@@ -41,23 +41,22 @@
           <section class="controls">
             <div class="panel">
               <h2>세션</h2>
-              <div class="row">
+              <div class="row session-row">
                 <select id="sessionSelect"></select>
                 <button id="newSessionBtn">새 세션</button>
                 <button id="renameSessionBtn">이름 변경</button>
               </div>
-              <div class="row">
+              <div class="row session-row">
                 <button id="exportBtn">내보내기</button>
-                <button id="deleteSessionBtn" class="danger">삭제</button>
-                <button id="resetSessionBtn" class="danger">세션 초기화</button>
+                <button id="deleteSessionBtn" class="danger session-delete">삭제</button>
+                <button id="resetSessionBtn" class="danger session-reset">세션 초기화</button>
               </div>
             </div>
             <div class="panel">
               <h2>스크램블 옵션</h2>
               <label>
                 종목
-                <div class="row">
-                  <select id="eventSelect">
+                <select id="eventSelect">
                     <option value="222">2x2</option>
                     <option value="333" selected>3x3</option>
                     <option value="444">4x4</option>
@@ -76,9 +75,11 @@
                     <option value="444bf">4x4 BLD</option>
                     <option value="555bf">5x5 BLD</option>
                   </select>
-                  <button id="newScrambleBtn">새 스크램블</button>
-                </div>
               </label>
+              <div class="row scramble-row">
+                <button id="prevScrambleBtn">이전 스크램블</button>
+                <button id="nextScrambleBtn">다음 스크램블</button>
+              </div>
             </div>
           </section>
           <section class="stats">
@@ -234,7 +235,7 @@
     </div>
 
     <footer class="site-footer">
-      <div>© 2026 CubeTimer. Licensed under GPL-3.0. v1.2</div>
+      <div>© 2026 CubeTimer. Licensed under GPL-3.0. v1.3</div>
       <div>Made with OpenAI GPT-5.2 Codex</div>
     </footer>
     <script type="module" src="main.js"></script>

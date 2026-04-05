@@ -3,7 +3,8 @@ import { randomScrambleForEvent } from "cubing/scramble";
 
 const scrambleText = document.getElementById("scrambleText");
 const scramblePreview = document.getElementById("scramblePreview");
-const newScrambleBtn = document.getElementById("newScrambleBtn");
+const prevScrambleBtn = document.getElementById("prevScrambleBtn");
+const nextScrambleBtn = document.getElementById("nextScrambleBtn");
 const timerDisplay = document.getElementById("timerDisplay");
 const timerSection = document.querySelector(".timer");
 const historyList = document.getElementById("historyList");
@@ -67,6 +68,9 @@ let nextSolvePenalty = "OK";
 let inspectionSpoken8 = false;
 let inspectionSpoken12 = false;
 let hideLiveUpdates = false;
+let scrambleHistory = [];
+let scrambleIndex = -1;
+let inputLock = false;
 const THEME_KEY = "cubeTimerTheme";
 const ACCENT_KEY = "cubeTimerAccent";
 const PREVIEW_KEY = "cubeTimerShowPreview";
@@ -334,6 +338,7 @@ function stopTimer() {
   setDisplay(finalTime);
   pushSolve(finalTime, nextSolvePenalty);
   nextSolvePenalty = "OK";
+  inputLock = true;
   void generateScramble();
 }
 
@@ -343,6 +348,7 @@ function resetTimer() {
   clearHoldState();
   resetInspection();
   setDisplay(0);
+  inputLock = false;
 }
 
 function pushSolve(ms, penalty = "OK") {
@@ -362,6 +368,7 @@ function pushSolve(ms, penalty = "OK") {
 
 function beginHold() {
   if (timerState === "running") return;
+  if (inputLock) return;
   timerState = "holding";
   holdReady = false;
   if (inspectionActive) {
@@ -530,8 +537,9 @@ function renderChart() {
   const ctx = progressChart.getContext("2d");
   if (!ctx || !session) return;
 
-  const width = progressChart.clientWidth || 480;
-  const height = progressChart.clientHeight || 240;
+  const rect = progressChart.getBoundingClientRect();
+  const width = rect.width || progressChart.clientWidth || 480;
+  const height = rect.height || progressChart.clientHeight || 240;
   const ratio = window.devicePixelRatio || 1;
   progressChart.width = Math.floor(width * ratio);
   progressChart.height = Math.floor(height * ratio);
@@ -704,6 +712,9 @@ function applyVisibilitySettings() {
   if (visualRow) {
     visualRow.style.display = previewVisible || chartVisible ? "" : "none";
   }
+  requestAnimationFrame(() => {
+    renderChart();
+  });
 }
 
 function formatShareTimestamp(date) {
@@ -872,17 +883,62 @@ async function generateScramble() {
   if (!scramble) {
     currentScramble = "";
     scrambleText.textContent = "스크램블 생성 실패";
+    updateScrambleNav();
     return;
   }
+  setCurrentScramble(scramble, appState.settings.eventId, { pushHistory: true });
+}
 
+function setCurrentScramble(scramble, eventId, options = {}) {
+  const { pushHistory = false } = options;
   currentScramble = scramble;
   scrambleText.textContent = currentScramble;
   scramblePreview.setAttribute("visualization", "2D");
-  scramblePreview.setAttribute("event", appState.settings.eventId);
+  scramblePreview.setAttribute("event", eventId);
   scramblePreview.setAttribute("scramble", currentScramble);
+  if (pushHistory) {
+    if (scrambleIndex < scrambleHistory.length - 1) {
+      scrambleHistory = scrambleHistory.slice(0, scrambleIndex + 1);
+    }
+    scrambleHistory.push({ scramble, eventId });
+    scrambleIndex = scrambleHistory.length - 1;
+  }
+  updateScrambleNav();
 }
 
-newScrambleBtn.addEventListener("click", async () => {
+function updateScrambleNav() {
+  if (prevScrambleBtn) {
+    prevScrambleBtn.disabled = scrambleIndex <= 0;
+  }
+  if (nextScrambleBtn) {
+    nextScrambleBtn.disabled = scrambleIndex === -1;
+  }
+}
+
+prevScrambleBtn?.addEventListener("click", () => {
+  if (scrambleIndex <= 0) return;
+  scrambleIndex -= 1;
+  const entry = scrambleHistory[scrambleIndex];
+  if (entry) {
+    appState.settings.eventId = entry.eventId;
+    eventSelect.value = entry.eventId;
+    setCurrentScramble(entry.scramble, entry.eventId, { pushHistory: false });
+    resetTimer();
+  }
+});
+
+nextScrambleBtn?.addEventListener("click", async () => {
+  if (scrambleIndex < scrambleHistory.length - 1) {
+    scrambleIndex += 1;
+    const entry = scrambleHistory[scrambleIndex];
+    if (entry) {
+      appState.settings.eventId = entry.eventId;
+      eventSelect.value = entry.eventId;
+      setCurrentScramble(entry.scramble, entry.eventId, { pushHistory: false });
+      resetTimer();
+    }
+    return;
+  }
   await generateScramble();
   resetTimer();
 });
@@ -1017,6 +1073,8 @@ accentButtons.forEach((button) => {
 
 eventSelect.addEventListener("change", async () => {
   appState.settings.eventId = eventSelect.value;
+  scrambleHistory = [];
+  scrambleIndex = -1;
   saveState();
   await generateScramble();
   resetTimer();
@@ -1140,6 +1198,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "Space") {
     event.preventDefault();
     if (event.repeat) return;
+    if (inputLock) return;
     if (timerState === "running") {
       stopTimer();
       return;
@@ -1160,6 +1219,9 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => {
   if (event.code === "Space") {
     event.preventDefault();
+    if (inputLock) {
+      inputLock = false;
+    }
     endHold();
   }
 });
@@ -1172,6 +1234,7 @@ function attachTimerPointerControls() {
   const onDown = (event) => {
     event.preventDefault();
     if (pointerActive) return;
+    if (inputLock) return;
     pointerActive = true;
     if (timerState === "running") {
       stopTimer();
@@ -1194,6 +1257,9 @@ function attachTimerPointerControls() {
     if (!pointerActive) return;
     event.preventDefault();
     pointerActive = false;
+    if (inputLock) {
+      inputLock = false;
+    }
     endHold();
   };
 
