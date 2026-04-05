@@ -1535,9 +1535,10 @@ if (progressChart) {
 
   progressChart.addEventListener("pointermove", (event) => {
     if (!chartDragging) return;
-    let deltaX = chartDragStartX - event.clientX;
+    const deltaXRaw = event.clientX - chartDragStartX;
+    let deltaX = deltaXRaw;
     if (event.pointerType === "mouse" && chartMouseReverse) {
-      deltaX = -deltaX;
+      deltaX = -deltaXRaw;
     }
     if (Math.abs(deltaX) > 3) chartDragMoved = true;
     const shift = deltaX / Math.max(1, chartStepPx);
@@ -1549,7 +1550,7 @@ if (progressChart) {
     const now = performance.now();
     const dt = Math.max(16, now - chartLastMoveTime);
     const dx = event.clientX - chartLastMoveX;
-    let velocity = (-dx / Math.max(1, chartStepPx)) * (16 / dt);
+    let velocity = (dx / Math.max(1, chartStepPx)) * (16 / dt);
     if (event.pointerType === "mouse" && chartMouseReverse) {
       velocity = -velocity;
     }
