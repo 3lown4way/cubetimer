@@ -808,6 +808,7 @@ body.hide-chart .visual-row {
   box-shadow: var(--shadow);
   min-width: 0;
   position: relative;
+  touch-action: none;
 }
 
 .chart-card h2 {

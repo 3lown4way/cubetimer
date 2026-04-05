@@ -1603,7 +1603,7 @@ if (progressChart) {
 
   if (usePointerEvents) {
     dragSurface.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
       event.preventDefault();
       startDrag(event.clientX, event.pointerType || "mouse", event.pointerId);
     });
