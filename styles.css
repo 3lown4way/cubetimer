@@ -710,7 +710,7 @@ body.theme-dark .modal-actions .actions-right button.danger {
 
   .visual-row {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
     gap: 16px;
     min-width: 0;
     width: 100%;
