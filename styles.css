@@ -11,6 +11,10 @@
   --card-soft: #eef0f3;
   --chart-bg: #f5f6f8;
   --chart-grid: rgba(30, 27, 22, 0.08);
+  --chart-time: var(--accent);
+  --chart-time-point: var(--accent);
+  --chart-ao5: var(--accent-2);
+  --chart-ao12: #7b61ff;
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
   font-family: "Space Grotesk", "Noto Sans KR", sans-serif;
 }
@@ -26,6 +30,10 @@ body.theme-dark {
   --card-soft: #1c2330;
   --chart-bg: #121824;
   --chart-grid: rgba(241, 244, 248, 0.12);
+  --chart-time: var(--accent);
+  --chart-time-point: var(--accent);
+  --chart-ao5: var(--accent-2);
+  --chart-ao12: #9b8cff;
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
 }
 
@@ -886,11 +894,15 @@ body.theme-dark .chart-tooltip {
   gap: 6px;
 }
 
+.legend-time {
+  background: var(--chart-time-point);
+}
+
 .legend-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--accent-2);
+  background: var(--chart-time-point);
   display: inline-block;
 }
 
@@ -898,9 +910,13 @@ body.theme-dark .chart-tooltip {
   width: 18px;
   height: 0;
   display: inline-block;
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--chart-time);
+}
+
+.legend-ao5 {
+  border-top: 2px solid var(--chart-ao5);
 }
 
 .legend-ao12 {
-  border-top: 2px dashed #6f7a8a;
+  border-top: 2px dashed var(--chart-ao12);
 }

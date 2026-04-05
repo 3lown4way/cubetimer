@@ -609,8 +609,10 @@ function renderChart() {
 
   ctx.clearRect(0, 0, width, height);
   const styles = getComputedStyle(document.body);
-  const accent = styles.getPropertyValue("--accent").trim() || "#1f6fe5";
-  const accent2 = styles.getPropertyValue("--accent-2").trim() || "#2c6b5a";
+  const timeColor = styles.getPropertyValue("--chart-time").trim() || "#1f6fe5";
+  const pointColor = styles.getPropertyValue("--chart-time-point").trim() || timeColor;
+  const ao5Color = styles.getPropertyValue("--chart-ao5").trim() || "#2c6b5a";
+  const ao12Color = styles.getPropertyValue("--chart-ao12").trim() || "#7b61ff";
   const chartBg = styles.getPropertyValue("--chart-bg").trim() || "#fffaf3";
   const chartGrid = styles.getPropertyValue("--chart-grid").trim() || "rgba(30, 27, 22, 0.08)";
   const showAo5 = localStorage.getItem(AO5_KEY) !== "false";
@@ -725,7 +727,7 @@ function renderChart() {
   ctx.rect(chartPadding.left, chartPadding.top, innerWidth, innerHeight);
   ctx.clip();
 
-  ctx.strokeStyle = accent;
+  ctx.strokeStyle = timeColor;
   ctx.lineWidth = 2;
   ctx.beginPath();
   let started = false;
@@ -780,7 +782,7 @@ function renderChart() {
     ctx.setLineDash([]);
   };
 
-  ctx.fillStyle = accent2;
+  ctx.fillStyle = pointColor;
   chartPoints = solves.map((solve, index) => {
     const x = chartPadding.left + (innerWidth * index) / denom + xShift;
     const y = yScale(solve.time);
@@ -791,10 +793,10 @@ function renderChart() {
   });
 
   if (showAo5) {
-    drawSeries(ao5Values, accent2);
+    drawSeries(ao5Values, ao5Color);
   }
   if (showAo12) {
-    drawSeries(ao12Values, "#6f7a8a", [6, 6]);
+    drawSeries(ao12Values, ao12Color, [6, 6]);
   }
 
   ctx.restore();
