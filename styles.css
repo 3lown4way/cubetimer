@@ -830,3 +830,37 @@ body.hide-chart .visual-row {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.chart-legend {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  display: inline-block;
+}
+
+.legend-line {
+  width: 18px;
+  height: 0;
+  display: inline-block;
+  border-top: 2px solid var(--accent);
+}
+
+.legend-ao12 {
+  border-top: 2px dashed #6f7a8a;
+}
