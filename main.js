@@ -1610,10 +1610,11 @@ if (progressChart) {
     }
   };
 
-  const endDrag = (event) => {
+  const endDrag = (event, clientX, clientY) => {
     if (!chartDragging) return;
     chartDragging = false;
     const wasTouch = chartActivePointerType === "touch";
+    const wasTap = wasTouch && !chartDragMoved;
     chartActivePointerType = "";
     if (chartDragMoved) {
       ignoreChartClick = true;
@@ -1621,6 +1622,9 @@ if (progressChart) {
     }
     if (wasTouch && chartVelocity && Math.abs(chartVelocity) > 0.01) {
       startChartInertia();
+    }
+    if (wasTap && typeof clientX === "number" && typeof clientY === "number") {
+      handlePointerMove(clientX, clientY);
     }
     if (event?.pointerId !== undefined && progressChart.releasePointerCapture) {
       try {
@@ -1654,7 +1658,7 @@ if (progressChart) {
     dragSurface.addEventListener("pointermove", (event) => {
       if (chartDragging) {
         if (event.pointerType === "mouse" && event.buttons === 0) {
-          endDrag();
+          endDrag(event, event.clientX, event.clientY);
           return;
         }
         updateDrag(event.clientX, event.pointerType || "mouse");
@@ -1663,9 +1667,15 @@ if (progressChart) {
       handlePointerMove(event.clientX, event.clientY);
     });
 
-    dragSurface.addEventListener("pointerup", endDrag);
-    dragSurface.addEventListener("pointerleave", endDrag);
-    dragSurface.addEventListener("pointercancel", endDrag);
+    dragSurface.addEventListener("pointerup", (event) => {
+      endDrag(event, event.clientX, event.clientY);
+    });
+    dragSurface.addEventListener("pointerleave", (event) => {
+      endDrag(event, event.clientX, event.clientY);
+    });
+    dragSurface.addEventListener("pointercancel", (event) => {
+      endDrag(event, event.clientX, event.clientY);
+    });
   } else {
     dragSurface.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;
@@ -1683,7 +1693,7 @@ if (progressChart) {
 
     window.addEventListener("mouseup", (event) => {
       if (!chartDragging || chartActivePointerType !== "mouse") return;
-      endDrag(event);
+      endDrag(event, event.clientX, event.clientY);
     });
 
     dragSurface.addEventListener(
@@ -1713,11 +1723,14 @@ if (progressChart) {
     );
 
     dragSurface.addEventListener("touchend", (event) => {
+      const touch = event.changedTouches[0];
       if (chartDragging && chartActivePointerType === "touch") {
-        endDrag(event);
+        endDrag(event, touch?.clientX, touch?.clientY);
       }
-      activeChartPoint = null;
-      hideChartTooltip();
+      if (!chartDragging) {
+        activeChartPoint = null;
+        hideChartTooltip();
+      }
     });
   }
 
