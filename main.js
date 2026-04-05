@@ -636,7 +636,10 @@ function renderChart() {
   const baseOffset = Math.floor(chartOffset);
   const fracOffset = chartOffset - baseOffset;
   const windowStartIndex = Math.max(0, total - windowSize - baseOffset);
-  const solves = allSolves.slice(windowStartIndex, windowStartIndex + windowSize);
+  const windowEndIndex = windowStartIndex + windowSize;
+  const solves = allSolves.slice(windowStartIndex, windowEndIndex);
+  const prevSolve = windowStartIndex > 0 ? allSolves[windowStartIndex - 1] : null;
+  const nextSolve = windowEndIndex < total ? allSolves[windowEndIndex] : null;
 
   if (chartWindowLabel) {
     chartWindowLabel.textContent = total === 0 ? "-" : `${windowSize}개`;
@@ -674,7 +677,8 @@ function renderChart() {
   const chartPadding = { top: 12, right: 12, bottom: 20, left: 36 };
   const innerWidth = width - chartPadding.left - chartPadding.right;
   const innerHeight = height - chartPadding.top - chartPadding.bottom;
-  chartStepPx = innerWidth / Math.max(1, solves.length - 1);
+  const denom = Math.max(1, windowSize - 1);
+  chartStepPx = innerWidth / denom;
   const xShift = fracOffset * chartStepPx;
 
   ctx.strokeStyle = chartGrid;
@@ -699,12 +703,32 @@ function renderChart() {
   ctx.strokeStyle = accent;
   ctx.lineWidth = 2;
   ctx.beginPath();
+  let started = false;
+  if (prevSolve) {
+    const x = chartPadding.left + (innerWidth * -1) / denom + xShift;
+    const y = yScale(prevSolve.time);
+    ctx.moveTo(x, y);
+    started = true;
+  }
   solves.forEach((solve, index) => {
-    const x = chartPadding.left + (innerWidth * index) / Math.max(1, solves.length - 1) + xShift;
+    const x = chartPadding.left + (innerWidth * index) / denom + xShift;
     const y = yScale(solve.time);
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (!started) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
+  if (nextSolve) {
+    const x = chartPadding.left + (innerWidth * windowSize) / denom + xShift;
+    const y = yScale(nextSolve.time);
+    if (!started) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
   ctx.stroke();
 
   const drawSeries = (values, style, dash = []) => {
@@ -733,7 +757,7 @@ function renderChart() {
 
   ctx.fillStyle = accent2;
   chartPoints = solves.map((solve, index) => {
-    const x = chartPadding.left + (innerWidth * index) / Math.max(1, solves.length - 1) + xShift;
+    const x = chartPadding.left + (innerWidth * index) / denom + xShift;
     const y = yScale(solve.time);
     ctx.beginPath();
     ctx.arc(x, y, 2.5, 0, Math.PI * 2);
