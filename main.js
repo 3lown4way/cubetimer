@@ -1551,13 +1551,20 @@ if (progressChart) {
     chartDragMoved = false;
     chartDragStartX = clientX;
     chartDragStartOffset = chartOffset;
+    chartLastMoveX = clientX;
+    chartLastMoveTime = performance.now();
+    chartVelocity = 0;
+    if (chartInertiaRaf) {
+      cancelAnimationFrame(chartInertiaRaf);
+      chartInertiaRaf = 0;
+    }
     if (progressChart.setPointerCapture && pointerId !== undefined) {
       progressChart.setPointerCapture(pointerId);
     }
     hideChartTooltip();
   };
 
-  const updateDrag = (clientX) => {
+  const updateDrag = (clientX, pointerType) => {
     if (!chartDragging) return;
     const step = Math.max(1, chartStepPx || 12);
     const deltaX = clientX - chartDragStartX;
@@ -1569,15 +1576,27 @@ if (progressChart) {
       chartTargetOffset = nextOffset;
       scheduleRenderChart();
     }
+    if (pointerType === "touch") {
+      const now = performance.now();
+      const dt = Math.max(16, now - chartLastMoveTime);
+      const dx = clientX - chartLastMoveX;
+      chartVelocity = (dx / step) * (16 / dt);
+      chartLastMoveX = clientX;
+      chartLastMoveTime = now;
+    }
   };
 
   const endDrag = (event) => {
     if (!chartDragging) return;
     chartDragging = false;
+    const wasTouch = chartActivePointerType === "touch";
     chartActivePointerType = "";
     if (chartDragMoved) {
       ignoreChartClick = true;
       chartDragMoved = false;
+    }
+    if (wasTouch && chartVelocity && Math.abs(chartVelocity) > 0.01) {
+      startChartInertia();
     }
     if (event?.pointerId !== undefined && progressChart.releasePointerCapture) {
       try {
@@ -1614,7 +1633,7 @@ if (progressChart) {
           endDrag();
           return;
         }
-        updateDrag(event.clientX);
+        updateDrag(event.clientX, event.pointerType || "mouse");
         return;
       }
       handlePointerMove(event.clientX, event.clientY);
@@ -1632,7 +1651,7 @@ if (progressChart) {
 
     window.addEventListener("mousemove", (event) => {
       if (chartDragging && chartActivePointerType === "mouse") {
-        updateDrag(event.clientX);
+        updateDrag(event.clientX, "mouse");
         return;
       }
       handlePointerMove(event.clientX, event.clientY);
@@ -1661,7 +1680,7 @@ if (progressChart) {
         if (!touch) return;
         event.preventDefault();
         if (chartDragging && chartActivePointerType === "touch") {
-          updateDrag(touch.clientX);
+          updateDrag(touch.clientX, "touch");
           return;
         }
         handlePointerMove(touch.clientX, touch.clientY);
