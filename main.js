@@ -38,6 +38,7 @@ const progressChart = document.getElementById("progressChart");
 const chartZoomOutBtn = document.getElementById("chartZoomOutBtn");
 const chartZoomInBtn = document.getElementById("chartZoomInBtn");
 const chartWindowLabel = document.getElementById("chartWindowLabel");
+const chartTooltip = document.getElementById("chartTooltip");
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsModal = document.getElementById("settingsModal");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
@@ -73,6 +74,8 @@ let hideLiveUpdates = false;
 let scrambleHistory = [];
 let scrambleIndex = -1;
 let inputLock = false;
+let chartPoints = [];
+let activeChartPoint = null;
 const THEME_KEY = "cubeTimerTheme";
 const ACCENT_KEY = "cubeTimerAccent";
 const PREVIEW_KEY = "cubeTimerShowPreview";
@@ -576,6 +579,7 @@ function renderChart() {
   const allSolves = session.solves
     .filter((s) => s.penalty !== "DNF")
     .map((s) => ({
+      solve: s,
       time: s.timeMs + (s.penalty === "PLUS2" ? 2000 : 0),
       createdAt: s.createdAt,
     }))
@@ -598,6 +602,12 @@ function renderChart() {
     ctx.fillStyle = "#6a5f54";
     ctx.font = "14px Space Grotesk, Noto Sans KR, sans-serif";
     ctx.fillText("데이터 없음", 12, 24);
+    chartPoints = [];
+    activeChartPoint = null;
+    if (chartTooltip) {
+      chartTooltip.classList.remove("visible");
+      chartTooltip.setAttribute("aria-hidden", "true");
+    }
     return;
   }
 
@@ -668,12 +678,13 @@ function renderChart() {
   };
 
   ctx.fillStyle = accent2;
-  solves.forEach((solve, index) => {
+  chartPoints = solves.map((solve, index) => {
     const x = chartPadding.left + (innerWidth * index) / Math.max(1, solves.length - 1);
     const y = yScale(solve.time);
     ctx.beginPath();
     ctx.arc(x, y, 2.5, 0, Math.PI * 2);
     ctx.fill();
+    return { x, y, solve: solve.solve };
   });
 
   if (showAo5) {
@@ -696,6 +707,43 @@ function adjustChartWindow(delta) {
   if (total === 0) return;
   chartWindowSize = Math.min(Math.max(1, chartWindowSize + delta), total);
   renderChart();
+}
+
+function findNearestChartPoint(x, y) {
+  const threshold = 12;
+  let nearest = null;
+  let nearestDist = Infinity;
+  chartPoints.forEach((point) => {
+    const dx = point.x - x;
+    const dy = point.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < threshold && dist < nearestDist) {
+      nearest = point;
+      nearestDist = dist;
+    }
+  });
+  return nearest;
+}
+
+function showChartTooltip(point) {
+  if (!chartTooltip || !progressChart) return;
+  const chartCard = progressChart.closest(".chart-card");
+  if (!chartCard) return;
+  const canvasRect = progressChart.getBoundingClientRect();
+  const cardRect = chartCard.getBoundingClientRect();
+  const left = canvasRect.left - cardRect.left + point.x;
+  const top = canvasRect.top - cardRect.top + point.y;
+  chartTooltip.textContent = `${formatSolveTime(point.solve)} · ${eventLabel(point.solve.eventId)}`;
+  chartTooltip.style.left = `${left}px`;
+  chartTooltip.style.top = `${top - 8}px`;
+  chartTooltip.classList.add("visible");
+  chartTooltip.setAttribute("aria-hidden", "false");
+}
+
+function hideChartTooltip() {
+  if (!chartTooltip) return;
+  chartTooltip.classList.remove("visible");
+  chartTooltip.setAttribute("aria-hidden", "true");
 }
 
 function openExportModal(title, text) {
@@ -1372,6 +1420,54 @@ chartWheelTarget?.addEventListener(
 
 chartZoomOutBtn?.addEventListener("click", () => adjustChartWindow(5));
 chartZoomInBtn?.addEventListener("click", () => adjustChartWindow(-5));
+
+if (progressChart) {
+  const handlePointerMove = (clientX, clientY) => {
+    const rect = progressChart.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const point = findNearestChartPoint(x, y);
+    if (point) {
+      activeChartPoint = point;
+      showChartTooltip(point);
+    } else {
+      activeChartPoint = null;
+      hideChartTooltip();
+    }
+  };
+
+  progressChart.addEventListener("mousemove", (event) => {
+    handlePointerMove(event.clientX, event.clientY);
+  });
+
+  progressChart.addEventListener("mouseleave", () => {
+    activeChartPoint = null;
+    hideChartTooltip();
+  });
+
+  progressChart.addEventListener("touchmove", (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    handlePointerMove(touch.clientX, touch.clientY);
+  });
+
+  progressChart.addEventListener("touchend", () => {
+    activeChartPoint = null;
+    hideChartTooltip();
+  });
+
+  progressChart.addEventListener("click", () => {
+    if (activeChartPoint) {
+      openSolveModal(activeChartPoint.solve);
+    }
+  });
+}
+
+chartTooltip?.addEventListener("click", () => {
+  if (activeChartPoint) {
+    openSolveModal(activeChartPoint.solve);
+  }
+});
 
 async function initApp() {
   try {

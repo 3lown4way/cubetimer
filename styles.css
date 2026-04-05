@@ -285,6 +285,7 @@ body.theme-dark .icon-btn.ghost {
   font-size: 1.4rem;
   line-height: 1.5;
   font-weight: 600;
+  text-align: center;
 }
 
 .preview {
@@ -804,6 +805,7 @@ body.hide-chart .visual-row {
   padding: 16px 20px 20px;
   box-shadow: var(--shadow);
   min-width: 0;
+  position: relative;
 }
 
 .chart-card h2 {
@@ -829,6 +831,31 @@ body.hide-chart .visual-row {
 .chart-hint {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(20, 24, 30, 0.92);
+  color: #ffffff;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translate(-50%, -100%);
+  transition: opacity 0.12s ease;
+  white-space: nowrap;
+}
+
+body.theme-dark .chart-tooltip {
+  background: rgba(240, 244, 252, 0.92);
+  color: #111822;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
 }
 
 .chart-legend {
