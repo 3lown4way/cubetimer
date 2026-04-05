@@ -100,6 +100,7 @@ let chartDragBaseOffset = 0;
 let chartRenderRaf = 0;
 let chartCanvasWidth = 0;
 let chartCanvasHeight = 0;
+let chartAutoFollow = true;
 let chartCache = {
   key: "",
   solves: [],
@@ -402,6 +403,7 @@ function pushSolve(ms, penalty = "OK") {
     createdAt: Date.now(),
     eventId: appState.settings.eventId,
   });
+  chartAutoFollow = true;
   saveState();
   renderAll();
 }
@@ -622,7 +624,9 @@ function renderChart() {
       solve: s,
       time: s.timeMs + (s.penalty === "PLUS2" ? 2000 : 0),
       createdAt: s.createdAt,
-    }));
+    }))
+    .slice()
+    .reverse();
 
   const total = allSolves.length;
   if (total > 0) {
@@ -632,6 +636,9 @@ function renderChart() {
   chartLastTotal = total;
   chartLastWindowSize = windowSize;
   chartMaxOffset = Math.max(0, total - windowSize);
+  if (chartAutoFollow && !chartDragging) {
+    chartOffset = 0;
+  }
   chartOffset = Math.min(Math.max(0, chartOffset), chartMaxOffset);
   chartTargetOffset = chartOffset;
   const baseOffset = Math.floor(chartOffset);
@@ -665,15 +672,32 @@ function renderChart() {
   const ao12Values = showAo12
     ? solves.map((_, idx) => averageAtIndexChrono(allSolves, windowStartIndex + idx, 12))
     : [];
-  const times = solves.map((s) => s.time);
-  const min = Math.min(...times);
-  const max = Math.max(...times);
-  const extraValues = [...ao5Values, ...ao12Values].filter((v) => Number.isFinite(v));
-  const extendedMin = extraValues.length ? Math.min(min, ...extraValues) : min;
-  const extendedMax = extraValues.length ? Math.max(max, ...extraValues) : max;
-  const padding = Math.max(1, (extendedMax - extendedMin) * 0.15 || 1);
-  const yMin = Math.max(0, extendedMin - padding);
-  const yMax = extendedMax + padding;
+
+  // y축 스케일은 전체 기록 기준으로 고정한다.
+  const globalTimes = allSolves.map((s) => s.time);
+  let globalMin = Math.min(...globalTimes);
+  let globalMax = Math.max(...globalTimes);
+  if (showAo5) {
+    for (let i = 0; i < allSolves.length; i += 1) {
+      const value = averageAtIndexChrono(allSolves, i, 5);
+      if (Number.isFinite(value)) {
+        globalMin = Math.min(globalMin, value);
+        globalMax = Math.max(globalMax, value);
+      }
+    }
+  }
+  if (showAo12) {
+    for (let i = 0; i < allSolves.length; i += 1) {
+      const value = averageAtIndexChrono(allSolves, i, 12);
+      if (Number.isFinite(value)) {
+        globalMin = Math.min(globalMin, value);
+        globalMax = Math.max(globalMax, value);
+      }
+    }
+  }
+  const padding = Math.max(1, (globalMax - globalMin) * 0.15 || 1);
+  const yMin = Math.max(0, globalMin - padding);
+  const yMax = globalMax + padding;
 
   const chartPadding = { top: 12, right: 12, bottom: 20, left: 36 };
   const innerWidth = width - chartPadding.left - chartPadding.right;
@@ -1466,12 +1490,14 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "ArrowLeft") {
     event.preventDefault();
+    chartAutoFollow = false;
     chartOffset = Math.min(chartMaxOffset, chartOffset + 1);
     chartTargetOffset = chartOffset;
     scheduleRenderChart();
   }
   if (event.code === "ArrowRight") {
     event.preventDefault();
+    chartAutoFollow = false;
     chartOffset = Math.max(0, chartOffset - 1);
     chartTargetOffset = chartOffset;
     scheduleRenderChart();
@@ -1576,6 +1602,7 @@ if (progressChart) {
     chartDragging = true;
     chartActivePointerType = pointerType;
     chartDragMoved = false;
+    chartAutoFollow = false;
     chartDragStartX = clientX;
     chartDragStartOffset = chartOffset;
     chartLastMoveX = clientX;
