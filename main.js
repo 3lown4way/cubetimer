@@ -76,6 +76,7 @@ let scrambleIndex = -1;
 let inputLock = false;
 let chartPoints = [];
 let activeChartPoint = null;
+let chartTooltipSolve = null;
 let chartOffset = 0;
 let chartMaxOffset = 0;
 let chartStepPx = 1;
@@ -869,12 +870,14 @@ function showChartTooltip(point) {
   chartTooltip.style.top = `${top - 8}px`;
   chartTooltip.classList.add("visible");
   chartTooltip.setAttribute("aria-hidden", "false");
+  chartTooltipSolve = point.solve;
 }
 
 function hideChartTooltip() {
   if (!chartTooltip) return;
   chartTooltip.classList.remove("visible");
   chartTooltip.setAttribute("aria-hidden", "true");
+  chartTooltipSolve = null;
 }
 
 function openExportModal(title, text) {
@@ -1753,17 +1756,15 @@ if (progressChart) {
 }
 
 chartTooltip?.addEventListener("click", () => {
-  if (activeChartPoint) {
-    openSolveModal(activeChartPoint.solve);
-  }
+  const solve = chartTooltipSolve || activeChartPoint?.solve;
+  if (solve) openSolveModal(solve);
 });
 
 chartTooltip?.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   event.stopPropagation();
-  if (activeChartPoint) {
-    openSolveModal(activeChartPoint.solve);
-  }
+  const solve = chartTooltipSolve || activeChartPoint?.solve;
+  if (solve) openSolveModal(solve);
 });
 
 async function initApp() {
