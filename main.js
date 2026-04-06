@@ -296,6 +296,7 @@ function resetInspection() {
     cancelAnimationFrame(inspectionRafId);
     inspectionRafId = 0;
   }
+  document.body.classList.remove("timer-only", "timer-full");
   timerDisplay.classList.remove("inspect-warn", "inspect-danger");
 }
 
@@ -342,6 +343,7 @@ function startInspection() {
   if (inspectionActive) return;
   inspectionActive = true;
   inspectionStartTime = performance.now();
+  document.body.classList.add("timer-only", "timer-full");
   inspectionTick();
 }
 
@@ -365,6 +367,7 @@ function startTimer() {
   timerState = "running";
   clearHoldState();
   startTime = performance.now();
+  document.body.classList.add("timer-only", "timer-full");
   if (hideLiveUpdates) {
     setSolvingDisplay();
   }
@@ -377,6 +380,7 @@ function stopTimer() {
   const finalTime = performance.now() - startTime;
   setDisplay(finalTime);
   pushSolve(finalTime, nextSolvePenalty);
+  document.body.classList.remove("timer-only", "timer-full");
   nextSolvePenalty = "OK";
   // 입력이 눌린 상태면 바로 다음 솔브가 시작되지 않도록 잠금.
   inputLock = true;
@@ -389,6 +393,7 @@ function resetTimer() {
   clearHoldState();
   resetInspection();
   setDisplay(0);
+  document.body.classList.remove("timer-only", "timer-full");
   inputLock = false;
 }
 

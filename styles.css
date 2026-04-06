@@ -332,6 +332,76 @@ scramble-display {
   margin: 0 auto;
 }
 
+body.timer-only {
+  overflow: hidden;
+}
+
+body.timer-only .top,
+body.timer-only .sidebar,
+body.timer-only .scramble,
+body.timer-only .visual-row,
+body.timer-only .history,
+body.timer-only .stats,
+body.timer-only .controls,
+body.timer-only .note,
+body.timer-only .modal {
+  display: none !important;
+}
+
+body.timer-only .layout {
+  grid-template-columns: 1fr;
+}
+
+body.timer-only .main-col {
+  max-width: none;
+}
+
+body.timer-only .timer {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+body.timer-full .app {
+  min-height: 100vh;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+body.timer-full .layout {
+  min-height: 100vh;
+  align-items: center;
+  gap: 0;
+}
+
+body.timer-full .main-col {
+  width: 100%;
+  grid-column: 1;
+}
+
+body.timer-full .main-stack {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+body.timer-full .timer {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+  width: 100%;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+body.timer-full .timer-display {
+  font-size: clamp(4.5rem, 14vw, 12rem);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 .timer-display {
   font-size: clamp(3rem, 7vw, 5.2rem);
   font-weight: 700;
