@@ -2165,7 +2165,9 @@ async function initApp() {
     }
     renderAll();
     resetSolverState();
-    void ensureSolverWorker();
+    ensureSolverWorker().catch((error) => {
+      console.error("Solver worker background init failed", error);
+    });
     await generateScramble();
     resetTimer();
     attachTimerPointerControls();

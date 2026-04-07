@@ -22,7 +22,13 @@ async function emitProgress(onProgress, progress) {
   if (typeof onProgress !== "function") return;
   try {
     await onProgress(progress);
-  } catch (_) {}
+  } catch (progressError) {
+    console.debug("solver progress callback failed", progressError);
+  }
+}
+
+function countMoves(solutionText) {
+  return solutionText ? solutionText.split(/\s+/).filter(Boolean).length : 0;
 }
 
 async function solve(scrambleOrRequest, eventId, onProgress) {
@@ -44,17 +50,18 @@ async function solve(scrambleOrRequest, eventId, onProgress) {
       const pattern = kpuzzle.defaultPattern().applyAlg(scramble);
       const solution = await experimentalSolve2x2x2(pattern);
       const solutionText = solution.toString().trim();
+      const moveCount = countMoves(solutionText);
       await emitProgress(args.onProgress, {
         type: "stage_done",
         stageIndex: 0,
         totalStages: 1,
         stageName: "2x2 Search",
-        moveCount: solutionText ? solutionText.split(/\s+/).length : 0,
+        moveCount,
       });
       return {
         ok: true,
         solution: solutionText,
-        moveCount: solutionText ? solutionText.split(/\s+/).length : 0,
+        moveCount,
         source: "CUBING_SEARCH",
       };
     }
@@ -70,17 +77,18 @@ async function solve(scrambleOrRequest, eventId, onProgress) {
       const pattern = kpuzzle.defaultPattern().applyAlg(scramble);
       const solution = await experimentalSolve3x3x3IgnoringCenters(pattern);
       const solutionText = solution.toString().trim();
+      const moveCount = countMoves(solutionText);
       await emitProgress(args.onProgress, {
         type: "stage_done",
         stageIndex: 0,
         totalStages: 1,
         stageName: "3x3 Search",
-        moveCount: solutionText ? solutionText.split(/\s+/).length : 0,
+        moveCount,
       });
       return {
         ok: true,
         solution: solutionText,
-        moveCount: solutionText ? solutionText.split(/\s+/).length : 0,
+        moveCount,
         source: "CUBING_SEARCH",
       };
     }
