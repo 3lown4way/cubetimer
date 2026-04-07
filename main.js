@@ -2165,7 +2165,7 @@ async function initApp() {
     }
     renderAll();
     resetSolverState();
-    await ensureSolverWorker();
+    void ensureSolverWorker();
     await generateScramble();
     resetTimer();
     attachTimerPointerControls();
