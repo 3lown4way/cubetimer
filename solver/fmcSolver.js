@@ -223,6 +223,15 @@ function invertAlg(algText) {
   return joinMoves(invertMoves(splitMoves(algText)));
 }
 
+function canonicalizeAlg(algText) {
+  return joinMoves(simplifyMoves(splitMoves(algText)));
+}
+
+function isReverseScrambleSolution(solutionText, reverseScrambleCanonical) {
+  if (!solutionText || !reverseScrambleCanonical) return false;
+  return canonicalizeAlg(solutionText) === reverseScrambleCanonical;
+}
+
 function orbitStateKey(orbit) {
   if (!orbit) return "";
   const pieces = Array.isArray(orbit.pieces) ? orbit.pieces : [];
@@ -599,6 +608,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     ? Math.max(1, Math.floor(options.insertionThreshold))
     : Math.max(targetMoveCount + 2, 22);
   const inverseScramble = invertAlg(scramble);
+  const reverseScrambleCanonical = canonicalizeAlg(inverseScramble);
   const solvedPattern = await getSolvedPattern();
   const scramblePattern = solvedPattern.applyAlg(scramble);
   const inversePattern = solvedPattern.applyAlg(inverseScramble);
@@ -992,11 +1002,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   }
 
   const preferNonCfop = options.preferNonCfop === true;
-  const nonCfopCandidates = preferNonCfop ? validCandidates.filter((candidate) => !candidate.usesCfop) : [];
-  const rankedCandidates = (nonCfopCandidates.length ? nonCfopCandidates : validCandidates).slice().sort((a, b) => {
-    if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
-    return a.solution.localeCompare(b.solution);
-  });
+  const nonReverseCandidates = validCandidates.filter(
+    (candidate) => !isReverseScrambleSolution(candidate.solution, reverseScrambleCanonical),
+  );
+  const reverseAwareCandidates = nonReverseCandidates.length ? nonReverseCandidates : validCandidates;
+  const nonCfopCandidates = preferNonCfop ? reverseAwareCandidates.filter((candidate) => !candidate.usesCfop) : [];
+  const rankedCandidates = (nonCfopCandidates.length ? nonCfopCandidates : reverseAwareCandidates)
+    .slice()
+    .sort((a, b) => {
+      if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
+      return a.solution.localeCompare(b.solution);
+    });
   const best = rankedCandidates[0];
   const candidateLines = rankedCandidates
     .slice(0, 3)

@@ -1,5 +1,6 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
+import { TwistyPlayer } from "cubing/twisty";
 import { proxy, wrap } from "comlink";
 
 const scrambleText = document.getElementById("scrambleText");
@@ -48,6 +49,14 @@ const solverStatus = document.getElementById("solverStatus");
 const solverSolution = document.getElementById("solverSolution");
 const solverMoveCount = document.getElementById("solverMoveCount");
 const solverCopyBtn = document.getElementById("solverCopyBtn");
+const solverVisualPanel = document.getElementById("solverVisualPanel");
+const solverTwistyHost = document.getElementById("solverTwistyHost");
+const solverStepLabel = document.getElementById("solverStepLabel");
+const solverStepResetBtn = document.getElementById("solverStepResetBtn");
+const solverStepPrevBtn = document.getElementById("solverStepPrevBtn");
+const solverPlayBtn = document.getElementById("solverPlayBtn");
+const solverStepNextBtn = document.getElementById("solverStepNextBtn");
+const solverStageList = document.getElementById("solverStageList");
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsModal = document.getElementById("settingsModal");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
@@ -88,6 +97,11 @@ let solverApi = null;
 let solverReady = false;
 let solverError = "";
 let solverProgressRunId = 0;
+let solverTwistyPlayer = null;
+let solverPlaybackScramble = "";
+let solverPlaybackMoves = [];
+let solverPlaybackIndex = 0;
+let solverPlaybackTimerId = 0;
 const SOLVER_CALL_TIMEOUT_MS_222 = 30000;
 const SOLVER_CALL_TIMEOUT_MS_333 = 240000;
 let scrambleHistory = [];
@@ -1235,9 +1249,170 @@ function updateSolverControls() {
   findSolutionBtn.disabled = solverBusy || !currentScramble || !supported;
 }
 
+function splitAlgTokens(algText) {
+  if (!algText || typeof algText !== "string") return [];
+  return algText
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && token !== "-");
+}
+
+function joinAlgTokens(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return "";
+  return tokens
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stopSolverPlayback() {
+  if (solverPlaybackTimerId) {
+    clearInterval(solverPlaybackTimerId);
+    solverPlaybackTimerId = 0;
+  }
+}
+
+function ensureSolverTwistyPlayer() {
+  if (solverTwistyPlayer) return solverTwistyPlayer;
+  if (!solverTwistyHost) return null;
+  solverTwistyPlayer = new TwistyPlayer({
+    puzzle: "3x3x3",
+    visualization: "3D",
+    background: "checkered",
+    controlPanel: "none",
+    hintFacelets: "none",
+    experimentalSetupAnchor: "start",
+  });
+  solverTwistyPlayer.tempoScale = 0.75;
+  solverTwistyHost.textContent = "";
+  solverTwistyHost.appendChild(solverTwistyPlayer);
+  return solverTwistyPlayer;
+}
+
+function updateSolverPlaybackControls() {
+  const total = solverPlaybackMoves.length;
+  const hasMoves = total > 0;
+  if (solverStepLabel) {
+    solverStepLabel.textContent = `${solverPlaybackIndex}/${total} 수`;
+  }
+  if (solverStepResetBtn) {
+    solverStepResetBtn.disabled = !hasMoves || solverPlaybackIndex <= 0;
+  }
+  if (solverStepPrevBtn) {
+    solverStepPrevBtn.disabled = !hasMoves || solverPlaybackIndex <= 0;
+  }
+  if (solverStepNextBtn) {
+    solverStepNextBtn.disabled = !hasMoves || solverPlaybackIndex >= total;
+  }
+  if (solverPlayBtn) {
+    solverPlayBtn.disabled = !hasMoves;
+    solverPlayBtn.textContent = solverPlaybackTimerId ? "정지" : "자동 재생";
+  }
+}
+
+function renderSolverStages(stages, fallbackSolution = "") {
+  if (!solverStageList) return;
+  const normalizedStages =
+    Array.isArray(stages) && stages.length
+      ? stages
+      : fallbackSolution
+        ? [{ name: "Solution", solution: fallbackSolution }]
+        : [];
+  solverStageList.textContent = "";
+  for (let i = 0; i < normalizedStages.length; i += 1) {
+    const stage = normalizedStages[i];
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    const stageName = stage?.name || `Stage ${i + 1}`;
+    const stageMoves = splitAlgTokens(stage?.solution || "");
+    title.textContent = `${stageName} (${stageMoves.length}수)`;
+    item.appendChild(title);
+    const line = document.createElement("div");
+    if (stageMoves.length) {
+      const code = document.createElement("code");
+      code.textContent = joinAlgTokens(stageMoves);
+      line.appendChild(code);
+    } else {
+      line.textContent = "-";
+    }
+    item.appendChild(line);
+    solverStageList.appendChild(item);
+  }
+}
+
+function updateSolverTwistyFrame() {
+  const player = ensureSolverTwistyPlayer();
+  if (!player) return;
+  player.experimentalSetupAlg = solverPlaybackScramble || "";
+  player.alg = joinAlgTokens(solverPlaybackMoves.slice(0, solverPlaybackIndex));
+  updateSolverPlaybackControls();
+}
+
+function setSolverPlaybackIndex(nextIndex) {
+  const clamped = Math.max(0, Math.min(solverPlaybackMoves.length, Math.floor(nextIndex)));
+  solverPlaybackIndex = clamped;
+  updateSolverTwistyFrame();
+}
+
+function showSolverVisualResult(scramble, solution, stages) {
+  if (!solverVisualPanel) return;
+  if (!scramble || !solution || !isThreeByThreeFamilyEvent(appState.settings.eventId)) {
+    clearSolverVisualResult();
+    return;
+  }
+  stopSolverPlayback();
+  solverPlaybackScramble = scramble;
+  solverPlaybackMoves = splitAlgTokens(solution);
+  solverPlaybackIndex = 0;
+  renderSolverStages(stages, solution);
+  solverVisualPanel.hidden = false;
+  updateSolverTwistyFrame();
+}
+
+function clearSolverVisualResult() {
+  stopSolverPlayback();
+  solverPlaybackScramble = "";
+  solverPlaybackMoves = [];
+  solverPlaybackIndex = 0;
+  if (solverStageList) solverStageList.textContent = "";
+  if (solverVisualPanel) solverVisualPanel.hidden = true;
+  if (solverTwistyPlayer) {
+    solverTwistyPlayer.experimentalSetupAlg = "";
+    solverTwistyPlayer.alg = "";
+  }
+  updateSolverPlaybackControls();
+}
+
+function toggleSolverPlayback() {
+  if (!solverPlaybackMoves.length) return;
+  if (solverPlaybackTimerId) {
+    stopSolverPlayback();
+    updateSolverPlaybackControls();
+    return;
+  }
+  if (solverPlaybackIndex >= solverPlaybackMoves.length) {
+    solverPlaybackIndex = 0;
+  }
+  solverPlaybackTimerId = window.setInterval(() => {
+    if (solverPlaybackIndex >= solverPlaybackMoves.length) {
+      stopSolverPlayback();
+      updateSolverPlaybackControls();
+      return;
+    }
+    setSolverPlaybackIndex(solverPlaybackIndex + 1);
+    if (solverPlaybackIndex >= solverPlaybackMoves.length) {
+      stopSolverPlayback();
+      updateSolverPlaybackControls();
+    }
+  }, 520);
+  updateSolverPlaybackControls();
+}
+
 function resetSolverState() {
   lastSolution = "";
   lastSolutionDisplay = "";
+  clearSolverVisualResult();
   const supported = isSolverSupportedEvent(appState.settings.eventId);
   if (solverStatus) {
     if (supported) {
@@ -1297,6 +1472,7 @@ async function solveCurrentScramble() {
   if (solverSolution) solverSolution.textContent = "";
   if (solverMoveCount) solverMoveCount.textContent = "0 수";
   if (solverCopyBtn) solverCopyBtn.disabled = true;
+  stopSolverPlayback();
   updateSolverControls();
 
   try {
@@ -1418,9 +1594,11 @@ async function solveCurrentScramble() {
       if (solverCopyBtn) {
         solverCopyBtn.disabled = !rawSolutionText;
       }
+      showSolverVisualResult(currentScramble, rawSolutionText, result.stages);
     } else {
       lastSolution = "";
       lastSolutionDisplay = "";
+      clearSolverVisualResult();
       const reason = result?.reason || "해를 찾지 못했습니다.";
       if (solverStatus) solverStatus.textContent = reason;
       if (solverSolution) solverSolution.textContent = "-";
@@ -1429,6 +1607,7 @@ async function solveCurrentScramble() {
     }
   } catch (error) {
     console.error("해 찾기 실패", error);
+    clearSolverVisualResult();
     if (String(error?.message || "").startsWith("SOLVER_TIMEOUT_")) {
       // Worker can be stuck in heavy sync search; hard-reset it so UI can recover.
       try {
@@ -1547,6 +1726,25 @@ f2lMethodSelect?.addEventListener("change", () => {
 
 solverCopyBtn?.addEventListener("click", () => {
   void copySolutionToClipboard();
+});
+
+solverStepResetBtn?.addEventListener("click", () => {
+  stopSolverPlayback();
+  setSolverPlaybackIndex(0);
+});
+
+solverStepPrevBtn?.addEventListener("click", () => {
+  stopSolverPlayback();
+  setSolverPlaybackIndex(solverPlaybackIndex - 1);
+});
+
+solverStepNextBtn?.addEventListener("click", () => {
+  stopSolverPlayback();
+  setSolverPlaybackIndex(solverPlaybackIndex + 1);
+});
+
+solverPlayBtn?.addEventListener("click", () => {
+  toggleSolverPlayback();
 });
 
 sessionSelect.addEventListener("change", () => {

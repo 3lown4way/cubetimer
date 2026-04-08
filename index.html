@@ -194,6 +194,20 @@
                 <span id="solverMoveCount">0 수</span>
                 <button id="solverCopyBtn" class="ghost" type="button" disabled>복사</button>
               </div>
+              <section id="solverVisualPanel" class="solver-visual" hidden>
+                <div class="solver-visual-header">
+                  <h3>FMC 3D 진행</h3>
+                  <span id="solverStepLabel" class="solver-step-label">0/0 수</span>
+                </div>
+                <div id="solverTwistyHost" class="solver-twisty-host"></div>
+                <div class="solver-visual-controls">
+                  <button id="solverStepResetBtn" class="ghost" type="button">처음</button>
+                  <button id="solverStepPrevBtn" class="ghost" type="button">이전 수</button>
+                  <button id="solverPlayBtn" class="ghost" type="button">자동 재생</button>
+                  <button id="solverStepNextBtn" class="ghost" type="button">다음 수</button>
+                </div>
+                <ol id="solverStageList" class="solver-stage-list"></ol>
+              </section>
             </div>
           </section>
         </div>
