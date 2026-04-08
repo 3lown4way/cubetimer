@@ -137,6 +137,7 @@ const INSPECTION_KEY = "cubeTimerInspection";
 const HIDE_LIVE_KEY = "cubeTimerHideLiveTime";
 const AO5_KEY = "cubeTimerShowAo5";
 const AO12_KEY = "cubeTimerShowAo12";
+const VALID_SOLVER_MODES = new Set(["strict", "fmc", "optimal"]);
 
 const ACCENT_THEMES = {
   ocean: {
@@ -223,7 +224,7 @@ function loadState() {
     if (!parsed.settings.crossColor) parsed.settings.crossColor = "D";
     if (!parsed.settings.solverMode) parsed.settings.solverMode = "strict";
     if (!parsed.settings.f2lMethod) parsed.settings.f2lMethod = "legacy";
-    if (parsed.settings.solverMode !== "strict") {
+    if (!VALID_SOLVER_MODES.has(parsed.settings.solverMode)) {
       parsed.settings.solverMode = "strict";
     }
     if (parsed.settings.f2lMethod !== "legacy") {
@@ -279,6 +280,14 @@ const EVENT_LABELS = {
   "444bf": "4x4x4 BF",
   "555bf": "5x5x5 BF",
 };
+
+function isThreeByThreeFamilyEvent(eventId) {
+  return eventId === "333" || eventId === "333fm";
+}
+
+function isSolverSupportedEvent(eventId) {
+  return eventId === "222" || isThreeByThreeFamilyEvent(eventId);
+}
 
 function eventLabel(eventId) {
   return EVENT_LABELS[eventId] || eventId;
@@ -1222,19 +1231,16 @@ function updateScrambleNav() {
 
 function updateSolverControls() {
   if (!findSolutionBtn) return;
-  const supports2x2 = appState.settings.eventId === "222";
-  const supports3x3 = appState.settings.eventId === "333";
-  findSolutionBtn.disabled =
-    solverBusy || !currentScramble || !(supports2x2 || supports3x3);
+  const supported = isSolverSupportedEvent(appState.settings.eventId);
+  findSolutionBtn.disabled = solverBusy || !currentScramble || !supported;
 }
 
 function resetSolverState() {
   lastSolution = "";
   lastSolutionDisplay = "";
-  const supports2x2 = appState.settings.eventId === "222";
-  const supports3x3 = appState.settings.eventId === "333";
+  const supported = isSolverSupportedEvent(appState.settings.eventId);
   if (solverStatus) {
-    if (supports2x2 || supports3x3) {
+    if (supported) {
       if (solverError) {
         solverStatus.textContent = `solver 로드 실패: ${solverError}`;
       } else if (!solverReady) {
@@ -1272,10 +1278,21 @@ async function solveCurrentScramble() {
   if (solverStatus) {
     const solverMode = appState.settings.solverMode || "strict";
     const f2lMethod = appState.settings.f2lMethod || "legacy";
-    solverStatus.textContent =
-      appState.settings.eventId === "333"
-        ? `계산 중... (3x3 CFOP 4단계, ${solverMode}, F2L: ${f2lMethod})`
-        : "계산 중...";
+    if (isThreeByThreeFamilyEvent(appState.settings.eventId)) {
+      solverStatus.textContent =
+        solverMode === "optimal"
+          ? "계산 중... (3x3 최소 수 우선 탐색, 느릴 수 있음)"
+          : solverMode === "fmc"
+            ? "계산 중... (3x3 FMC 스타일 탐색: Direct + NISS + Premove)"
+            : `계산 중... (3x3 CFOP 4단계, ${solverMode}, F2L: ${f2lMethod})`;
+    } else if (appState.settings.eventId === "222") {
+      solverStatus.textContent =
+        solverMode === "optimal" || solverMode === "fmc"
+          ? "계산 중... (2x2 최소 수 우선 탐색)"
+          : "계산 중...";
+    } else {
+      solverStatus.textContent = "계산 중...";
+    }
   }
   if (solverSolution) solverSolution.textContent = "";
   if (solverMoveCount) solverMoveCount.textContent = "0 수";
@@ -1288,12 +1305,12 @@ async function solveCurrentScramble() {
     const stageElapsedTimes = new Map();
     const stageNames = new Map();
     const eventId = appState.settings.eventId;
-    const timeoutMs = eventId === "333" ? SOLVER_CALL_TIMEOUT_MS_333 : SOLVER_CALL_TIMEOUT_MS_222;
+    const timeoutMs = isThreeByThreeFamilyEvent(eventId) ? SOLVER_CALL_TIMEOUT_MS_333 : SOLVER_CALL_TIMEOUT_MS_222;
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error(`SOLVER_TIMEOUT_${timeoutMs}MS`)), timeoutMs),
     );
     const onProgress =
-      eventId === "333"
+      isThreeByThreeFamilyEvent(eventId)
         ? proxy((progress) => {
             if (runId !== solverProgressRunId || !solverBusy || !solverStatus) return;
             if (!progress || typeof progress !== "object") return;
@@ -1387,8 +1404,15 @@ async function solveCurrentScramble() {
             ? `, ${result.nodes.toLocaleString()} 노드`
             : "";
         let fallbackText = "";
-        if (result.source === "EXTERNAL_CUBING_SEARCH_FALLBACK") fallbackText = ", 외부 복구";
-        else if (result.fallbackFrom) fallbackText = ", 내부 복구";
+        if (typeof result.source === "string" && result.source.startsWith("FMC_")) {
+          fallbackText = ", FMC";
+        } else if (result.source === "EXTERNAL_CUBING_SEARCH_MINIMAL") {
+          fallbackText = ", 최소수 탐색";
+        } else if (result.source === "EXTERNAL_CUBING_SEARCH_FALLBACK") {
+          fallbackText = ", 외부 복구";
+        } else if (result.fallbackFrom) {
+          fallbackText = ", 내부 복구";
+        }
         solverStatus.textContent = `완료 (${duration}ms${nodesText}${fallbackText})`;
       }
       if (solverCopyBtn) {
@@ -1414,7 +1438,7 @@ async function solveCurrentScramble() {
       solverApi = null;
       solverReady = false;
       const eventId = appState.settings.eventId;
-      const timeoutMs = eventId === "333" ? SOLVER_CALL_TIMEOUT_MS_333 : SOLVER_CALL_TIMEOUT_MS_222;
+      const timeoutMs = isThreeByThreeFamilyEvent(eventId) ? SOLVER_CALL_TIMEOUT_MS_333 : SOLVER_CALL_TIMEOUT_MS_222;
       solverError = `solver 시간 초과 (${Math.round(timeoutMs / 1000)}초)`;
     }
     lastSolution = "";
@@ -1509,7 +1533,9 @@ crossColorSelect?.addEventListener("change", () => {
 
 solverModeSelect?.addEventListener("change", () => {
   if (!solverModeSelect) return;
-  appState.settings.solverMode = "strict";
+  appState.settings.solverMode = VALID_SOLVER_MODES.has(solverModeSelect.value)
+    ? solverModeSelect.value
+    : "strict";
   saveState();
 });
 
