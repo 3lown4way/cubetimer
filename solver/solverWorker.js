@@ -282,14 +282,14 @@ const api = {
           const isOptimalMode = mode === "optimal";
           const fmcResult = await withTimeout(
             solveWithFMCSearch(scramble, onProgress, {
-              maxPremoveSets: isOptimalMode ? 8 : 2,
-              timeBudgetMs: isOptimalMode ? 65000 : 15000,
-              targetMoveCount: isOptimalMode ? 19 : 24,
-              allowCfopFallback: true,
+              maxPremoveSets: isOptimalMode ? 8 : 1,
+              timeBudgetMs: isOptimalMode ? 65000 : 9000,
+              targetMoveCount: isOptimalMode ? 19 : 26,
+              allowCfopFallback: isOptimalMode,
               premoveAllowCfopFallback: isOptimalMode,
               preferNonCfop: !isOptimalMode,
-              directProfileLevel: isOptimalMode ? "deep" : "light",
-              directPhaseAttemptTimeoutMs: isOptimalMode ? 9000 : 3000,
+              directProfileLevel: isOptimalMode ? "deep" : "micro",
+              directPhaseAttemptTimeoutMs: isOptimalMode ? 9000 : 1200,
               directCfopPerColorTimeoutMs: isOptimalMode ? 2200 : 1200,
               sweepProfileLevel: "micro",
               sweepPhaseAttemptTimeoutMs: isOptimalMode ? 1400 : 900,
@@ -302,6 +302,42 @@ const api = {
             return fmcResult;
           }
           if (mode === "fmc") {
+            if (typeof onProgress === "function") {
+              try {
+                void onProgress({
+                  type: "fallback_start",
+                  stageName: "FMC Safety Phase",
+                  reason: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
+                });
+              } catch (_) {}
+            }
+            const phaseSafety = await withTimeout(
+              solveWithInternal3x3Phase(scramble, INTERNAL_PHASE_FALLBACK_OPTIONS),
+              INTERNAL_333_PHASE_TIMEOUT_MS,
+            ).catch(() => null);
+            if (phaseSafety?.ok) {
+              if (typeof onProgress === "function") {
+                try {
+                  void onProgress({
+                    type: "fallback_done",
+                    stageName: "FMC Safety Phase",
+                  });
+                } catch (_) {}
+              }
+              return {
+                ...phaseSafety,
+                source: "INTERNAL_3X3_PHASE_FMC_SAFETY",
+                fallbackFrom: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
+              };
+            }
+            if (typeof onProgress === "function") {
+              try {
+                void onProgress({
+                  type: "fallback_fail",
+                  stageName: "FMC Safety Phase",
+                });
+              } catch (_) {}
+            }
             return fmcResult || { ok: false, reason: "FMC_FAILED" };
           }
         }
