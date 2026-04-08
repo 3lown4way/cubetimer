@@ -1346,6 +1346,7 @@ function updateSolverTwistyFrame() {
   if (!player) return;
   player.experimentalSetupAlg = solverPlaybackScramble || "";
   player.alg = joinAlgTokens(solverPlaybackMoves.slice(0, solverPlaybackIndex));
+  player.timestamp = "end";
   updateSolverPlaybackControls();
 }
 
