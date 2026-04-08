@@ -1281,7 +1281,7 @@ async function solveCurrentScramble() {
     if (isThreeByThreeFamilyEvent(appState.settings.eventId)) {
       solverStatus.textContent =
         solverMode === "optimal"
-          ? "계산 중... (3x3 최소 수 우선 탐색, 느릴 수 있음)"
+          ? "계산 중... (3x3 최소 수 우선 내부 탐색, 느릴 수 있음)"
           : solverMode === "fmc"
             ? "계산 중... (3x3 FMC 스타일 탐색: Direct + NISS + Premove)"
             : `계산 중... (3x3 CFOP 4단계, ${solverMode}, F2L: ${f2lMethod})`;

@@ -77,6 +77,11 @@ function withTimeout(promise, timeoutMs) {
   });
 }
 
+function remainingMs(deadlineTs) {
+  if (!Number.isFinite(deadlineTs)) return Infinity;
+  return deadlineTs - Date.now();
+}
+
 function parseMove(move) {
   if (!move || typeof move !== "string") return null;
   const match = /^([A-Za-z]+)(2'?|')?$/.exec(move);
@@ -195,7 +200,9 @@ function selectPhaseProfiles(profileLevel) {
 
 async function solveInternal333(scrambleText, options = {}) {
   try {
+    if (remainingMs(options.deadlineTs) <= 300) return null;
     const solvedPattern = await getSolvedPattern();
+    if (remainingMs(options.deadlineTs) <= 300) return null;
     const pattern = solvedPattern.applyAlg(scrambleText);
     const phaseProfiles = selectPhaseProfiles(options.profileLevel || "medium");
     const phaseAttemptTimeoutMs = Number.isFinite(options.phaseAttemptTimeoutMs)
@@ -203,10 +210,13 @@ async function solveInternal333(scrambleText, options = {}) {
       : 12000;
 
     for (let i = 0; i < phaseProfiles.length; i++) {
+      const phaseRemaining = remainingMs(options.deadlineTs);
+      if (phaseRemaining <= 600) return null;
+      const phaseTimeoutMs = Math.max(500, Math.min(phaseAttemptTimeoutMs, phaseRemaining - 200));
       const profile = phaseProfiles[i];
       const phaseResult = await withTimeout(
         solve3x3InternalPhase(pattern, profile),
-        phaseAttemptTimeoutMs,
+        phaseTimeoutMs,
       ).catch(() => null);
       if (phaseResult?.ok) {
         return {
@@ -216,16 +226,23 @@ async function solveInternal333(scrambleText, options = {}) {
       }
     }
 
+    if (options.allowCfopFallback === false) {
+      return null;
+    }
+
+    const cfopRemaining = remainingMs(options.deadlineTs);
+    if (cfopRemaining <= 1000) return null;
     const cfopTimeoutMs = Number.isFinite(options.cfopTimeoutMs)
       ? Math.max(1000, Math.floor(options.cfopTimeoutMs))
       : 20000;
+    const boundedCfopTimeoutMs = Math.max(1000, Math.min(cfopTimeoutMs, cfopRemaining - 200));
     const cfopResult = await withTimeout(
       solve3x3StrictCfopFromPattern(pattern, {
         crossColor: "D",
         mode: "strict",
         f2lMethod: "legacy",
       }),
-      cfopTimeoutMs,
+      boundedCfopTimeoutMs,
     ).catch(() => null);
     if (cfopResult?.ok) {
       return {
@@ -242,11 +259,15 @@ async function solveInternal333(scrambleText, options = {}) {
 export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const maxPremoveSets = Number.isFinite(options.maxPremoveSets)
     ? Math.max(0, Math.floor(options.maxPremoveSets))
-    : FMC_PREMOVE_SETS.length;
+    : 4;
   const timeBudgetMs = Number.isFinite(options.timeBudgetMs)
     ? Math.max(1000, Math.floor(options.timeBudgetMs))
-    : 90000;
+    : 30000;
+  const targetMoveCount = Number.isFinite(options.targetMoveCount)
+    ? Math.max(1, Math.floor(options.targetMoveCount))
+    : 24;
   const startedAt = Date.now();
+  const deadlineTs = startedAt + timeBudgetMs;
   const inverseScramble = invertAlg(scramble);
   const candidates = [];
   let attempts = 0;
@@ -272,9 +293,11 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
 
   notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
   const direct = await solveInternal333(scramble, {
-    profileLevel: "deep",
-    phaseAttemptTimeoutMs: 14000,
-    cfopTimeoutMs: 22000,
+    profileLevel: "medium",
+    phaseAttemptTimeoutMs: 6000,
+    cfopTimeoutMs: 7000,
+    allowCfopFallback: true,
+    deadlineTs,
   });
   attempts += 1;
   if (direct?.solution) {
@@ -289,11 +312,16 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   });
 
   notify({ type: "stage_start", stageIndex: 1, totalStages, stageName: "FMC NISS" });
-  const inverse = await solveInternal333(inverseScramble, {
-    profileLevel: "deep",
-    phaseAttemptTimeoutMs: 14000,
-    cfopTimeoutMs: 22000,
-  });
+  const inverse =
+    remainingMs(deadlineTs) > 1000
+      ? await solveInternal333(inverseScramble, {
+          profileLevel: "medium",
+          phaseAttemptTimeoutMs: 6000,
+          cfopTimeoutMs: 7000,
+          allowCfopFallback: true,
+          deadlineTs,
+        })
+      : null;
   attempts += 1;
   if (inverse?.solution) {
     trackCandidate(createCandidate("FMC_NISS", "inverse", invertMoves(splitMoves(inverse.solution))));
@@ -309,13 +337,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   notify({ type: "stage_start", stageIndex: 2, totalStages, stageName: "FMC Premove Sweep" });
   for (let i = 0; i < FMC_PREMOVE_SETS.length && i < maxPremoveSets; i += 1) {
     if (Date.now() - startedAt >= timeBudgetMs) break;
+    if (remainingMs(deadlineTs) <= 1200) break;
+    if (bestMoveCount <= targetMoveCount) break;
     const premove = FMC_PREMOVE_SETS[i];
 
     const directScrambleWithPremove = joinMoves([scramble, ...premove]);
     const directWithPremove = await solveInternal333(directScrambleWithPremove, {
       profileLevel: "light",
-      phaseAttemptTimeoutMs: 7000,
-      cfopTimeoutMs: 12000,
+      phaseAttemptTimeoutMs: 2500,
+      cfopTimeoutMs: 2500,
+      allowCfopFallback: false,
+      deadlineTs,
     });
     attempts += 1;
     if (directWithPremove?.solution) {
@@ -324,12 +356,16 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     }
 
     if (Date.now() - startedAt >= timeBudgetMs) break;
+    if (remainingMs(deadlineTs) <= 1200) break;
+    if (bestMoveCount <= targetMoveCount) break;
 
     const inverseScrambleWithPremove = joinMoves([inverseScramble, ...premove]);
     const inverseWithPremove = await solveInternal333(inverseScrambleWithPremove, {
       profileLevel: "light",
-      phaseAttemptTimeoutMs: 7000,
-      cfopTimeoutMs: 12000,
+      phaseAttemptTimeoutMs: 2500,
+      cfopTimeoutMs: 2500,
+      allowCfopFallback: false,
+      deadlineTs,
     });
     attempts += 1;
     if (inverseWithPremove?.solution) {

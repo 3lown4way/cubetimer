@@ -5,8 +5,6 @@ import { solveWithExternalSearch } from "./externalSolver.js";
 let solver2x2ModulesPromise = null;
 let solver3x3PhaseModulesPromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
-const OPTIMAL_222_TIMEOUT_MS = 30000;
-const OPTIMAL_333_TIMEOUT_MS = 120000;
 const STRICT_CFOP_TIMEOUT_MS = 45000;
 const STRICT_CFOP_RETRY_TIMEOUT_MS = 25000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
@@ -186,47 +184,6 @@ async function solveWithInternal3x3StrictRetries(scramble, onProgress, options =
   return lastFailure || { ok: false, reason: "INTERNAL_3X3_CFOP_FAILED" };
 }
 
-async function solveWithOptimalExternalSearch(scramble, eventId, onProgress) {
-  const stageName = eventId === "333" ? "3x3 Minimal Search" : "2x2 Minimal Search";
-  if (typeof onProgress === "function") {
-    try {
-      void onProgress({
-        type: "fallback_start",
-        stageName,
-        reason: "MINIMAL_MODE",
-      });
-    } catch (_) {}
-  }
-  const timeoutMs = eventId === "333" ? OPTIMAL_333_TIMEOUT_MS : OPTIMAL_222_TIMEOUT_MS;
-  const optimalResult = await withTimeout(
-    solveWithExternalSearch(scramble, eventId),
-    timeoutMs,
-  ).catch(() => null);
-  if (optimalResult?.ok) {
-    if (typeof onProgress === "function") {
-      try {
-        void onProgress({
-          type: "fallback_done",
-          stageName,
-        });
-      } catch (_) {}
-    }
-    return {
-      ...optimalResult,
-      source: "EXTERNAL_CUBING_SEARCH_MINIMAL",
-    };
-  }
-  if (typeof onProgress === "function") {
-    try {
-      void onProgress({
-        type: "fallback_fail",
-        stageName,
-      });
-    } catch (_) {}
-  }
-  return null;
-}
-
 async function prewarmInternal2x2() {
   try {
     const { solve2x2Scramble } = await import("./solver2x2.js");
@@ -317,32 +274,25 @@ const api = {
     // 222 uses in-repo solver implementation.
     try {
       if (normalizedEventId === "222") {
-        if (mode === "optimal") {
-          const optimalResult = await solveWithOptimalExternalSearch(scramble, "222", onProgress);
-          if (optimalResult?.ok) {
-            return optimalResult;
-          }
-        }
+        // 2x2 internal solver is IDA* based and already shortest-path oriented.
         return await solveWithInternal2x2(scramble);
       }
       if (normalizedEventId === "333") {
-        if (mode === "fmc") {
+        if (mode === "fmc" || mode === "optimal") {
+          const isOptimalMode = mode === "optimal";
           const fmcResult = await withTimeout(
             solveWithFMCSearch(scramble, onProgress, {
-              maxPremoveSets: 10,
-              timeBudgetMs: 90000,
+              maxPremoveSets: isOptimalMode ? 6 : 3,
+              timeBudgetMs: isOptimalMode ? 50000 : 25000,
+              targetMoveCount: isOptimalMode ? 21 : 24,
             }),
             FMC_333_TIMEOUT_MS,
-          ).catch(() => ({ ok: false, reason: "FMC_TIMEOUT" }));
+          ).catch(() => ({ ok: false, reason: isOptimalMode ? "OPTIMAL_TIMEOUT" : "FMC_TIMEOUT" }));
           if (fmcResult?.ok) {
             return fmcResult;
           }
-          return fmcResult || { ok: false, reason: "FMC_FAILED" };
-        }
-        if (mode === "optimal") {
-          const optimalResult = await solveWithOptimalExternalSearch(scramble, "333", onProgress);
-          if (optimalResult?.ok) {
-            return optimalResult;
+          if (mode === "fmc") {
+            return fmcResult || { ok: false, reason: "FMC_FAILED" };
           }
         }
         if (typeof onProgress === "function") {
@@ -392,6 +342,11 @@ const api = {
           try {
             void onProgress({ type: "fallback_fail", stageName: "3x3 Internal Phase" });
           } catch (_) {}
+        }
+
+        if (mode !== "strict") {
+          // Do not use external library fallback in optimal/fmc mode.
+          return phaseResult?.reason ? phaseResult : strictResult;
         }
 
         if (typeof onProgress === "function") {
