@@ -1,6 +1,7 @@
 import { expose } from "../vendor/comlink/index.js";
 import { solveWithFMCSearch } from "./fmcSolver.js";
 import { solveWithExternalSearch } from "./externalSolver.js";
+import { ensureWasmSolverReady, solveWithWasmIfAvailable } from "./wasmSolver.js";
 
 let solver2x2ModulesPromise = null;
 let solver3x3PhaseModulesPromise = null;
@@ -92,6 +93,18 @@ function withTimeout(promise, timeoutMs) {
 }
 
 async function solveWithInternal2x2(scramble) {
+  const wasmResult = await solveWithWasmIfAvailable(scramble, "222");
+  if (wasmResult?.ok) {
+    return {
+      ok: true,
+      solution: wasmResult.solution,
+      moveCount: wasmResult.moveCount,
+      nodes: wasmResult.nodes ?? 0,
+      bound: wasmResult.bound ?? 0,
+      source: "WASM_2X2",
+    };
+  }
+
   if (!solver2x2ModulesPromise) {
     solver2x2ModulesPromise = import("./solver2x2.js");
   }
@@ -449,6 +462,14 @@ async function prewarmInternal3x3Phase() {
   }
 }
 
+async function prewarmWasmSolver() {
+  try {
+    await ensureWasmSolverReady();
+  } catch (_) {
+    // Warmup failure should not block solving.
+  }
+}
+
 async function prewarmRouxParallel() {
   try {
     await runRouxCandidateInSubWorker(
@@ -479,6 +500,7 @@ const api = {
     void prewarmInternal2x2();
     void prewarmInternal3x3StrictCfop();
     void prewarmInternal3x3Phase();
+    void prewarmWasmSolver();
     void prewarmRouxParallel();
     return { ok: true };
   },
@@ -530,6 +552,14 @@ const api = {
         return await solveWithInternal2x2(scramble);
       }
       if (normalizedEventId === "333") {
+        const wasm3x3Result = await solveWithWasmIfAvailable(scramble, "333");
+        if (wasm3x3Result?.ok) {
+          return {
+            ...wasm3x3Result,
+            source: "WASM_3X3",
+          };
+        }
+
         if (mode === "fmc" || mode === "optimal") {
           const isOptimalMode = mode === "optimal";
           const fmcResult = await withTimeout(

@@ -1595,13 +1595,13 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       name: stage3Name,
       formulaKeys: stage3FormulaKeys,
       formulaPreAufList: FORMULA_AUF,
-      formulaAttemptLimit: useZbStages ? 15000 : 0,
+      formulaAttemptLimit: normalizeDepth(options.zblsFormulaAttemptLimit, useZbStages ? 26000 : 0),
       maxDepth: normalizeDepth(options.ollMaxDepth, profile.ollMaxDepth),
       searchMaxDepth: normalizeDepth(
         options.zblsSearchMaxDepth,
-        useZbStages ? 9 : profile.ollMaxDepth,
+        useZbStages ? 10 : profile.ollMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 160000 : 0),
+      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 320000 : 0),
       moveIndices: ctx.noDMoveIndices,
       isSolved: useZbStages ? isZBLSSolved : isOLLSolved,
       mismatch(data) {
@@ -1665,13 +1665,13 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       formulaKeys: stage4FormulaKeys,
       formulaPreAufList: FORMULA_AUF,
       formulaPostAufList: FORMULA_AUF,
-      formulaAttemptLimit: useZbStages ? 40000 : 0,
+      formulaAttemptLimit: normalizeDepth(options.zbllFormulaAttemptLimit, useZbStages ? 50000 : 0),
       maxDepth: normalizeDepth(options.pllMaxDepth, profile.pllMaxDepth),
       searchMaxDepth: normalizeDepth(
         options.zbllSearchMaxDepth,
-        useZbStages ? 11 : profile.pllMaxDepth,
+        useZbStages ? 12 : profile.pllMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbStages ? 220000 : 0),
+      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbStages ? 320000 : 0),
       moveIndices: ctx.noDMoveIndices,
       isSolved: isPLLSolved,
       mismatch(data) {
@@ -2331,21 +2331,47 @@ function solveStage(startPattern, stage, ctx) {
     bound = res;
   }
 
-  if (nodeLimitHit) {
-    return {
-      ok: false,
-      reason: `${stage.name.toUpperCase()}_SEARCH_LIMIT`,
-      nodes,
-      bound: STAGE_NOT_SET,
+  const baseFailure = nodeLimitHit
+    ? {
+        ok: false,
+        reason: `${stage.name.toUpperCase()}_SEARCH_LIMIT`,
+        nodes,
+        bound: STAGE_NOT_SET,
+      }
+    : {
+        ok: false,
+        reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
+        nodes,
+        bound: STAGE_NOT_SET,
+      };
+
+  const canRelaxSearch =
+    (stage.name === "ZBLS" || stage.name === "ZBLL") &&
+    !stage.__relaxedSearchTried &&
+    !stage.disableSearchFallback;
+  if (canRelaxSearch) {
+    const relaxedStage = {
+      ...stage,
+      __relaxedSearchTried: true,
+      // Last-stage ZB failures are usually limit-bound; allow wider move set and deeper cap once.
+      moveIndices: ctx.allMoveIndices,
+      searchMaxDepth: normalizeDepth(stage.searchMaxDepth, stage.maxDepth) + (stage.name === "ZBLS" ? 2 : 1),
+      nodeLimit: Math.max(
+        normalizeDepth(stage.nodeLimit, 0),
+        stage.name === "ZBLS" ? 900000 : 700000,
+      ),
+      formulaAttemptLimit: Math.max(
+        normalizeDepth(stage.formulaAttemptLimit, 0),
+        stage.name === "ZBLS" ? 70000 : 90000,
+      ),
     };
+    const relaxedResult = solveStage(startPattern, relaxedStage, ctx);
+    if (relaxedResult?.ok) return relaxedResult;
+    const relaxedNodes = relaxedResult?.nodes || 0;
+    if (relaxedNodes > baseFailure.nodes) baseFailure.nodes = relaxedNodes;
   }
 
-  return {
-    ok: false,
-    reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
-    nodes,
-    bound: STAGE_NOT_SET,
-  };
+  return baseFailure;
 }
 
 export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
@@ -2631,6 +2657,76 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       totalBound += result.bound;
     }
     if (!result.ok) {
+      const canAttemptZbRecovery =
+        solveMode === "zb" &&
+        (stage.name === "ZBLS" || stage.name === "ZBLL") &&
+        !options.__zbRecoveryAttempted &&
+        (String(result.reason || "").endsWith("_SEARCH_LIMIT") ||
+          String(result.reason || "").endsWith("_NOT_FOUND"));
+      if (canAttemptZbRecovery) {
+        const recoveryStageName =
+          stage.name === "ZBLL" ? "ZBLL Recovery (CFOP Finish)" : "ZBLS Recovery (CFOP Finish)";
+        if (onStageUpdate) {
+          onStageUpdate({
+            type: "fallback_start",
+            stageName: recoveryStageName,
+            reason: result.reason || `${stage.name}_FAILED`,
+          });
+        }
+
+        const recoveryResult = await solve3x3StrictCfopFromPattern(stageStartPattern, {
+          ...options,
+          mode: "strict",
+          crossColor: "D",
+          __colorNeutralApplied: true,
+          __zbRecoveryAttempted: true,
+          onStageUpdate: undefined,
+        });
+        if (recoveryResult?.ok) {
+          const recoveryStages = Array.isArray(recoveryResult.stages) ? recoveryResult.stages : [];
+          const filteredRecoveryStages = [];
+          for (let r = 0; r < recoveryStages.length; r++) {
+            const entry = recoveryStages[r];
+            const entryMoves = splitMoves(entry?.solution || "");
+            if (!entryMoves.length) continue;
+            const mappedName = r === 0 ? `ZBLS Recovery ${entry.name || "F2L"}` : entry.name;
+            filteredRecoveryStages.push({
+              ...entry,
+              name: mappedName,
+              moveCount: entryMoves.length,
+              depth: entryMoves.length,
+            });
+          }
+
+          const recoveryMoves = simplifyMoves(splitMoves(recoveryResult.solution || ""));
+          const recoveryText = joinMoves(recoveryMoves);
+          if (recoveryMoves.length) {
+            allMoves.push(...recoveryMoves);
+            solvedStages.push(...filteredRecoveryStages);
+            currentPattern = currentPattern.applyAlg(recoveryText);
+          }
+          totalNodes += recoveryResult.nodes || 0;
+          if (typeof recoveryResult.bound === "number" && recoveryResult.bound !== STAGE_NOT_SET) {
+            totalBound += recoveryResult.bound;
+          }
+
+          if (onStageUpdate) {
+            onStageUpdate({
+              type: "fallback_done",
+              stageName: recoveryStageName,
+            });
+          }
+          break;
+        }
+
+        if (onStageUpdate) {
+          onStageUpdate({
+            type: "fallback_fail",
+            stageName: recoveryStageName,
+          });
+        }
+      }
+
       if (onStageUpdate) {
         onStageUpdate({
           type: "stage_fail",
