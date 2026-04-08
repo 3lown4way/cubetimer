@@ -117,6 +117,15 @@ function joinMoves(parts) {
     .trim();
 }
 
+function applyMovesToPattern(pattern, moves) {
+  if (!pattern || !Array.isArray(moves) || !moves.length) return pattern;
+  let current = pattern;
+  for (let i = 0; i < moves.length; i += 1) {
+    current = current.applyMove(moves[i]);
+  }
+  return current;
+}
+
 function withTimeout(promise, timeoutMs) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
   return new Promise((resolve, reject) => {
@@ -413,9 +422,13 @@ function getPhaseAttemptScale(profileId) {
 async function solveInternal333(scrambleText, options = {}) {
   try {
     if (remainingMs(options.deadlineTs) <= 300) return null;
-    const solvedPattern = await getSolvedPattern();
+    let pattern = options.startPattern || null;
+    if (!pattern) {
+      const solvedPattern = await getSolvedPattern();
+      if (!scrambleText || typeof scrambleText !== "string") return null;
+      pattern = solvedPattern.applyAlg(scrambleText);
+    }
     if (remainingMs(options.deadlineTs) <= 300) return null;
-    const pattern = solvedPattern.applyAlg(scrambleText);
     const phaseProfiles = selectPhaseProfiles(options.profileLevel || "medium");
     const phaseAttemptTimeoutMs = Number.isFinite(options.phaseAttemptTimeoutMs)
       ? Math.max(600, Math.floor(options.phaseAttemptTimeoutMs))
@@ -566,7 +579,13 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const insertionTimeMs = Number.isFinite(options.insertionTimeMs)
     ? Math.max(600, Math.floor(options.insertionTimeMs))
     : Math.max(1200, Math.min(16000, Math.floor(timeBudgetMs * 0.22)));
+  const insertionThreshold = Number.isFinite(options.insertionThreshold)
+    ? Math.max(1, Math.floor(options.insertionThreshold))
+    : Math.max(targetMoveCount + 2, 22);
   const inverseScramble = invertAlg(scramble);
+  const solvedPattern = await getSolvedPattern();
+  const scramblePattern = solvedPattern.applyAlg(scramble);
+  const inversePattern = solvedPattern.applyAlg(inverseScramble);
   const candidates = [];
   let attempts = 0;
   const hasSweep = maxPremoveSets > 0;
@@ -596,6 +615,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
   const directDeadlineTs = Math.min(deadlineTs, Date.now() + directStageBudgetMs);
   const direct = await solveInternal333(scramble, {
+    startPattern: scramblePattern,
     profileLevel: directProfileLevel,
     phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
     cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
@@ -632,6 +652,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const inverse =
     remainingMs(nissDeadlineTs) > 400
       ? await solveInternal333(inverseScramble, {
+          startPattern: inversePattern,
           profileLevel: directProfileLevel,
           phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
           cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
@@ -683,8 +704,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         } catch (_) {}
       }
 
-      const directScrambleWithPremove = joinMoves([scramble, ...premove]);
-      const directWithPremove = await solveInternal333(directScrambleWithPremove, {
+      const directPatternWithPremove = applyMovesToPattern(scramblePattern, premove);
+      const directWithPremove = await solveInternal333(scramble, {
+        startPattern: directPatternWithPremove,
         profileLevel: sweepProfileLevel,
         phaseAttemptTimeoutMs: sweepPhaseAttemptTimeoutMs,
         cfopPerColorTimeoutMs: sweepCfopPerColorTimeoutMs,
@@ -718,8 +740,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       if (remainingMs(sweepDeadlineTs) <= 500) break;
       if (bestMoveCount <= targetMoveCount) break;
 
-      const inverseScrambleWithPremove = joinMoves([inverseScramble, ...premove]);
-      const inverseWithPremove = await solveInternal333(inverseScrambleWithPremove, {
+      const inversePatternWithPremove = applyMovesToPattern(inversePattern, premove);
+      const inverseWithPremove = await solveInternal333(inverseScramble, {
+        startPattern: inversePatternWithPremove,
         profileLevel: sweepProfileLevel,
         phaseAttemptTimeoutMs: sweepPhaseAttemptTimeoutMs,
         cfopPerColorTimeoutMs: sweepCfopPerColorTimeoutMs,
@@ -786,7 +809,11 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       attempts,
     };
   }
-  if (enableInsertions && remainingMs(deadlineTs) > 900) {
+  const bestValidatedMoveCount = validCandidates.reduce(
+    (best, candidate) => Math.min(best, candidate.moveCount),
+    Infinity,
+  );
+  if (enableInsertions && bestValidatedMoveCount <= insertionThreshold && remainingMs(deadlineTs) > 900) {
     const insertionDeadlineTs = Math.min(deadlineTs, Date.now() + insertionTimeMs);
     const insertionTargets = validCandidates
       .slice()
@@ -797,8 +824,6 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       .slice(0, Math.min(insertionCandidateLimit, validCandidates.length));
 
     if (insertionTargets.length) {
-      const solvedPattern = await getSolvedPattern();
-      const scramblePattern = solvedPattern.applyAlg(scramble);
       for (let i = 0; i < insertionTargets.length; i += 1) {
         if (remainingMs(insertionDeadlineTs) <= 250) break;
         if (remainingMs(deadlineTs) <= 250) break;
