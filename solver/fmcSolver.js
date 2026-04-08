@@ -1,24 +1,65 @@
 import { getDefaultPattern } from "./context.js";
 import { solve3x3StrictCfopFromPattern } from "./cfop3x3.js";
 import { solve3x3InternalPhase } from "./solver3x3Phase/index.js";
+import { MOVE_NAMES } from "./moves.js";
 
-const FMC_PREMOVE_SETS = [
-  ["U"],
-  ["U'"],
-  ["U2"],
-  ["R"],
-  ["R'"],
-  ["R2"],
-  ["F"],
-  ["F'"],
-  ["F2"],
+const FMC_PREMOVE_TURNS = ["", "'", "2"];
+const FMC_PREMOVE_SINGLE_FACES = ["U", "R", "F", "D", "L", "B"];
+const FMC_PREMOVE_PAIR_FACES = [
   ["U", "R"],
   ["R", "U"],
   ["U", "F"],
   ["F", "U"],
   ["R", "F"],
   ["F", "R"],
+  ["D", "L"],
+  ["L", "D"],
+  ["D", "B"],
+  ["B", "D"],
+  ["L", "B"],
+  ["B", "L"],
+  ["U", "D"],
+  ["D", "U"],
+  ["R", "L"],
+  ["L", "R"],
+  ["F", "B"],
+  ["B", "F"],
 ];
+
+function buildFmcPremoveSets() {
+  const sets = [];
+  const seen = new Set();
+  const pushSet = (moves) => {
+    const normalized = simplifyMoves(moves);
+    if (!normalized.length || normalized.length > 2) return;
+    const key = normalized.join(" ");
+    if (seen.has(key)) return;
+    seen.add(key);
+    sets.push(normalized);
+  };
+
+  for (let i = 0; i < FMC_PREMOVE_SINGLE_FACES.length; i += 1) {
+    const face = FMC_PREMOVE_SINGLE_FACES[i];
+    for (let t = 0; t < FMC_PREMOVE_TURNS.length; t += 1) {
+      pushSet([`${face}${FMC_PREMOVE_TURNS[t]}`]);
+    }
+  }
+
+  for (let a = 0; a < FMC_PREMOVE_TURNS.length; a += 1) {
+    for (let b = 0; b < FMC_PREMOVE_TURNS.length; b += 1) {
+      for (let i = 0; i < FMC_PREMOVE_PAIR_FACES.length; i += 1) {
+        const [faceA, faceB] = FMC_PREMOVE_PAIR_FACES[i];
+        const first = `${faceA}${FMC_PREMOVE_TURNS[a]}`;
+        const second = `${faceB}${FMC_PREMOVE_TURNS[b]}`;
+        pushSet([first, second]);
+      }
+    }
+  }
+
+  return sets;
+}
+
+const FMC_PREMOVE_SETS = buildFmcPremoveSets();
 const FMC_PHASE_PROFILES = [
   {
     id: "phase-micro",
@@ -48,9 +89,17 @@ const FMC_PHASE_PROFILES = [
     phase1NodeLimit: 6000000,
     phase2NodeLimit: 10000000,
   },
+  {
+    id: "phase-xdeep",
+    phase1MaxDepth: 14,
+    phase2MaxDepth: 21,
+    phase1NodeLimit: 12000000,
+    phase2NodeLimit: 20000000,
+  },
 ];
 
 let solvedPatternPromise = null;
+const FMC_INSERTION_MOVE_NAMES = MOVE_NAMES.slice();
 
 function splitMoves(alg) {
   if (!alg || typeof alg !== "string") return [];
@@ -165,6 +214,130 @@ function invertAlg(algText) {
   return joinMoves(invertMoves(splitMoves(algText)));
 }
 
+function orbitStateKey(orbit) {
+  if (!orbit) return "";
+  const pieces = Array.isArray(orbit.pieces) ? orbit.pieces : [];
+  const orientation = Array.isArray(orbit.orientation) ? orbit.orientation : [];
+  return `${pieces.join(",")}/${orientation.join(",")}`;
+}
+
+function patternStateKey(pattern) {
+  const data = pattern?.patternData;
+  if (!data) return "";
+  return `C:${orbitStateKey(data.CORNERS)}|E:${orbitStateKey(data.EDGES)}|N:${orbitStateKey(data.CENTERS)}`;
+}
+
+function buildPatternFrontier(rootPattern, depthLimit, direction = "forward") {
+  const map = new Map();
+  const rootKey = patternStateKey(rootPattern);
+  map.set(rootKey, []);
+  if (!Number.isFinite(depthLimit) || depthLimit <= 0) return map;
+
+  const queue = [{ pattern: rootPattern, path: [], depth: 0, lastFace: "" }];
+  let head = 0;
+
+  while (head < queue.length) {
+    const node = queue[head++];
+    if (node.depth >= depthLimit) continue;
+
+    for (let i = 0; i < FMC_INSERTION_MOVE_NAMES.length; i += 1) {
+      const move = FMC_INSERTION_MOVE_NAMES[i];
+      const face = move[0];
+      if (face === node.lastFace) continue;
+
+      const stepMove = direction === "forward" ? move : invertToken(move);
+      const nextPattern = node.pattern.applyMove(stepMove);
+      const nextPath = direction === "forward" ? node.path.concat(move) : [move].concat(node.path);
+      const key = patternStateKey(nextPattern);
+      const existing = map.get(key);
+      if (existing && existing.length <= nextPath.length) continue;
+      map.set(key, nextPath);
+      queue.push({
+        pattern: nextPattern,
+        path: nextPath,
+        depth: node.depth + 1,
+        lastFace: face,
+      });
+    }
+  }
+
+  return map;
+}
+
+function findShorterEquivalentSegment(startPattern, targetPattern, maxDepth, currentLength) {
+  if (!Number.isFinite(maxDepth) || maxDepth <= 0 || currentLength <= 1) return null;
+  const startKey = patternStateKey(startPattern);
+  const targetKey = patternStateKey(targetPattern);
+  if (!startKey || !targetKey) return null;
+  if (startKey === targetKey) return [];
+
+  const searchDepth = Math.max(1, Math.min(Math.floor(maxDepth), currentLength - 1));
+  const forwardDepth = Math.floor(searchDepth / 2);
+  const backwardDepth = searchDepth - forwardDepth;
+  const forwardMap = buildPatternFrontier(startPattern, forwardDepth, "forward");
+  const backwardMap = buildPatternFrontier(targetPattern, backwardDepth, "backward");
+
+  let best = null;
+  let bestText = "";
+
+  for (const [key, leftPath] of forwardMap.entries()) {
+    const rightPath = backwardMap.get(key);
+    if (!rightPath) continue;
+    const merged = leftPath.concat(rightPath);
+    if (merged.length >= currentLength || merged.length > searchDepth) continue;
+    const mergedText = joinMoves(merged);
+    if (!best || merged.length < best.length || (merged.length === best.length && mergedText < bestText)) {
+      best = merged;
+      bestText = mergedText;
+    }
+  }
+
+  return best;
+}
+
+function buildPatternStates(scramblePattern, moves) {
+  const states = new Array(moves.length + 1);
+  states[0] = scramblePattern;
+  for (let i = 0; i < moves.length; i += 1) {
+    states[i + 1] = states[i].applyMove(moves[i]);
+  }
+  return states;
+}
+
+function optimizeSolutionWithInsertions(scramblePattern, moves, options = {}) {
+  let current = simplifyMoves(Array.isArray(moves) ? moves : []);
+  if (!current.length) return current;
+
+  const maxPasses = Number.isFinite(options.maxPasses) ? Math.max(1, Math.floor(options.maxPasses)) : 3;
+  const minWindow = Number.isFinite(options.minWindow) ? Math.max(2, Math.floor(options.minWindow)) : 3;
+  const maxWindow = Number.isFinite(options.maxWindow) ? Math.max(minWindow, Math.floor(options.maxWindow)) : 7;
+  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(1, Math.floor(options.maxDepth)) : 6;
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    let improved = false;
+    const states = buildPatternStates(scramblePattern, current);
+    const windowCap = Math.min(maxWindow, current.length);
+
+    outer: for (let window = windowCap; window >= minWindow; window -= 1) {
+      for (let start = 0; start + window <= current.length; start += 1) {
+        const end = start + window;
+        const depthCap = Math.min(maxDepth, window - 1);
+        const replacement = findShorterEquivalentSegment(states[start], states[end], depthCap, window);
+        if (!replacement) continue;
+        const next = simplifyMoves(current.slice(0, start).concat(replacement, current.slice(end)));
+        if (next.length >= current.length) continue;
+        current = next;
+        improved = true;
+        break outer;
+      }
+    }
+
+    if (!improved) break;
+  }
+
+  return current;
+}
+
 async function getSolvedPattern() {
   if (!solvedPatternPromise) {
     solvedPatternPromise = getDefaultPattern("333");
@@ -214,10 +387,27 @@ function pushUniqueCandidate(list, candidate) {
 }
 
 function selectPhaseProfiles(profileLevel) {
-  if (profileLevel === "micro") return FMC_PHASE_PROFILES.slice(0, 1);
-  if (profileLevel === "light") return FMC_PHASE_PROFILES.slice(1, 2);
-  if (profileLevel === "medium") return FMC_PHASE_PROFILES.slice(1, 3);
-  return FMC_PHASE_PROFILES.slice(1);
+  const profileIdsByLevel = {
+    micro: ["phase-micro"],
+    light: ["phase-light"],
+    medium: ["phase-light", "phase-mid"],
+    deep: ["phase-light", "phase-mid", "phase-deep"],
+    xdeep: ["phase-light", "phase-mid", "phase-deep", "phase-xdeep"],
+  };
+  const ids = profileIdsByLevel[profileLevel] || profileIdsByLevel.medium;
+  const selected = [];
+  for (let i = 0; i < ids.length; i += 1) {
+    const profile = FMC_PHASE_PROFILES.find((entry) => entry.id === ids[i]);
+    if (profile) selected.push(profile);
+  }
+  return selected;
+}
+
+function getPhaseAttemptScale(profileId) {
+  if (profileId === "phase-mid") return 1.15;
+  if (profileId === "phase-deep") return 1.35;
+  if (profileId === "phase-xdeep") return 1.6;
+  return 1;
 }
 
 async function solveInternal333(scrambleText, options = {}) {
@@ -233,24 +423,46 @@ async function solveInternal333(scrambleText, options = {}) {
     const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
       ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
       : 1024;
+    const targetMoveCount = Number.isFinite(options.targetMoveCount)
+      ? Math.max(1, Math.floor(options.targetMoveCount))
+      : null;
+    let bestPhase = null;
 
     for (let i = 0; i < phaseProfiles.length; i++) {
       const phaseRemaining = remainingMs(options.deadlineTs);
-      if (phaseRemaining <= 350) return null;
-      const phaseDeadlineTs = clampAttemptDeadline(options.deadlineTs, phaseAttemptTimeoutMs, 100);
       const profile = phaseProfiles[i];
+      if (phaseRemaining <= 350) break;
+      const scaledAttemptTimeoutMs = Math.max(
+        600,
+        Math.floor(phaseAttemptTimeoutMs * getPhaseAttemptScale(profile.id)),
+      );
+      const phaseDeadlineTs = clampAttemptDeadline(options.deadlineTs, scaledAttemptTimeoutMs, 100);
       const phaseResult = await solve3x3InternalPhase(pattern, {
         ...profile,
         deadlineTs: phaseDeadlineTs,
         timeCheckInterval: phaseTimeCheckInterval,
       }).catch(() => null);
       if (phaseResult?.ok) {
-        return {
+        const phaseCandidate = {
           ...phaseResult,
           source: `INTERNAL_FMC_${profile.id.toUpperCase()}`,
         };
+        const candidateMoveCount = Number.isFinite(phaseCandidate.moveCount)
+          ? phaseCandidate.moveCount
+          : splitMoves(phaseCandidate.solution).length;
+        if (!bestPhase || candidateMoveCount < bestPhase.moveCount) {
+          bestPhase = {
+            ...phaseCandidate,
+            moveCount: candidateMoveCount,
+          };
+        }
+        if (targetMoveCount && bestPhase.moveCount <= targetMoveCount) {
+          break;
+        }
       }
     }
+
+    if (bestPhase?.solution) return bestPhase;
 
     if (options.allowCfopFallback === false) {
       return null;
@@ -335,12 +547,32 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const sweepAttemptBudgetMs = Number.isFinite(options.sweepAttemptBudgetMs)
     ? Math.max(500, Math.floor(options.sweepAttemptBudgetMs))
     : Math.max(700, Math.min(1800, Math.floor(sweepBudgetMs * 0.35)));
+  const enableInsertions = options.enableInsertions !== false;
+  const insertionCandidateLimit = Number.isFinite(options.insertionCandidateLimit)
+    ? Math.max(1, Math.floor(options.insertionCandidateLimit))
+    : 3;
+  const insertionMaxPasses = Number.isFinite(options.insertionMaxPasses)
+    ? Math.max(1, Math.floor(options.insertionMaxPasses))
+    : 3;
+  const insertionMinWindow = Number.isFinite(options.insertionMinWindow)
+    ? Math.max(2, Math.floor(options.insertionMinWindow))
+    : 3;
+  const insertionMaxWindow = Number.isFinite(options.insertionMaxWindow)
+    ? Math.max(insertionMinWindow, Math.floor(options.insertionMaxWindow))
+    : 7;
+  const insertionMaxDepth = Number.isFinite(options.insertionMaxDepth)
+    ? Math.max(1, Math.floor(options.insertionMaxDepth))
+    : 6;
+  const insertionTimeMs = Number.isFinite(options.insertionTimeMs)
+    ? Math.max(600, Math.floor(options.insertionTimeMs))
+    : Math.max(1200, Math.min(16000, Math.floor(timeBudgetMs * 0.22)));
   const inverseScramble = invertAlg(scramble);
   const candidates = [];
   let attempts = 0;
   const hasSweep = maxPremoveSets > 0;
   const totalStages = hasSweep ? 3 : 2;
   let bestMoveCount = Infinity;
+  const sweepLimit = Math.min(maxPremoveSets, FMC_PREMOVE_SETS.length);
 
   const notify = (progress) => {
     if (typeof onProgress !== "function") return;
@@ -358,6 +590,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       bestMoveCount = candidate.moveCount;
     }
   };
+  const currentTargetMoveCount = () =>
+    Number.isFinite(bestMoveCount) ? Math.max(targetMoveCount, bestMoveCount - 1) : targetMoveCount;
 
   notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
   const directDeadlineTs = Math.min(deadlineTs, Date.now() + directStageBudgetMs);
@@ -369,6 +603,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     crossColors: options.crossColors || ["D"],
     deadlineTs: directDeadlineTs,
     phaseTimeCheckInterval,
+    targetMoveCount: currentTargetMoveCount(),
   });
   attempts += 1;
   if (direct?.solution) {
@@ -404,6 +639,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           crossColors: options.crossColors || ["D"],
           deadlineTs: nissDeadlineTs,
           phaseTimeCheckInterval,
+          targetMoveCount: currentTargetMoveCount(),
         })
       : null;
   attempts += 1;
@@ -430,7 +666,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
 
   if (hasSweep) {
     notify({ type: "stage_start", stageIndex: 2, totalStages, stageName: "FMC Premove Sweep" });
-    for (let i = 0; i < FMC_PREMOVE_SETS.length && i < maxPremoveSets; i += 1) {
+    for (let i = 0; i < sweepLimit; i += 1) {
       if (Date.now() - startedAt >= timeBudgetMs) break;
       if (remainingMs(deadlineTs) <= 1200) break;
       if (remainingMs(sweepDeadlineTs) <= 500) break;
@@ -441,7 +677,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         try {
           void onProgress({
             type: "fallback_start",
-            stageName: `FMC Sweep ${i + 1}/${Math.min(maxPremoveSets, FMC_PREMOVE_SETS.length)}`,
+            stageName: `FMC Sweep ${i + 1}/${sweepLimit}`,
             reason: "PREMOVE",
           });
         } catch (_) {}
@@ -456,6 +692,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
         phaseTimeCheckInterval,
+        targetMoveCount: currentTargetMoveCount(),
       });
       attempts += 1;
       if (directWithPremove?.solution) {
@@ -490,6 +727,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
         phaseTimeCheckInterval,
+        targetMoveCount: currentTargetMoveCount(),
       });
       attempts += 1;
       if (inverseWithPremove?.solution) {
@@ -522,11 +760,23 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   });
 
   const validCandidates = [];
-  const verifyLimit = Math.min(candidates.length, 8);
+  const requestedVerifyLimit = Number.isFinite(options.verifyLimit)
+    ? Math.max(8, Math.floor(options.verifyLimit))
+    : 24;
+  const verifyLimit = Math.min(candidates.length, requestedVerifyLimit);
   for (let i = 0; i < verifyLimit; i += 1) {
     const candidate = candidates[i];
     if (await verifyCandidate(scramble, candidate)) {
       validCandidates.push(candidate);
+    }
+  }
+  if (!validCandidates.length && verifyLimit < candidates.length) {
+    for (let i = verifyLimit; i < candidates.length; i += 1) {
+      const candidate = candidates[i];
+      if (await verifyCandidate(scramble, candidate)) {
+        validCandidates.push(candidate);
+        if (validCandidates.length >= 3) break;
+      }
     }
   }
   if (!validCandidates.length) {
@@ -536,6 +786,72 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       attempts,
     };
   }
+  if (enableInsertions && remainingMs(deadlineTs) > 900) {
+    const insertionDeadlineTs = Math.min(deadlineTs, Date.now() + insertionTimeMs);
+    const insertionTargets = validCandidates
+      .slice()
+      .sort((a, b) => {
+        if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
+        return a.solution.localeCompare(b.solution);
+      })
+      .slice(0, Math.min(insertionCandidateLimit, validCandidates.length));
+
+    if (insertionTargets.length) {
+      const solvedPattern = await getSolvedPattern();
+      const scramblePattern = solvedPattern.applyAlg(scramble);
+      for (let i = 0; i < insertionTargets.length; i += 1) {
+        if (remainingMs(insertionDeadlineTs) <= 250) break;
+        if (remainingMs(deadlineTs) <= 250) break;
+        const target = insertionTargets[i];
+        if (typeof onProgress === "function") {
+          try {
+            void onProgress({
+              type: "fallback_start",
+              stageName: `FMC Insertion ${i + 1}/${insertionTargets.length}`,
+              reason: `${target.moveCount}T`,
+            });
+          } catch (_) {}
+        }
+
+        const optimizedMoves = optimizeSolutionWithInsertions(scramblePattern, target.moves, {
+          maxPasses: insertionMaxPasses,
+          minWindow: insertionMinWindow,
+          maxWindow: insertionMaxWindow,
+          maxDepth: insertionMaxDepth,
+        });
+
+        if (optimizedMoves.length < target.moveCount) {
+          const insertionCandidate = createCandidate(
+            "FMC_INSERTION",
+            {
+              tag: `insertion:${target.source}`,
+              usesCfop: target.usesCfop,
+              innerSource: target.innerSource || target.source,
+            },
+            optimizedMoves,
+          );
+          if (insertionCandidate && (await verifyCandidate(scramble, insertionCandidate))) {
+            if (!validCandidates.some((existing) => existing.solution === insertionCandidate.solution)) {
+              validCandidates.push(insertionCandidate);
+              pushUniqueCandidate(candidates, insertionCandidate);
+              if (insertionCandidate.moveCount < bestMoveCount) {
+                bestMoveCount = insertionCandidate.moveCount;
+              }
+            }
+          }
+        }
+
+        if (typeof onProgress === "function") {
+          try {
+            void onProgress({
+              type: "fallback_done",
+              stageName: `FMC Insertion ${i + 1}/${insertionTargets.length}`,
+            });
+          } catch (_) {}
+        }
+      }
+    }
+  }
 
   const preferNonCfop = options.preferNonCfop === true;
   const nonCfopCandidates = preferNonCfop ? validCandidates.filter((candidate) => !candidate.usesCfop) : [];
@@ -544,7 +860,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     return a.solution.localeCompare(b.solution);
   });
   const best = rankedCandidates[0];
-  const candidateLines = validCandidates
+  const candidateLines = rankedCandidates
     .slice(0, 3)
     .map((candidate, index) => `${index + 1}. ${candidate.moveCount}수 [${candidate.source}] ${candidate.solution}`);
 
