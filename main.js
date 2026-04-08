@@ -1540,7 +1540,15 @@ async function solveCurrentScramble() {
     ]);
     const duration = Math.max(1, Math.round(performance.now() - startTime));
     if (result?.ok) {
-      const rawSolutionText = result.solution?.trim() || "";
+      const rawSolutionText =
+        result.solution?.trim() ||
+        (Array.isArray(result.stages)
+          ? result.stages
+              .map((stage) => (typeof stage?.solution === "string" ? stage.solution.trim() : ""))
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+          : "");
       const stageLines =
         Array.isArray(result.stages) && result.stages.length
           ? result.stages.map((stage) => `${stage.name}: ${stage.solution || "-"}`)
