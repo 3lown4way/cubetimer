@@ -17,6 +17,7 @@ const ROUX_PARALLEL_MAX_WORKERS = 6;
 const ROUX_PARALLEL_CANDIDATE_TIMEOUT_MS = 22000;
 const ROUX_PARALLEL_DEFAULT_SCOUT_CHECKS = 6;
 const ROUX_PARALLEL_EARLY_STOP_MOVE_COUNT = 48;
+const ROUX_PARALLEL_EARLY_STOP_GRACE_MS = 900;
 const CROSS_COLOR_ROTATION_CANDIDATES = Object.freeze({
   D: Object.freeze([""]),
   U: Object.freeze(["x2"]),
@@ -273,7 +274,7 @@ function normalizeNonNegativeInt(value, fallback) {
   return intN >= 0 ? intN : fallback;
 }
 
-async function runRouxCandidateInSubWorker(scramble, rotationAlg, options, timeoutMs) {
+async function runRouxCandidateInSubWorker(scramble, rotationAlg, options, timeoutMs, abortSignal) {
   if (typeof Worker !== "function") {
     return { ok: false, reason: "WORKER_UNAVAILABLE" };
   }
@@ -282,10 +283,27 @@ async function runRouxCandidateInSubWorker(scramble, rotationAlg, options, timeo
     let finished = false;
     let worker = null;
     let timer = 0;
+    let aborted = false;
+
+    const abortHandler = () => {
+      aborted = true;
+      done({ ok: false, reason: "ROUX_SUBWORKER_ABORTED" });
+    };
+
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        abortHandler();
+        return;
+      }
+      abortSignal.addEventListener("abort", abortHandler);
+    }
 
     function done(result) {
       if (finished) return;
       finished = true;
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", abortHandler);
+      }
       if (timer) clearTimeout(timer);
       if (worker) {
         try {
@@ -313,6 +331,7 @@ async function runRouxCandidateInSubWorker(scramble, rotationAlg, options, timeo
     });
 
     timer = setTimeout(() => {
+      if (aborted) return;
       done({ ok: false, reason: "ROUX_SUBWORKER_TIMEOUT" });
     }, timeoutMs);
 
@@ -454,9 +473,16 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
   let best = null;
   const failures = [];
   let stopLaunch = false;
+  const runningControllers = new Set();
+  let earlyStopAbortTimer = 0;
+  let earlyAbortRequested = false;
 
   return await new Promise((resolve) => {
     const maybeFinish = () => {
+      if (running === 0 && earlyStopAbortTimer) {
+        clearTimeout(earlyStopAbortTimer);
+        earlyStopAbortTimer = 0;
+      }
       if (running > 0) return;
       if (!stopLaunch && nextIndex < candidateRotations.length) return;
       if (typeof onProgress === "function") {
@@ -477,11 +503,31 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
       }
     };
 
+    const requestEarlyAbort = () => {
+      if (earlyAbortRequested) return;
+      earlyAbortRequested = true;
+      if (earlyStopAbortTimer) {
+        clearTimeout(earlyStopAbortTimer);
+      }
+      earlyStopAbortTimer = setTimeout(() => {
+        earlyStopAbortTimer = 0;
+        for (const controller of Array.from(runningControllers)) {
+          try {
+            controller.abort();
+          } catch (_) {}
+        }
+        runningControllers.clear();
+        maybeFinish();
+      }, ROUX_PARALLEL_EARLY_STOP_GRACE_MS);
+    };
+
     const launch = () => {
       while (!stopLaunch && running < maxWorkers && nextIndex < candidateRotations.length) {
         const idx = nextIndex++;
         const rotation = candidateRotations[idx];
         running += 1;
+        const abortController = new AbortController();
+        runningControllers.add(abortController);
         if (typeof onProgress === "function") {
           try {
             void onProgress({
@@ -492,7 +538,7 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
           } catch (_) {}
         }
 
-        void runRouxCandidateInSubWorker(scramble, rotation, subWorkerOptions, candidateTimeoutMs)
+        void runRouxCandidateInSubWorker(scramble, rotation, subWorkerOptions, candidateTimeoutMs, abortController.signal)
           .then((result) => {
             if (result?.ok) {
               if (!best || result.moveCount < best.moveCount) {
@@ -500,6 +546,7 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
               }
               if (best?.moveCount <= earlyStopMoveCount) {
                 stopLaunch = true;
+                requestEarlyAbort();
               }
               if (typeof onProgress === "function") {
                 try {
@@ -533,6 +580,7 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
             }
           })
           .finally(() => {
+            runningControllers.delete(abortController);
             running -= 1;
             launch();
             maybeFinish();

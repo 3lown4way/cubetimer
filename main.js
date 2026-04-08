@@ -1400,6 +1400,12 @@ function stopSolverPlayback() {
   }
 }
 
+function isSolverPlaybackActive() {
+  return Boolean(
+    solverPlaybackAnimating || solverPlaybackTimerId || solverPlaybackAutoTimerId,
+  );
+}
+
 function ensureSolverTwistyPlayer() {
   if (solverTwistyPlayer) return solverTwistyPlayer;
   if (!solverTwistyHost) return null;
@@ -1434,8 +1440,7 @@ function updateSolverPlaybackControls() {
   }
   if (solverPlayBtn) {
     solverPlayBtn.disabled = !hasMoves;
-    solverPlayBtn.textContent =
-      solverPlaybackTimerId || solverPlaybackAutoTimerId ? "정지" : "자동 재생";
+    solverPlayBtn.textContent = isSolverPlaybackActive() ? "정지" : "자동 재생";
   }
 }
 
@@ -1495,8 +1500,15 @@ function setSolverPlaybackIndex(nextIndex) {
 }
 
 function estimateMoveAnimationMs(move) {
-  if (!move) return 560;
-  return move.includes("2") ? 760 : 560;
+  const player = ensureSolverTwistyPlayer();
+  const tempoScale = player?.tempoScale && player.tempoScale > 0 ? player.tempoScale : 1;
+  const baseDuration = (() => {
+    if (!move) return 1000;
+    if (move.includes("2")) return 1500;
+    return 1000;
+  })();
+  const scaled = baseDuration / tempoScale;
+  return Math.max(320, Math.round(scaled + 120));
 }
 
 function playSingleForwardStep() {
@@ -1563,7 +1575,7 @@ function clearSolverVisualResult() {
 
 function toggleSolverPlayback() {
   if (!solverPlaybackMoves.length) return;
-  if (solverPlaybackTimerId || solverPlaybackAutoTimerId) {
+  if (isSolverPlaybackActive()) {
     stopSolverPlayback();
     updateSolverPlaybackControls();
     return;
