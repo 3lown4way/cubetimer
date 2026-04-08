@@ -24,29 +24,29 @@ const FMC_PHASE_PROFILES = [
     id: "phase-micro",
     phase1MaxDepth: 11,
     phase2MaxDepth: 16,
-    phase1NodeLimit: 60000,
-    phase2NodeLimit: 90000,
+    phase1NodeLimit: 220000,
+    phase2NodeLimit: 320000,
   },
   {
     id: "phase-light",
     phase1MaxDepth: 12,
     phase2MaxDepth: 18,
-    phase1NodeLimit: 180000,
-    phase2NodeLimit: 260000,
+    phase1NodeLimit: 700000,
+    phase2NodeLimit: 1200000,
   },
   {
     id: "phase-mid",
     phase1MaxDepth: 13,
     phase2MaxDepth: 19,
-    phase1NodeLimit: 700000,
-    phase2NodeLimit: 1100000,
+    phase1NodeLimit: 2500000,
+    phase2NodeLimit: 4500000,
   },
   {
     id: "phase-deep",
     phase1MaxDepth: 13,
     phase2MaxDepth: 20,
-    phase1NodeLimit: 1600000,
-    phase2NodeLimit: 2600000,
+    phase1NodeLimit: 6000000,
+    phase2NodeLimit: 10000000,
   },
 ];
 
@@ -87,6 +87,17 @@ function withTimeout(promise, timeoutMs) {
 function remainingMs(deadlineTs) {
   if (!Number.isFinite(deadlineTs)) return Infinity;
   return deadlineTs - Date.now();
+}
+
+function clampAttemptDeadline(deadlineTs, attemptMs, reserveMs = 120) {
+  const now = Date.now();
+  if (!Number.isFinite(deadlineTs)) {
+    return now + Math.max(100, Math.floor(attemptMs));
+  }
+  const remaining = deadlineTs - now;
+  if (remaining <= reserveMs) return now;
+  const bounded = Math.max(80, Math.min(Math.floor(attemptMs), remaining - reserveMs));
+  return now + bounded;
 }
 
 function parseMove(move) {
@@ -217,18 +228,22 @@ async function solveInternal333(scrambleText, options = {}) {
     const pattern = solvedPattern.applyAlg(scrambleText);
     const phaseProfiles = selectPhaseProfiles(options.profileLevel || "medium");
     const phaseAttemptTimeoutMs = Number.isFinite(options.phaseAttemptTimeoutMs)
-      ? Math.max(1000, Math.floor(options.phaseAttemptTimeoutMs))
-      : 12000;
+      ? Math.max(600, Math.floor(options.phaseAttemptTimeoutMs))
+      : 4000;
+    const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
+      ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
+      : 1024;
 
     for (let i = 0; i < phaseProfiles.length; i++) {
       const phaseRemaining = remainingMs(options.deadlineTs);
-      if (phaseRemaining <= 600) return null;
-      const phaseTimeoutMs = Math.max(500, Math.min(phaseAttemptTimeoutMs, phaseRemaining - 200));
+      if (phaseRemaining <= 350) return null;
+      const phaseDeadlineTs = clampAttemptDeadline(options.deadlineTs, phaseAttemptTimeoutMs, 100);
       const profile = phaseProfiles[i];
-      const phaseResult = await withTimeout(
-        solve3x3InternalPhase(pattern, profile),
-        phaseTimeoutMs,
-      ).catch(() => null);
+      const phaseResult = await solve3x3InternalPhase(pattern, {
+        ...profile,
+        deadlineTs: phaseDeadlineTs,
+        timeCheckInterval: phaseTimeCheckInterval,
+      }).catch(() => null);
       if (phaseResult?.ok) {
         return {
           ...phaseResult,
@@ -296,18 +311,30 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const sweepDeadlineTs = startedAt + sweepBudgetMs;
   const directProfileLevel = options.directProfileLevel || "medium";
   const directPhaseAttemptTimeoutMs = Number.isFinite(options.directPhaseAttemptTimeoutMs)
-    ? Math.max(800, Math.floor(options.directPhaseAttemptTimeoutMs))
-    : 6000;
+    ? Math.max(600, Math.floor(options.directPhaseAttemptTimeoutMs))
+    : 2500;
   const directCfopPerColorTimeoutMs = Number.isFinite(options.directCfopPerColorTimeoutMs)
     ? Math.max(700, Math.floor(options.directCfopPerColorTimeoutMs))
     : 2500;
+  const directStageBudgetMs = Number.isFinite(options.directStageBudgetMs)
+    ? Math.max(800, Math.floor(options.directStageBudgetMs))
+    : Math.max(1200, Math.min(5000, Math.floor(timeBudgetMs * 0.42)));
+  const nissStageBudgetMs = Number.isFinite(options.nissStageBudgetMs)
+    ? Math.max(800, Math.floor(options.nissStageBudgetMs))
+    : Math.max(1200, Math.min(5000, Math.floor(timeBudgetMs * 0.42)));
+  const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
+    ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
+    : 1024;
   const sweepProfileLevel = options.sweepProfileLevel || "micro";
   const sweepPhaseAttemptTimeoutMs = Number.isFinite(options.sweepPhaseAttemptTimeoutMs)
-    ? Math.max(700, Math.floor(options.sweepPhaseAttemptTimeoutMs))
+    ? Math.max(400, Math.floor(options.sweepPhaseAttemptTimeoutMs))
     : 900;
   const sweepCfopPerColorTimeoutMs = Number.isFinite(options.sweepCfopPerColorTimeoutMs)
     ? Math.max(700, Math.floor(options.sweepCfopPerColorTimeoutMs))
     : 900;
+  const sweepAttemptBudgetMs = Number.isFinite(options.sweepAttemptBudgetMs)
+    ? Math.max(500, Math.floor(options.sweepAttemptBudgetMs))
+    : Math.max(700, Math.min(1800, Math.floor(sweepBudgetMs * 0.35)));
   const inverseScramble = invertAlg(scramble);
   const candidates = [];
   let attempts = 0;
@@ -333,13 +360,15 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   };
 
   notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
+  const directDeadlineTs = Math.min(deadlineTs, Date.now() + directStageBudgetMs);
   const direct = await solveInternal333(scramble, {
     profileLevel: directProfileLevel,
     phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
     cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
     allowCfopFallback: options.allowCfopFallback === true,
     crossColors: options.crossColors || ["D"],
-    deadlineTs,
+    deadlineTs: directDeadlineTs,
+    phaseTimeCheckInterval,
   });
   attempts += 1;
   if (direct?.solution) {
@@ -364,15 +393,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   });
 
   notify({ type: "stage_start", stageIndex: 1, totalStages, stageName: "FMC NISS" });
+  const nissDeadlineTs = Math.min(deadlineTs, Date.now() + nissStageBudgetMs);
   const inverse =
-    remainingMs(deadlineTs) > 1000
+    remainingMs(nissDeadlineTs) > 400
       ? await solveInternal333(inverseScramble, {
           profileLevel: directProfileLevel,
           phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
           cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
           allowCfopFallback: options.allowCfopFallback === true,
           crossColors: options.crossColors || ["D"],
-          deadlineTs,
+          deadlineTs: nissDeadlineTs,
+          phaseTimeCheckInterval,
         })
       : null;
   attempts += 1;
@@ -405,7 +436,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       if (remainingMs(sweepDeadlineTs) <= 500) break;
       if (bestMoveCount <= targetMoveCount) break;
       const premove = FMC_PREMOVE_SETS[i];
-      const iterationDeadlineTs = Math.min(deadlineTs, sweepDeadlineTs);
+      const iterationDeadlineTs = Math.min(deadlineTs, sweepDeadlineTs, Date.now() + sweepAttemptBudgetMs);
       if (typeof onProgress === "function") {
         try {
           void onProgress({
@@ -424,6 +455,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         allowCfopFallback: options.premoveAllowCfopFallback === true,
         crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
+        phaseTimeCheckInterval,
       });
       attempts += 1;
       if (directWithPremove?.solution) {
@@ -457,6 +489,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         allowCfopFallback: options.premoveAllowCfopFallback === true,
         crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
+        phaseTimeCheckInterval,
       });
       attempts += 1;
       if (inverseWithPremove?.solution) {

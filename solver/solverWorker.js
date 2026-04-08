@@ -28,10 +28,11 @@ const STRICT_F2L_RETRY_OPTIONS = [
   },
 ];
 const INTERNAL_PHASE_FALLBACK_OPTIONS = {
-  phase1MaxDepth: 12,
-  phase2MaxDepth: 16,
-  phase1NodeLimit: 350000,
-  phase2NodeLimit: 450000,
+  phase1MaxDepth: 13,
+  phase2MaxDepth: 20,
+  phase1NodeLimit: 0,
+  phase2NodeLimit: 0,
+  timeCheckInterval: 768,
 };
 
 function normalizeMode(mode) {
@@ -282,39 +283,47 @@ const api = {
           const isOptimalMode = mode === "optimal";
           const fmcResult = await withTimeout(
             solveWithFMCSearch(scramble, onProgress, {
-              maxPremoveSets: isOptimalMode ? 8 : 0,
-              timeBudgetMs: isOptimalMode ? 65000 : 9000,
-              sweepBudgetMs: isOptimalMode ? 22000 : 2200,
+              maxPremoveSets: isOptimalMode ? 4 : 0,
+              timeBudgetMs: isOptimalMode ? 70000 : 13000,
+              sweepBudgetMs: isOptimalMode ? 14000 : 2000,
               sweepIncludeInverse: isOptimalMode,
-              targetMoveCount: isOptimalMode ? 19 : 26,
-              allowCfopFallback: true,
-              premoveAllowCfopFallback: isOptimalMode,
-              preferNonCfop: !isOptimalMode,
-              directProfileLevel: isOptimalMode ? "deep" : "micro",
-              directPhaseAttemptTimeoutMs: isOptimalMode ? 9000 : 1200,
-              directCfopPerColorTimeoutMs: isOptimalMode ? 2200 : 1200,
-              sweepProfileLevel: "micro",
-              sweepPhaseAttemptTimeoutMs: isOptimalMode ? 1400 : 900,
-              sweepCfopPerColorTimeoutMs: isOptimalMode ? 1200 : 900,
-              crossColors: isOptimalMode ? ["D", "U", "F", "B", "R", "L"] : ["D"],
+              targetMoveCount: isOptimalMode ? 20 : 24,
+              allowCfopFallback: false,
+              premoveAllowCfopFallback: false,
+              preferNonCfop: true,
+              directProfileLevel: isOptimalMode ? "deep" : "medium",
+              directPhaseAttemptTimeoutMs: isOptimalMode ? 5200 : 2200,
+              directStageBudgetMs: isOptimalMode ? 21000 : 4200,
+              nissStageBudgetMs: isOptimalMode ? 21000 : 4200,
+              phaseTimeCheckInterval: isOptimalMode ? 1024 : 768,
+              directCfopPerColorTimeoutMs: isOptimalMode ? 1500 : 1000,
+              sweepProfileLevel: isOptimalMode ? "light" : "micro",
+              sweepPhaseAttemptTimeoutMs: isOptimalMode ? 1800 : 900,
+              sweepAttemptBudgetMs: isOptimalMode ? 2200 : 1000,
+              sweepCfopPerColorTimeoutMs: isOptimalMode ? 900 : 800,
+              crossColors: ["D"],
             }),
             FMC_333_TIMEOUT_MS,
           ).catch(() => ({ ok: false, reason: isOptimalMode ? "OPTIMAL_TIMEOUT" : "FMC_TIMEOUT" }));
           if (fmcResult?.ok) {
             return fmcResult;
           }
-          if (mode === "fmc") {
+          if (mode === "fmc" || mode === "optimal") {
+            const safetyStageName = isOptimalMode ? "Optimal Safety Phase" : "FMC Safety Phase";
             if (typeof onProgress === "function") {
               try {
                 void onProgress({
                   type: "fallback_start",
-                  stageName: "FMC Safety Phase",
+                  stageName: safetyStageName,
                   reason: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
                 });
               } catch (_) {}
             }
             const phaseSafety = await withTimeout(
-              solveWithInternal3x3Phase(scramble, INTERNAL_PHASE_FALLBACK_OPTIONS),
+              solveWithInternal3x3Phase(scramble, {
+                ...INTERNAL_PHASE_FALLBACK_OPTIONS,
+                deadlineTs: Date.now() + Math.min(9000, INTERNAL_333_PHASE_TIMEOUT_MS - 800),
+              }),
               INTERNAL_333_PHASE_TIMEOUT_MS,
             ).catch(() => null);
             if (phaseSafety?.ok) {
@@ -322,13 +331,15 @@ const api = {
                 try {
                   void onProgress({
                     type: "fallback_done",
-                    stageName: "FMC Safety Phase",
+                    stageName: safetyStageName,
                   });
                 } catch (_) {}
               }
               return {
                 ...phaseSafety,
-                source: "INTERNAL_3X3_PHASE_FMC_SAFETY",
+                source: isOptimalMode
+                  ? "INTERNAL_3X3_PHASE_OPTIMAL_SAFETY"
+                  : "INTERNAL_3X3_PHASE_FMC_SAFETY",
                 fallbackFrom: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
               };
             }
@@ -336,11 +347,11 @@ const api = {
               try {
                 void onProgress({
                   type: "fallback_fail",
-                  stageName: "FMC Safety Phase",
+                  stageName: safetyStageName,
                 });
               } catch (_) {}
             }
-            return fmcResult || { ok: false, reason: "FMC_FAILED" };
+            return fmcResult || { ok: false, reason: isOptimalMode ? "OPTIMAL_FAILED" : "FMC_FAILED" };
           }
         }
         if (typeof onProgress === "function") {

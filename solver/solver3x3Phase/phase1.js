@@ -7,6 +7,15 @@ const MOVE_COUNT = 18;
 const NOT_SET = 255;
 const OPPOSITE_FACE = [3, 4, 5, 0, 1, 2];
 const SLICE_EDGE_IDS = new Set([8, 9, 10, 11]);
+const FAIL_CACHE_LIMIT = 220000;
+const SOLVED_SLICE_OCC = (() => {
+  const occ = new Uint8Array(12);
+  occ[8] = 1;
+  occ[9] = 1;
+  occ[10] = 1;
+  occ[11] = 1;
+  return occ;
+})();
 
 let initPromise = null;
 let coMove = null;
@@ -87,14 +96,14 @@ function decodeSliceToOccupancy(idx, occ) {
   }
 }
 
-function buildDistTable(moveTable, size) {
+function buildDistTable(moveTable, size, startState = 0) {
   const dist = new Uint8Array(size);
   dist.fill(NOT_SET);
   const queue = new Uint32Array(size);
   let head = 0;
   let tail = 0;
-  dist[0] = 0;
-  queue[tail++] = 0;
+  dist[startState] = 0;
+  queue[tail++] = startState;
   while (head < tail) {
     const s = queue[head++];
     const d = dist[s] + 1;
@@ -162,9 +171,10 @@ async function ensurePhase1Tables() {
       }
     }
 
-    coDist = buildDistTable(coMove, CO_SIZE);
-    eoDist = buildDistTable(eoMove, EO_SIZE);
-    sliceDist = buildDistTable(sliceMove, SLICE_SIZE);
+    const solvedSliceIdx = encodeSliceFromOccupancy(SOLVED_SLICE_OCC);
+    coDist = buildDistTable(coMove, CO_SIZE, 0);
+    eoDist = buildDistTable(eoMove, EO_SIZE, 0);
+    sliceDist = buildDistTable(sliceMove, SLICE_SIZE, solvedSliceIdx);
 
     allowedMovesByLastFace = Array.from({ length: 7 }, () => []);
     for (let last = 0; last <= 6; last++) {
@@ -195,13 +205,16 @@ export function buildPhase1Input(coords, options = {}) {
     sliceIdx: encodeSliceFromOccupancy(occ),
     maxDepth: options.phase1MaxDepth ?? 12,
     nodeLimit: options.phase1NodeLimit ?? 350000,
+    deadlineTs: options.deadlineTs,
+    timeCheckInterval: options.timeCheckInterval,
   };
 }
 
 export async function solvePhase1(input) {
   await ensurePhase1Tables();
-  const { coIdx, eoIdx, sliceIdx, maxDepth, nodeLimit } = input;
-  if (coIdx === 0 && eoIdx === 0 && sliceIdx === 0) {
+  const { coIdx, eoIdx, sliceIdx, maxDepth, nodeLimit, deadlineTs, timeCheckInterval } = input;
+  const solvedSliceIdx = encodeSliceFromOccupancy(SOLVED_SLICE_OCC);
+  if (coIdx === 0 && eoIdx === 0 && sliceIdx === solvedSliceIdx) {
     return { ok: true, moves: [], depth: 0, nodes: 0 };
   }
 
@@ -209,18 +222,46 @@ export async function solvePhase1(input) {
   const path = [];
   let nodes = 0;
   let nodeLimitHit = false;
+  let timeLimitHit = false;
+  const hasDeadline = Number.isFinite(deadlineTs);
+  const checkInterval = Number.isFinite(timeCheckInterval)
+    ? Math.max(128, Math.floor(timeCheckInterval))
+    : 1024;
+  let checkCounter = 0;
+  let failCache = new Map();
+
+  function shouldStopSearch() {
+    if (nodeLimit > 0 && nodes >= nodeLimit) {
+      nodeLimitHit = true;
+      return true;
+    }
+    if (!hasDeadline) return false;
+    checkCounter += 1;
+    if (checkCounter < checkInterval) return false;
+    checkCounter = 0;
+    if (Date.now() >= deadlineTs) {
+      timeLimitHit = true;
+      return true;
+    }
+    return false;
+  }
 
   function dfs(co, eo, sl, depth, currentBound, lastFace) {
+    if (timeLimitHit || nodeLimitHit) return Infinity;
     const h = Math.max(coDist[co], eoDist[eo], sliceDist[sl]);
     const f = depth + h;
     if (f > currentBound) return f;
-    if (co === 0 && eo === 0 && sl === 0) return true;
+    if (co === 0 && eo === 0 && sl === solvedSliceIdx) return true;
+    const remaining = currentBound - depth;
+    const cacheKey = ((((co * EO_SIZE + eo) * SLICE_SIZE + sl) * 7) + lastFace);
+    const seenMask = failCache.get(cacheKey) || 0;
+    const bit = 1 << Math.min(remaining, 30);
+    if (seenMask & bit) return Infinity;
 
     let minNext = Infinity;
     const moves = allowedMovesByLastFace[lastFace];
     for (let i = 0; i < moves.length; i++) {
-      if (nodeLimit > 0 && nodes >= nodeLimit) {
-        nodeLimitHit = true;
+      if (shouldStopSearch()) {
         return Infinity;
       }
       const m = moves[i];
@@ -228,6 +269,12 @@ export async function solvePhase1(input) {
       const nextCo = coMove[co * MOVE_COUNT + m];
       const nextEo = eoMove[eo * MOVE_COUNT + m];
       const nextSl = sliceMove[sl * MOVE_COUNT + m];
+      const nextH = Math.max(coDist[nextCo], eoDist[nextEo], sliceDist[nextSl]);
+      const nextF = depth + 1 + nextH;
+      if (nextF > currentBound) {
+        if (nextF < minNext) minNext = nextF;
+        continue;
+      }
       const res = dfs(nextCo, nextEo, nextSl, depth + 1, currentBound, Math.floor(m / 3));
       if (res === true) {
         path.push(m);
@@ -235,12 +282,19 @@ export async function solvePhase1(input) {
       }
       if (res < minNext) minNext = res;
     }
+    if (failCache.size > FAIL_CACHE_LIMIT) failCache.clear();
+    failCache.set(cacheKey, seenMask | bit);
     return minNext;
   }
 
   while (bound <= maxDepth) {
-    if (nodeLimitHit) break;
+    if (nodeLimitHit || timeLimitHit) break;
+    if (hasDeadline && Date.now() >= deadlineTs) {
+      timeLimitHit = true;
+      break;
+    }
     path.length = 0;
+    failCache = new Map();
     const res = dfs(coIdx, eoIdx, sliceIdx, 0, bound, 6);
     if (res === true) {
       path.reverse();
@@ -253,6 +307,8 @@ export async function solvePhase1(input) {
   if (nodeLimitHit) {
     return { ok: false, reason: "PHASE1_SEARCH_LIMIT", nodes };
   }
+  if (timeLimitHit) {
+    return { ok: false, reason: "PHASE1_TIMEOUT", nodes };
+  }
   return { ok: false, reason: "PHASE1_NOT_FOUND", nodes };
 }
-
