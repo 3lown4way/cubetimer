@@ -433,7 +433,6 @@ function getRouxSbBlockTableLowerBound(data, ctx) {
   const pairCount = Math.min(4, ctx.f2lPairDefs.length);
   const pairStates = new Int16Array(pairCount);
   let lowerBound = 0;
-  const rankedPairs = [];
   for (let i = 0; i < pairCount; i++) {
     const pairDef = ctx.f2lPairDefs[i];
     const pairState = getF2LPairStateForDef(data, pairDef);
@@ -444,41 +443,29 @@ function getRouxSbBlockTableLowerBound(data, ctx) {
     const dist = pruneTable[pairState];
     if (!Number.isFinite(dist) || dist < 0) continue;
     if (dist > lowerBound) lowerBound = dist;
-    if (dist > 0) rankedPairs.push({ pairIndex: i, dist });
   }
 
-  rankedPairs.sort((a, b) => b.dist - a.dist || a.pairIndex - b.pairIndex);
-  if (rankedPairs.length >= 2) {
-    const maxRankedPairs = Math.min(4, rankedPairs.length);
-    for (let i = 0; i < maxRankedPairs; i++) {
-      for (let j = i + 1; j < maxRankedPairs; j++) {
-        let pairA = rankedPairs[i].pairIndex;
-        let pairB = rankedPairs[j].pairIndex;
-        if (pairA > pairB) {
-          const temp = pairA;
-          pairA = pairB;
-          pairB = temp;
-        }
-        const stateA = pairStates[pairA];
-        const stateB = pairStates[pairB];
-        if (stateA < 0 || stateB < 0) continue;
-        const pairKey = `${pairA}:${pairB}`;
-        let blockTable = ctx.rouxSbBlockPairTableCache.get(pairKey) || null;
-        if (!blockTable) {
-          const pairDefA = ctx.f2lPairDefs[pairA];
-          const pairDefB = ctx.f2lPairDefs[pairB];
-          blockTable = buildRouxSbBlockPairPruneTable(
-            pairDefA,
-            pairDefB,
-            ctx.f2lPairStateTransitionByMove,
-            ctx.noDMoveIndices,
-          );
-          ctx.rouxSbBlockPairTableCache.set(pairKey, blockTable);
-        }
-        const dist = blockTable[stateA * 576 + stateB];
-        if (Number.isFinite(dist) && dist > lowerBound) {
-          lowerBound = dist;
-        }
+  for (let pairA = 0; pairA < pairCount; pairA++) {
+    for (let pairB = pairA + 1; pairB < pairCount; pairB++) {
+      const stateA = pairStates[pairA];
+      const stateB = pairStates[pairB];
+      if (stateA < 0 || stateB < 0) continue;
+      const pairKey = `${pairA}:${pairB}`;
+      let blockTable = ctx.rouxSbBlockPairTableCache.get(pairKey) || null;
+      if (!blockTable) {
+        const pairDefA = ctx.f2lPairDefs[pairA];
+        const pairDefB = ctx.f2lPairDefs[pairB];
+        blockTable = buildRouxSbBlockPairPruneTable(
+          pairDefA,
+          pairDefB,
+          ctx.f2lPairStateTransitionByMove,
+          ctx.noDMoveIndices,
+        );
+        ctx.rouxSbBlockPairTableCache.set(pairKey, blockTable);
+      }
+      const dist = blockTable[stateA * 576 + stateB];
+      if (Number.isFinite(dist) && dist > lowerBound) {
+        lowerBound = dist;
       }
     }
   }
@@ -1517,6 +1504,200 @@ function getRouxSbMovePriorityByMoveIndex(ctx) {
   return priority;
 }
 
+function getInverseMoveIndexByMoveIndex(ctx) {
+  if (ctx.inverseMoveIndexByMoveIndex instanceof Int16Array) {
+    return ctx.inverseMoveIndexByMoveIndex;
+  }
+  const tokenToIndex = new Map();
+  for (let i = 0; i < MOVE_NAMES.length; i++) {
+    tokenToIndex.set(MOVE_NAMES[i], i);
+  }
+  const inverse = new Int16Array(MOVE_NAMES.length);
+  for (let i = 0; i < MOVE_NAMES.length; i++) {
+    const invToken = invertToken(MOVE_NAMES[i]);
+    const invIndex = tokenToIndex.get(invToken);
+    inverse[i] = Number.isFinite(invIndex) ? invIndex : i;
+  }
+  ctx.inverseMoveIndexByMoveIndex = inverse;
+  return inverse;
+}
+
+function getRouxSbGoalMacroTable(ctx, moveIndices, maxDepth, nodeLimit) {
+  if (!Array.isArray(moveIndices) || !moveIndices.length) return new Map();
+  const normalizedDepth = Math.max(1, Math.min(10, normalizeDepth(maxDepth, 6)));
+  const normalizedNodeLimit = Math.max(1000, normalizeDepth(nodeLimit, 220000));
+  const signature = `${moveIndices.join(",")}|${normalizedDepth}|${normalizedNodeLimit}`;
+  if (!(ctx.rouxSbGoalMacroTableCache instanceof Map)) {
+    ctx.rouxSbGoalMacroTableCache = new Map();
+  }
+  const cache = ctx.rouxSbGoalMacroTableCache;
+  const cached = cache.get(signature);
+  if (cached instanceof Map) return cached;
+
+  const inverseMoveIndexByMoveIndex = getInverseMoveIndexByMoveIndex(ctx);
+  const table = new Map();
+  const bestDepthByKey = new Map();
+  const queue = [];
+  const solvedKey = getF2LStateKey(ctx.solvedData, ctx);
+  bestDepthByKey.set(solvedKey, 0);
+  table.set(solvedKey, []);
+  queue.push({
+    pattern: ctx.solvedPattern,
+    depth: 0,
+    lastFace: NO_FACE_INDEX,
+    tailMoves: [],
+  });
+
+  let head = 0;
+  let expanded = 0;
+  while (head < queue.length && expanded < normalizedNodeLimit) {
+    const item = queue[head++];
+    if (item.depth >= normalizedDepth) continue;
+
+    for (let i = 0; i < moveIndices.length; i++) {
+      if (expanded >= normalizedNodeLimit) break;
+      const moveIndex = moveIndices[i];
+      const face = ctx.moveFace[moveIndex];
+      if (item.lastFace !== NO_FACE_INDEX) {
+        if (face === item.lastFace) continue;
+        if (face === OPPOSITE_FACE[item.lastFace] && face < item.lastFace) continue;
+      }
+      expanded += 1;
+
+      const nextPattern = item.pattern.applyMove(MOVE_NAMES[moveIndex]);
+      const nextData = nextPattern.patternData;
+      const nextDepth = item.depth + 1;
+      const key = getF2LStateKey(nextData, ctx);
+      const prevDepth = bestDepthByKey.get(key);
+      if (Number.isFinite(prevDepth) && prevDepth <= nextDepth) {
+        continue;
+      }
+      const invMove = inverseMoveIndexByMoveIndex[moveIndex];
+      const tailMoves = [invMove].concat(item.tailMoves);
+      bestDepthByKey.set(key, nextDepth);
+      table.set(key, tailMoves);
+      queue.push({
+        pattern: nextPattern,
+        depth: nextDepth,
+        lastFace: face,
+        tailMoves,
+      });
+    }
+  }
+
+  cache.set(signature, table);
+  if (cache.size > 8) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  return table;
+}
+
+function getGoalMacroTableByMoveEntries(
+  ctx,
+  solvedPattern,
+  moveEntries,
+  keyFn,
+  maxDepth,
+  nodeLimit,
+  cacheProp = "goalMacroTableCache",
+) {
+  if (
+    !solvedPattern ||
+    typeof keyFn !== "function" ||
+    !Array.isArray(moveEntries) ||
+    !moveEntries.length
+  ) {
+    return new Map();
+  }
+  const normalizedDepth = Math.max(1, Math.min(12, normalizeDepth(maxDepth, 8)));
+  const normalizedNodeLimit = Math.max(1000, normalizeDepth(nodeLimit, 320000));
+  const moveSignature = moveEntries.map((entry) => entry.move).join("|");
+  const signature = `${moveSignature}|${normalizedDepth}|${normalizedNodeLimit}`;
+  if (!(ctx[cacheProp] instanceof Map)) {
+    ctx[cacheProp] = new Map();
+  }
+  const cache = ctx[cacheProp];
+  const cached = cache.get(signature);
+  if (cached instanceof Map) return cached;
+
+  const allowedMoves = new Set(moveEntries.map((entry) => entry.move));
+  const usableEntries = [];
+  for (let i = 0; i < moveEntries.length; i++) {
+    const entry = moveEntries[i];
+    const invMove = invertToken(entry.move);
+    if (!allowedMoves.has(invMove)) continue;
+    usableEntries.push({
+      move: entry.move,
+      inverse: invMove,
+      face: entry.face,
+      axis: entry.axis,
+    });
+  }
+  if (!usableEntries.length) {
+    const empty = new Map();
+    cache.set(signature, empty);
+    return empty;
+  }
+
+  const table = new Map();
+  const bestDepthByKey = new Map();
+  const queue = [];
+  const solvedKey = keyFn(solvedPattern.patternData);
+  bestDepthByKey.set(solvedKey, 0);
+  table.set(solvedKey, []);
+  queue.push({
+    pattern: solvedPattern,
+    depth: 0,
+    lastFace: "",
+    lastAxis: "",
+    tailMoves: [],
+  });
+
+  let head = 0;
+  let expanded = 0;
+  while (head < queue.length && expanded < normalizedNodeLimit) {
+    const item = queue[head++];
+    if (item.depth >= normalizedDepth) continue;
+
+    for (let i = 0; i < usableEntries.length; i++) {
+      if (expanded >= normalizedNodeLimit) break;
+      const entry = usableEntries[i];
+      if (entry.face === item.lastFace) continue;
+      if (item.lastAxis && entry.axis === item.lastAxis && entry.face < item.lastFace) continue;
+      expanded += 1;
+
+      let nextPattern = null;
+      try {
+        nextPattern = item.pattern.applyMove(entry.move);
+      } catch (_) {
+        continue;
+      }
+      const nextDepth = item.depth + 1;
+      const nextKey = keyFn(nextPattern.patternData);
+      const prevDepth = bestDepthByKey.get(nextKey);
+      if (Number.isFinite(prevDepth) && prevDepth <= nextDepth) continue;
+      const tailMoves = [entry.inverse].concat(item.tailMoves);
+      bestDepthByKey.set(nextKey, nextDepth);
+      table.set(nextKey, tailMoves);
+      queue.push({
+        pattern: nextPattern,
+        depth: nextDepth,
+        lastFace: entry.face,
+        lastAxis: entry.axis,
+        tailMoves,
+      });
+    }
+  }
+
+  cache.set(signature, table);
+  if (cache.size > 10) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  return table;
+}
+
 function estimateRouxSbDifficulty(data, ctx, lockedPairMask = 0) {
   const metrics = getRouxSbObjectiveMetrics(data, ctx, lockedPairMask);
   const lb = getRouxSbF2bLowerBound(data, ctx, lockedPairMask);
@@ -2273,6 +2454,10 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         sbBridgeDepthCap: normalizeDepth(options.sbBridgeDepthCap, 8),
         sbBridgeMinDepth: normalizeDepth(options.sbBridgeMinDepth, 3),
         sbBridgeNodeLimit: normalizeDepth(options.sbBridgeNodeLimit, 1800000),
+        sbGoalMacroEnabled: options.sbGoalMacroEnabled !== false,
+        sbGoalMacroDepth: normalizeDepth(options.sbGoalMacroDepth, 8),
+        sbGoalMacroNodeLimit: normalizeDepth(options.sbGoalMacroNodeLimit, 650000),
+        sbGoalMacroMaxTailLength: normalizeDepth(options.sbGoalMacroMaxTailLength, 8),
         moveIndices: ctx.noDMoveIndices,
         movePriorityByIndex: getRouxSbMovePriorityByMoveIndex(ctx),
         isSolved(data) {
@@ -2484,6 +2669,20 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
           options.lseReducedExtendedNodeLimit,
           useRouxFastProfile ? 1800000 : 2400000,
         ),
+        lseReducedGoalMacroEnabled: options.lseReducedGoalMacroEnabled !== false,
+        lseReducedGoalMacroDepth: normalizeDepth(
+          options.lseReducedGoalMacroDepth,
+          useRouxFastProfile ? 9 : 10,
+        ),
+        lseReducedGoalMacroNodeLimit: normalizeDepth(
+          options.lseReducedGoalMacroNodeLimit,
+          useRouxFastProfile ? 420000 : 620000,
+        ),
+        lseReducedGoalMacroMaxTailLength: normalizeDepth(
+          options.lseReducedGoalMacroMaxTailLength,
+          useRouxFastProfile ? 9 : 10,
+        ),
+        allowReducedTimeoutFallback: options.lseReducedTimeoutFallback !== false,
         moveIndices: ctx.noDMoveIndices,
         // 기본은 탐색 fallback을 켜서 LSE_NOT_FOUND를 줄인다. false로 명시하면 끈다.
         disableSearchFallback: options.lseSearchFallback === false,
@@ -4217,6 +4416,12 @@ function solveRouxSbCustomSearch(startPattern, stage, ctx, deadlineTs = Infinity
   );
   const bridgeNodeLimit = Math.max(0, normalizeDepth(stage.sbBridgeNodeLimit, 900000));
   const movePriority = getRouxSbMovePriorityByMoveIndex(ctx);
+  const goalMacroEnabled = stage.sbGoalMacroEnabled !== false;
+  const goalMacroDepth = Math.max(2, normalizeDepth(stage.sbGoalMacroDepth, 6));
+  const goalMacroNodeLimit = Math.max(10000, normalizeDepth(stage.sbGoalMacroNodeLimit, 220000));
+  const goalMacroTable = goalMacroEnabled
+    ? getRouxSbGoalMacroTable(ctx, moveIndices, goalMacroDepth, goalMacroNodeLimit)
+    : null;
   const startStateKey = getRouxSbStateKey(startData, ctx, lockedMask);
   const moveSignature = moveIndices.join(",");
   const continuation =
@@ -4327,6 +4532,34 @@ function solveRouxSbCustomSearch(startPattern, stage, ctx, deadlineTs = Infinity
     }
   }
 
+  function tryResolveWithGoalMacro(pattern, depth) {
+    if (!(goalMacroTable instanceof Map) || !goalMacroTable.size) return false;
+    const key = getF2LStateKey(pattern.patternData, ctx);
+    const tailMoveIndices = goalMacroTable.get(key);
+    if (!Array.isArray(tailMoveIndices)) return false;
+    if (!tailMoveIndices.length) {
+      if (isRouxF2BSolved(pattern.patternData, ctx)) {
+        solvedPath = trace.slice();
+        return true;
+      }
+      return false;
+    }
+
+    const maxTailLen = Math.max(2, normalizeDepth(stage.sbGoalMacroMaxTailLength, goalMacroDepth));
+    if (tailMoveIndices.length > maxTailLen) return false;
+    let workingPattern = pattern;
+    for (let i = 0; i < tailMoveIndices.length; i++) {
+      const moveIndex = tailMoveIndices[i];
+      workingPattern = workingPattern.applyMove(MOVE_NAMES[moveIndex]);
+      if (lockBroken(workingPattern.patternData, depth + i + 1)) {
+        return false;
+      }
+    }
+    if (!isRouxF2BSolved(workingPattern.patternData, ctx)) return false;
+    solvedPath = trace.concat(tailMoveIndices);
+    return true;
+  }
+
   function dfs(pattern, depth, currentBound, lastFace, presetHeuristic = null) {
     if ((nodes & 511) === 0 && isDeadlineExceeded(deadlineTs)) {
       timedOut = true;
@@ -4346,6 +4579,9 @@ function solveRouxSbCustomSearch(startPattern, stage, ctx, deadlineTs = Infinity
     const h = Number.isFinite(presetHeuristic) ? Math.floor(presetHeuristic) : heuristic(data);
     const f = depth + h;
     if (f > currentBound) return f;
+    if (tryResolveWithGoalMacro(pattern, depth)) {
+      return true;
+    }
 
     const remaining = currentBound - depth;
     const stateKey = getRouxSbStateKey(data, ctx, lockedMask);
@@ -4483,7 +4719,6 @@ function solveRouxSbCustomSearch(startPattern, stage, ctx, deadlineTs = Infinity
     if (nodeLimitHit) break;
     trace.length = 0;
     solvedPath = null;
-    bestSeenDepthByState.clear();
     const res = dfs(startPattern, 0, bound, NO_FACE_INDEX);
     if (res === true) {
       const moves = Array.isArray(solvedPath) ? solvedPath.slice() : [];
@@ -4867,10 +5102,13 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
   if (stage?.name !== "LSE") return null;
 
   const probePattern = ctx?.solvedPattern || startPattern;
-  const searchDepthCap = normalizeDepth(stage.searchMaxDepth, stage.maxDepth);
+  const reducedDepthCap = Math.max(
+    normalizeDepth(stage.searchMaxDepth, stage.maxDepth),
+    normalizeDepth(stage.maxDepth, 20),
+  );
   const reducedSearchMaxDepth = Math.max(
     1,
-    Math.min(searchDepthCap, normalizeDepth(stage.lseReducedSearchMaxDepth, 16)),
+    Math.min(reducedDepthCap, normalizeDepth(stage.lseReducedSearchMaxDepth, 16)),
   );
   const reducedNodeLimit = normalizeDepth(
     stage.lseReducedNodeLimit,
@@ -4923,7 +5161,29 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
     const heuristicCache = canResumeContinuation ? continuation.heuristicCache : new Map();
     const failCache = canResumeContinuation ? continuation.failCache : new Map();
     const bestSeenDepthByState = canResumeContinuation ? continuation.bestSeenDepthByState : new Map();
+    const goalMacroEnabled = stage.lseReducedGoalMacroEnabled !== false;
+    const goalMacroDepth = Math.max(2, normalizeDepth(stage.lseReducedGoalMacroDepth, 9));
+    const goalMacroNodeLimit = Math.max(
+      1000,
+      normalizeDepth(stage.lseReducedGoalMacroNodeLimit, 420000),
+    );
+    const goalMacroMaxTailLength = Math.max(
+      2,
+      normalizeDepth(stage.lseReducedGoalMacroMaxTailLength, goalMacroDepth),
+    );
+    const goalMacroTable = goalMacroEnabled
+      ? getGoalMacroTableByMoveEntries(
+          ctx,
+          ctx.solvedPattern || probePattern,
+          moveEntries,
+          (data) => stage.key(data),
+          goalMacroDepth,
+          goalMacroNodeLimit,
+          "lseReducedGoalMacroTableCache",
+        )
+      : null;
     const path = [];
+    let goalTailOnSuccess = null;
     let nodes = canResumeContinuation ? Math.max(0, normalizeDepth(continuation.nodes, 0)) : 0;
     let nodeLimitHit = false;
     let timedOut = false;
@@ -4961,6 +5221,33 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
       return h;
     }
 
+    function tryResolveWithGoalMacro(pattern, depth, currentBound) {
+      if (!(goalMacroTable instanceof Map) || !goalMacroTable.size) return false;
+      const stateKey = stage.key(pattern.patternData);
+      const tailMoves = goalMacroTable.get(stateKey);
+      if (!Array.isArray(tailMoves)) return false;
+      if (!tailMoves.length) {
+        if (stage.isSolved(pattern.patternData, ctx)) {
+          goalTailOnSuccess = [];
+          return true;
+        }
+        return false;
+      }
+      if (tailMoves.length > goalMacroMaxTailLength) return false;
+      if (depth + tailMoves.length > currentBound) return false;
+      let workingPattern = pattern;
+      for (let i = 0; i < tailMoves.length; i++) {
+        try {
+          workingPattern = workingPattern.applyMove(tailMoves[i]);
+        } catch (_) {
+          return false;
+        }
+      }
+      if (!stage.isSolved(workingPattern.patternData, ctx)) return false;
+      goalTailOnSuccess = tailMoves.slice();
+      return true;
+    }
+
     function dfs(pattern, depth, currentBound, lastFace, lastAxis, presetHeuristic = null) {
       if ((nodes & 255) === 0 && isDeadlineExceeded(deadlineTs)) {
         timedOut = true;
@@ -4968,7 +5255,10 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
       }
       if (timedOut) return Infinity;
       const data = pattern.patternData;
-      if (stage.isSolved(data, ctx)) return true;
+      if (stage.isSolved(data, ctx)) {
+        goalTailOnSuccess = [];
+        return true;
+      }
       if (typeof stage.prune === "function" && stage.prune(data, depth, currentBound, ctx)) {
         return Infinity;
       }
@@ -4976,6 +5266,9 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
       const h = Number.isFinite(presetHeuristic) ? Math.floor(presetHeuristic) : heuristic(data);
       const f = depth + h;
       if (f > currentBound) return f;
+      if (tryResolveWithGoalMacro(pattern, depth, currentBound)) {
+        return true;
+      }
 
       const remaining = currentBound - depth;
       const stateKey = stage.key(data);
@@ -5105,14 +5398,18 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
       }
       if (nodeLimitHit) break;
       path.length = 0;
-      bestSeenDepthByState.clear();
+      goalTailOnSuccess = null;
       const res = dfs(startPattern, 0, bound, "", "");
       if (res === true) {
         path.reverse();
+        const fullMoves =
+          Array.isArray(goalTailOnSuccess) && goalTailOnSuccess.length
+            ? path.concat(goalTailOnSuccess)
+            : path.slice();
         return {
           ok: true,
-          moves: path.slice(),
-          depth: path.length,
+          moves: fullMoves,
+          depth: fullMoves.length,
           nodes,
           bound,
         };
@@ -5151,7 +5448,7 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
 
   const primaryResult = runReducedSearch(primaryMoves, reducedSearchMaxDepth, reducedNodeLimit);
   if (!primaryResult || primaryResult.ok) return primaryResult;
-  if (String(primaryResult.reason || "").endsWith("_TIMEOUT")) return primaryResult;
+  const primaryTimedOut = String(primaryResult.reason || "").endsWith("_TIMEOUT");
 
   if (stage.lseReducedExtended === false) return primaryResult;
   const extendedMoves = buildMoveEntries(
@@ -5174,7 +5471,7 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
   const extendedSearchMaxDepth = Math.max(
     reducedSearchMaxDepth,
     Math.min(
-      searchDepthCap,
+      reducedDepthCap,
       normalizeDepth(stage.lseReducedExtendedSearchMaxDepth, reducedSearchMaxDepth + 1),
     ),
   );
@@ -5188,6 +5485,12 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
     extendedNodeLimit,
   );
   if (!extendedResult) return primaryResult;
+  if (!extendedResult.ok && primaryTimedOut && String(extendedResult.reason || "").endsWith("_TIMEOUT")) {
+    return {
+      ...extendedResult,
+      nodes: Math.max(extendedResult.nodes || 0, primaryResult.nodes || 0),
+    };
+  }
   return {
     ...extendedResult,
     nodes: (extendedResult.nodes || 0) + (primaryResult.nodes || 0),
@@ -5297,7 +5600,10 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     }
     if (reducedResult) {
       preSearchNodes += reducedResult.nodes || 0;
-      if (!reducedResult.ok && String(reducedResult.reason || "").endsWith("_TIMEOUT")) {
+      const reducedTimedOut = !reducedResult.ok && String(reducedResult.reason || "").endsWith("_TIMEOUT");
+      const canFallbackAfterReducedTimeout =
+        stage.name === "LSE" && stage.allowReducedTimeoutFallback !== false && !stage.disableSearchFallback;
+      if (reducedTimedOut && !canFallbackAfterReducedTimeout) {
         return {
           ...reducedResult,
           nodes: preSearchNodes,
@@ -5670,8 +5976,7 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     const canRunLseEmergencyFallback =
       stage.name === "LSE" &&
       !stage.__lseEmergencyAttempted &&
-      !stage.disableSearchFallback &&
-      !String(secondaryResult?.reason || "").endsWith("_TIMEOUT");
+      !stage.disableSearchFallback;
     if (canRunLseEmergencyFallback) {
       const emergencyStage = {
         ...stage,
