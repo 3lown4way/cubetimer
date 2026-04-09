@@ -227,7 +227,10 @@ function shouldFallbackToExternal3x3(result) {
     reason.startsWith("F2L2_") ||
     reason.startsWith("ZBLS_") ||
     reason.startsWith("ZBLL_") ||
+    // Last-layer misses are recoverable: hand them to the broader fallback path.
     reason.endsWith("_TIMEOUT") ||
+    reason.endsWith("_NOT_FOUND") ||
+    reason.endsWith("_SEARCH_LIMIT") ||
     reason === "FINAL_STATE_NOT_SOLVED" ||
     reason === "INTERNAL_3X3_CFOP_TIMEOUT"
   );
