@@ -92,7 +92,7 @@ const ROUX_RETRY_OPTIONS = [
     lseNodeLimit: 880000,
   },
 ];
-const ROUX_STRICT_RETRY_OPTIONS = Object.freeze([ROUX_RETRY_OPTIONS[2]]);
+const ROUX_STRICT_RETRY_OPTIONS = Object.freeze([ROUX_RETRY_OPTIONS[2], ROUX_RETRY_OPTIONS[3]]);
 const ZB_RETRY_OPTIONS = [
   {
     zblsFormulaAttemptLimit: 70000,
@@ -729,7 +729,7 @@ const api = {
     let rouxParallelRescue = true;
     let rouxOrientationSweep = false;
     let rouxSweepMaxChecks = 1;
-    let rouxAllowCfopStageRecovery = false;
+    let rouxAllowCfopStageRecovery = true;
     let rouxRecoverAllStages = false;
     let rouxSafetyCfop = false;
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
@@ -1088,10 +1088,15 @@ const api = {
                     cmllFormulaAttemptLimit: 120000,
                     cmllSearchMaxDepth: 13,
                     cmllNodeLimit: 460000,
-                    lseFormulaAttemptLimit: 110000,
-                    lseSearchMaxDepth: 12,
-                    lseNodeLimit: 460000,
+                    lseFormulaAttemptLimit: 150000,
+                    lseSearchMaxDepth: 13,
+                    lseNodeLimit: 760000,
+                    lseSecondarySearchMaxDepth: 14,
+                    lseSecondaryNodeLimit: 1200000,
+                    lsePllFallback: true,
+                    lseStageTimeBudgetMs: 14000,
                     sbDeepRetry: false,
+                    rouxLastLayerDeepRetry: true,
                     retryOptions: ROUX_STRICT_RETRY_OPTIONS,
                     // Parallel sweep already covers orientation alternatives.
                     rouxOrientationSweep: rouxParallelSucceeded ? false : rouxOrientationSweep,

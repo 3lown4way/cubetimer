@@ -4,8 +4,9 @@ import { SCDB_CFOP_ALGS } from "./scdbCfopAlgs.js";
 import { ZB_FORMULAS } from "./zbDataset.js";
 import { ROUX_FORMULAS } from "./rouxDataset.js";
 
-const FACE_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
-const OPPOSITE_FACE = [3, 4, 5, 0, 1, 2];
+const FACE_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5, M: 6 };
+const OPPOSITE_FACE = [3, 4, 5, 0, 1, 2, 6];
+const NO_FACE_INDEX = OPPOSITE_FACE.length;
 const STAGE_NOT_SET = 255;
 const HEURISTIC_CACHE_LIMIT = 120000;
 const FAIL_CACHE_LIMIT = 160000;
@@ -1134,6 +1135,395 @@ function popcount32(value) {
   return count;
 }
 
+function getRouxBlockDefs(ctx) {
+  if (Array.isArray(ctx?.rouxBlockDefs) && ctx.rouxBlockDefs.length) {
+    return ctx.rouxBlockDefs;
+  }
+  const pairCount = Math.min(4, Array.isArray(ctx?.f2lPairDefs) ? ctx.f2lPairDefs.length : 0);
+  if (pairCount < 2) return [];
+  const fallbackMasks = pairCount >= 4 ? [0b0011, 0b1100] : [(1 << pairCount) - 1];
+  return fallbackMasks.map((pairMask) => ({
+    pairMask,
+    bottomEdgePos: -1,
+    bottomEdgePieceId: -1,
+    bottomEdgeTargetOri: 0,
+  }));
+}
+
+function getRouxBlockPairMasks(ctx) {
+  const blockDefs = getRouxBlockDefs(ctx);
+  return blockDefs.map((def) => def.pairMask).filter((mask) => Number.isFinite(mask) && mask > 0);
+}
+
+function isRouxBlockBottomEdgeSolved(data, blockDef) {
+  const pos = Number.isFinite(blockDef?.bottomEdgePos) ? Math.floor(blockDef.bottomEdgePos) : -1;
+  if (pos < 0) return true;
+  if (!data?.EDGES?.pieces || !data?.EDGES?.orientation || pos >= data.EDGES.pieces.length) return true;
+  const targetPieceId = Number.isFinite(blockDef.bottomEdgePieceId)
+    ? Math.floor(blockDef.bottomEdgePieceId)
+    : -1;
+  const targetOri = Number.isFinite(blockDef.bottomEdgeTargetOri)
+    ? Math.floor(blockDef.bottomEdgeTargetOri) & 1
+    : 0;
+  return data.EDGES.pieces[pos] === targetPieceId && (data.EDGES.orientation[pos] & 1) === targetOri;
+}
+
+function getRouxFbTargetUnits(ctx, targetPairs) {
+  const target = Math.max(1, Math.floor(targetPairs || 0));
+  return target;
+}
+
+function getRouxBestBlockSolvedMetrics(data, ctx) {
+  const blockDefs = getRouxBlockDefs(ctx);
+  if (!blockDefs.length) {
+    return {
+      solvedPairMask: 0,
+      bestMask: 0,
+      bestSolvedPairs: 0,
+      bestBottomSolved: false,
+      bestSolvedUnits: 0,
+    };
+  }
+  const solvedPairMask = getSolvedF2LPairMask(data, ctx);
+  let bestMask = 0;
+  let bestSolvedPairs = 0;
+  let bestBottomSolved = false;
+  let bestSolvedUnits = 0;
+  for (let i = 0; i < blockDefs.length; i++) {
+    const def = blockDefs[i];
+    const mask = Number.isFinite(def?.pairMask) ? Math.floor(def.pairMask) : 0;
+    if (mask <= 0) continue;
+    const solvedPairs = popcount32(solvedPairMask & mask);
+    const bottomSolved = isRouxBlockBottomEdgeSolved(data, def);
+    const solvedUnits = solvedPairs + (bottomSolved ? 1 : 0);
+    if (
+      solvedUnits > bestSolvedUnits ||
+      (solvedUnits === bestSolvedUnits && solvedPairs > bestSolvedPairs) ||
+      (solvedUnits === bestSolvedUnits && solvedPairs === bestSolvedPairs && mask > bestMask)
+    ) {
+      bestMask = mask;
+      bestSolvedPairs = solvedPairs;
+      bestBottomSolved = bottomSolved;
+      bestSolvedUnits = solvedUnits;
+    }
+  }
+  return {
+    solvedPairMask,
+    bestMask,
+    bestSolvedPairs,
+    bestBottomSolved,
+    bestSolvedUnits,
+  };
+}
+
+function getRouxFbPairDeficit(data, ctx, targetPairs) {
+  const targetUnits = getRouxFbTargetUnits(ctx, targetPairs);
+  const { bestSolvedUnits } = getRouxBestBlockSolvedMetrics(data, ctx);
+  return Math.max(0, targetUnits - bestSolvedUnits);
+}
+
+function getRouxFbBlockLowerBound(data, ctx, targetPairs = 2) {
+  const deficitBound = getRouxFbPairDeficit(data, ctx, targetPairs);
+  const blockDefs = getRouxBlockDefs(ctx);
+  if (!blockDefs.length || !Array.isArray(ctx?.f2lPairDefs) || !ctx.f2lPairDefs.length) {
+    return deficitBound;
+  }
+
+  const target = Math.max(1, Math.floor(targetPairs || 0));
+  const cacheKey = `${target}:${getF2LStateKey(data, ctx)}`;
+  const cache = ctx.rouxFbLowerBoundCache || (ctx.rouxFbLowerBoundCache = new Map());
+  const cached = cache.get(cacheKey);
+  if (typeof cached === "number") return cached;
+
+  const maxPairCount = Math.min(31, ctx.f2lPairDefs.length);
+  const cornerPosByPiece = ctx.f2lCornerPosScratch || (ctx.f2lCornerPosScratch = new Int8Array(8));
+  const edgePosByPiece = ctx.f2lEdgePosScratch || (ctx.f2lEdgePosScratch = new Int8Array(12));
+  for (let pos = 0; pos < 8; pos++) {
+    cornerPosByPiece[data.CORNERS.pieces[pos]] = pos;
+  }
+  for (let pos = 0; pos < 12; pos++) {
+    edgePosByPiece[data.EDGES.pieces[pos]] = pos;
+  }
+
+  let pairDistByIndex = ctx.rouxFbPairDistScratch;
+  if (!(pairDistByIndex instanceof Int16Array) || pairDistByIndex.length < maxPairCount) {
+    pairDistByIndex = new Int16Array(Math.max(8, maxPairCount));
+    ctx.rouxFbPairDistScratch = pairDistByIndex;
+  }
+  pairDistByIndex.fill(-1, 0, maxPairCount);
+  for (let i = 0; i < maxPairCount; i++) {
+    const pairDef = ctx.f2lPairDefs[i];
+    if (!pairDef) continue;
+    const cornerPos = cornerPosByPiece[pairDef.cornerPieceId];
+    const edgePos = edgePosByPiece[pairDef.edgePieceId];
+    if (cornerPos < 0 || edgePos < 0) continue;
+    const cornerOri = data.CORNERS.orientation[cornerPos] % 3;
+    const edgeOri = data.EDGES.orientation[edgePos] & 1;
+    const state = encodeF2LPairState(cornerPos, cornerOri, edgePos, edgeOri);
+    const pruneTable = pairDef.pruneTableAll || pairDef.pruneTable;
+    if (!pruneTable) continue;
+    const dist = pruneTable[state];
+    if (Number.isFinite(dist) && dist >= 0) pairDistByIndex[i] = dist;
+  }
+
+  let bestBlockBound = Infinity;
+  for (let b = 0; b < blockDefs.length; b++) {
+    const blockDef = blockDefs[b];
+    const mask = Number.isFinite(blockDef?.pairMask) ? Math.floor(blockDef.pairMask) : 0;
+    if (mask <= 0) continue;
+    let pairBound = 0;
+    for (let i = 0; i < maxPairCount; i++) {
+      if ((mask & (1 << i)) === 0) continue;
+      const dist = pairDistByIndex[i];
+      if (dist > pairBound) pairBound = dist;
+    }
+    const edgeNeed = isRouxBlockBottomEdgeSolved(data, blockDef)
+      ? 0
+      : Number.isFinite(blockDef?.bottomEdgePos) && Math.floor(blockDef.bottomEdgePos) >= 0
+        ? 1
+        : 0;
+    const blockBound = Math.max(pairBound, edgeNeed);
+    if (blockBound < bestBlockBound) bestBlockBound = blockBound;
+  }
+  if (!Number.isFinite(bestBlockBound)) bestBlockBound = 0;
+  const lowerBound = Math.max(deficitBound, bestBlockBound);
+  if (cache.size > HEURISTIC_CACHE_LIMIT) cache.clear();
+  cache.set(cacheKey, lowerBound);
+  return lowerBound;
+}
+
+function getRouxPrimaryBlockMask(data, ctx, targetPairs = 2) {
+  const targetUnits = getRouxFbTargetUnits(ctx, targetPairs);
+  const { bestMask, bestSolvedUnits } = getRouxBestBlockSolvedMetrics(data, ctx);
+  if (!bestMask || bestSolvedUnits < targetUnits) return 0;
+  return bestMask;
+}
+
+function isRouxFbBlockSolved(data, ctx, targetPairs) {
+  return getRouxFbPairDeficit(data, ctx, targetPairs) === 0;
+}
+
+function getRouxBlockDefByMask(ctx, pairMask) {
+  const targetMask = Number.isFinite(pairMask) ? Math.floor(pairMask) : 0;
+  if (targetMask <= 0) return null;
+  const blockDefs = getRouxBlockDefs(ctx);
+  for (let i = 0; i < blockDefs.length; i++) {
+    const def = blockDefs[i];
+    if (Math.floor(def?.pairMask || 0) === targetMask) return def;
+  }
+  return null;
+}
+
+function getRouxBlockTargetUnitCount(blockDef) {
+  const pairMask = Number.isFinite(blockDef?.pairMask) ? Math.floor(blockDef.pairMask) : 0;
+  if (pairMask <= 0) return 0;
+  let units = popcount32(pairMask);
+  if (Number.isFinite(blockDef?.bottomEdgePos) && Math.floor(blockDef.bottomEdgePos) >= 0) {
+    units += 1;
+  }
+  return units;
+}
+
+function getRouxBlockSolvedUnitCount(data, blockDef, solvedPairMask) {
+  const pairMask = Number.isFinite(blockDef?.pairMask) ? Math.floor(blockDef.pairMask) : 0;
+  if (pairMask <= 0) return 0;
+  const solvedPairs = popcount32((solvedPairMask >>> 0) & pairMask);
+  const bottomSolved = isRouxBlockBottomEdgeSolved(data, blockDef) ? 1 : 0;
+  return solvedPairs + bottomSolved;
+}
+
+function getRouxBlockDeficitUnitCount(data, blockDef, solvedPairMask) {
+  const targetUnits = getRouxBlockTargetUnitCount(blockDef);
+  const solvedUnits = getRouxBlockSolvedUnitCount(data, blockDef, solvedPairMask);
+  return Math.max(0, targetUnits - solvedUnits);
+}
+
+function isRouxF2BSolved(data, ctx) {
+  const blockDefs = getRouxBlockDefs(ctx);
+  if (!blockDefs.length) return getF2LPairProgress(data, ctx) >= 4;
+  const solvedPairMask = getSolvedF2LPairMask(data, ctx);
+  for (let i = 0; i < blockDefs.length; i++) {
+    if (getRouxBlockDeficitUnitCount(data, blockDefs[i], solvedPairMask) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getRouxSbObjectiveMetrics(data, ctx, lockedPairMask = 0) {
+  const blockDefs = getRouxBlockDefs(ctx);
+  const solvedPairMask = getSolvedF2LPairMask(data, ctx);
+  if (!blockDefs.length) {
+    const pairNeed = getF2LPairDeficit(data, ctx, 4);
+    return {
+      solvedPairMask,
+      primaryMask: 0,
+      secondaryMask: 0,
+      primaryDeficit: pairNeed,
+      secondaryDeficit: pairNeed,
+      secondaryBottomNeed: 0,
+      totalDeficit: pairNeed,
+    };
+  }
+
+  const normalizedLockedMask = Number.isFinite(lockedPairMask) ? Math.floor(lockedPairMask) : 0;
+  let primaryDef = null;
+  if (normalizedLockedMask > 0) {
+    for (let i = 0; i < blockDefs.length; i++) {
+      const defMask = Math.floor(blockDefs[i]?.pairMask || 0);
+      if (!defMask) continue;
+      if ((defMask & normalizedLockedMask) === normalizedLockedMask || defMask === normalizedLockedMask) {
+        primaryDef = blockDefs[i];
+        break;
+      }
+    }
+  }
+  if (!primaryDef) {
+    let bestUnits = -1;
+    for (let i = 0; i < blockDefs.length; i++) {
+      const solvedUnits = getRouxBlockSolvedUnitCount(data, blockDefs[i], solvedPairMask);
+      if (solvedUnits > bestUnits) {
+        bestUnits = solvedUnits;
+        primaryDef = blockDefs[i];
+      }
+    }
+  }
+
+  let secondaryDef = null;
+  for (let i = 0; i < blockDefs.length; i++) {
+    if (blockDefs[i] !== primaryDef) {
+      secondaryDef = blockDefs[i];
+      break;
+    }
+  }
+
+  const primaryMask = Math.floor(primaryDef?.pairMask || 0);
+  const secondaryMask = Math.floor(secondaryDef?.pairMask || 0);
+  const primaryDeficit = getRouxBlockDeficitUnitCount(data, primaryDef, solvedPairMask);
+  const secondaryDeficit = secondaryDef
+    ? getRouxBlockDeficitUnitCount(data, secondaryDef, solvedPairMask)
+    : 0;
+  const secondaryBottomNeed =
+    secondaryDef &&
+    Number.isFinite(secondaryDef?.bottomEdgePos) &&
+    Math.floor(secondaryDef.bottomEdgePos) >= 0 &&
+    !isRouxBlockBottomEdgeSolved(data, secondaryDef)
+      ? 1
+      : 0;
+
+  let totalDeficit = 0;
+  for (let i = 0; i < blockDefs.length; i++) {
+    totalDeficit += getRouxBlockDeficitUnitCount(data, blockDefs[i], solvedPairMask);
+  }
+
+  return {
+    solvedPairMask,
+    primaryMask,
+    secondaryMask,
+    primaryDeficit,
+    secondaryDeficit,
+    secondaryBottomNeed,
+    totalDeficit,
+  };
+}
+
+function getRouxPairMaskLowerBound(data, ctx, pairMask, useNoDPrune = true) {
+  const normalizedMask = Number.isFinite(pairMask) ? Math.floor(pairMask) : 0;
+  if (normalizedMask <= 0 || !Array.isArray(ctx?.f2lPairDefs) || !ctx.f2lPairDefs.length) return 0;
+
+  const cacheKey = `${useNoDPrune ? 1 : 0}:${normalizedMask}:${getF2LStateKey(data, ctx)}`;
+  const cache = ctx.rouxPairMaskLowerBoundCache || (ctx.rouxPairMaskLowerBoundCache = new Map());
+  const cached = cache.get(cacheKey);
+  if (typeof cached === "number") return cached;
+
+  const cornerPosByPiece = ctx.f2lCornerPosScratch || (ctx.f2lCornerPosScratch = new Int8Array(8));
+  const edgePosByPiece = ctx.f2lEdgePosScratch || (ctx.f2lEdgePosScratch = new Int8Array(12));
+  for (let pos = 0; pos < 8; pos++) {
+    cornerPosByPiece[data.CORNERS.pieces[pos]] = pos;
+  }
+  for (let pos = 0; pos < 12; pos++) {
+    edgePosByPiece[data.EDGES.pieces[pos]] = pos;
+  }
+
+  let lowerBound = 0;
+  const maxPairCount = Math.min(31, ctx.f2lPairDefs.length);
+  for (let i = 0; i < maxPairCount; i++) {
+    if ((normalizedMask & (1 << i)) === 0) continue;
+    const pairDef = ctx.f2lPairDefs[i];
+    if (!pairDef) continue;
+    const cornerPos = cornerPosByPiece[pairDef.cornerPieceId];
+    const edgePos = edgePosByPiece[pairDef.edgePieceId];
+    if (cornerPos < 0 || edgePos < 0) continue;
+    const cornerOri = data.CORNERS.orientation[cornerPos] % 3;
+    const edgeOri = data.EDGES.orientation[edgePos] & 1;
+    const state = encodeF2LPairState(cornerPos, cornerOri, edgePos, edgeOri);
+    const pruneTable = useNoDPrune
+      ? pairDef.pruneTableNoD || pairDef.pruneTableAll || pairDef.pruneTable
+      : pairDef.pruneTableAll || pairDef.pruneTable;
+    if (!pruneTable) continue;
+    const dist = pruneTable[state];
+    if (Number.isFinite(dist) && dist > lowerBound) lowerBound = dist;
+  }
+
+  if (cache.size > HEURISTIC_CACHE_LIMIT) cache.clear();
+  cache.set(cacheKey, lowerBound);
+  return lowerBound;
+}
+
+function getRouxSbF2bLowerBound(data, ctx, lockedPairMask = 0) {
+  const metrics = getRouxSbObjectiveMetrics(data, ctx, lockedPairMask);
+  if (metrics.totalDeficit <= 0) return 0;
+
+  let lowerBound = 0;
+  const coupledBound = getRouxSbBlockTableLowerBound(data, ctx);
+  if (coupledBound > lowerBound) lowerBound = coupledBound;
+
+  const secondaryPairBound = getRouxPairMaskLowerBound(data, ctx, metrics.secondaryMask, true);
+  if (secondaryPairBound > lowerBound) lowerBound = secondaryPairBound;
+  if (metrics.secondaryBottomNeed > lowerBound) lowerBound = metrics.secondaryBottomNeed;
+
+  if (metrics.primaryDeficit > 0) {
+    const primaryPairBound = getRouxPairMaskLowerBound(data, ctx, metrics.primaryMask, true);
+    if (primaryPairBound > lowerBound) lowerBound = primaryPairBound;
+  }
+
+  if (lowerBound <= 0) lowerBound = 1;
+  return lowerBound;
+}
+
+function getRouxSbStateKey(data, ctx, lockedPairMask = 0) {
+  const normalizedLockedMask = Number.isFinite(lockedPairMask) ? Math.floor(lockedPairMask) : 0;
+  return `SB2:${normalizedLockedMask}:${getF2LStateKey(data, ctx)}`;
+}
+
+function getRouxSbMovePriorityByMoveIndex(ctx) {
+  if (ctx.rouxSbMovePriorityByMoveIndex instanceof Int8Array) {
+    return ctx.rouxSbMovePriorityByMoveIndex;
+  }
+  const priority = new Int8Array(MOVE_NAMES.length);
+  priority.fill(6);
+  for (let i = 0; i < MOVE_NAMES.length; i++) {
+    const token = MOVE_NAMES[i];
+    const face = token.charAt(0);
+    let rank = 4;
+    if (face === "R" || face === "L" || face === "M") rank = 0;
+    else if (face === "U") rank = 1;
+    else if (face === "F" || face === "B") rank = 2;
+    else if (face === "D") rank = 5;
+    if (token.endsWith("2")) rank += 1;
+    priority[i] = rank;
+  }
+  ctx.rouxSbMovePriorityByMoveIndex = priority;
+  return priority;
+}
+
+function estimateRouxSbDifficulty(data, ctx, lockedPairMask = 0) {
+  const metrics = getRouxSbObjectiveMetrics(data, ctx, lockedPairMask);
+  const lb = getRouxSbF2bLowerBound(data, ctx, lockedPairMask);
+  const coupled = getRouxSbBlockTableLowerBound(data, ctx);
+  return lb * 100 + coupled * 30 + metrics.secondaryDeficit * 12 + metrics.primaryDeficit * 8 + metrics.totalDeficit;
+}
+
 function getF2LPairStateForDef(data, pairDef) {
   if (!pairDef) return -1;
   let cornerPos = -1;
@@ -1417,7 +1807,7 @@ async function getCfopContext() {
     const moveFace = MOVE_NAMES.map((move) => FACE_TO_INDEX[move[0]]);
     const allMoveIndices = MOVE_NAMES.map((_, idx) => idx);
     const noDMoveIndices = allMoveIndices.filter((idx) => moveFace[idx] !== FACE_TO_INDEX.D);
-    const quarterMoveIndexByFace = new Int8Array(6);
+    const quarterMoveIndexByFace = new Int8Array(NO_FACE_INDEX);
     quarterMoveIndexByFace.fill(-1);
     for (let i = 0; i < MOVE_NAMES.length; i++) {
       if (MOVE_NAMES[i].length === 1) {
@@ -1443,7 +1833,7 @@ async function getCfopContext() {
       const cornerTargetPos = f2lCornerPositions[i];
       const edgeTargetPos = middleEdgePositions[i];
       let noDbFaceMask = 1 << FACE_TO_INDEX.U;
-      for (let face = 0; face < 6; face++) {
+      for (let face = 0; face < NO_FACE_INDEX; face++) {
         if (face === FACE_TO_INDEX.U || face === FACE_TO_INDEX.D) continue;
         const quarterMoveIndex = quarterMoveIndexByFace[face];
         if (quarterMoveIndex < 0) continue;
@@ -1491,6 +1881,66 @@ async function getCfopContext() {
       });
     }
 
+    const quarterLIndex = quarterMoveIndexByFace[FACE_TO_INDEX.L];
+    const quarterRIndex = quarterMoveIndexByFace[FACE_TO_INDEX.R];
+    const quarterLCornerMap = quarterLIndex >= 0 ? cornerMoveTables[quarterLIndex] : null;
+    const quarterLEdgeMap = quarterLIndex >= 0 ? edgeMoveTables[quarterLIndex] : null;
+    const quarterRCornerMap = quarterRIndex >= 0 ? cornerMoveTables[quarterRIndex] : null;
+    const quarterREdgeMap = quarterRIndex >= 0 ? edgeMoveTables[quarterRIndex] : null;
+    let rouxLeftBlockPairMask = 0;
+    let rouxRightBlockPairMask = 0;
+    for (let i = 0; i < f2lPairDefs.length; i++) {
+      const pairDef = f2lPairDefs[i];
+      if (quarterLCornerMap && quarterLEdgeMap) {
+        const touchesLCorner =
+          quarterLCornerMap.cornerPosMap[pairDef.cornerTargetPos] !== pairDef.cornerTargetPos;
+        const touchesLEdge = quarterLEdgeMap.edgePosMap[pairDef.edgeTargetPos] !== pairDef.edgeTargetPos;
+        if (touchesLCorner || touchesLEdge) {
+          rouxLeftBlockPairMask |= 1 << i;
+        }
+      }
+      if (quarterRCornerMap && quarterREdgeMap) {
+        const touchesRCorner =
+          quarterRCornerMap.cornerPosMap[pairDef.cornerTargetPos] !== pairDef.cornerTargetPos;
+        const touchesREdge = quarterREdgeMap.edgePosMap[pairDef.edgeTargetPos] !== pairDef.edgeTargetPos;
+        if (touchesRCorner || touchesREdge) {
+          rouxRightBlockPairMask |= 1 << i;
+        }
+      }
+    }
+    const rouxBlockPairMasks = [];
+    if (rouxLeftBlockPairMask) rouxBlockPairMasks.push(rouxLeftBlockPairMask);
+    if (rouxRightBlockPairMask && rouxRightBlockPairMask !== rouxLeftBlockPairMask) {
+      rouxBlockPairMasks.push(rouxRightBlockPairMask);
+    }
+    const findBottomEdgePosTouchedByMap = (edgeMap) => {
+      if (!edgeMap) return -1;
+      for (let i = 0; i < bottomEdgePositions.length; i++) {
+        const pos = bottomEdgePositions[i];
+        if (edgeMap.edgePosMap[pos] !== pos) return pos;
+      }
+      return -1;
+    };
+    const leftBottomEdgePos = findBottomEdgePosTouchedByMap(quarterLEdgeMap);
+    const rightBottomEdgePos = findBottomEdgePosTouchedByMap(quarterREdgeMap);
+    const rouxBlockDefs = [];
+    if (rouxLeftBlockPairMask) {
+      rouxBlockDefs.push({
+        pairMask: rouxLeftBlockPairMask,
+        bottomEdgePos: leftBottomEdgePos,
+        bottomEdgePieceId: leftBottomEdgePos >= 0 ? solvedData.EDGES.pieces[leftBottomEdgePos] : -1,
+        bottomEdgeTargetOri: leftBottomEdgePos >= 0 ? solvedData.EDGES.orientation[leftBottomEdgePos] & 1 : 0,
+      });
+    }
+    if (rouxRightBlockPairMask && rouxRightBlockPairMask !== rouxLeftBlockPairMask) {
+      rouxBlockDefs.push({
+        pairMask: rouxRightBlockPairMask,
+        bottomEdgePos: rightBottomEdgePos,
+        bottomEdgePieceId: rightBottomEdgePos >= 0 ? solvedData.EDGES.pieces[rightBottomEdgePos] : -1,
+        bottomEdgeTargetOri: rightBottomEdgePos >= 0 ? solvedData.EDGES.orientation[rightBottomEdgePos] & 1 : 0,
+      });
+    }
+
     return {
       solvedPattern,
       solvedData,
@@ -1509,6 +1959,8 @@ async function getCfopContext() {
       crossEdgePieceIds,
       crossPieceIndexById,
       f2lPairDefs,
+      rouxBlockPairMasks,
+      rouxBlockDefs,
     };
   })();
   return contextPromise;
@@ -1747,45 +2199,38 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   }
 
   if (useRouxStages) {
-    const fbTargetPairs = 1;
+    const fbTargetPairs = 2;
     const sbTargetPairs = 4;
     return [
       {
         name: "FB",
         displayName: "FB",
-        maxDepth: normalizeDepth(options.fbMaxDepth, profile.crossMaxDepth),
+        maxDepth: normalizeDepth(options.fbMaxDepth, Math.max(profile.crossMaxDepth, 12)),
+        searchMaxDepth: normalizeDepth(
+          options.fbSearchMaxDepth,
+          normalizeDepth(options.fbMaxDepth, Math.max(profile.crossMaxDepth, 12)),
+        ),
+        nodeLimit: normalizeDepth(options.fbNodeLimit, 850000),
         moveIndices: options.fbNoDMoves === true ? ctx.noDMoveIndices : ctx.allMoveIndices,
+        enableMoveOrdering: true,
+        moveOrderingMaxDepth: normalizeDepth(options.fbMoveOrderingDepth, 6),
         isSolved(data) {
-          return isCrossWithF2LPairTarget(data, ctx, fbTargetPairs);
+          return isRouxFbBlockSolved(data, ctx, fbTargetPairs);
+        },
+        prune(data, depth, currentBound, stageCtx) {
+          const remaining = currentBound - depth;
+          if (remaining < 0) return true;
+          const fbBound = getRouxFbBlockLowerBound(data, stageCtx, fbTargetPairs);
+          return fbBound > remaining;
         },
         heuristic(data) {
-          const crossBound = getCrossPruneHeuristic(data, ctx);
-          const pairNeed = getF2LPairDeficit(data, ctx, fbTargetPairs);
-          if (Number.isFinite(crossBound) && crossBound >= 0) {
-            return Math.max(crossBound, pairNeed);
-          }
-          const e = countOrbitMismatches(
-            data.EDGES,
-            ctx.solvedData.EDGES,
-            ctx.bottomEdgePositions,
-            true,
-            true,
-          );
-          const crossFallback = stageHeuristicFromMismatch(e.pieceMismatch, e.orientationMismatch);
-          return Math.max(crossFallback, pairNeed);
+          return getRouxFbBlockLowerBound(data, ctx, fbTargetPairs);
         },
         mismatch(data) {
-          const e = countOrbitMismatches(
-            data.EDGES,
-            ctx.solvedData.EDGES,
-            ctx.bottomEdgePositions,
-            true,
-            true,
-          );
-          const pairNeed = getF2LPairDeficit(data, ctx, fbTargetPairs);
+          const pairNeed = getRouxFbPairDeficit(data, ctx, fbTargetPairs);
           return {
-            pieceMismatch: e.pieceMismatch + pairNeed * 2,
-            orientationMismatch: e.orientationMismatch,
+            pieceMismatch: pairNeed * 2,
+            orientationMismatch: 0,
           };
         },
         key(data) {
@@ -1796,6 +2241,9 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         name: "SB",
         displayName: "SB",
         formulaKeys: ["F2L"],
+        skipFormulaDb: false,
+        customSearch: solveRouxSbCustomSearch,
+        customSearchFallback: "continue",
         maxDepth: normalizeDepth(options.sbMaxDepth, profile.f2lMaxDepth),
         formulaMaxSteps: normalizeDepth(
           options.sbFormulaMaxSteps,
@@ -1814,13 +2262,19 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         ),
         formulaMaxAttempts: normalizeDepth(
           options.sbFormulaMaxAttempts,
-          normalizeDepth(options.f2lFormulaMaxAttempts, Math.max(profile.f2lFormulaMaxAttempts, 420000)),
+          normalizeDepth(options.f2lFormulaMaxAttempts, Math.max(profile.f2lFormulaMaxAttempts, 520000)),
         ),
-        searchMaxDepth: normalizeDepth(options.sbSearchMaxDepth, 13),
-        nodeLimit: normalizeDepth(options.sbNodeLimit, 760000),
+        searchMaxDepth: normalizeDepth(options.sbSearchMaxDepth, 14),
+        nodeLimit: normalizeDepth(options.sbNodeLimit, 980000),
+        sbBridgeFallback: options.sbBridgeFallback !== false,
+        sbBridgeFrontierLimit: Math.max(8, normalizeDepth(options.sbBridgeFrontierLimit, 24)),
+        sbBridgeDepthCap: normalizeDepth(options.sbBridgeDepthCap, 8),
+        sbBridgeMinDepth: normalizeDepth(options.sbBridgeMinDepth, 3),
+        sbBridgeNodeLimit: normalizeDepth(options.sbBridgeNodeLimit, 900000),
         moveIndices: ctx.noDMoveIndices,
+        movePriorityByIndex: getRouxSbMovePriorityByMoveIndex(ctx),
         isSolved(data) {
-          return isCrossWithF2LPairTarget(data, ctx, sbTargetPairs);
+          return isRouxF2BSolved(data, ctx) || getF2LPairProgress(data, ctx) >= sbTargetPairs;
         },
         usePairTable: true,
         enableMoveOrdering: true,
@@ -1842,33 +2296,88 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
               return true;
             }
           }
-          const pairLowerBound = getF2LPairTableLowerBound(data, stageCtx);
-          if (pairLowerBound > remaining) return true;
-          const sbBlockBound = getRouxSbBlockTableLowerBound(data, stageCtx);
-          if (sbBlockBound > remaining) return true;
-          return false;
+          const f2bBound = getRouxSbF2bLowerBound(data, stageCtx, lockedMask);
+          return f2bBound > remaining;
         },
         heuristic(data) {
-          const mismatch = getF2LMismatch(data);
-          const mismatchBound = stageHeuristicFromMismatch(
-            mismatch.pieceMismatch,
-            mismatch.orientationMismatch,
-          );
-          const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
-          const sbBlockBound = getRouxSbBlockTableLowerBound(data, ctx);
-          if (pairNeed === 0) return 0;
-          return Math.max(pairNeed, sbBlockBound, Math.min(mismatchBound, pairNeed + 2));
+          const lockedMask =
+            Number.isFinite(this.sbLockedPairMask) && this.sbLockedPairMask > 0
+              ? Math.floor(this.sbLockedPairMask)
+              : 0;
+          return getRouxSbF2bLowerBound(data, ctx, lockedMask);
         },
         mismatch(data) {
-          const mismatch = getF2LMismatch(data);
-          const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
+          const lockedMask =
+            Number.isFinite(this.sbLockedPairMask) && this.sbLockedPairMask > 0
+              ? Math.floor(this.sbLockedPairMask)
+              : 0;
+          const metrics = getRouxSbObjectiveMetrics(data, ctx, lockedMask);
           return {
-            pieceMismatch: mismatch.pieceMismatch + pairNeed,
-            orientationMismatch: mismatch.orientationMismatch,
+            pieceMismatch: metrics.totalDeficit * 2,
+            orientationMismatch: 0,
           };
         },
         key(data) {
-          return `SB:${getF2LStateKey(data, ctx)}`;
+          const lockedMask =
+            Number.isFinite(this.sbLockedPairMask) && this.sbLockedPairMask > 0
+              ? Math.floor(this.sbLockedPairMask)
+              : 0;
+          return getRouxSbStateKey(data, ctx, lockedMask);
+        },
+        buildLegacyFallbackStage() {
+          const legacyLockedMask = 0;
+          const legacyLockDepth = 0;
+          return {
+            ...this,
+            skipFormulaDb: false,
+            customSearch: null,
+            customSearchFallback: undefined,
+            searchMaxDepth: Math.max(normalizeDepth(this.searchMaxDepth, this.maxDepth), 15),
+            nodeLimit: Math.max(normalizeDepth(this.nodeLimit, 0), 1600000),
+            formulaMaxAttempts: Math.max(normalizeDepth(this.formulaMaxAttempts, 0), 900000),
+            formulaBeamWidth: Math.max(normalizeDepth(this.formulaBeamWidth, 0), 12),
+            formulaExpansionLimit: Math.max(normalizeDepth(this.formulaExpansionLimit, 0), 20),
+            isSolved(data) {
+              return isCrossWithF2LPairTarget(data, ctx, sbTargetPairs);
+            },
+            prune(data, depth, currentBound, stageCtx) {
+              const remaining = currentBound - depth;
+              if (remaining < 0) return true;
+              if (legacyLockedMask && depth <= legacyLockDepth) {
+                const solvedMask = getSolvedF2LPairMask(data, stageCtx);
+                if ((solvedMask & legacyLockedMask) !== legacyLockedMask) {
+                  return true;
+                }
+              }
+              const pairLowerBound = getF2LPairTableLowerBound(data, stageCtx);
+              if (pairLowerBound > remaining) return true;
+              const sbBlockBound = getRouxSbBlockTableLowerBound(data, stageCtx);
+              if (sbBlockBound > remaining) return true;
+              return false;
+            },
+            heuristic(data) {
+              const mismatch = getF2LMismatch(data);
+              const mismatchBound = stageHeuristicFromMismatch(
+                mismatch.pieceMismatch,
+                mismatch.orientationMismatch,
+              );
+              const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
+              const sbBlockBound = getRouxSbBlockTableLowerBound(data, ctx);
+              if (pairNeed === 0) return 0;
+              return Math.max(pairNeed, sbBlockBound, Math.min(mismatchBound, pairNeed + 2));
+            },
+            mismatch(data) {
+              const mismatch = getF2LMismatch(data);
+              const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
+              return {
+                pieceMismatch: mismatch.pieceMismatch + pairNeed,
+                orientationMismatch: mismatch.orientationMismatch,
+              };
+            },
+            key(data) {
+              return `SB:${getF2LStateKey(data, ctx)}`;
+            },
+          };
         },
       },
       {
@@ -1907,21 +2416,21 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         // 1차는 LSE 전용으로 빠르게 시도하고, PLL 포함은 2차 품질보존 fallback에서 사용한다.
         // LSE DB 커버리지 바깥 케이스를 줄이기 위해 PLL 케이스도 함께 허용한다.
         formulaKeys: ["LSE", "PLL"],
-        secondaryLseQualityFallback: !useRouxFastProfile && options.lsePllFallback !== false,
+        secondaryLseQualityFallback: options.lsePllFallback !== false,
         secondaryFormulaKeys: ["LSE", "PLL"],
         secondaryFormulaAttemptLimit: normalizeDepth(
           options.lseSecondaryFormulaAttemptLimit,
           useRouxFastProfile
-            ? Math.max(normalizeDepth(options.lseFormulaAttemptLimit, 60000), 120000)
+            ? Math.max(normalizeDepth(options.lseFormulaAttemptLimit, 80000), 180000)
             : Math.max(normalizeDepth(options.lseFormulaAttemptLimit, 100000), 180000),
         ),
         secondarySearchMaxDepth: normalizeDepth(
           options.lseSecondarySearchMaxDepth,
-          normalizeDepth(options.lseSearchMaxDepth, useRouxFastProfile ? 10 : 12),
+          normalizeDepth(options.lseSearchMaxDepth, useRouxFastProfile ? 12 : 13),
         ),
         secondaryNodeLimit: normalizeDepth(
           options.lseSecondaryNodeLimit,
-          normalizeDepth(options.lseNodeLimit, useRouxFastProfile ? 220000 : 320000),
+          normalizeDepth(options.lseNodeLimit, useRouxFastProfile ? 760000 : 980000),
         ),
         secondaryMoveIndices: ctx.allMoveIndices,
         formulaPreAufList: FORMULA_AUF,
@@ -3375,7 +3884,7 @@ function collectNoDbPairSequences(
     for (let i = 0; i < moveIndices.length; i++) {
       const moveIndex = moveIndices[i];
       const face = moveFace[moveIndex];
-      if (lastFace !== 6) {
+      if (lastFace !== NO_FACE_INDEX) {
         if (face === lastFace) continue;
         if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
       }
@@ -3388,7 +3897,7 @@ function collectNoDbPairSequences(
     }
   }
 
-  dfs(startState, 0, 6);
+  dfs(startState, 0, NO_FACE_INDEX);
   return { sequences, nodes, timedOut };
 }
 
@@ -3471,6 +3980,40 @@ function solveNoDbF2LStageUsingPairPrune(startPattern, stage, ctx, deadlineTs = 
     );
   }
 
+  function resolveStageMismatch(data) {
+    if (typeof stage?.mismatch === "function") {
+      const mismatch = stage.mismatch(data);
+      if (
+        mismatch &&
+        Number.isFinite(mismatch.pieceMismatch) &&
+        Number.isFinite(mismatch.orientationMismatch)
+      ) {
+        return mismatch;
+      }
+    }
+
+    const cornerMismatch = countOrbitMismatches(
+      data.CORNERS,
+      ctx.solvedData.CORNERS,
+      ctx.f2lCornerPositions,
+      true,
+      true,
+    );
+    const edgeMismatch = countOrbitMismatches(
+      data.EDGES,
+      ctx.solvedData.EDGES,
+      ctx.f2lEdgePositions,
+      true,
+      true,
+    );
+    const targetPairs = Math.max(1, normalizeDepth(stage?.noDbTargetPairs, 4));
+    const pairNeed = Math.max(0, targetPairs - getF2LPairProgress(data, ctx));
+    return {
+      pieceMismatch: cornerMismatch.pieceMismatch + edgeMismatch.pieceMismatch + pairNeed,
+      orientationMismatch: cornerMismatch.orientationMismatch + edgeMismatch.orientationMismatch,
+    };
+  }
+
   function pushFrontier(nextPattern, moves, pairProgress, score) {
     const key = `${pairProgress}:${getF2LStateKey(nextPattern.patternData, ctx)}`;
     const prev = frontierByKey.get(key);
@@ -3508,7 +4051,7 @@ function solveNoDbF2LStageUsingPairPrune(startPattern, stage, ctx, deadlineTs = 
     const nextData = nextPattern.patternData;
     if (!isCrossSolved(nextData, ctx)) return;
     const pairProgress = getF2LPairProgress(nextData, ctx);
-    const mismatch = stage.mismatch(nextData);
+    const mismatch = resolveStageMismatch(nextData);
     const score = scoreCandidate(moves.length, pairProgress, mismatch);
     if (pairProgress >= targetPairs) {
       if (!best || score < best.score || (score === best.score && moves.length < best.moves.length)) {
@@ -3619,6 +4162,626 @@ function solveNoDbF2LStageUsingPairPrune(startPattern, stage, ctx, deadlineTs = 
     depth: best.moves.length,
     nodes: totalNodes,
     bound: best.moves.length,
+  };
+}
+
+function solveRouxSbCustomSearch(startPattern, stage, ctx, deadlineTs = Infinity) {
+  if (isDeadlineExceeded(deadlineTs)) {
+    return {
+      ok: false,
+      reason: `${stage.name.toUpperCase()}_TIMEOUT`,
+      nodes: 0,
+      bound: STAGE_NOT_SET,
+    };
+  }
+
+  const startData = startPattern.patternData;
+  if (isRouxF2BSolved(startData, ctx)) {
+    return { ok: true, moves: [], depth: 0, nodes: 0, bound: 0 };
+  }
+
+  const moveIndices =
+    Array.isArray(stage.moveIndices) && stage.moveIndices.length ? stage.moveIndices : ctx.noDMoveIndices;
+  if (!Array.isArray(moveIndices) || !moveIndices.length) {
+    return {
+      ok: false,
+      reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
+      nodes: 0,
+      bound: STAGE_NOT_SET,
+    };
+  }
+
+  const lockedMask =
+    Number.isFinite(stage.sbLockedPairMask) && stage.sbLockedPairMask > 0
+      ? Math.floor(stage.sbLockedPairMask)
+      : 0;
+  const lockDepthLimit =
+    Number.isFinite(stage.sbLockPreserveDepth) && stage.sbLockPreserveDepth >= 0
+      ? Math.floor(stage.sbLockPreserveDepth)
+      : 2;
+  const searchMaxDepth = Number.isFinite(stage.searchMaxDepth) ? stage.searchMaxDepth : stage.maxDepth;
+  const nodeLimit = Number.isFinite(stage.nodeLimit) ? stage.nodeLimit : 0;
+  const bridgeEnabled = stage.sbBridgeFallback !== false;
+  const bridgeFrontierLimit = Math.max(6, normalizeDepth(stage.sbBridgeFrontierLimit, 24));
+  const bridgeDepthCap = Math.max(2, Math.min(searchMaxDepth, normalizeDepth(stage.sbBridgeDepthCap, 8)));
+  const bridgeMinDepth = Math.min(
+    bridgeDepthCap,
+    Math.max(1, normalizeDepth(stage.sbBridgeMinDepth, 3)),
+  );
+  const bridgeNodeLimit = Math.max(0, normalizeDepth(stage.sbBridgeNodeLimit, 900000));
+  const movePriority = getRouxSbMovePriorityByMoveIndex(ctx);
+
+  const heuristicCache = new Map();
+  const failCache = new Map();
+  const bridgeFrontierByKey = new Map();
+  const trace = [];
+  let solvedPath = null;
+  let nodes = 0;
+  let nodeLimitHit = false;
+  let timedOut = false;
+
+  function lockBroken(data, depth) {
+    if (!lockedMask || depth > lockDepthLimit) return false;
+    return (getSolvedF2LPairMask(data, ctx) & lockedMask) !== lockedMask;
+  }
+
+  function heuristic(data) {
+    const key = getRouxSbStateKey(data, ctx, lockedMask);
+    const cached = heuristicCache.get(key);
+    if (typeof cached === "number") return cached;
+    const h = getRouxSbF2bLowerBound(data, ctx, lockedMask);
+    if (heuristicCache.size > HEURISTIC_CACHE_LIMIT) heuristicCache.clear();
+    heuristicCache.set(key, h);
+    return h;
+  }
+
+  function compareBridgeRank(a, b) {
+    if (a.secondaryDeficit !== b.secondaryDeficit) return a.secondaryDeficit - b.secondaryDeficit;
+    if (a.primaryDeficit !== b.primaryDeficit) return a.primaryDeficit - b.primaryDeficit;
+    if (a.totalDeficit !== b.totalDeficit) return a.totalDeficit - b.totalDeficit;
+    if (a.projectedDepth !== b.projectedDepth) return a.projectedDepth - b.projectedDepth;
+    if (a.depth !== b.depth) return b.depth - a.depth;
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return 0;
+  }
+
+  function trimBridgeFrontier(maxKeep = bridgeFrontierLimit * 2) {
+    if (bridgeFrontierByKey.size <= maxKeep) return;
+    const frontier = Array.from(bridgeFrontierByKey.entries())
+      .sort((a, b) => compareBridgeRank(a[1].rank, b[1].rank) || a[1].moves.length - b[1].moves.length)
+      .slice(0, maxKeep);
+    bridgeFrontierByKey.clear();
+    for (let i = 0; i < frontier.length; i++) {
+      const [key, entry] = frontier[i];
+      bridgeFrontierByKey.set(key, entry);
+    }
+  }
+
+  function maybePushBridgeCandidate(nextPattern, nextData, depth, face, nextH, metrics, priority) {
+    if (!bridgeEnabled) return;
+    if (depth < bridgeMinDepth || depth > bridgeDepthCap) return;
+    if (!metrics) return;
+
+    const rank = {
+      secondaryDeficit: metrics.secondaryDeficit,
+      primaryDeficit: metrics.primaryDeficit,
+      totalDeficit: metrics.totalDeficit,
+      projectedDepth: depth + nextH,
+      depth,
+      priority,
+    };
+    const stateKey = getRouxSbStateKey(nextData, ctx, lockedMask);
+    const frontierKey = `${stateKey}|${face}`;
+    const existing = bridgeFrontierByKey.get(frontierKey);
+    if (existing && compareBridgeRank(existing.rank, rank) <= 0) {
+      return;
+    }
+
+    bridgeFrontierByKey.set(frontierKey, {
+      pattern: nextPattern,
+      moves: trace.slice(0, depth),
+      rank,
+    });
+    if (bridgeFrontierByKey.size > bridgeFrontierLimit * 4) {
+      trimBridgeFrontier();
+    }
+  }
+
+  function dfs(pattern, depth, currentBound, lastFace, presetHeuristic = null) {
+    if ((nodes & 2047) === 0 && isDeadlineExceeded(deadlineTs)) {
+      timedOut = true;
+      return Infinity;
+    }
+    if (timedOut) return Infinity;
+    const data = pattern.patternData;
+    if (isRouxF2BSolved(data, ctx)) {
+      solvedPath = trace.slice();
+      return true;
+    }
+    if (lockBroken(data, depth)) return Infinity;
+    if (typeof stage.prune === "function" && stage.prune(data, depth, currentBound, ctx)) {
+      return Infinity;
+    }
+
+    const h = Number.isFinite(presetHeuristic) ? Math.floor(presetHeuristic) : heuristic(data);
+    const f = depth + h;
+    if (f > currentBound) return f;
+
+    const remaining = currentBound - depth;
+    const stateKey = getRouxSbStateKey(data, ctx, lockedMask);
+    const failKey = `${stateKey}|${lastFace}`;
+    const seenMask = failCache.get(failKey) || 0;
+    const bit = 1 << Math.min(remaining, 30);
+    if (seenMask & bit) return Infinity;
+
+    let minNext = Infinity;
+    const shouldOrderMoves =
+      moveIndices.length > 6 && depth <= normalizeDepth(stage.moveOrderingMaxDepth, 8);
+    if (shouldOrderMoves) {
+      const candidates = [];
+      for (let i = 0; i < moveIndices.length; i++) {
+        if (timedOut) return Infinity;
+        if (nodeLimit > 0 && nodes >= nodeLimit) {
+          nodeLimitHit = true;
+          return Infinity;
+        }
+        const moveIndex = moveIndices[i];
+        const face = ctx.moveFace[moveIndex];
+        if (lastFace !== NO_FACE_INDEX) {
+          if (face === lastFace) continue;
+          if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
+        }
+        nodes += 1;
+        const nextPattern = pattern.applyMove(MOVE_NAMES[moveIndex]);
+        const nextData = nextPattern.patternData;
+        if (lockBroken(nextData, depth + 1)) continue;
+        const nextH = heuristic(nextData);
+        const nextF = depth + 1 + nextH;
+        if (nextF > currentBound) {
+          if (nextF < minNext) minNext = nextF;
+          continue;
+        }
+        const metrics = getRouxSbObjectiveMetrics(nextData, ctx, lockedMask);
+        candidates.push({
+          moveIndex,
+          face,
+          nextPattern,
+          nextData,
+          nextH,
+          priority: movePriority[moveIndex] || 0,
+          metrics,
+          secondaryDeficit: metrics.secondaryDeficit,
+          primaryDeficit: metrics.primaryDeficit,
+          totalDeficit: metrics.totalDeficit,
+        });
+      }
+
+      candidates.sort(
+        (a, b) =>
+          a.nextH - b.nextH ||
+          a.secondaryDeficit - b.secondaryDeficit ||
+          a.primaryDeficit - b.primaryDeficit ||
+          a.totalDeficit - b.totalDeficit ||
+          a.priority - b.priority ||
+          a.moveIndex - b.moveIndex,
+      );
+
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        trace.push(candidate.moveIndex);
+        maybePushBridgeCandidate(
+          candidate.nextPattern,
+          candidate.nextData,
+          depth + 1,
+          candidate.face,
+          candidate.nextH,
+          candidate.metrics,
+          candidate.priority,
+        );
+        const res = dfs(candidate.nextPattern, depth + 1, currentBound, candidate.face, candidate.nextH);
+        if (res === true) {
+          return true;
+        }
+        trace.pop();
+        if (res < minNext) minNext = res;
+      }
+    } else {
+      for (let i = 0; i < moveIndices.length; i++) {
+        if (timedOut) return Infinity;
+        if (nodeLimit > 0 && nodes >= nodeLimit) {
+          nodeLimitHit = true;
+          return Infinity;
+        }
+        const moveIndex = moveIndices[i];
+        const face = ctx.moveFace[moveIndex];
+        if (lastFace !== NO_FACE_INDEX) {
+          if (face === lastFace) continue;
+          if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
+        }
+        nodes += 1;
+        const nextPattern = pattern.applyMove(MOVE_NAMES[moveIndex]);
+        const nextData = nextPattern.patternData;
+        if (lockBroken(nextData, depth + 1)) continue;
+        const nextH = heuristic(nextData);
+        const nextF = depth + 1 + nextH;
+        if (nextF > currentBound) {
+          if (nextF < minNext) minNext = nextF;
+          continue;
+        }
+        const metrics = bridgeEnabled ? getRouxSbObjectiveMetrics(nextData, ctx, lockedMask) : null;
+        trace.push(moveIndex);
+        if (metrics) {
+          maybePushBridgeCandidate(nextPattern, nextData, depth + 1, face, nextH, metrics, movePriority[moveIndex] || 0);
+        }
+        const res = dfs(nextPattern, depth + 1, currentBound, face, nextH);
+        if (res === true) {
+          return true;
+        }
+        trace.pop();
+        if (res < minNext) minNext = res;
+      }
+    }
+
+    if (failCache.size > FAIL_CACHE_LIMIT) failCache.clear();
+    failCache.set(failKey, seenMask | bit);
+    return minNext;
+  }
+
+  let bound = Math.max(heuristic(startData), 1);
+  while (bound <= searchMaxDepth) {
+    if (isDeadlineExceeded(deadlineTs)) {
+      timedOut = true;
+      break;
+    }
+    if (nodeLimitHit) break;
+    trace.length = 0;
+    solvedPath = null;
+    const res = dfs(startPattern, 0, bound, NO_FACE_INDEX);
+    if (res === true) {
+      const moves = Array.isArray(solvedPath) ? solvedPath.slice() : [];
+      return {
+        ok: true,
+        moves: moves.map((idx) => MOVE_NAMES[idx]),
+        depth: moves.length,
+        nodes,
+        bound,
+      };
+    }
+    if (!Number.isFinite(res)) break;
+    bound = res;
+  }
+
+  if (bridgeEnabled && !isDeadlineExceeded(deadlineTs) && bridgeFrontierByKey.size) {
+    const bridgeStage = {
+      name: stage.name,
+      noDbMode: true,
+      maxDepth: Math.max(12, normalizeDepth(stage.searchMaxDepth, stage.maxDepth)),
+      searchMaxDepth: Math.max(12, normalizeDepth(stage.searchMaxDepth, stage.maxDepth)),
+      moveIndices: ctx.noDMoveIndices,
+      noDbPairTryLimit: Math.max(2, normalizeDepth(stage.sbBridgePairTryLimit, 4)),
+      noDbCandidateLimit: Math.max(32, normalizeDepth(stage.sbBridgeCandidateLimit, 120)),
+      noDbSlackDepth: Math.max(2, normalizeDepth(stage.sbBridgeSlackDepth, 5)),
+      noDbTargetPairs: 4,
+      isSolved(data) {
+        return isRouxF2BSolved(data, ctx) || getF2LPairProgress(data, ctx) >= 4;
+      },
+    };
+    const frontier = Array.from(bridgeFrontierByKey.values())
+      .sort((a, b) => compareBridgeRank(a.rank, b.rank) || a.moves.length - b.moves.length)
+      .slice(0, bridgeFrontierLimit);
+    let bridgeNodes = 0;
+    let bridgeNodeLimitHit = false;
+
+    for (let i = 0; i < frontier.length; i++) {
+      if (isDeadlineExceeded(deadlineTs)) {
+        timedOut = true;
+        break;
+      }
+      if (bridgeNodeLimit > 0 && bridgeNodes >= bridgeNodeLimit) {
+        bridgeNodeLimitHit = true;
+        break;
+      }
+
+      const attemptsLeft = Math.max(1, frontier.length - i);
+      let bridgeDeadlineTs = deadlineTs;
+      if (Number.isFinite(deadlineTs)) {
+        const remainingMs = deadlineTs - Date.now();
+        if (remainingMs <= 0) {
+          timedOut = true;
+          break;
+        }
+        const sliceMs = Math.max(750, Math.floor(remainingMs / attemptsLeft));
+        bridgeDeadlineTs = Math.min(deadlineTs, Date.now() + sliceMs);
+      }
+
+      const entry = frontier[i];
+      const bridgeResult = solveNoDbF2LStageUsingPairPrune(
+        entry.pattern,
+        bridgeStage,
+        ctx,
+        bridgeDeadlineTs,
+      );
+      bridgeNodes += bridgeResult?.nodes || 0;
+
+      if (bridgeResult?.ok) {
+        const tailMoves = Array.isArray(bridgeResult.moves) ? bridgeResult.moves : [];
+        const prefixMoves = entry.moves.map((idx) => MOVE_NAMES[idx]);
+        const mergedMoves = simplifyMoves(prefixMoves.concat(tailMoves));
+        return {
+          ok: true,
+          moves: mergedMoves,
+          depth: mergedMoves.length,
+          nodes: nodes + bridgeNodes,
+          bound: mergedMoves.length,
+        };
+      }
+    }
+
+    nodes += bridgeNodes;
+    if (bridgeNodeLimitHit) {
+      nodeLimitHit = true;
+    }
+  }
+
+  return nodeLimitHit
+    ? {
+        ok: false,
+        reason: `${stage.name.toUpperCase()}_SEARCH_LIMIT`,
+        nodes,
+        bound: STAGE_NOT_SET,
+      }
+    : timedOut
+      ? {
+          ok: false,
+          reason: `${stage.name.toUpperCase()}_TIMEOUT`,
+          nodes,
+          bound: STAGE_NOT_SET,
+        }
+      : {
+          ok: false,
+          reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
+          nodes,
+          bound: STAGE_NOT_SET,
+        };
+}
+
+function solveRouxFbWithCandidates(startPattern, stage, ctx, options, deadlineTs = Infinity) {
+  if (isDeadlineExceeded(deadlineTs)) {
+    return {
+      ok: false,
+      reason: `${stage.name.toUpperCase()}_TIMEOUT`,
+      nodes: 0,
+      bound: STAGE_NOT_SET,
+    };
+  }
+
+  const candidateLimit = Math.max(1, Math.min(8, normalizeDepth(options.rouxFbCandidateCount, 3)));
+  const sbEntryMaxLowerBound = Math.max(2, normalizeDepth(options.rouxFbSbEntryMaxLowerBound, 8));
+  const earlyStopDifficulty = Math.max(0, normalizeDepth(options.rouxFbEarlyStopDifficulty, 4));
+  const earlyStopMoveCount = Math.max(4, normalizeDepth(options.rouxFbEarlyStopMoveCount, 10));
+  const variants = [];
+  const seenVariant = new Set();
+  const pushVariant = (label, patch = {}) => {
+    const variantStage = {
+      ...stage,
+      ...patch,
+    };
+    const moveKey = Array.isArray(variantStage.moveIndices)
+      ? variantStage.moveIndices.join(",")
+      : "";
+    const key = `${moveKey}|${normalizeDepth(variantStage.maxDepth, stage.maxDepth)}|${normalizeDepth(
+      variantStage.searchMaxDepth,
+      stage.searchMaxDepth,
+    )}|${normalizeDepth(variantStage.nodeLimit, stage.nodeLimit)}`;
+    if (seenVariant.has(key)) return;
+    seenVariant.add(key);
+    variants.push({ label, stage: variantStage });
+  };
+
+  pushVariant("base", {});
+  if (stage.moveIndices !== ctx.noDMoveIndices) {
+    pushVariant("no-d", {
+      moveIndices: ctx.noDMoveIndices,
+    });
+  }
+  pushVariant("deep", {
+    maxDepth: normalizeDepth(stage.maxDepth, 10) + 1,
+    searchMaxDepth: normalizeDepth(stage.searchMaxDepth, normalizeDepth(stage.maxDepth, 10)) + 1,
+    nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 520000),
+  });
+  if (stage.moveIndices !== ctx.noDMoveIndices) {
+    pushVariant("no-d-deep", {
+      moveIndices: ctx.noDMoveIndices,
+      maxDepth: normalizeDepth(stage.maxDepth, 10) + 1,
+      searchMaxDepth: normalizeDepth(stage.searchMaxDepth, normalizeDepth(stage.maxDepth, 10)) + 1,
+      nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 520000),
+    });
+  }
+  pushVariant("deeper", {
+    maxDepth: normalizeDepth(stage.maxDepth, 10) + 2,
+    searchMaxDepth: normalizeDepth(stage.searchMaxDepth, normalizeDepth(stage.maxDepth, 10)) + 2,
+    nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 900000),
+  });
+  if (stage.moveIndices !== ctx.noDMoveIndices) {
+    pushVariant("no-d-deeper", {
+      moveIndices: ctx.noDMoveIndices,
+      maxDepth: normalizeDepth(stage.maxDepth, 10) + 2,
+      searchMaxDepth: normalizeDepth(stage.searchMaxDepth, normalizeDepth(stage.maxDepth, 10)) + 2,
+      nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 900000),
+    });
+  }
+
+  const legacyFallbackStage =
+    options.rouxFbLegacyFallback === false
+      ? null
+      : {
+          ...stage,
+          isSolved(data) {
+            return isCrossWithF2LPairTarget(data, ctx, 1);
+          },
+          heuristic(data) {
+            const crossBound = getCrossPruneHeuristic(data, ctx);
+            const pairNeed = getF2LPairDeficit(data, ctx, 1);
+            if (Number.isFinite(crossBound) && crossBound >= 0) {
+              return Math.max(crossBound, pairNeed);
+            }
+            const e = countOrbitMismatches(
+              data.EDGES,
+              ctx.solvedData.EDGES,
+              ctx.bottomEdgePositions,
+              true,
+              true,
+            );
+            const crossFallback = stageHeuristicFromMismatch(e.pieceMismatch, e.orientationMismatch);
+            return Math.max(crossFallback, pairNeed);
+          },
+          mismatch(data) {
+            const e = countOrbitMismatches(
+              data.EDGES,
+              ctx.solvedData.EDGES,
+              ctx.bottomEdgePositions,
+              true,
+              true,
+            );
+            const pairNeed = getF2LPairDeficit(data, ctx, 1);
+            return {
+              pieceMismatch: e.pieceMismatch + pairNeed * 2,
+              orientationMismatch: e.orientationMismatch,
+            };
+          },
+          key(data) {
+            return `FB_LEGACY:${getF2LStateKey(data, ctx)}`;
+          },
+          maxDepth: Math.max(normalizeDepth(stage.maxDepth, 10), 10),
+          searchMaxDepth: Math.max(
+            normalizeDepth(stage.searchMaxDepth, normalizeDepth(stage.maxDepth, 10)),
+            10,
+          ),
+          nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 520000),
+        };
+
+  let totalNodes = 0;
+  let bestSuccess = null;
+  let firstFailure = null;
+
+  function considerSuccess(candidateResult, variantOrder) {
+    const internalMoves = Array.isArray(candidateResult.moves) ? candidateResult.moves.slice() : [];
+    const outputMoves = simplifyMoves(internalMoves);
+    const moveText = joinMoves(outputMoves);
+    const endPattern = moveText ? startPattern.applyAlg(moveText) : startPattern;
+    const lockedMask = getRouxPrimaryBlockMask(endPattern.patternData, ctx, 2);
+    const sbLowerBound = getRouxSbF2bLowerBound(endPattern.patternData, ctx, lockedMask);
+    if (sbLowerBound > sbEntryMaxLowerBound) {
+      return false;
+    }
+    const sbBlockBound = getRouxSbBlockTableLowerBound(endPattern.patternData, ctx);
+    const sbDifficulty = estimateRouxSbDifficulty(endPattern.patternData, ctx, lockedMask);
+    const rank = {
+      sbLowerBound,
+      sbDifficulty,
+      sbBlockBound,
+      moveCount: outputMoves.length,
+      bound: Number.isFinite(candidateResult.bound) ? candidateResult.bound : outputMoves.length,
+      variantOrder,
+    };
+    if (
+      !bestSuccess ||
+      rank.sbLowerBound < bestSuccess.rank.sbLowerBound ||
+      (rank.sbLowerBound === bestSuccess.rank.sbLowerBound &&
+        rank.sbDifficulty < bestSuccess.rank.sbDifficulty) ||
+      (rank.sbLowerBound === bestSuccess.rank.sbLowerBound &&
+        rank.sbDifficulty === bestSuccess.rank.sbDifficulty &&
+        rank.sbBlockBound < bestSuccess.rank.sbBlockBound) ||
+      (rank.sbLowerBound === bestSuccess.rank.sbLowerBound &&
+        rank.sbDifficulty === bestSuccess.rank.sbDifficulty &&
+        rank.sbBlockBound === bestSuccess.rank.sbBlockBound &&
+        rank.moveCount < bestSuccess.rank.moveCount) ||
+      (rank.sbLowerBound === bestSuccess.rank.sbLowerBound &&
+        rank.sbDifficulty === bestSuccess.rank.sbDifficulty &&
+        rank.sbBlockBound === bestSuccess.rank.sbBlockBound &&
+        rank.moveCount === bestSuccess.rank.moveCount &&
+        rank.bound < bestSuccess.rank.bound) ||
+      (rank.sbLowerBound === bestSuccess.rank.sbLowerBound &&
+        rank.sbDifficulty === bestSuccess.rank.sbDifficulty &&
+        rank.sbBlockBound === bestSuccess.rank.sbBlockBound &&
+        rank.moveCount === bestSuccess.rank.moveCount &&
+        rank.bound === bestSuccess.rank.bound &&
+        rank.variantOrder < bestSuccess.rank.variantOrder)
+    ) {
+      bestSuccess = {
+        rank,
+        result: {
+          ...candidateResult,
+          moves: outputMoves,
+          depth: outputMoves.length,
+        },
+      };
+      return true;
+    }
+    return false;
+  }
+
+  function isEarlyStopSatisfied() {
+    if (!bestSuccess) return false;
+    if (bestSuccess.rank.sbLowerBound > Math.min(2, sbEntryMaxLowerBound)) return false;
+    if (bestSuccess.rank.sbDifficulty > earlyStopDifficulty) return false;
+    return bestSuccess.rank.moveCount <= earlyStopMoveCount;
+  }
+
+  for (let i = 0; i < variants.length && i < candidateLimit; i++) {
+    if (isDeadlineExceeded(deadlineTs)) break;
+    const attemptsLeft = Math.max(1, Math.min(candidateLimit, variants.length) - i);
+    let candidateDeadlineTs = deadlineTs;
+    if (Number.isFinite(deadlineTs)) {
+      const remainingMs = deadlineTs - Date.now();
+      if (remainingMs <= 0) break;
+      const sliceMs = Math.max(2500, Math.floor(remainingMs / attemptsLeft));
+      candidateDeadlineTs = Math.min(deadlineTs, Date.now() + sliceMs);
+    }
+    const variant = variants[i];
+    const candidateResult = solveStage(startPattern, variant.stage, ctx, candidateDeadlineTs);
+    totalNodes += candidateResult?.nodes || 0;
+
+    if (candidateResult?.ok) {
+      considerSuccess(candidateResult, i);
+      if (isEarlyStopSatisfied()) {
+        break;
+      }
+      continue;
+    }
+
+    if (!firstFailure) {
+      firstFailure = candidateResult;
+    }
+  }
+
+  if (!bestSuccess?.result && legacyFallbackStage && !isDeadlineExceeded(deadlineTs)) {
+    const legacyResult = solveStage(startPattern, legacyFallbackStage, ctx, deadlineTs);
+    totalNodes += legacyResult?.nodes || 0;
+    if (legacyResult?.ok) {
+      considerSuccess(legacyResult, 99);
+    } else if (!firstFailure) {
+      firstFailure = legacyResult;
+    }
+  }
+
+  if (bestSuccess?.result) {
+    return {
+      ...bestSuccess.result,
+      nodes: totalNodes,
+    };
+  }
+  if (firstFailure) {
+    return {
+      ...firstFailure,
+      nodes: Math.max(totalNodes, firstFailure.nodes || 0),
+    };
+  }
+  return {
+    ok: false,
+    reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
+    nodes: totalNodes,
+    bound: STAGE_NOT_SET,
   };
 }
 
@@ -3957,23 +5120,52 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     return { ok: true, moves: [], depth: 0, nodes: 0, bound: 0 };
   }
 
-  const formulaResult = solveStageByFormulaDb(startPattern, stage, ctx, deadlineTs);
+  let preSearchNodes = 0;
+
+  if (typeof stage.customSearch === "function") {
+    const customResult = stage.customSearch(startPattern, stage, ctx, deadlineTs);
+    if (customResult?.ok) {
+      return customResult;
+    }
+    if (customResult) {
+      preSearchNodes += customResult.nodes || 0;
+      const allowFallback = stage.customSearchFallback === "continue";
+      if (!allowFallback || String(customResult.reason || "").endsWith("_TIMEOUT")) {
+        return {
+          ...customResult,
+          nodes: preSearchNodes,
+        };
+      }
+    }
+  }
+
+  let formulaResult = null;
+  if (stage.skipFormulaDb !== true) {
+    formulaResult = solveStageByFormulaDb(startPattern, stage, ctx, deadlineTs);
+  }
   if (formulaResult?.ok) {
-    return formulaResult;
+    return {
+      ...formulaResult,
+      nodes: preSearchNodes + (formulaResult.nodes || 0),
+    };
   }
   if (formulaResult && !formulaResult.ok && String(formulaResult.reason || "").endsWith("_TIMEOUT")) {
-    return formulaResult;
+    return {
+      ...formulaResult,
+      nodes: preSearchNodes + (formulaResult.nodes || 0),
+    };
   }
+  preSearchNodes += formulaResult?.nodes || 0;
+
   if (stage.disableSearchFallback) {
     return {
       ok: false,
       reason: `${stage.name.toUpperCase()}_NOT_FOUND`,
-      nodes: formulaResult?.nodes || 0,
+      nodes: preSearchNodes,
       bound: STAGE_NOT_SET,
     };
   }
 
-  let preSearchNodes = formulaResult?.nodes || 0;
   const canRunLseReducedSearch =
     stage.name === "LSE" &&
     !stage.__lseReducedMoveSearchTried &&
@@ -4034,6 +5226,8 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
 
   let bound = Math.max(heuristic(startData), 1);
   const searchMaxDepth = Number.isFinite(stage.searchMaxDepth) ? stage.searchMaxDepth : stage.maxDepth;
+  const movePriorityByIndex =
+    stage.movePriorityByIndex instanceof Int8Array ? stage.movePriorityByIndex : null;
 
   function dfs(pattern, depth, currentBound, lastFace, presetHeuristic = null) {
     if ((nodes & 2047) === 0 && isDeadlineExceeded(deadlineTs)) {
@@ -4053,7 +5247,7 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     const remaining = currentBound - depth;
     const stateKey = stage.key(data);
     const seenMasks = failCache.get(stateKey);
-    const seenMask = Array.isArray(seenMasks) ? seenMasks[lastFace] || 0 : 0;
+    const seenMask = seenMasks && seenMasks.length > lastFace ? seenMasks[lastFace] || 0 : 0;
     const bit = 1 << Math.min(remaining, 30);
     if (seenMask & bit) return Infinity;
 
@@ -4072,7 +5266,7 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
         }
         const moveIndex = stage.moveIndices[i];
         const face = ctx.moveFace[moveIndex];
-        if (lastFace !== 6) {
+        if (lastFace !== NO_FACE_INDEX) {
           if (face === lastFace) continue;
           if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
         }
@@ -4091,7 +5285,15 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
           nextH,
         });
       }
-      candidates.sort((a, b) => a.nextH - b.nextH || a.moveIndex - b.moveIndex);
+      candidates.sort((a, b) => {
+        if (a.nextH !== b.nextH) return a.nextH - b.nextH;
+        if (movePriorityByIndex) {
+          const ap = movePriorityByIndex[a.moveIndex] || 0;
+          const bp = movePriorityByIndex[b.moveIndex] || 0;
+          if (ap !== bp) return ap - bp;
+        }
+        return a.moveIndex - b.moveIndex;
+      });
       for (let i = 0; i < candidates.length; i++) {
         const candidate = candidates[i];
         const res = dfs(
@@ -4116,7 +5318,7 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
         }
         const moveIndex = stage.moveIndices[i];
         const face = ctx.moveFace[moveIndex];
-        if (lastFace !== 6) {
+        if (lastFace !== NO_FACE_INDEX) {
           if (face === lastFace) continue;
           if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
         }
@@ -4139,8 +5341,8 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
 
     if (failCache.size > FAIL_CACHE_LIMIT) failCache.clear();
     let nextSeenMasks = failCache.get(stateKey);
-    if (!Array.isArray(nextSeenMasks)) {
-      nextSeenMasks = [0, 0, 0, 0, 0, 0, 0];
+    if (!(nextSeenMasks && nextSeenMasks.length > NO_FACE_INDEX)) {
+      nextSeenMasks = new Uint32Array(NO_FACE_INDEX + 1);
       failCache.set(stateKey, nextSeenMasks);
     }
     nextSeenMasks[lastFace] = seenMask | bit;
@@ -4154,7 +5356,7 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     }
     if (nodeLimitHit) break;
     path.length = 0;
-    const res = dfs(startPattern, 0, bound, 6);
+    const res = dfs(startPattern, 0, bound, NO_FACE_INDEX);
     if (res === true) {
       path.reverse();
       return {
@@ -4274,6 +5476,57 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     if (secondaryResult?.nodes > baseFailure.nodes) {
       baseFailure.nodes = secondaryResult.nodes;
     }
+
+    const canRunLseEmergencyFallback =
+      stage.name === "LSE" &&
+      !stage.__lseEmergencyAttempted &&
+      !stage.disableSearchFallback &&
+      !String(secondaryResult?.reason || "").endsWith("_TIMEOUT");
+    if (canRunLseEmergencyFallback) {
+      const emergencyStage = {
+        ...stage,
+        __lseEmergencyAttempted: true,
+        __lseSecondaryAttempted: true,
+        secondaryLseQualityFallback: false,
+        formulaKeys: ["LSE", "PLL"],
+        moveIndices:
+          Array.isArray(stage.secondaryMoveIndices) && stage.secondaryMoveIndices.length
+            ? stage.secondaryMoveIndices
+            : ctx.allMoveIndices,
+        formulaAttemptLimit: Math.max(
+          normalizeDepth(stage.formulaAttemptLimit, 0),
+          normalizeDepth(stage.secondaryFormulaAttemptLimit, 0),
+          260000,
+        ),
+        searchMaxDepth: Math.max(
+          normalizeDepth(stage.searchMaxDepth, stage.maxDepth),
+          normalizeDepth(stage.secondarySearchMaxDepth, stage.maxDepth),
+          15,
+        ),
+        nodeLimit: Math.max(
+          normalizeDepth(stage.nodeLimit, 0),
+          normalizeDepth(stage.secondaryNodeLimit, 0),
+          1400000,
+        ),
+        lseReducedSearchMaxDepth: Math.max(normalizeDepth(stage.lseReducedSearchMaxDepth, 0), 18),
+        lseReducedNodeLimit: Math.max(normalizeDepth(stage.lseReducedNodeLimit, 0), 900000),
+        lseReducedExtendedSearchMaxDepth: Math.max(
+          normalizeDepth(stage.lseReducedExtendedSearchMaxDepth, 0),
+          20,
+        ),
+        lseReducedExtendedNodeLimit: Math.max(
+          normalizeDepth(stage.lseReducedExtendedNodeLimit, 0),
+          1800000,
+        ),
+      };
+      const emergencyResult = solveStage(startPattern, emergencyStage, ctx, deadlineTs);
+      if (emergencyResult?.ok) return emergencyResult;
+      if (emergencyResult?.nodes > baseFailure.nodes) {
+        baseFailure.nodes = emergencyResult.nodes;
+      }
+      return emergencyResult || secondaryResult || baseFailure;
+    }
+
     // Secondary LSE fallback already includes its own relaxed search path.
     // Avoid duplicating deep LSE retries in the outer call.
     return secondaryResult || baseFailure;
@@ -4682,15 +5935,12 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     const stageStartedAtMs = getNowMs();
     const stageStartPattern = currentPattern;
     if (solveMode === "roux" && stage?.name === "SB") {
-      const solvedPairMask = getSolvedF2LPairMask(stageStartPattern.patternData, ctx);
-      const solvedPairCount = popcount32(solvedPairMask);
-      const primarySolvedPairMask =
-        solvedPairCount === 1 && solvedPairMask ? solvedPairMask & -solvedPairMask : 0;
+      const primarySolvedPairMask = getRouxPrimaryBlockMask(stageStartPattern.patternData, ctx, 2);
       if (primarySolvedPairMask) {
         stage = {
           ...stage,
           sbLockedPairMask: primarySolvedPairMask,
-          sbLockPreserveDepth: normalizeDepth(options.sbLockPreserveDepth, 6),
+          sbLockPreserveDepth: normalizeDepth(options.sbLockPreserveDepth, 2),
         };
       }
     }
@@ -4714,7 +5964,12 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       }
     }
 
-    let result = solveStage(stageStartPattern, stage, ctx, stageDeadlineTs);
+    let result =
+      solveMode === "roux" &&
+      stage?.name === "FB" &&
+      options.rouxFbMultiCandidate !== false
+        ? solveRouxFbWithCandidates(stageStartPattern, stage, ctx, options, stageDeadlineTs)
+        : solveStage(stageStartPattern, stage, ctx, stageDeadlineTs);
     if (
       !result.ok &&
       stage?.name === "LSE" &&
@@ -4729,6 +5984,57 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         reason: "LSE_SEARCH_LIMIT",
       };
     }
+
+    const canRunRouxSbLegacyFallback =
+      !result.ok &&
+      solveMode === "roux" &&
+      stage?.name === "SB" &&
+      options.rouxSbLegacyFallback !== false &&
+      typeof stage.buildLegacyFallbackStage === "function" &&
+      (String(result.reason || "").endsWith("_SEARCH_LIMIT") ||
+        String(result.reason || "").endsWith("_NOT_FOUND") ||
+        String(result.reason || "").endsWith("_TIMEOUT"));
+    if (canRunRouxSbLegacyFallback) {
+      const fallbackStageName = "Roux SB Legacy Fallback";
+      if (onStageUpdate) {
+        onStageUpdate({
+          type: "fallback_start",
+          stageName: fallbackStageName,
+          reason: result.reason || "SB_F2B_FAILED",
+        });
+      }
+      const previousNodes = result.nodes || 0;
+      const legacyStage = {
+        ...stage.buildLegacyFallbackStage(),
+        __rouxSbLegacyFallbackAttempted: true,
+      };
+      const legacyResult = solveStage(stageStartPattern, legacyStage, ctx, solveDeadlineTs);
+      const combinedNodes = previousNodes + (legacyResult.nodes || 0);
+      if (legacyResult?.ok) {
+        result = {
+          ...legacyResult,
+          nodes: combinedNodes,
+        };
+        if (onStageUpdate) {
+          onStageUpdate({
+            type: "fallback_done",
+            stageName: fallbackStageName,
+          });
+        }
+      } else {
+        result = {
+          ...result,
+          nodes: combinedNodes,
+        };
+        if (onStageUpdate) {
+          onStageUpdate({
+            type: "fallback_fail",
+            stageName: fallbackStageName,
+          });
+        }
+      }
+    }
+
     totalNodes += result.nodes || 0;
     if (typeof result.bound === "number" && result.bound !== STAGE_NOT_SET) {
       totalBound += result.bound;
