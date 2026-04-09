@@ -2949,7 +2949,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       formulaPreAufList: FORMULA_AUF,
       formulaAttemptLimit: normalizeDepth(
         useZbStages ? options.zblsFormulaAttemptLimit : options.ollFormulaAttemptLimit,
-        useZbStages ? 180000 : 160000,
+        useZbStages ? 180000 : 0,
       ),
       maxDepth: normalizeDepth(options.ollMaxDepth, profile.ollMaxDepth),
       searchMaxDepth: normalizeDepth(
@@ -2958,7 +2958,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       ),
       nodeLimit: normalizeDepth(
         useZbStages ? options.zblsNodeLimit : options.ollNodeLimit,
-        useZbStages ? 2200000 : 1800000,
+        useZbStages ? 2200000 : 0,
       ),
       moveIndices: ctx.noDMoveIndices,
       isSolved: useZbStages ? isZBLSSolved : isOLLSolved,
@@ -3025,7 +3025,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       formulaPostAufList: FORMULA_AUF,
       formulaAttemptLimit: normalizeDepth(
         useZbStages ? options.zbllFormulaAttemptLimit : options.pllFormulaAttemptLimit,
-        useZbStages ? 240000 : 220000,
+        useZbStages ? 240000 : 0,
       ),
       maxDepth: normalizeDepth(options.pllMaxDepth, profile.pllMaxDepth),
       searchMaxDepth: normalizeDepth(
@@ -3034,7 +3034,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       ),
       nodeLimit: normalizeDepth(
         useZbStages ? options.zbllNodeLimit : options.pllNodeLimit,
-        useZbStages ? 2600000 : 2600000,
+        useZbStages ? 2600000 : 0,
       ),
       moveIndices: ctx.noDMoveIndices,
       isSolved: isPLLSolved,
@@ -6560,12 +6560,6 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       } else if (solveMode === "roux" && stage?.name === "LSE") {
         const lseStageTimeBudgetMs = normalizeDepth(options.lseStageTimeBudgetMs, 35000);
         applyStageBudgetCap(lseStageTimeBudgetMs);
-      } else if (solveMode === "strict" && stage?.name === "OLL") {
-        const ollStageTimeBudgetMs = normalizeDepth(options.ollStageTimeBudgetMs, 22000);
-        applyStageBudgetCap(ollStageTimeBudgetMs);
-      } else if (solveMode === "strict" && stage?.name === "PLL") {
-        const pllStageTimeBudgetMs = normalizeDepth(options.pllStageTimeBudgetMs, 26000);
-        applyStageBudgetCap(pllStageTimeBudgetMs);
       } else if (solveMode === "zb" && stage?.name === "ZBLS") {
         const zblsStageTimeBudgetMs = normalizeDepth(options.zblsStageTimeBudgetMs, 30000);
         applyStageBudgetCap(zblsStageTimeBudgetMs);
@@ -6637,34 +6631,6 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         reason: "ZBLL_SEARCH_LIMIT",
       };
     }
-    if (
-      !result.ok &&
-      stage?.name === "OLL" &&
-      result.reason === "OLL_TIMEOUT" &&
-      Number.isFinite(stageDeadlineTs) &&
-      Number.isFinite(solveDeadlineTs) &&
-      stageDeadlineTs < solveDeadlineTs &&
-      !isDeadlineExceeded(solveDeadlineTs)
-    ) {
-      result = {
-        ...result,
-        reason: "OLL_SEARCH_LIMIT",
-      };
-    }
-    if (
-      !result.ok &&
-      stage?.name === "PLL" &&
-      result.reason === "PLL_TIMEOUT" &&
-      Number.isFinite(stageDeadlineTs) &&
-      Number.isFinite(solveDeadlineTs) &&
-      stageDeadlineTs < solveDeadlineTs &&
-      !isDeadlineExceeded(solveDeadlineTs)
-    ) {
-      result = {
-        ...result,
-        reason: "PLL_SEARCH_LIMIT",
-      };
-    }
     const canRunStageBudgetRetry =
       !result.ok &&
       Number.isFinite(stageDeadlineTs) &&
@@ -6674,9 +6640,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       ((stage?.name === "SB" && result.reason === "SB_SEARCH_LIMIT") ||
         (stage?.name === "LSE" && result.reason === "LSE_SEARCH_LIMIT") ||
         (stage?.name === "ZBLS" && result.reason === "ZBLS_SEARCH_LIMIT") ||
-        (stage?.name === "ZBLL" && result.reason === "ZBLL_SEARCH_LIMIT") ||
-        (stage?.name === "OLL" && result.reason === "OLL_SEARCH_LIMIT") ||
-        (stage?.name === "PLL" && result.reason === "PLL_SEARCH_LIMIT"));
+        (stage?.name === "ZBLL" && result.reason === "ZBLL_SEARCH_LIMIT"));
     if (canRunStageBudgetRetry) {
       let stageBudgetRetryMs = 0;
       if (stage?.name === "SB") {
@@ -6687,10 +6651,6 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         stageBudgetRetryMs = normalizeDepth(options.zblsStageRetryTimeBudgetMs, 35000);
       } else if (stage?.name === "ZBLL") {
         stageBudgetRetryMs = normalizeDepth(options.zbllStageRetryTimeBudgetMs, 35000);
-      } else if (stage?.name === "OLL") {
-        stageBudgetRetryMs = normalizeDepth(options.ollStageRetryTimeBudgetMs, 26000);
-      } else if (stage?.name === "PLL") {
-        stageBudgetRetryMs = normalizeDepth(options.pllStageRetryTimeBudgetMs, 32000);
       }
       if (stageBudgetRetryMs > 0) {
         const stageBudgetRetryStageName = `${stageLabel} Budget Retry`;
@@ -6745,20 +6705,6 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
                       nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 3200000),
                       formulaAttemptLimit: Math.max(normalizeDepth(stage.formulaAttemptLimit, 0), 320000),
                     }
-                  : stage?.name === "OLL"
-                    ? {
-                        ...retryStageBase,
-                        searchMaxDepth: normalizeDepth(stage.searchMaxDepth, stage.maxDepth) + 1,
-                        nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 2400000),
-                        formulaAttemptLimit: Math.max(normalizeDepth(stage.formulaAttemptLimit, 0), 200000),
-                      }
-                    : stage?.name === "PLL"
-                      ? {
-                          ...retryStageBase,
-                          searchMaxDepth: normalizeDepth(stage.searchMaxDepth, stage.maxDepth) + 1,
-                          nodeLimit: Math.max(normalizeDepth(stage.nodeLimit, 0), 3400000),
-                          formulaAttemptLimit: Math.max(normalizeDepth(stage.formulaAttemptLimit, 0), 320000),
-                        }
                   : retryStageBase;
         let retryResult = solveStage(stageStartPattern, retryStage, ctx, retryStageDeadlineTs);
         if (
@@ -6815,34 +6761,6 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           retryResult = {
             ...retryResult,
             reason: "ZBLL_SEARCH_LIMIT",
-          };
-        }
-        if (
-          !retryResult.ok &&
-          stage?.name === "OLL" &&
-          retryResult.reason === "OLL_TIMEOUT" &&
-          Number.isFinite(retryStageDeadlineTs) &&
-          Number.isFinite(solveDeadlineTs) &&
-          retryStageDeadlineTs < solveDeadlineTs &&
-          !isDeadlineExceeded(solveDeadlineTs)
-        ) {
-          retryResult = {
-            ...retryResult,
-            reason: "OLL_SEARCH_LIMIT",
-          };
-        }
-        if (
-          !retryResult.ok &&
-          stage?.name === "PLL" &&
-          retryResult.reason === "PLL_TIMEOUT" &&
-          Number.isFinite(retryStageDeadlineTs) &&
-          Number.isFinite(solveDeadlineTs) &&
-          retryStageDeadlineTs < solveDeadlineTs &&
-          !isDeadlineExceeded(solveDeadlineTs)
-        ) {
-          retryResult = {
-            ...retryResult,
-            reason: "PLL_SEARCH_LIMIT",
           };
         }
         const combinedNodes = retryContinuation
