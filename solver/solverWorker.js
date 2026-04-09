@@ -16,7 +16,7 @@ const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const ROUX_PARALLEL_ROTATIONS = Object.freeze(["", "x", "x'", "z", "z'", "x2"]);
 const ROUX_PARALLEL_COLOR_LOCK_ROTATIONS = Object.freeze(["", "y", "y'", "y2"]);
 const ROUX_PARALLEL_MAX_WORKERS = 6;
-const ROUX_PARALLEL_CANDIDATE_TIMEOUT_MS = 30000;
+const ROUX_PARALLEL_CANDIDATE_TIMEOUT_MS = 18000;
 const ROUX_PARALLEL_DEFAULT_SCOUT_CHECKS = 6;
 const ROUX_PARALLEL_EARLY_STOP_MOVE_COUNT = 48;
 const ROUX_PARALLEL_PRIMARY_ENABLED = true;
@@ -471,34 +471,40 @@ async function solveWithInternal3x3RouxParallel(scramble, onProgress, options = 
       subWorkerOptions.enablePostInsertionOptimization = false;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "fbMaxDepth")) {
-        subWorkerOptions.fbMaxDepth = 10;
+      subWorkerOptions.fbMaxDepth = 10;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "sbMaxDepth")) {
-        subWorkerOptions.sbMaxDepth = 12;
+      subWorkerOptions.sbMaxDepth = 13;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "sbSearchMaxDepth")) {
-        subWorkerOptions.sbSearchMaxDepth = 11;
+      subWorkerOptions.sbSearchMaxDepth = 13;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "sbNodeLimit")) {
-        subWorkerOptions.sbNodeLimit = 550000;
+      subWorkerOptions.sbNodeLimit = 1000000;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "cmllSearchMaxDepth")) {
-        subWorkerOptions.cmllSearchMaxDepth = 11;
+      subWorkerOptions.cmllSearchMaxDepth = 12;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "cmllNodeLimit")) {
-        subWorkerOptions.cmllNodeLimit = 420000;
+      subWorkerOptions.cmllNodeLimit = 600000;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "cmllFormulaAttemptLimit")) {
-        subWorkerOptions.cmllFormulaAttemptLimit = 90000;
+      subWorkerOptions.cmllFormulaAttemptLimit = 130000;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "lseSearchMaxDepth")) {
-        subWorkerOptions.lseSearchMaxDepth = 11;
+      subWorkerOptions.lseSearchMaxDepth = 13;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "lseNodeLimit")) {
-        subWorkerOptions.lseNodeLimit = 500000;
+      subWorkerOptions.lseNodeLimit = 1200000;
     }
     if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "lseFormulaAttemptLimit")) {
-        subWorkerOptions.lseFormulaAttemptLimit = 110000;
+      subWorkerOptions.lseFormulaAttemptLimit = 180000;
+    }
+    if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "lseSecondarySearchMaxDepth")) {
+      subWorkerOptions.lseSecondarySearchMaxDepth = 15;
+    }
+    if (!Object.prototype.hasOwnProperty.call(subWorkerOptions, "lseSecondaryNodeLimit")) {
+      subWorkerOptions.lseSecondaryNodeLimit = 2200000;
     }
   }
 
@@ -836,8 +842,8 @@ const api = {
     mode = normalizeMode(mode);
     f2lMethod = normalizeF2LMethod(f2lMethod);
     if (mode === "strict" && !hasExplicitF2LMethod) {
-      // strict 기본값은 hybrid로 두어 최근 F2L 병목을 줄이고 실패 복구율을 높인다.
-      f2lMethod = "hybrid";
+      // strict 기본값은 legacy로 유지해 F2L wall-clock과 last-layer timeout 변동을 줄인다.
+      f2lMethod = "legacy";
     }
     const normalizedEventId = eventId === "333fm" ? "333" : eventId;
     if (!scramble) {

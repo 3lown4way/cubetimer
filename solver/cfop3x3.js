@@ -795,6 +795,27 @@ function tryApplyMoves(pattern, moves) {
   }
 }
 
+function resolveLseOrientationAlignmentMoves(pattern, stage, ctx) {
+  if (stage?.name !== "LSE" || !pattern) return null;
+  if (typeof pattern.experimentalIsSolved !== "function") return null;
+  try {
+    if (!pattern.experimentalIsSolved({ ignorePuzzleOrientation: true })) {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
+
+  for (let i = 0; i < SOLVED_ORIENTATION_ALIGN_ALGS.length; i++) {
+    const alignAlg = SOLVED_ORIENTATION_ALIGN_ALGS[i];
+    const alignedPattern = alignAlg ? tryApplyAlg(pattern, alignAlg) : pattern;
+    if (!alignedPattern) continue;
+    if (!stage.isSolved(alignedPattern.patternData, ctx)) continue;
+    return splitMoves(alignAlg);
+  }
+  return null;
+}
+
 function tryBuildTransformation(pattern, algText) {
   if (!algText) return null;
   try {
@@ -3517,24 +3538,7 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx, deadlineTs = In
   }
 
   function findOrientationAlignmentMoves(pattern) {
-    if (stage.name !== "LSE" || !pattern) return null;
-    if (typeof pattern.experimentalIsSolved !== "function") return null;
-    try {
-      if (!pattern.experimentalIsSolved({ ignorePuzzleOrientation: true })) {
-        return null;
-      }
-    } catch (_) {
-      return null;
-    }
-
-    for (let i = 0; i < SOLVED_ORIENTATION_ALIGN_ALGS.length; i++) {
-      const alignAlg = SOLVED_ORIENTATION_ALIGN_ALGS[i];
-      const alignedPattern = alignAlg ? tryApplyAlg(pattern, alignAlg) : pattern;
-      if (!alignedPattern) continue;
-      if (!stage.isSolved(alignedPattern.patternData, ctx)) continue;
-      return splitMoves(alignAlg);
-    }
-    return null;
+    return resolveLseOrientationAlignmentMoves(pattern, stage, ctx);
   }
 
   function finalizeStageMoves(baseMoves, endPattern, maxDepthLimit) {
@@ -5424,6 +5428,7 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
     const heuristicCache = canResumeContinuation ? continuation.heuristicCache : new Map();
     const failCache = canResumeContinuation ? continuation.failCache : new Map();
     const bestSeenDepthByState = canResumeContinuation ? continuation.bestSeenDepthByState : new Map();
+    const lseOrientationAlignCache = new Map();
     const goalMacroEnabled = stage.lseReducedGoalMacroEnabled !== false;
     const goalMacroDepth = Math.max(2, normalizeDepth(stage.lseReducedGoalMacroDepth, 9));
     const goalMacroNodeLimit = Math.max(
@@ -5529,12 +5534,28 @@ function solveLseReducedMoveSearch(startPattern, stage, ctx, deadlineTs = Infini
       const h = Number.isFinite(presetHeuristic) ? Math.floor(presetHeuristic) : heuristic(data);
       const f = depth + h;
       if (f > currentBound) return f;
+      const remaining = currentBound - depth;
+      const stateKey = stage.key(data);
+      if (stage.name === "LSE" && remaining <= 2) {
+        let alignmentTail;
+        if (lseOrientationAlignCache.has(stateKey)) {
+          alignmentTail = lseOrientationAlignCache.get(stateKey);
+        } else {
+          alignmentTail = resolveLseOrientationAlignmentMoves(pattern, stage, ctx);
+          if (lseOrientationAlignCache.size > HEURISTIC_CACHE_LIMIT) {
+            lseOrientationAlignCache.clear();
+          }
+          lseOrientationAlignCache.set(stateKey, alignmentTail || null);
+        }
+        if (Array.isArray(alignmentTail) && depth + alignmentTail.length <= currentBound) {
+          goalTailOnSuccess = alignmentTail;
+          return true;
+        }
+      }
       if (tryResolveWithGoalMacro(pattern, depth, currentBound)) {
         return true;
       }
 
-      const remaining = currentBound - depth;
-      const stateKey = stage.key(data);
       const failKey = `${stateKey}|${lastFace}`;
       const bestSeenDepth = bestSeenDepthByState.get(failKey);
       if (Number.isFinite(bestSeenDepth) && bestSeenDepth <= depth) return Infinity;
@@ -5926,6 +5947,8 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
   let nodes = canResumeStageContinuation ? Math.max(0, normalizeDepth(resumeContinuation.nodes, 0)) : 0;
   let nodeLimitHit = false;
   let timedOut = false;
+  let lseOrientationTailOnSuccess = null;
+  const lseOrientationAlignCache = new Map();
   const nodeLimit = Number.isFinite(stage.nodeLimit) ? stage.nodeLimit : 0;
   const searchMaxDepth = Number.isFinite(stage.searchMaxDepth) ? stage.searchMaxDepth : stage.maxDepth;
   const movePriorityByIndex =
@@ -5981,7 +6004,10 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     }
     if (timedOut) return Infinity;
     const data = pattern.patternData;
-    if (stage.isSolved(data, ctx)) return true;
+    if (stage.isSolved(data, ctx)) {
+      lseOrientationTailOnSuccess = [];
+      return true;
+    }
     if (typeof stage.prune === "function" && stage.prune(data, depth, currentBound, ctx)) {
       return Infinity;
     }
@@ -5991,6 +6017,22 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
 
     const remaining = currentBound - depth;
     const stateKey = stage.key(data);
+    if (stage.name === "LSE" && remaining <= 2) {
+      let alignmentTail;
+      if (lseOrientationAlignCache.has(stateKey)) {
+        alignmentTail = lseOrientationAlignCache.get(stateKey);
+      } else {
+        alignmentTail = resolveLseOrientationAlignmentMoves(pattern, stage, ctx);
+        if (lseOrientationAlignCache.size > HEURISTIC_CACHE_LIMIT) {
+          lseOrientationAlignCache.clear();
+        }
+        lseOrientationAlignCache.set(stateKey, alignmentTail || null);
+      }
+      if (Array.isArray(alignmentTail) && depth + alignmentTail.length <= currentBound) {
+        lseOrientationTailOnSuccess = alignmentTail;
+        return true;
+      }
+    }
     const failKey = `${stateKey}|${lastFace}`;
     const bestSeenDepth = bestSeenDepthByState.get(failKey);
     if (Number.isFinite(bestSeenDepth) && bestSeenDepth <= depth) return Infinity;
@@ -6106,16 +6148,22 @@ function solveStage(startPattern, stage, ctx, deadlineTs = Infinity) {
     }
     if (nodeLimitHit) break;
     path.length = 0;
+    lseOrientationTailOnSuccess = null;
     bestSeenDepthByState.clear();
     const res = dfs(startPattern, 0, bound, NO_FACE_INDEX);
     if (res === true) {
       path.reverse();
+      const baseMoves = path.map((idx) => MOVE_NAMES[idx]);
+      const fullMoves =
+        Array.isArray(lseOrientationTailOnSuccess) && lseOrientationTailOnSuccess.length
+          ? baseMoves.concat(lseOrientationTailOnSuccess)
+          : baseMoves;
       return {
         ok: true,
-        moves: path.map((idx) => MOVE_NAMES[idx]),
-        depth: path.length,
+        moves: fullMoves,
+        depth: fullMoves.length,
         nodes: nodes + preSearchNodes,
-        bound,
+        bound: fullMoves.length,
       };
     }
     if (!Number.isFinite(res)) break;
