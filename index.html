@@ -10,6 +10,7 @@
           "scramble-display": "./vendor/scramble-display/index.js",
           "cubing/scramble": "./vendor/cubing/scramble/index.js",
           "cubing/alg": "./vendor/cubing/alg/index.js",
+          "cubing/notation": "./vendor/cubing/notation/index.js",
           "cubing/puzzles": "./vendor/cubing/puzzles/index.js",
           "cubing/twisty": "./vendor/cubing/twisty/index.js",
           "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
@@ -186,7 +187,6 @@
                   탐색 모드
                   <select id="solverModeSelect">
                     <option value="strict">CFOP 단계형 (빠름)</option>
-                    <option value="roux">Roux Hybrid (실험)</option>
                     <option value="zb">ZB Hybrid (실험)</option>
                     <option value="fmc">FMC 스타일 (짧은 해 우선)</option>
                     <option value="optimal">최소 수 우선 (느릴 수 있음)</option>
@@ -200,7 +200,6 @@
               </div>
               <section id="solverVisualPanel" class="solver-visual" hidden>
                 <div class="solver-visual-header">
-                  <h3>FMC 3D 진행</h3>
                   <span id="solverStepLabel" class="solver-step-label">0/0 수</span>
                 </div>
                 <div id="solverTwistyHost" class="solver-twisty-host"></div>

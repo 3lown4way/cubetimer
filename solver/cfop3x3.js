@@ -2,7 +2,6 @@ import { getDefaultPattern } from "./context.js";
 import { MOVE_NAMES } from "./moves.js";
 import { SCDB_CFOP_ALGS } from "./scdbCfopAlgs.js";
 import { ZB_FORMULAS } from "./zbDataset.js";
-import { ROUX_FORMULAS } from "./rouxDataset.js";
 
 const FACE_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
 const OPPOSITE_FACE = [3, 4, 5, 0, 1, 2];
@@ -44,19 +43,6 @@ const FAST_CFOP_PROFILE = {
   ollMaxDepth: 12,
   pllMaxDepth: 18,
 };
-const ROUX_PROFILE = {
-  crossMaxDepth: 10,
-  f2lMaxDepth: 38,
-  f2lFormulaMaxSteps: 12,
-  f2lFormulaBeamWidth: 7,
-  f2lFormulaExpansionLimit: 12,
-  f2lFormulaMaxAttempts: 240000,
-  f2lSearchMaxDepth: 10,
-  f2lNodeLimit: 200000,
-  ollMaxDepth: 18,
-  pllMaxDepth: 24,
-};
-const ROUX_ORIENTATION_SWEEP_CANDIDATES = Object.freeze(["", "x", "x'", "z", "z'", "x2"]);
 const POST_OPT_MOVE_NAMES = MOVE_NAMES.slice();
 const CROSS_STATE_COUNT = 190080; // 12P4 * 2^4
 const CROSS_RANK_FACTORS = [990, 90, 9, 1];
@@ -86,6 +72,7 @@ const CROSS_EDGE_TARGETS = {
 };
 let f2lCaseLibraryPromise = null;
 const formulaValidityCache = new Map();
+const formulaListCache = new Map();
 const singleStageFormulaCaseLibraryCache = new Map();
 const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 12;
 
@@ -890,7 +877,6 @@ function getCrossRotationCandidates(color) {
 
 function normalizeSolveMode(mode) {
   const normalized = String(mode || "strict").toLowerCase();
-  if (normalized === "roux") return "roux";
   if (normalized === "zb") return "zb";
   return "strict";
 }
@@ -900,7 +886,6 @@ function normalizeF2LMethod(method) {
 }
 
 function getCfopProfile(mode) {
-  if (mode === "roux") return ROUX_PROFILE;
   return STRICT_CFOP_PROFILE;
 }
 
@@ -995,7 +980,7 @@ function normalizeNonNegativeDepth(value, fallback) {
 }
 
 function maybePostOptimizeMoves(startPattern, moves, solveMode, options, ctx) {
-  const enabledByMode = solveMode === "roux";
+  const enabledByMode = false;
   const enabled =
     options?.enablePostInsertionOptimization === true ||
     (enabledByMode && options?.enablePostInsertionOptimization !== false);
@@ -1301,7 +1286,6 @@ function isPLLSolved(data, ctx) {
 }
 
 function getStageDefinitions(options, ctx, profile, solveMode) {
-  const useRouxStages = solveMode === "roux";
   const useZbStages = solveMode === "zb";
   const crossStageName = useZbStages ? "XCross" : "Cross";
   const crossTargetPairs = useZbStages ? 1 : 0;
@@ -1332,164 +1316,6 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       pieceMismatch: c.pieceMismatch + e.pieceMismatch,
       orientationMismatch: c.orientationMismatch + e.orientationMismatch,
     };
-  }
-
-  if (useRouxStages) {
-    const fbTargetPairs = 1;
-    const sbTargetPairs = 4;
-    return [
-      {
-        name: "FB",
-        displayName: "FB",
-        maxDepth: normalizeDepth(options.fbMaxDepth, profile.crossMaxDepth),
-        moveIndices: ctx.allMoveIndices,
-        isSolved(data) {
-          return isCrossWithF2LPairTarget(data, ctx, fbTargetPairs);
-        },
-        heuristic(data) {
-          const crossBound = getCrossPruneHeuristic(data, ctx);
-          const pairNeed = getF2LPairDeficit(data, ctx, fbTargetPairs);
-          if (Number.isFinite(crossBound) && crossBound >= 0) {
-            return Math.max(crossBound, pairNeed);
-          }
-          const e = countOrbitMismatches(
-            data.EDGES,
-            ctx.solvedData.EDGES,
-            ctx.bottomEdgePositions,
-            true,
-            true,
-          );
-          const crossFallback = stageHeuristicFromMismatch(e.pieceMismatch, e.orientationMismatch);
-          return Math.max(crossFallback, pairNeed);
-        },
-        mismatch(data) {
-          const e = countOrbitMismatches(
-            data.EDGES,
-            ctx.solvedData.EDGES,
-            ctx.bottomEdgePositions,
-            true,
-            true,
-          );
-          const pairNeed = getF2LPairDeficit(data, ctx, fbTargetPairs);
-          return {
-            pieceMismatch: e.pieceMismatch + pairNeed * 2,
-            orientationMismatch: e.orientationMismatch,
-          };
-        },
-        key(data) {
-          return `FB:${getF2LStateKey(data, ctx)}`;
-        },
-      },
-      {
-        name: "SB",
-        displayName: "SB",
-        formulaKeys: ["F2L"],
-        maxDepth: normalizeDepth(options.sbMaxDepth, profile.f2lMaxDepth),
-        formulaMaxSteps: normalizeDepth(options.f2lFormulaMaxSteps, profile.f2lFormulaMaxSteps),
-        formulaBeamWidth: normalizeDepth(options.f2lFormulaBeamWidth, profile.f2lFormulaBeamWidth),
-        formulaExpansionLimit: normalizeDepth(
-          options.f2lFormulaExpansionLimit,
-          profile.f2lFormulaExpansionLimit,
-        ),
-        formulaMaxAttempts: normalizeDepth(options.f2lFormulaMaxAttempts, profile.f2lFormulaMaxAttempts),
-        searchMaxDepth: normalizeDepth(options.sbSearchMaxDepth, 9),
-        nodeLimit: normalizeDepth(options.sbNodeLimit, 180000),
-        moveIndices: ctx.noDMoveIndices,
-        isSolved(data) {
-          return isCrossWithF2LPairTarget(data, ctx, sbTargetPairs);
-        },
-        usePairTable: false,
-        heuristic(data) {
-          const mismatch = getF2LMismatch(data);
-          const mismatchBound = stageHeuristicFromMismatch(
-            mismatch.pieceMismatch,
-            mismatch.orientationMismatch,
-          );
-          const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
-          if (pairNeed === 0) return 0;
-          return Math.max(pairNeed, Math.min(mismatchBound, pairNeed + 2));
-        },
-        mismatch(data) {
-          const mismatch = getF2LMismatch(data);
-          const pairNeed = getF2LPairDeficit(data, ctx, sbTargetPairs);
-          return {
-            pieceMismatch: mismatch.pieceMismatch + pairNeed,
-            orientationMismatch: mismatch.orientationMismatch,
-          };
-        },
-        key(data) {
-          return `SB:${getF2LStateKey(data, ctx)}`;
-        },
-      },
-      {
-        name: "CMLL",
-        displayName: "CMLL",
-        formulaKeys: ["CMLL", "OLL", "PLL"],
-        formulaPreAufList: FORMULA_AUF,
-        formulaPostAufList: [""],
-        formulaAttemptLimit: normalizeDepth(options.cmllFormulaAttemptLimit, 80000),
-        maxDepth: normalizeDepth(options.cmllMaxDepth, profile.ollMaxDepth),
-        searchMaxDepth: normalizeDepth(options.cmllSearchMaxDepth, 11),
-        nodeLimit: normalizeDepth(options.cmllNodeLimit, 320000),
-        moveIndices: ctx.noDMoveIndices,
-        isSolved: isCMLLSolved,
-        mismatch(data) {
-          const c = countOrbitMismatches(
-            data.CORNERS,
-            ctx.solvedData.CORNERS,
-            [0, 1, 2, 3, 4, 5, 6, 7],
-            true,
-            true,
-          );
-          return {
-            pieceMismatch: c.pieceMismatch,
-            orientationMismatch: c.orientationMismatch,
-          };
-        },
-        key(data) {
-          const c = buildKeyForOrbit(data.CORNERS, [0, 1, 2, 3, 4, 5, 6, 7], true, true);
-          return `CMLL:C:${c}`;
-        },
-      },
-      {
-        name: "LSE",
-        displayName: "LSE",
-        formulaKeys: ["LSE", "PLL"],
-        formulaPreAufList: FORMULA_AUF,
-        formulaPostAufList: FORMULA_AUF,
-        formulaAttemptLimit: normalizeDepth(options.lseFormulaAttemptLimit, 65000),
-        maxDepth: normalizeDepth(options.lseMaxDepth, profile.pllMaxDepth),
-        searchMaxDepth: normalizeDepth(options.lseSearchMaxDepth, 12),
-        nodeLimit: normalizeDepth(options.lseNodeLimit, 320000),
-        moveIndices: ctx.allMoveIndices,
-        isSolved: isPLLSolved,
-        mismatch(data) {
-          const c = countOrbitMismatches(
-            data.CORNERS,
-            ctx.solvedData.CORNERS,
-            [0, 1, 2, 3, 4, 5, 6, 7],
-            true,
-            true,
-          );
-          const e = countOrbitMismatches(
-            data.EDGES,
-            ctx.solvedData.EDGES,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            true,
-            true,
-          );
-          return {
-            pieceMismatch: c.pieceMismatch + e.pieceMismatch,
-            orientationMismatch: c.orientationMismatch + e.orientationMismatch,
-          };
-        },
-        key(data) {
-          const c = buildKeyForOrbit(data.CORNERS, [0, 1, 2, 3, 4, 5, 6, 7], true, true);
-          const e = buildKeyForOrbit(data.EDGES, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], true, true);
-          return `LSE:C:${c}|E:${e}`;
-        },
-      },
-    ];
   }
 
   return [
@@ -1599,9 +1425,9 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       maxDepth: normalizeDepth(options.ollMaxDepth, profile.ollMaxDepth),
       searchMaxDepth: normalizeDepth(
         options.zblsSearchMaxDepth,
-        useZbStages ? 10 : profile.ollMaxDepth,
+        useZbStages ? 8 : profile.ollMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 320000 : 0),
+      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 180000 : 0),
       moveIndices: ctx.noDMoveIndices,
       isSolved: useZbStages ? isZBLSSolved : isOLLSolved,
       mismatch(data) {
@@ -1669,9 +1495,9 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       maxDepth: normalizeDepth(options.pllMaxDepth, profile.pllMaxDepth),
       searchMaxDepth: normalizeDepth(
         options.zbllSearchMaxDepth,
-        useZbStages ? 12 : profile.pllMaxDepth,
+        useZbStages ? 10 : profile.pllMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbStages ? 320000 : 0),
+      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbStages ? 180000 : 0),
       moveIndices: ctx.noDMoveIndices,
       isSolved: isPLLSolved,
       mismatch(data) {
@@ -1709,8 +1535,6 @@ function getFormulaListByKey(key) {
   if (key === "PLL") return SCDB_CFOP_ALGS.PLL || [];
   if (key === "ZBLS") return ZB_FORMULAS.ZBLS || [];
   if (key === "ZBLL") return ZB_FORMULAS.ZBLL || [];
-  if (key === "CMLL") return ROUX_FORMULAS.CMLL || [];
-  if (key === "LSE") return ROUX_FORMULAS.LSE || [];
   return [];
 }
 
@@ -1721,6 +1545,9 @@ function getFormulaListForStage(stageOrName) {
     stageOrName && typeof stageOrName === "object" && Array.isArray(stageOrName.formulaKeys)
       ? stageOrName.formulaKeys
       : [stageName];
+  const cacheKey = `${stageName}::${keys.join("|")}`;
+  const cached = formulaListCache.get(cacheKey);
+  if (cached) return cached;
   const seen = new Set();
   const merged = [];
   for (let i = 0; i < keys.length; i++) {
@@ -1732,13 +1559,17 @@ function getFormulaListForStage(stageOrName) {
       merged.push(alg);
     }
   }
+  formulaListCache.set(cacheKey, merged);
+  if (formulaListCache.size > 24) {
+    const oldest = formulaListCache.keys().next().value;
+    if (oldest !== undefined) formulaListCache.delete(oldest);
+  }
   return merged;
 }
 
 function shouldUseSingleStageCaseLibrary(stage, formulas) {
   if (!stage || !Array.isArray(formulas) || !formulas.length) return false;
-  if (stage.name === "CMLL" || stage.name === "LSE") return true;
-  return formulas.length >= 160;
+  return stage.name === "CMLL" || stage.name === "LSE";
 }
 
 function getSingleStageCaseLibraryKey(stage, formulas, preAufList, postAufList) {
@@ -2346,24 +2177,48 @@ function solveStage(startPattern, stage, ctx) {
       };
 
   const canRelaxSearch =
-    (stage.name === "ZBLS" || stage.name === "ZBLL") &&
+    (stage.name === "F2L" ||
+      stage.name === "PLL" ||
+      stage.name === "ZBLS" ||
+      stage.name === "ZBLL") &&
     !stage.__relaxedSearchTried &&
     !stage.disableSearchFallback;
   if (canRelaxSearch) {
+    const baseSearchMaxDepth = normalizeDepth(stage.searchMaxDepth, stage.maxDepth);
+    const baseNodeLimit = normalizeDepth(stage.nodeLimit, 0);
+    const baseFormulaAttemptLimit = normalizeDepth(stage.formulaAttemptLimit, 0);
+
+    let relaxedSearchMaxDepth = baseSearchMaxDepth + 1;
+    let relaxedNodeLimit = baseNodeLimit;
+    let relaxedFormulaAttemptLimit = baseFormulaAttemptLimit;
+
+    if (stage.name === "F2L") {
+      // Rare fallback for tough F2L states: expand search and allow D turns once.
+      relaxedNodeLimit = Math.max(baseNodeLimit, 340000);
+      relaxedFormulaAttemptLimit = Math.max(
+        normalizeDepth(stage.formulaMaxAttempts, 0),
+        320000,
+      );
+    } else if (stage.name === "PLL") {
+      // PLL should usually be formula-fast; if not, allow a wider emergency search.
+      relaxedNodeLimit = Math.max(baseNodeLimit, 220000);
+    } else {
+      // Last-stage ZB failures are usually limit-bound; allow wider move set and deeper cap once.
+      relaxedNodeLimit = Math.max(baseNodeLimit, 240000);
+      relaxedFormulaAttemptLimit = Math.max(
+        baseFormulaAttemptLimit,
+        stage.name === "ZBLS" ? 30000 : 35000,
+      );
+    }
+
     const relaxedStage = {
       ...stage,
       __relaxedSearchTried: true,
-      // Last-stage ZB failures are usually limit-bound; allow wider move set and deeper cap once.
       moveIndices: ctx.allMoveIndices,
-      searchMaxDepth: normalizeDepth(stage.searchMaxDepth, stage.maxDepth) + (stage.name === "ZBLS" ? 2 : 1),
-      nodeLimit: Math.max(
-        normalizeDepth(stage.nodeLimit, 0),
-        stage.name === "ZBLS" ? 900000 : 700000,
-      ),
-      formulaAttemptLimit: Math.max(
-        normalizeDepth(stage.formulaAttemptLimit, 0),
-        stage.name === "ZBLS" ? 70000 : 90000,
-      ),
+      searchMaxDepth: relaxedSearchMaxDepth,
+      nodeLimit: relaxedNodeLimit,
+      formulaAttemptLimit: relaxedFormulaAttemptLimit,
+      formulaMaxAttempts: stage.name === "F2L" ? relaxedFormulaAttemptLimit : stage.formulaMaxAttempts,
     };
     const relaxedResult = solveStage(startPattern, relaxedStage, ctx);
     if (relaxedResult?.ok) return relaxedResult;
@@ -2377,147 +2232,12 @@ function solveStage(startPattern, stage, ctx) {
 export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
   const ctx = await getCfopContext();
   const solveMode = normalizeSolveMode(options.mode);
-  const crossFailureStageName =
-    solveMode === "roux" ? "FB" : solveMode === "zb" ? "XCross" : "Cross";
+  const crossFailureStageName = solveMode === "zb" ? "XCross" : "Cross";
   const modeProfile = getCfopProfile(solveMode);
   const crossColorRaw = normalizeCrossColor(options.crossColor);
   const crossStageLabel = getCrossStageLabel(crossColorRaw);
   const crossRotationCandidates = getCrossRotationCandidates(crossColorRaw).filter(Boolean);
-  if (solveMode === "roux" && !options.__rouxOrientationApplied) {
-    const onStageUpdate = typeof options.onStageUpdate === "function" ? options.onStageUpdate : null;
-    const sweepTriggerMoveCount = normalizeDepth(options.rouxSweepTriggerMoveCount, 50);
-    const sweepStopMoveCount = normalizeDepth(options.rouxSweepStopMoveCount, 44);
-    const sweepMaxChecks = normalizeNonNegativeDepth(options.rouxSweepMaxChecks, 5);
-    const customCandidates =
-      Array.isArray(options.rouxOrientationCandidates) && options.rouxOrientationCandidates.length
-        ? options.rouxOrientationCandidates
-        : ROUX_ORIENTATION_SWEEP_CANDIDATES;
-    const extraRotationCandidates = [];
-    const seenRotation = new Set();
-    for (let i = 0; i < customCandidates.length; i++) {
-      const rotationAlg = String(customCandidates[i] || "").trim();
-      if (!rotationAlg || seenRotation.has(rotationAlg)) continue;
-      seenRotation.add(rotationAlg);
-      extraRotationCandidates.push(rotationAlg);
-    }
-
-    async function runRouxCandidate(rotationAlg, emitProgress) {
-      const transformedPattern = rotationAlg
-        ? transformPatternForCrossColor(pattern, ctx.solvedPattern, rotationAlg)
-        : pattern;
-      if (!transformedPattern) {
-        return {
-          ok: false,
-          reason: "CROSS_COLOR_TRANSFORM_FAILED",
-          stage: "FB",
-          nodes: 0,
-        };
-      }
-      const candidateResult = await solve3x3StrictCfopFromPattern(transformedPattern, {
-        ...options,
-        crossColor: "D",
-        __rouxOrientationApplied: true,
-        __colorNeutralApplied: true,
-        onStageUpdate: emitProgress ? onStageUpdate : undefined,
-      });
-      if (!candidateResult?.ok) return candidateResult;
-
-      const setupMoves = splitMoves(rotationAlg);
-      const cleanupMoves = splitMoves(invertAlg(rotationAlg));
-      const coreMoves = splitMoves(candidateResult.solution || "");
-      let fullMoves = simplifyMoves(setupMoves.concat(coreMoves, cleanupMoves));
-      fullMoves = maybePostOptimizeMoves(pattern, fullMoves, solveMode, options, ctx);
-      const fullSolution = joinMoves(fullMoves);
-      const stages = Array.isArray(candidateResult.stages)
-        ? candidateResult.stages.map((stage) => ({ ...stage }))
-        : [];
-
-      if (stages.length) {
-        if (setupMoves.length) {
-          const firstMoves = simplifyMoves(setupMoves.concat(splitMoves(stages[0].solution || "")));
-          stages[0].solution = joinMoves(firstMoves);
-          stages[0].moveCount = firstMoves.length;
-          stages[0].depth = firstMoves.length;
-        }
-        const lastIndex = stages.length - 1;
-        if (cleanupMoves.length) {
-          const lastMoves = simplifyMoves(splitMoves(stages[lastIndex].solution || "").concat(cleanupMoves));
-          stages[lastIndex].solution = joinMoves(lastMoves);
-          stages[lastIndex].moveCount = lastMoves.length;
-          stages[lastIndex].depth = lastMoves.length;
-        }
-      }
-
-      const finalPattern = fullSolution ? pattern.applyAlg(fullSolution) : pattern;
-      if (!isStrictSolvedPattern(finalPattern, finalPattern.patternData, ctx)) {
-        return {
-          ok: false,
-          reason: "FINAL_STATE_NOT_SOLVED",
-          stage: "LSE",
-          nodes: candidateResult.nodes || 0,
-        };
-      }
-
-      return {
-        ...candidateResult,
-        solution: fullSolution,
-        moveCount: fullMoves.length,
-        stages,
-        solutionDisplay: formatStageDisplay(stages, fullSolution),
-      };
-    }
-
-    const baseResult = await runRouxCandidate("", true);
-    if (!baseResult?.ok) {
-      return baseResult || {
-        ok: false,
-        reason: "ROUX_ORIENTATION_BASE_FAILED",
-        stage: "FB",
-        nodes: 0,
-      };
-    }
-
-    let bestResult = baseResult;
-    if (bestResult.moveCount <= sweepStopMoveCount || bestResult.moveCount <= sweepTriggerMoveCount) {
-      return bestResult;
-    }
-
-    const checkCount = Math.min(extraRotationCandidates.length, sweepMaxChecks);
-    for (let i = 0; i < checkCount; i++) {
-      const rotationAlg = extraRotationCandidates[i];
-      if (onStageUpdate) {
-        onStageUpdate({
-          type: "fallback_start",
-          stageName: `Roux Orientation ${i + 1}/${checkCount}`,
-          reason: rotationAlg || "identity",
-        });
-      }
-      const candidate = await runRouxCandidate(rotationAlg, false);
-      if (!candidate?.ok) {
-        if (onStageUpdate) {
-          onStageUpdate({
-            type: "fallback_fail",
-            stageName: `Roux Orientation ${i + 1}/${checkCount}`,
-          });
-        }
-        continue;
-      }
-      if (onStageUpdate) {
-        onStageUpdate({
-          type: "fallback_done",
-          stageName: `Roux Orientation ${i + 1}/${checkCount}`,
-        });
-      }
-      if (candidate.moveCount < bestResult.moveCount) {
-        bestResult = candidate;
-      }
-      if (bestResult.moveCount <= sweepStopMoveCount) {
-        break;
-      }
-    }
-    return bestResult;
-  }
-  if (solveMode !== "roux" && !options.__colorNeutralApplied && crossRotationCandidates.length) {
+  if (!options.__colorNeutralApplied && crossRotationCandidates.length) {
     const onStageUpdate = typeof options.onStageUpdate === "function" ? options.onStageUpdate : null;
     let selectedRotationAlg = "";
     let childResult = null;
@@ -2602,7 +2322,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       return {
         ok: false,
         reason: "FINAL_STATE_NOT_SOLVED",
-        stage: solveMode === "roux" ? "LSE" : solveMode === "zb" ? "ZBLL" : "PLL",
+        stage: solveMode === "zb" ? "ZBLL" : "PLL",
         nodes: childResult.nodes || 0,
       };
     }
@@ -2814,11 +2534,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     nodes: totalNodes,
     bound: totalBound,
     source:
-      solveMode === "roux"
-        ? "INTERNAL_3X3_ROUX_HYBRID"
-        : solveMode === "zb"
-          ? "INTERNAL_3X3_CFOP_ZB_HYBRID"
-          : "INTERNAL_3X3_CFOP_STRICT",
+      solveMode === "zb" ? "INTERNAL_3X3_CFOP_ZB_HYBRID" : "INTERNAL_3X3_CFOP_STRICT",
     stages: solvedStages,
   };
 }

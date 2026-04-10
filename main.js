@@ -1,6 +1,9 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
 import { TwistyPlayer } from "cubing/twisty";
+import { experimentalCountMetricMoves } from "cubing/notation";
+import { cube3x3x3 } from "cubing/puzzles";
+import { Alg } from "cubing/alg";
 import { proxy, wrap } from "comlink";
 
 const scrambleText = document.getElementById("scrambleText");
@@ -153,7 +156,7 @@ const INSPECTION_KEY = "cubeTimerInspection";
 const HIDE_LIVE_KEY = "cubeTimerHideLiveTime";
 const AO5_KEY = "cubeTimerShowAo5";
 const AO12_KEY = "cubeTimerShowAo12";
-const VALID_SOLVER_MODES = new Set(["strict", "roux", "zb", "fmc", "optimal"]);
+const VALID_SOLVER_MODES = new Set(["strict", "zb", "fmc", "optimal"]);
 
 const ACCENT_THEMES = {
   ocean: {
@@ -307,6 +310,20 @@ function isSolverSupportedEvent(eventId) {
 
 function eventLabel(eventId) {
   return EVENT_LABELS[eventId] || eventId;
+}
+
+function formatSolverMoveCountText(eventId, rawSolutionText) {
+  if (isThreeByThreeFamilyEvent(eventId) && rawSolutionText) {
+    try {
+      const algObj = Alg.fromString(rawSolutionText);
+      const stm = experimentalCountMetricMoves(cube3x3x3, "RBTM", algObj);
+      const htm = experimentalCountMetricMoves(cube3x3x3, "OBTM", algObj);
+      return `STM ${stm}, HTM ${htm}`;
+    } catch (error) {
+      return "0 수";
+    }
+  }
+  return "0 수";
 }
 
 function adjustedTimeMs(solve) {
@@ -1478,7 +1495,7 @@ function resetSolverState() {
     solverSolution.textContent = "-";
   }
   if (solverMoveCount) {
-    solverMoveCount.textContent = "0 수";
+    solverMoveCount.textContent = formatSolverMoveCountText(appState.settings.eventId, "");
   }
   if (solverCopyBtn) {
     solverCopyBtn.disabled = true;
@@ -1495,6 +1512,7 @@ async function solveCurrentScramble() {
   }
   solverBusy = true;
   const runId = ++solverProgressRunId;
+  const eventId = appState.settings.eventId;
   if (solverStatus) {
     const solverMode = appState.settings.solverMode || "strict";
     const f2lMethod = appState.settings.f2lMethod || "legacy";
@@ -1502,8 +1520,6 @@ async function solveCurrentScramble() {
       solverStatus.textContent =
         solverMode === "optimal"
           ? "계산 중... (3x3 최소 수 우선 내부 탐색, 느릴 수 있음)"
-          : solverMode === "roux"
-            ? "계산 중... (3x3 Roux Hybrid: FB + SB + CMLL + LSE + Quality Sweep)"
           : solverMode === "fmc"
             ? "계산 중... (3x3 FMC 스타일 탐색: Direct + NISS + Premove)"
             : `계산 중... (3x3 CFOP 4단계, ${solverMode}, F2L: ${f2lMethod})`;
@@ -1517,7 +1533,7 @@ async function solveCurrentScramble() {
     }
   }
   if (solverSolution) solverSolution.textContent = "";
-  if (solverMoveCount) solverMoveCount.textContent = "0 수";
+  if (solverMoveCount) solverMoveCount.textContent = formatSolverMoveCountText(eventId, "");
   if (solverCopyBtn) solverCopyBtn.disabled = true;
   stopSolverPlayback();
   updateSolverControls();
@@ -1527,7 +1543,6 @@ async function solveCurrentScramble() {
     const stageStartTimes = new Map();
     const stageElapsedTimes = new Map();
     const stageNames = new Map();
-    const eventId = appState.settings.eventId;
     const timeoutMs = isThreeByThreeFamilyEvent(eventId) ? SOLVER_CALL_TIMEOUT_MS_333 : SOLVER_CALL_TIMEOUT_MS_222;
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error(`SOLVER_TIMEOUT_${timeoutMs}MS`)), timeoutMs),
@@ -1621,11 +1636,16 @@ async function solveCurrentScramble() {
         solverSolution.textContent = solutionText || "-";
       }
       if (solverMoveCount) {
-        const moveCount =
-          typeof result.moveCount === "number"
-            ? result.moveCount
-            : rawSolutionText.split(/\s+/).filter(Boolean).length;
-        solverMoveCount.textContent = `${moveCount} 수`;
+        const metricText = formatSolverMoveCountText(eventId, rawSolutionText);
+        if (metricText && metricText !== "0 수") {
+          solverMoveCount.textContent = metricText;
+        } else {
+          const moveCount =
+            typeof result.moveCount === "number"
+              ? result.moveCount
+              : rawSolutionText.split(/\s+/).filter(Boolean).length;
+          solverMoveCount.textContent = `${moveCount} 수`;
+        }
       }
       lastSolution = rawSolutionText;
       lastSolutionDisplay = solutionText || rawSolutionText;
