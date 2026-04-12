@@ -5,6 +5,10 @@ import { experimentalCountMetricMoves } from "cubing/notation";
 import { cube3x3x3 } from "cubing/puzzles";
 import { Alg } from "cubing/alg";
 import { proxy, wrap } from "comlink";
+import {
+  estimateMixedActivationScore as estimateMixedActivationScoreCore,
+  resolvePlayerRecommendedF2LMethod as resolvePlayerRecommendedF2LMethodCore,
+} from "./solver/mixed-cfop-activation.js";
 
 const scrambleText = document.getElementById("scrambleText");
 const scramblePreview = document.getElementById("scramblePreview");
@@ -161,7 +165,7 @@ const INSPECTION_KEY = "cubeTimerInspection";
 const HIDE_LIVE_KEY = "cubeTimerHideLiveTime";
 const AO5_KEY = "cubeTimerShowAo5";
 const AO12_KEY = "cubeTimerShowAo12";
-const VALID_SOLVER_MODES = new Set(["strict", "zb", "fmc", "optimal"]);
+const VALID_SOLVER_MODES = new Set(["strict", "zb", "roux", "fmc", "optimal"]);
 const VALID_F2L_METHODS = new Set(["legacy", "balanced", "rotationless", "low-auf", "speed", "mixed"]);
 const DEFAULT_F2L_METHOD = "legacy";
 const DEFAULT_F2L_METHOD_SOURCE = "default";
@@ -180,7 +184,7 @@ const DEFAULT_MIXED_CFOP_STYLE_PROFILE = Object.freeze({
 });
 const STYLE_PROFILE_DATA_URL = "vendor-data/reco/reco-3x3-style-details.json";
 const STYLE_PROFILE_LEARNED_DATA_URL = "vendor-data/reco/reco-3x3-learned-style-weights.json";
-const STYLE_PROFILE_MIXED_DATA_URL = "vendor-data/reco/reco-3x3-mixed-cfop-profile.json";
+const STYLE_PROFILE_MIXED_DATA_URL = "vendor-data/reco/reco-3x3-top10-mixed-cfop-profile.json";
 
 let styleProfilePlayers = [];
 let styleProfilePlayerMap = new Map();
@@ -1633,6 +1637,29 @@ function formatCaseBiasSummary(caseBias) {
   return `XC ${caseBias.xcrossWeight}, XXC ${caseBias.xxcrossWeight}, ZBLL ${caseBias.zbllWeight}, ZBLS ${caseBias.zblsWeight}`;
 }
 
+function deriveCaseBiasFromMixedSummary(summary) {
+  const xcrossRate = clampRate01(summary?.firstStageXCrossRate ?? summary?.xcrossRate, null);
+  const xxcrossRate = clampRate01(summary?.firstStageXXCrossRate ?? summary?.xxcrossRate, null);
+  const zbllRate = clampRate01(summary?.zbllRate, null);
+  const zblsRate = clampRate01(summary?.zblsRate, null);
+
+  if (xcrossRate === null && xxcrossRate === null && zbllRate === null && zblsRate === null) {
+    return {
+      xcrossWeight: 5,
+      xxcrossWeight: 2,
+      zbllWeight: 3,
+      zblsWeight: 2,
+    };
+  }
+
+  return {
+    xcrossWeight: xcrossRate >= 0.4 ? 6 : xcrossRate >= 0.28 ? 5 : xcrossRate >= 0.16 ? 4 : 2,
+    xxcrossWeight: xxcrossRate >= 0.08 ? 3 : xxcrossRate >= 0.03 ? 2 : 1,
+    zbllWeight: zbllRate >= 0.16 ? 4 : zbllRate >= 0.08 ? 3 : 2,
+    zblsWeight: zblsRate >= 0.06 ? 2 : 1,
+  };
+}
+
 function clampRate01(value, fallback = null) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -1652,22 +1679,7 @@ function formatMixedCfopSummary(summary) {
 }
 
 function estimateMixedActivationScore(profile, mixedProfile, mixedSummary, caseBias) {
-  let score = 0;
-  if (mixedProfile) score += 0.35;
-  if (mixedSummary) {
-    if (Number(mixedSummary.firstStageXCrossRate) >= 0.25) score += 0.2;
-    if (Number(mixedSummary.xxcrossRate) >= 0.05) score += 0.15;
-    if (Number(mixedSummary.zbllRate) >= 0.08) score += 0.25;
-    if (Number(mixedSummary.zblsRate) >= 0.04) score += 0.1;
-  }
-  if (caseBias) {
-    if (caseBias.xcrossWeight >= 4) score += 0.12;
-    if (caseBias.xxcrossWeight >= 3) score += 0.08;
-    if (caseBias.zbllWeight >= 4) score += 0.2;
-    if (caseBias.zblsWeight >= 3) score += 0.08;
-  }
-  if (profile?.mixedEligible === false) score -= 0.5;
-  return score;
+  return estimateMixedActivationScoreCore(profile, mixedProfile, mixedSummary, caseBias);
 }
 
 function applyCaseBiasToStyleProfile(baseProfile, caseBias, mixedSummary = null, crossSamplingCalibration = null) {
@@ -1732,11 +1744,14 @@ function getGlobalSpeedStyleProfile() {
 
 function getGlobalMixedCfopStyleProfile() {
   const profile = normalizeStyleProfileRecord(globalMixedCfopStyleProfile) || DEFAULT_MIXED_CFOP_STYLE_PROFILE;
+  const summary = getGlobalMixedCfopSummary();
   // Mixed CFOP is meant to feel player-like on random scrambles, so we keep
   // a slightly stronger rotation bias than the raw aggregate profile.
   return {
     ...profile,
     rotationWeight: Math.max(profile.rotationWeight, 3),
+    caseBias: profile.caseBias || deriveCaseBiasFromMixedSummary(summary),
+    mixedCfopSummary: summary || null,
   };
 }
 
@@ -1745,34 +1760,7 @@ function getGlobalMixedCfopSummary() {
 }
 
 function resolvePlayerRecommendedF2LMethod(profile) {
-  if (!profile || typeof profile !== "object") return DEFAULT_F2L_METHOD;
-
-  const recommendedRaw = String(profile.recommendedF2LMethod || "").trim().toLowerCase();
-  const normalizedRecommended = VALID_F2L_METHODS.has(recommendedRaw) ? recommendedRaw : "";
-  const forcePureCfop = profile.forcePureCfop === true;
-
-  if (forcePureCfop) {
-    return normalizedRecommended || "legacy";
-  }
-
-  const mixedProfile = normalizeStyleProfileRecord(profile.mixedCfopStyleProfile);
-  const mixedSummary = normalizeMixedCfopSummaryRecord(profile.mixedCfopSummary);
-  const caseBias = normalizeCaseBiasRecord(profile.caseBias);
-  if (mixedProfile || mixedSummary) {
-    if (profile.mixedEligible === false) {
-      return normalizedRecommended || DEFAULT_F2L_METHOD;
-    }
-    if (!caseBias) {
-      return "mixed";
-    }
-    const score = estimateMixedActivationScore(profile, mixedProfile, mixedSummary, caseBias);
-    if (score >= 0.45) {
-      return "mixed";
-    }
-    return normalizedRecommended || DEFAULT_F2L_METHOD;
-  }
-
-  return normalizedRecommended || DEFAULT_F2L_METHOD;
+  return resolvePlayerRecommendedF2LMethodCore(profile);
 }
 
 function renderStylePlayerOptions() {
@@ -1998,41 +1986,46 @@ async function loadStyleProfiles({ force = false } = {}) {
         solver: entry.solver.trim(),
         ...(learnedBySolver.get(String(entry.solver || "").trim()) || {}),
         ...(mixedBySolver.get(String(entry.solver || "").trim()) || {}),
-        learnedStyleProfile:
-          normalizeStyleProfileRecord(learnedBySolver.get(String(entry.solver || "").trim())?.learnedStyleProfile) ||
-          null,
-        speedStyleProfile:
-          normalizeStyleProfileRecord(learnedBySolver.get(String(entry.solver || "").trim())?.speedStyleProfile) ||
-          null,
-        mixedCfopSummary:
-          normalizeMixedCfopSummaryRecord(
-            mixedBySolver.get(String(entry.solver || "").trim())?.mixedCfopStats ||
-              mixedBySolver.get(String(entry.solver || "").trim())?.summary ||
-              mixedBySolver.get(String(entry.solver || "").trim())?.stats,
-          ) || null,
-        mixedCfopStyleProfile:
-          normalizeStyleProfileRecord(
-            mixedBySolver.get(String(entry.solver || "").trim())?.mixedStyleProfile ||
-              mixedBySolver.get(String(entry.solver || "").trim())?.mixedCfopStyleProfile,
-          ) || null,
-        forcePureCfop:
-          mixedBySolver.get(String(entry.solver || "").trim())?.forcePureCfop === true ||
-          entry.forcePureCfop === true,
-        mixedEligible:
-          mixedBySolver.get(String(entry.solver || "").trim())?.mixedEligible !== undefined
-            ? mixedBySolver.get(String(entry.solver || "").trim())?.mixedEligible === true
-            : entry.mixedEligible !== false,
-        caseBias:
-          normalizeCaseBiasRecord(
-            mixedBySolver.get(String(entry.solver || "").trim())?.caseBias ||
-              learnedBySolver.get(String(entry.solver || "").trim())?.caseBias ||
-              entry.caseBias,
-          ) || null,
-        coverage:
-          learnedBySolver.get(String(entry.solver || "").trim())?.coverage ||
-          entry.coverage ||
-          null,
       }))
+      .map((entry) => {
+        const solverName = String(entry.solver || "").trim();
+        const learnedEntry = learnedBySolver.get(solverName) || {};
+        const mixedEntry = mixedBySolver.get(solverName) || {};
+        const mixedCfopSummary =
+          normalizeMixedCfopSummaryRecord(
+            mixedEntry.mixedCfopSummary ||
+              mixedEntry.mixedCfopStats ||
+              mixedEntry.summary ||
+              mixedEntry.stats,
+          ) || null;
+        const mixedCfopStyleProfile =
+          normalizeStyleProfileRecord(mixedEntry.mixedStyleProfile || mixedEntry.mixedCfopStyleProfile) || null;
+        const learnedStyleProfile = normalizeStyleProfileRecord(learnedEntry.learnedStyleProfile) || null;
+        const speedStyleProfile = normalizeStyleProfileRecord(learnedEntry.speedStyleProfile) || null;
+        const mixedCaseBias = mixedEntry.caseBias
+          ? normalizeCaseBiasRecord(mixedEntry.caseBias)
+          : mixedCfopSummary
+            ? deriveCaseBiasFromMixedSummary(mixedCfopSummary)
+            : null;
+        const caseBias =
+          normalizeCaseBiasRecord(
+            mixedCaseBias ||
+              learnedEntry.caseBias ||
+              entry.caseBias,
+          ) || null;
+        return {
+          ...entry,
+          learnedStyleProfile,
+          speedStyleProfile,
+          mixedCfopSummary,
+          mixedCfopStyleProfile,
+          forcePureCfop: mixedEntry.forcePureCfop === true || entry.forcePureCfop === true,
+          mixedEligible:
+            mixedEntry.mixedEligible !== undefined ? mixedEntry.mixedEligible === true : entry.mixedEligible !== false,
+          caseBias,
+          coverage: learnedEntry.coverage || entry.coverage || null,
+        };
+      })
       .sort((a, b) => {
         const countDiff = Number(b.solveCount || 0) - Number(a.solveCount || 0);
         if (countDiff !== 0) return countDiff;
@@ -2094,6 +2087,8 @@ async function solveCurrentScramble() {
           ? "계산 중... (3x3 최소 수 우선 내부 탐색, 느릴 수 있음)"
           : solverMode === "fmc"
             ? "계산 중... (3x3 FMC 스타일 탐색: Direct + NISS + Premove)"
+            : solverMode === "roux"
+              ? "계산 중... (3x3 Roux 4단계: FB → SB → CMLL → LSE)"
             : `계산 중... (3x3 CFOP 4단계, ${solverMode}, F2L: ${f2lMethod})`;
     } else if (appState.settings.eventId === "222") {
       solverStatus.textContent =

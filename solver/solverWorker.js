@@ -3,6 +3,7 @@ import { solveWithFMCSearch } from "./fmcSolver.js";
 import { solveWithExternalSearch } from "./externalSolver.js";
 import { getF2LTransitionProfileForSolver } from "./f2lTransitionProfiles.js";
 import { getF2LDownstreamProfileForSolver } from "./f2lDownstreamProfiles.js";
+import { getLlFamilyCalibrationForSolver } from "./llFamilyCalibration.js";
 import { ensureWasmSolverReady, solveWithWasmIfAvailable } from "./wasmSolver.js";
 
 let solver2x2ModulesPromise = null;
@@ -10,6 +11,7 @@ let solver3x3PhaseModulesPromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
 const STRICT_CFOP_TIMEOUT_MS = 45000;
 const STRICT_CFOP_RETRY_TIMEOUT_MS = 25000;
+const ROUX_333_TIMEOUT_MS = 90000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const STRICT_F2L_RETRY_OPTIONS = [
@@ -47,6 +49,9 @@ function normalizeMode(mode) {
   }
   if (mode === "zb") {
     return "zb";
+  }
+  if (mode === "roux") {
+    return "roux";
   }
   return "strict";
 }
@@ -286,6 +291,23 @@ async function prewarmInternal3x3StrictCfop() {
   }
 }
 
+async function prewarmInternal3x3Roux() {
+  try {
+    const [{ getDefaultPattern }, { solve3x3RouxFromPattern }] = await Promise.all([
+      import("./context.js"),
+      import("./roux3x3.js"),
+    ]);
+    const solved = await getDefaultPattern("333");
+    await solve3x3RouxFromPattern(solved, {
+      fbMaxDepth: 1,
+      sbMaxDepth: 1,
+      cmllMaxDepth: 1,
+    });
+  } catch (_) {
+    // Warmup failure should not block solving.
+  }
+}
+
 async function prewarmInternal3x3Phase() {
   try {
     if (!solver3x3PhaseModulesPromise) {
@@ -310,6 +332,7 @@ const api = {
     // Start async warmups early; don't block ping response.
     void prewarmInternal2x2();
     void prewarmInternal3x3StrictCfop();
+    void prewarmInternal3x3Roux();
     void prewarmInternal3x3Phase();
     void prewarmWasmSolver();
     return { ok: true };
@@ -383,6 +406,12 @@ const api = {
       } catch (_) {
         f2lDownstreamProfile = null;
       }
+    }
+    let llFamilyCalibration = null;
+    try {
+      llFamilyCalibration = await getLlFamilyCalibrationForSolver(transitionProfileSolver);
+    } catch (_) {
+      llFamilyCalibration = null;
     }
     const hasStyleOptIn =
       (styleProfile !== undefined && styleProfile !== null) || f2lMethod !== "legacy";
@@ -503,6 +532,27 @@ const api = {
             return fmcResult || { ok: false, reason: isOptimalMode ? "OPTIMAL_FAILED" : "FMC_FAILED" };
           }
         }
+        if (mode === "roux") {
+          const [{ getDefaultPattern }, { solve3x3RouxFromPattern }] = await Promise.all([
+            import("./context.js"),
+            import("./roux3x3.js"),
+          ]);
+          const solved = await getDefaultPattern("333");
+          const pattern = solved.applyAlg(scramble);
+          return await withTimeout(
+            solve3x3RouxFromPattern(pattern, {
+              deadlineTs: Date.now() + Math.max(1000, ROUX_333_TIMEOUT_MS - 250),
+              onStageUpdate(progress) {
+                if (typeof onProgress === "function") {
+                  try {
+                    void onProgress(progress);
+                  } catch (_) {}
+                }
+              },
+            }),
+            ROUX_333_TIMEOUT_MS,
+          ).catch(() => ({ ok: false, reason: "ROUX_TIMEOUT", stage: "ROUX" }));
+        }
         if (typeof onProgress === "function") {
           try {
             void onProgress({ type: "queue", eventId: "333" });
@@ -516,6 +566,7 @@ const api = {
           f2lTransitionProfile,
           enableStyleFallback,
           f2lDownstreamProfile,
+          llFamilyCalibration,
           enableOllPllPrediction,
           ollPllPredictionWeight,
         });

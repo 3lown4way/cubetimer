@@ -1,0 +1,1555 @@
+{
+  "generatedAt": "2026-04-12T02:35:29.979Z",
+  "currentBenchmark": {
+    "source": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-style-benchmark.json",
+    "sampleCount": 5629,
+    "parameters": {
+      "offset": 0,
+      "limit": 5629,
+      "perSolverLimit": 0,
+      "scrambleConcurrency": 3,
+      "crossColor": "D",
+      "timeoutMs": 5000,
+      "maxWorkers": 6,
+      "timeoutMsByMode": {
+        "strict": 3000,
+        "zb": 5000
+      },
+      "styles": [
+        "legacy",
+        "balanced",
+        "rotationless",
+        "low-auf"
+      ],
+      "modes": [
+        "strict",
+        "zb"
+      ],
+      "methods": [
+        "CFOP",
+        "ZB"
+      ],
+      "includedMethods": [
+        "CFOP",
+        "ZB"
+      ],
+      "samplingPolicy": "batched-offset-limit",
+      "acceptanceGate": "balanced",
+      "batchSize": 100,
+      "batchCount": 57,
+      "batchMode": true,
+      "batchInputs": [
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0000-0099.json",
+          "offset": 0,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0000-0099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0100-0199.json",
+          "offset": 100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0100-0199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0200-0299.json",
+          "offset": 200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0200-0299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0300-0399.json",
+          "offset": 300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0300-0399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0400-0499.json",
+          "offset": 400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0400-0499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0500-0599.json",
+          "offset": 500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0500-0599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0600-0699.json",
+          "offset": 600,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0600-0699.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0700-0799.json",
+          "offset": 700,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0700-0799.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0800-0899.json",
+          "offset": 800,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0800-0899.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-0900-0999.json",
+          "offset": 900,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-0900-0999.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1000-1099.json",
+          "offset": 1000,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1000-1099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1100-1199.json",
+          "offset": 1100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1100-1199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1200-1299.json",
+          "offset": 1200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1200-1299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1300-1399.json",
+          "offset": 1300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1300-1399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1400-1499.json",
+          "offset": 1400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1400-1499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1500-1599.json",
+          "offset": 1500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1500-1599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1600-1699.json",
+          "offset": 1600,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1600-1699.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1700-1799.json",
+          "offset": 1700,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1700-1799.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1800-1899.json",
+          "offset": 1800,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1800-1899.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-1900-1999.json",
+          "offset": 1900,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-1900-1999.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2000-2099.json",
+          "offset": 2000,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2000-2099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2100-2199.json",
+          "offset": 2100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2100-2199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2200-2299.json",
+          "offset": 2200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2200-2299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2300-2399.json",
+          "offset": 2300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2300-2399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2400-2499.json",
+          "offset": 2400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2400-2499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2500-2599.json",
+          "offset": 2500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2500-2599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2600-2699.json",
+          "offset": 2600,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2600-2699.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2700-2799.json",
+          "offset": 2700,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2700-2799.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2800-2899.json",
+          "offset": 2800,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2800-2899.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-2900-2999.json",
+          "offset": 2900,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-2900-2999.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3000-3099.json",
+          "offset": 3000,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3000-3099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3100-3199.json",
+          "offset": 3100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3100-3199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3200-3299.json",
+          "offset": 3200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3200-3299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3300-3399.json",
+          "offset": 3300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3300-3399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3400-3499.json",
+          "offset": 3400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3400-3499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3500-3599.json",
+          "offset": 3500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3500-3599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3600-3699.json",
+          "offset": 3600,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3600-3699.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3700-3799.json",
+          "offset": 3700,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3700-3799.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3800-3899.json",
+          "offset": 3800,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3800-3899.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-3900-3999.json",
+          "offset": 3900,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-3900-3999.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4000-4099.json",
+          "offset": 4000,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4000-4099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4100-4199.json",
+          "offset": 4100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4100-4199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4200-4299.json",
+          "offset": 4200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4200-4299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4300-4399.json",
+          "offset": 4300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4300-4399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4400-4499.json",
+          "offset": 4400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4400-4499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4500-4599.json",
+          "offset": 4500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4500-4599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4600-4699.json",
+          "offset": 4600,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4600-4699.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4700-4799.json",
+          "offset": 4700,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4700-4799.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4800-4899.json",
+          "offset": 4800,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4800-4899.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-4900-4999.json",
+          "offset": 4900,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-4900-4999.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5000-5099.json",
+          "offset": 5000,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5000-5099.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5100-5199.json",
+          "offset": 5100,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5100-5199.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5200-5299.json",
+          "offset": 5200,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5200-5299.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5300-5399.json",
+          "offset": 5300,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5300-5399.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5400-5499.json",
+          "offset": 5400,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5400-5499.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5500-5599.json",
+          "offset": 5500,
+          "limit": 100,
+          "sampleCount": 100,
+          "label": "strict-5500-5599.json"
+        },
+        {
+          "file": "vendor-data/reco/style-benchmark-batches/strict/strict-5600-5628.json",
+          "offset": 5600,
+          "limit": 29,
+          "sampleCount": 29,
+          "label": "strict-5600-5628.json"
+        }
+      ]
+    }
+  },
+  "baselineBenchmark": {
+    "source": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-all-3x3-top10-style-benchmark.json",
+    "sampleCount": 100,
+    "parameters": {
+      "offset": 0,
+      "limit": 50,
+      "perSolverLimit": 10,
+      "scrambleConcurrency": 2,
+      "crossColor": "D",
+      "timeoutMs": 9000,
+      "styles": [
+        "legacy",
+        "balanced",
+        "rotationless",
+        "low-auf"
+      ],
+      "modes": [
+        "strict"
+      ],
+      "methods": [
+        "CFOP",
+        "ZB"
+      ],
+      "acceptanceGate": "balanced"
+    }
+  },
+  "comparisons": {
+    "strict": {
+      "mode": "strict",
+      "currentOverall": {
+        "attempted": 22516,
+        "solved": 18883,
+        "failed": 3633,
+        "successRate": 0.8386480724817907,
+        "avgMoveCountSolved": 62.896361806916275,
+        "p50MoveCountSolved": 63,
+        "p90MoveCountSolved": 71,
+        "avgDurationMs": 1958.6358145318884,
+        "p50DurationMs": 1665,
+        "p95DurationMs": 3650,
+        "avgNodesSolved": 415303.32420695864,
+        "avgStyleDistanceToTarget": 962562.9078511929,
+        "p50StyleDistanceToTarget": 950001.9101877449
+      },
+      "baselineOverall": {
+        "attempted": 400,
+        "solved": 240,
+        "failed": 160,
+        "successRate": 0.6,
+        "avgMoveCountSolved": 61.075,
+        "p50MoveCountSolved": 62,
+        "p90MoveCountSolved": 67,
+        "avgDurationMs": 4727.475,
+        "p50DurationMs": 1958,
+        "p95DurationMs": 9151,
+        "avgNodesSolved": 186551.15416666667,
+        "avgStyleDistanceToTarget": 971876.3909385572,
+        "p50StyleDistanceToTarget": 950001.4488222825
+      },
+      "overallDelta": {
+        "deltaSuccessRate": 0.23864807248179076,
+        "deltaAvgMoveCountSolved": 1.821361806916272,
+        "deltaAvgDurationMs": -2768.839185468112,
+        "deltaP95DurationMs": -5501,
+        "deltaStyleDistanceToTarget": -9313.483087364351
+      },
+      "styles": [
+        {
+          "style": "legacy",
+          "current": {
+            "style": "legacy",
+            "attempted": 5629,
+            "solved": 4742,
+            "failed": 887,
+            "successRate": 0.8424231657488008,
+            "avgMoveCountSolved": 61.23808519611978,
+            "p50MoveCountSolved": 61,
+            "p90MoveCountSolved": 69,
+            "avgDurationMs": 1908.6198259015812,
+            "p50DurationMs": 1636,
+            "p95DurationMs": 3650,
+            "avgNodesSolved": 415539.02108814847,
+            "avgStyleDistanceToTarget": 897945.1421843997,
+            "p50StyleDistanceToTarget": 900000.9496280728,
+            "failureReasonCounts": {
+              "TIMEOUT_3000MS": 120,
+              "TIMEOUT_3500MS": 766,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 887
+            }
+          },
+          "baseline": {
+            "style": "legacy",
+            "attempted": 100,
+            "solved": 58,
+            "failed": 42,
+            "successRate": 0.58,
+            "avgMoveCountSolved": 58.56896551724138,
+            "p50MoveCountSolved": 58,
+            "p90MoveCountSolved": 65,
+            "avgDurationMs": 4859.25,
+            "p50DurationMs": 1958,
+            "p95DurationMs": 9152,
+            "avgNodesSolved": 185099.89655172414,
+            "avgStyleDistanceToTarget": 889081.770691828,
+            "p50StyleDistanceToTarget": 875001.5219305636,
+            "failureReasonCounts": {
+              "TIMEOUT_9000MS": 42
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 42
+            }
+          },
+          "delta": {
+            "deltaSuccessRate": 0.26242316574880087,
+            "deltaAvgMoveCountSolved": 2.6691196788784026,
+            "deltaAvgDurationMs": -2950.630174098419,
+            "deltaP95DurationMs": -5502,
+            "deltaP95DurationRatio": -0.6011800699300699,
+            "deltaStyleDistanceToTarget": 8863.371492571663,
+            "deltaStyleDistancePct": 0.009969129707467448
+          }
+        },
+        {
+          "style": "balanced",
+          "current": {
+            "style": "balanced",
+            "attempted": 5629,
+            "solved": 4728,
+            "failed": 901,
+            "successRate": 0.8399360454787707,
+            "avgMoveCountSolved": 62.753807106598984,
+            "p50MoveCountSolved": 63,
+            "p90MoveCountSolved": 70,
+            "avgDurationMs": 1914.4370225617338,
+            "p50DurationMs": 1626,
+            "p95DurationMs": 3650,
+            "avgNodesSolved": 414892.9496615905,
+            "avgStyleDistanceToTarget": 951651.0897220158,
+            "p50StyleDistanceToTarget": 950001.0531530309,
+            "failureReasonCounts": {
+              "TIMEOUT_3000MS": 134,
+              "TIMEOUT_3500MS": 766,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 901
+            }
+          },
+          "baseline": {
+            "style": "balanced",
+            "attempted": 100,
+            "solved": 61,
+            "failed": 39,
+            "successRate": 0.61,
+            "avgMoveCountSolved": 61.540983606557376,
+            "p50MoveCountSolved": 63,
+            "p90MoveCountSolved": 67,
+            "avgDurationMs": 4637.13,
+            "p50DurationMs": 1935,
+            "p95DurationMs": 9151,
+            "avgNodesSolved": 185253.73770491802,
+            "avgStyleDistanceToTarget": 960930.328973195,
+            "p50StyleDistanceToTarget": 950000.8117665598,
+            "failureReasonCounts": {
+              "TIMEOUT_9000MS": 39
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 39
+            }
+          },
+          "delta": {
+            "deltaSuccessRate": 0.22993604547877067,
+            "deltaAvgMoveCountSolved": 1.2128235000416083,
+            "deltaAvgDurationMs": -2722.692977438266,
+            "deltaP95DurationMs": -5501,
+            "deltaP95DurationRatio": -0.6011364878155393,
+            "deltaStyleDistanceToTarget": -9279.239251179271,
+            "deltaStyleDistancePct": -0.009656516160848654
+          }
+        },
+        {
+          "style": "rotationless",
+          "current": {
+            "style": "rotationless",
+            "attempted": 5629,
+            "solved": 4782,
+            "failed": 847,
+            "successRate": 0.8495292236631728,
+            "avgMoveCountSolved": 62.96131325805103,
+            "p50MoveCountSolved": 63,
+            "p90MoveCountSolved": 70,
+            "avgDurationMs": 1932.4197903712916,
+            "p50DurationMs": 1650,
+            "p95DurationMs": 3650,
+            "avgNodesSolved": 415858.71392722713,
+            "avgStyleDistanceToTarget": 970395.5228402494,
+            "p50StyleDistanceToTarget": 966667.9552834665,
+            "failureReasonCounts": {
+              "TIMEOUT_3000MS": 143,
+              "TIMEOUT_3500MS": 703,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 847
+            }
+          },
+          "baseline": {
+            "style": "rotationless",
+            "attempted": 100,
+            "solved": 63,
+            "failed": 37,
+            "successRate": 0.63,
+            "avgMoveCountSolved": 61.34920634920635,
+            "p50MoveCountSolved": 63,
+            "p90MoveCountSolved": 67,
+            "avgDurationMs": 4478,
+            "p50DurationMs": 1852,
+            "p95DurationMs": 9151,
+            "avgNodesSolved": 188732.39682539683,
+            "avgStyleDistanceToTarget": 983599.2576194939,
+            "p50StyleDistanceToTarget": 950002.1585774908,
+            "failureReasonCounts": {
+              "TIMEOUT_9000MS": 37
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 37
+            }
+          },
+          "delta": {
+            "deltaSuccessRate": 0.21952922366317285,
+            "deltaAvgMoveCountSolved": 1.6121069088446802,
+            "deltaAvgDurationMs": -2545.5802096287084,
+            "deltaP95DurationMs": -5501,
+            "deltaP95DurationRatio": -0.6011364878155393,
+            "deltaStyleDistanceToTarget": -13203.734779244522,
+            "deltaStyleDistancePct": -0.013423896649942773
+          }
+        },
+        {
+          "style": "low-auf",
+          "current": {
+            "style": "low-auf",
+            "attempted": 5629,
+            "solved": 4631,
+            "failed": 998,
+            "successRate": 0.8227038550364185,
+            "avgMoveCountSolved": 64.67285683437703,
+            "p50MoveCountSolved": 65,
+            "p90MoveCountSolved": 72,
+            "avgDurationMs": 2079.066619292947,
+            "p50DurationMs": 1772,
+            "p95DurationMs": 3650,
+            "avgNodesSolved": 414907.4491470525,
+            "avgStyleDistanceToTarget": 1031781.857544362,
+            "p50StyleDistanceToTarget": 1025001.3262693314,
+            "failureReasonCounts": {
+              "TIMEOUT_3000MS": 174,
+              "TIMEOUT_3500MS": 823,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 998
+            }
+          },
+          "baseline": {
+            "style": "low-auf",
+            "attempted": 100,
+            "solved": 58,
+            "failed": 42,
+            "successRate": 0.58,
+            "avgMoveCountSolved": 62.793103448275865,
+            "p50MoveCountSolved": 63,
+            "p90MoveCountSolved": 68,
+            "avgDurationMs": 4935.52,
+            "p50DurationMs": 1993,
+            "p95DurationMs": 9151,
+            "avgNodesSolved": 186997.6551724138,
+            "avgStyleDistanceToTarget": 1053449.7901333554,
+            "p50StyleDistanceToTarget": 1025001.2011240674,
+            "failureReasonCounts": {
+              "TIMEOUT_9000MS": 42
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 42
+            }
+          },
+          "delta": {
+            "deltaSuccessRate": 0.24270385503641856,
+            "deltaAvgMoveCountSolved": 1.8797533861011644,
+            "deltaAvgDurationMs": -2856.4533807070534,
+            "deltaP95DurationMs": -5501,
+            "deltaP95DurationRatio": -0.6011364878155393,
+            "deltaStyleDistanceToTarget": -21667.932588993455,
+            "deltaStyleDistancePct": -0.020568548014282227
+          }
+        }
+      ]
+    },
+    "zb": {
+      "mode": "zb",
+      "currentOverall": {
+        "attempted": 22516,
+        "solved": 19891,
+        "failed": 2625,
+        "successRate": 0.8834162373423343,
+        "avgMoveCountSolved": 60.60258408325373,
+        "p50MoveCountSolved": 61,
+        "p90MoveCountSolved": 70,
+        "avgDurationMs": 2410.056448747557,
+        "p50DurationMs": 2222,
+        "p95DurationMs": 5150,
+        "avgNodesSolved": 299053.50178472674,
+        "avgStyleDistanceToTarget": 1582252.2216059058,
+        "p50StyleDistanceToTarget": 1550001.2817412517
+      },
+      "baselineOverall": null,
+      "overallDelta": null,
+      "styles": [
+        {
+          "style": "legacy",
+          "current": {
+            "style": "legacy",
+            "attempted": 5629,
+            "solved": 4957,
+            "failed": 672,
+            "successRate": 0.8806182270385504,
+            "avgMoveCountSolved": 59.40689933427476,
+            "p50MoveCountSolved": 59,
+            "p90MoveCountSolved": 69,
+            "avgDurationMs": 2376.7255285130573,
+            "p50DurationMs": 2203,
+            "p95DurationMs": 5150,
+            "avgNodesSolved": 300381.90296550334,
+            "avgStyleDistanceToTarget": 1506184.5181290838,
+            "p50StyleDistanceToTarget": 1500000.9472438996,
+            "failureReasonCounts": {
+              "TIMEOUT_5000MS": 551,
+              "F2L2_SEARCH_LIMIT": 119,
+              "ZBLS_SEARCH_LIMIT": 1,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 552,
+              "F2L2": 119,
+              "ZBLS": 1
+            }
+          },
+          "baseline": null,
+          "delta": null
+        },
+        {
+          "style": "balanced",
+          "current": {
+            "style": "balanced",
+            "attempted": 5629,
+            "solved": 4945,
+            "failed": 684,
+            "successRate": 0.8784864096642387,
+            "avgMoveCountSolved": 60.71607684529828,
+            "p50MoveCountSolved": 61,
+            "p90MoveCountSolved": 70,
+            "avgDurationMs": 2403.0371291526026,
+            "p50DurationMs": 2216,
+            "p95DurationMs": 5150,
+            "avgNodesSolved": 299442.3783619818,
+            "avgStyleDistanceToTarget": 1587433.24416614,
+            "p50StyleDistanceToTarget": 1550001.6361423687,
+            "failureReasonCounts": {
+              "F2L2_SEARCH_LIMIT": 107,
+              "TIMEOUT_5000MS": 573,
+              "ZBLS_SEARCH_LIMIT": 3,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "F2L2": 107,
+              "UNKNOWN": 574,
+              "ZBLS": 3
+            }
+          },
+          "baseline": null,
+          "delta": null
+        },
+        {
+          "style": "rotationless",
+          "current": {
+            "style": "rotationless",
+            "attempted": 5629,
+            "solved": 4974,
+            "failed": 655,
+            "successRate": 0.8836383016521585,
+            "avgMoveCountSolved": 60.71391234418979,
+            "p50MoveCountSolved": 61,
+            "p90MoveCountSolved": 70,
+            "avgDurationMs": 2414.7583940309114,
+            "p50DurationMs": 2224,
+            "p95DurationMs": 5150,
+            "avgNodesSolved": 299080.0896662646,
+            "avgStyleDistanceToTarget": 1590481.9890285055,
+            "p50StyleDistanceToTarget": 1550001.5857848092,
+            "failureReasonCounts": {
+              "TIMEOUT_5000MS": 547,
+              "F2L2_SEARCH_LIMIT": 102,
+              "ZBLS_SEARCH_LIMIT": 5,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 548,
+              "F2L2": 102,
+              "ZBLS": 5
+            }
+          },
+          "baseline": null,
+          "delta": null
+        },
+        {
+          "style": "low-auf",
+          "current": {
+            "style": "low-auf",
+            "attempted": 5629,
+            "solved": 5015,
+            "failed": 614,
+            "successRate": 0.8909220110143897,
+            "avgMoveCountSolved": 61.562113659022934,
+            "p50MoveCountSolved": 62,
+            "p90MoveCountSolved": 71,
+            "avgDurationMs": 2445.704743293658,
+            "p50DurationMs": 2251,
+            "p95DurationMs": 5150,
+            "avgNodesSolved": 297330.64486540377,
+            "avgStyleDistanceToTarget": 1644168.9885877764,
+            "p50StyleDistanceToTarget": 1600001.4956900144,
+            "failureReasonCounts": {
+              "TIMEOUT_5000MS": 504,
+              "F2L2_SEARCH_LIMIT": 103,
+              "ZBLS_SEARCH_LIMIT": 6,
+              "Unexpected character: %": 1
+            },
+            "failureStageCounts": {
+              "UNKNOWN": 505,
+              "F2L2": 103,
+              "ZBLS": 6
+            }
+          },
+          "baseline": null,
+          "delta": null
+        }
+      ]
+    }
+  },
+  "mixedActivation": {
+    "threshold": 0.45,
+    "playerCount": 15,
+    "selectedCount": 10,
+    "selectedPlayers": [
+      {
+        "solver": "Tymon Kolasiński",
+        "activationScore": 0.94,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 756,
+        "caseBias": {
+          "xcrossWeight": 8,
+          "xxcrossWeight": 3,
+          "zbllWeight": 5,
+          "zblsWeight": 3
+        },
+        "mixedCfopSummary": {
+          "solveCount": 756,
+          "xcrossRate": 0.62963,
+          "xxcrossRate": 0.190476,
+          "crossRate": 0.384921,
+          "firstStageXCrossRate": 0.62963,
+          "firstStageXXCrossRate": 0.190476,
+          "firstStageXxCrossRate": 0.190476,
+          "firstStageCrossRate": 0.37037,
+          "zbllRate": 0.383598,
+          "zblsRate": 0.218254
+        }
+      },
+      {
+        "solver": "Leo Borromeo",
+        "activationScore": 0.78,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 238,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 3,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 238,
+          "xcrossRate": 0.470588,
+          "xxcrossRate": 0.117647,
+          "crossRate": 0.529412,
+          "firstStageXCrossRate": 0.470588,
+          "firstStageXXCrossRate": 0.117647,
+          "firstStageXxCrossRate": 0.117647,
+          "firstStageCrossRate": 0.529412,
+          "zbllRate": 0.138655,
+          "zblsRate": 0.046218
+        }
+      },
+      {
+        "solver": "Kyle Santucci",
+        "activationScore": 0.72,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 197,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 4,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 197,
+          "xcrossRate": 0.335025,
+          "xxcrossRate": 0.030457,
+          "crossRate": 0.664975,
+          "firstStageXCrossRate": 0.335025,
+          "firstStageXXCrossRate": 0.030457,
+          "firstStageXxCrossRate": 0.030457,
+          "firstStageCrossRate": 0.664975,
+          "zbllRate": 0.253807,
+          "zblsRate": 0.06599
+        }
+      },
+      {
+        "solver": "Yiheng Wang",
+        "activationScore": 0.57,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 584,
+        "caseBias": {
+          "xcrossWeight": 7,
+          "xxcrossWeight": 2,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 584,
+          "xcrossRate": 0.546233,
+          "xxcrossRate": 0.085616,
+          "crossRate": 0.469178,
+          "firstStageXCrossRate": 0.546233,
+          "firstStageXXCrossRate": 0.085616,
+          "firstStageXxCrossRate": 0.085616,
+          "firstStageCrossRate": 0.44863,
+          "zbllRate": 0.010274,
+          "zblsRate": 0.008562
+        }
+      },
+      {
+        "solver": "Seung Hyuk Nahm",
+        "activationScore": 0.56,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 272,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 272,
+          "xcrossRate": 0.327206,
+          "xxcrossRate": 0.011029,
+          "crossRate": 0.683824,
+          "firstStageXCrossRate": 0.327206,
+          "firstStageXXCrossRate": 0.011029,
+          "firstStageXxCrossRate": 0.011029,
+          "firstStageCrossRate": 0.672794,
+          "zbllRate": 0.198529,
+          "zblsRate": 0.055147
+        }
+      },
+      {
+        "solver": "Xuanyi Geng",
+        "activationScore": 0.52,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "ZB",
+        "solveCount": 240,
+        "caseBias": {
+          "xcrossWeight": 1,
+          "xxcrossWeight": 1,
+          "zbllWeight": 11,
+          "zblsWeight": 11
+        },
+        "mixedCfopSummary": {
+          "solveCount": 240,
+          "xcrossRate": 0,
+          "xxcrossRate": 0,
+          "crossRate": 1.045833,
+          "firstStageXCrossRate": 0,
+          "firstStageXXCrossRate": 0,
+          "firstStageXxCrossRate": 0,
+          "firstStageCrossRate": 1,
+          "zbllRate": 0.941667,
+          "zblsRate": 0.933333
+        }
+      },
+      {
+        "solver": "Matty Hiroto Inaba",
+        "activationScore": 0.5,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 515,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 2,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 515,
+          "xcrossRate": 0.473786,
+          "xxcrossRate": 0.060194,
+          "crossRate": 0.549515,
+          "firstStageXCrossRate": 0.473786,
+          "firstStageXXCrossRate": 0.060194,
+          "firstStageXxCrossRate": 0.060194,
+          "firstStageCrossRate": 0.526214,
+          "zbllRate": 0.058252,
+          "zblsRate": 0.001942
+        }
+      },
+      {
+        "solver": "Max Park",
+        "activationScore": 0.5,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 959,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 959,
+          "xcrossRate": 0.450469,
+          "xxcrossRate": 0.05318,
+          "crossRate": 0.553702,
+          "firstStageXCrossRate": 0.450469,
+          "firstStageXXCrossRate": 0.05318,
+          "firstStageXxCrossRate": 0.05318,
+          "firstStageCrossRate": 0.548488,
+          "zbllRate": 0.033368,
+          "zblsRate": 0.001043
+        }
+      },
+      {
+        "solver": "Bill Wang",
+        "activationScore": 0.46,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 196,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 196,
+          "xcrossRate": 0.321429,
+          "xxcrossRate": 0.015306,
+          "crossRate": 0.678571,
+          "firstStageXCrossRate": 0.321429,
+          "firstStageXXCrossRate": 0.015306,
+          "firstStageXxCrossRate": 0.015306,
+          "firstStageCrossRate": 0.678571,
+          "zbllRate": 0.153061,
+          "zblsRate": 0
+        }
+      },
+      {
+        "solver": "Feliks Zemdegs",
+        "activationScore": 0.46,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 771,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 771,
+          "xcrossRate": 0.320363,
+          "xxcrossRate": 0.02594,
+          "crossRate": 0.690013,
+          "firstStageXCrossRate": 0.320363,
+          "firstStageXXCrossRate": 0.02594,
+          "firstStageXxCrossRate": 0.02594,
+          "firstStageCrossRate": 0.679637,
+          "zbllRate": 0.155642,
+          "zblsRate": 0.015564
+        }
+      }
+    ],
+    "rows": [
+      {
+        "solver": "Tymon Kolasiński",
+        "activationScore": 0.94,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 756,
+        "caseBias": {
+          "xcrossWeight": 8,
+          "xxcrossWeight": 3,
+          "zbllWeight": 5,
+          "zblsWeight": 3
+        },
+        "mixedCfopSummary": {
+          "solveCount": 756,
+          "xcrossRate": 0.62963,
+          "xxcrossRate": 0.190476,
+          "crossRate": 0.384921,
+          "firstStageXCrossRate": 0.62963,
+          "firstStageXXCrossRate": 0.190476,
+          "firstStageXxCrossRate": 0.190476,
+          "firstStageCrossRate": 0.37037,
+          "zbllRate": 0.383598,
+          "zblsRate": 0.218254
+        }
+      },
+      {
+        "solver": "Leo Borromeo",
+        "activationScore": 0.78,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 238,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 3,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 238,
+          "xcrossRate": 0.470588,
+          "xxcrossRate": 0.117647,
+          "crossRate": 0.529412,
+          "firstStageXCrossRate": 0.470588,
+          "firstStageXXCrossRate": 0.117647,
+          "firstStageXxCrossRate": 0.117647,
+          "firstStageCrossRate": 0.529412,
+          "zbllRate": 0.138655,
+          "zblsRate": 0.046218
+        }
+      },
+      {
+        "solver": "Kyle Santucci",
+        "activationScore": 0.72,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 197,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 4,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 197,
+          "xcrossRate": 0.335025,
+          "xxcrossRate": 0.030457,
+          "crossRate": 0.664975,
+          "firstStageXCrossRate": 0.335025,
+          "firstStageXXCrossRate": 0.030457,
+          "firstStageXxCrossRate": 0.030457,
+          "firstStageCrossRate": 0.664975,
+          "zbllRate": 0.253807,
+          "zblsRate": 0.06599
+        }
+      },
+      {
+        "solver": "Yiheng Wang",
+        "activationScore": 0.57,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 584,
+        "caseBias": {
+          "xcrossWeight": 7,
+          "xxcrossWeight": 2,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 584,
+          "xcrossRate": 0.546233,
+          "xxcrossRate": 0.085616,
+          "crossRate": 0.469178,
+          "firstStageXCrossRate": 0.546233,
+          "firstStageXXCrossRate": 0.085616,
+          "firstStageXxCrossRate": 0.085616,
+          "firstStageCrossRate": 0.44863,
+          "zbllRate": 0.010274,
+          "zblsRate": 0.008562
+        }
+      },
+      {
+        "solver": "Seung Hyuk Nahm",
+        "activationScore": 0.56,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 272,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 2
+        },
+        "mixedCfopSummary": {
+          "solveCount": 272,
+          "xcrossRate": 0.327206,
+          "xxcrossRate": 0.011029,
+          "crossRate": 0.683824,
+          "firstStageXCrossRate": 0.327206,
+          "firstStageXXCrossRate": 0.011029,
+          "firstStageXxCrossRate": 0.011029,
+          "firstStageCrossRate": 0.672794,
+          "zbllRate": 0.198529,
+          "zblsRate": 0.055147
+        }
+      },
+      {
+        "solver": "Xuanyi Geng",
+        "activationScore": 0.52,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "ZB",
+        "solveCount": 240,
+        "caseBias": {
+          "xcrossWeight": 1,
+          "xxcrossWeight": 1,
+          "zbllWeight": 11,
+          "zblsWeight": 11
+        },
+        "mixedCfopSummary": {
+          "solveCount": 240,
+          "xcrossRate": 0,
+          "xxcrossRate": 0,
+          "crossRate": 1.045833,
+          "firstStageXCrossRate": 0,
+          "firstStageXXCrossRate": 0,
+          "firstStageXxCrossRate": 0,
+          "firstStageCrossRate": 1,
+          "zbllRate": 0.941667,
+          "zblsRate": 0.933333
+        }
+      },
+      {
+        "solver": "Matty Hiroto Inaba",
+        "activationScore": 0.5,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 515,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 2,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 515,
+          "xcrossRate": 0.473786,
+          "xxcrossRate": 0.060194,
+          "crossRate": 0.549515,
+          "firstStageXCrossRate": 0.473786,
+          "firstStageXXCrossRate": 0.060194,
+          "firstStageXxCrossRate": 0.060194,
+          "firstStageCrossRate": 0.526214,
+          "zbllRate": 0.058252,
+          "zblsRate": 0.001942
+        }
+      },
+      {
+        "solver": "Max Park",
+        "activationScore": 0.5,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 959,
+        "caseBias": {
+          "xcrossWeight": 6,
+          "xxcrossWeight": 2,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 959,
+          "xcrossRate": 0.450469,
+          "xxcrossRate": 0.05318,
+          "crossRate": 0.553702,
+          "firstStageXCrossRate": 0.450469,
+          "firstStageXXCrossRate": 0.05318,
+          "firstStageXxCrossRate": 0.05318,
+          "firstStageCrossRate": 0.548488,
+          "zbllRate": 0.033368,
+          "zblsRate": 0.001043
+        }
+      },
+      {
+        "solver": "Bill Wang",
+        "activationScore": 0.46,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 196,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 196,
+          "xcrossRate": 0.321429,
+          "xxcrossRate": 0.015306,
+          "crossRate": 0.678571,
+          "firstStageXCrossRate": 0.321429,
+          "firstStageXXCrossRate": 0.015306,
+          "firstStageXxCrossRate": 0.015306,
+          "firstStageCrossRate": 0.678571,
+          "zbllRate": 0.153061,
+          "zblsRate": 0
+        }
+      },
+      {
+        "solver": "Feliks Zemdegs",
+        "activationScore": 0.46,
+        "mixedEligible": true,
+        "recommendedF2LMethod": "mixed",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 771,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 3,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 771,
+          "xcrossRate": 0.320363,
+          "xxcrossRate": 0.02594,
+          "crossRate": 0.690013,
+          "firstStageXCrossRate": 0.320363,
+          "firstStageXXCrossRate": 0.02594,
+          "firstStageXxCrossRate": 0.02594,
+          "firstStageCrossRate": 0.679637,
+          "zbllRate": 0.155642,
+          "zblsRate": 0.015564
+        }
+      },
+      {
+        "solver": "Jayden McNeill",
+        "activationScore": -0.07,
+        "mixedEligible": false,
+        "recommendedF2LMethod": "balanced",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 181,
+        "caseBias": {
+          "xcrossWeight": 4,
+          "xxcrossWeight": 1,
+          "zbllWeight": 2,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 181,
+          "xcrossRate": 0.309392,
+          "xxcrossRate": 0.038674,
+          "crossRate": 0.690608,
+          "firstStageXCrossRate": 0.309392,
+          "firstStageXXCrossRate": 0.038674,
+          "firstStageXxCrossRate": 0.038674,
+          "firstStageCrossRate": 0.690608,
+          "zbllRate": 0.110497,
+          "zblsRate": 0
+        }
+      },
+      {
+        "solver": "Luke Garrett",
+        "activationScore": -0.15,
+        "mixedEligible": false,
+        "recommendedF2LMethod": "balanced",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 310,
+        "caseBias": {
+          "xcrossWeight": 5,
+          "xxcrossWeight": 1,
+          "zbllWeight": 2,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 310,
+          "xcrossRate": 0.36129,
+          "xxcrossRate": 0.03871,
+          "crossRate": 0.654839,
+          "firstStageXCrossRate": 0.36129,
+          "firstStageXXCrossRate": 0.03871,
+          "firstStageXxCrossRate": 0.03871,
+          "firstStageCrossRate": 0.63871,
+          "zbllRate": 0.054839,
+          "zblsRate": 0
+        }
+      },
+      {
+        "solver": "Ruihang Xu",
+        "activationScore": -0.2,
+        "mixedEligible": false,
+        "recommendedF2LMethod": "balanced",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 308,
+        "caseBias": {
+          "xcrossWeight": 4,
+          "xxcrossWeight": 1,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 308,
+          "xcrossRate": 0.253247,
+          "xxcrossRate": 0.019481,
+          "crossRate": 0.75974,
+          "firstStageXCrossRate": 0.253247,
+          "firstStageXXCrossRate": 0.019481,
+          "firstStageXxCrossRate": 0.019481,
+          "firstStageCrossRate": 0.743506,
+          "zbllRate": 0.035714,
+          "zblsRate": 0
+        }
+      },
+      {
+        "solver": "Dylan Miller",
+        "activationScore": -0.3,
+        "mixedEligible": false,
+        "recommendedF2LMethod": "balanced",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 441,
+        "caseBias": {
+          "xcrossWeight": 4,
+          "xxcrossWeight": 1,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 441,
+          "xcrossRate": 0.24263,
+          "xxcrossRate": 0.020408,
+          "crossRate": 0.78458,
+          "firstStageXCrossRate": 0.24263,
+          "firstStageXXCrossRate": 0.020408,
+          "firstStageXxCrossRate": 0.020408,
+          "firstStageCrossRate": 0.75737,
+          "zbllRate": 0.036281,
+          "zblsRate": 0.004535
+        }
+      },
+      {
+        "solver": "Sei Sugama",
+        "activationScore": -0.35,
+        "mixedEligible": false,
+        "recommendedF2LMethod": "balanced",
+        "primaryMethodGroup": "CFOP",
+        "solveCount": 101,
+        "caseBias": {
+          "xcrossWeight": 2,
+          "xxcrossWeight": 1,
+          "zbllWeight": 1,
+          "zblsWeight": 1
+        },
+        "mixedCfopSummary": {
+          "solveCount": 101,
+          "xcrossRate": 0.059406,
+          "xxcrossRate": 0,
+          "crossRate": 0.950495,
+          "firstStageXCrossRate": 0.059406,
+          "firstStageXXCrossRate": 0,
+          "firstStageXxCrossRate": 0,
+          "firstStageCrossRate": 0.940594,
+          "zbllRate": 0.019802,
+          "zblsRate": 0
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,864 @@
+{
+  "generatedAt": "2026-04-11T14:53:29.155Z",
+  "input": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-all-3x3-gte100-details.json",
+  "output": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/roux-recovery-report-sample6.json",
+  "parameters": {
+    "offset": 0,
+    "limit": 6,
+    "deadlineMs": 15000,
+    "uniqueScrambles": true,
+    "sampleFailures": 12,
+    "sampleRecoveries": 12
+  },
+  "dataset": {
+    "totalRecords": 6069,
+    "uniqueScrambles": 5629,
+    "evaluated": 6
+  },
+  "caseDb": {
+    "schemaVersion": "roux-case-db.v1",
+    "generatedAt": "2026-04-11T14:43:55.500Z",
+    "fbPlans": [
+      "LEFT_FIRST",
+      "RIGHT_FIRST"
+    ],
+    "sbPlans": [
+      "LEFT_FIRST",
+      "RIGHT_FIRST"
+    ],
+    "cmllKeys": 592,
+    "lseKeys": 1272
+  },
+  "summary": {
+    "success": 2,
+    "successRate": 0.3333333333333333,
+    "pureSuccess": 1,
+    "pureSuccessRate": 0.16666666666666666,
+    "recoveredSuccess": 1,
+    "recoveredSuccessRate": 0.16666666666666666,
+    "failed": 4,
+    "failedRate": 0.6666666666666666,
+    "avgDurationMs": 13790.166666666666,
+    "p50DurationMs": 15205,
+    "p95DurationMs": 15677,
+    "avgMoveCount": 28.5,
+    "avgMoveCountPure": 33,
+    "avgMoveCountRecovered": 24
+  },
+  "counts": {
+    "sourceCounts": {
+      "INTERNAL_3X3_ROUX": 5,
+      "INTERNAL_3X3_ROUX_PHASE_RECOVERY": 1
+    },
+    "fallbackCounts": {
+      "FB_FAILED": 1
+    },
+    "failureReasonCounts": {
+      "ROUX_TIMEOUT": 2,
+      "ROUX_STAGE_TIMEOUT": 2
+    },
+    "failureStageCounts": {
+      "ROUX": 4
+    },
+    "diagnosticMethodCounts": {
+      "case-index": 19,
+      "UNKNOWN": 30,
+      "phase-prefix": 3,
+      "phase-recovery": 8,
+      "phase-prefix-relaxed": 1
+    },
+    "diagnosticReasonCounts": {
+      "CASE_MISS": 17,
+      "PHASE2_TIMEOUT": 1,
+      "ROUX_RECOVERY_TIMEOUT": 4,
+      "PHASE_PREFIX_FILTERED_OUT": 1,
+      "PRE_SOLVED": 5,
+      "PHASE_PREFIX_NOT_FOUND": 1
+    },
+    "diagnosticStageReasonCounts": {
+      "FB:CASE_MISS": 12,
+      "SB:CASE_MISS": 5,
+      "SB:PHASE2_TIMEOUT": 1,
+      "RECOVERY:ROUX_RECOVERY_TIMEOUT": 4,
+      "FB:PHASE_PREFIX_FILTERED_OUT": 1,
+      "SB:PRE_SOLVED": 1,
+      "CMLL:PRE_SOLVED": 2,
+      "LSE:PRE_SOLVED": 2,
+      "SB:PHASE_PREFIX_NOT_FOUND": 1
+    }
+  },
+  "examples": {
+    "pure": [
+      {
+        "index": 5,
+        "id": 13022,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "U2 F B2 R2 U2 B2 R2 D' B2 D' L2 R2 U R' F' R2 D' L U2 B R2",
+        "ok": true,
+        "source": "INTERNAL_3X3_ROUX",
+        "fallbackFrom": "",
+        "reason": "",
+        "stage": "",
+        "moveCount": 33,
+        "durationMs": 14324,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "R B D R' U' L F D2 L D'"
+          },
+          {
+            "name": "SB",
+            "solution": "U2 B2 R' F U2 L' B2 L' B U F2 L2 D' B2 U F2 R2 L2 U R2 U2 B2 U'"
+          },
+          {
+            "name": "CMLL",
+            "solution": ""
+          },
+          {
+            "name": "LSE",
+            "solution": ""
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "phase-prefix",
+            "ok": false,
+            "reason": "PHASE_PREFIX_NOT_FOUND",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "phase-prefix-relaxed",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "CMLL",
+            "method": "case-index",
+            "ok": true,
+            "reason": "PRE_SOLVED",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "LSE",
+            "method": "case-index",
+            "ok": true,
+            "reason": "PRE_SOLVED",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          }
+        ]
+      }
+    ],
+    "recovered": [
+      {
+        "index": 4,
+        "id": 13023,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "U' D2 B' R2 B' D2 R2 B F2 D2 F' L2 F R F2 L2 D' B D R U",
+        "ok": true,
+        "source": "INTERNAL_3X3_ROUX_PHASE_RECOVERY",
+        "fallbackFrom": "FB_FAILED",
+        "reason": "",
+        "stage": "",
+        "moveCount": 24,
+        "durationMs": 6307,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "U F2 D' F' D' R B' D2 F L B2 R2 L2 D2 L2 D B2 R2 U B2 L2 D R2 U'"
+          },
+          {
+            "name": "SB",
+            "solution": ""
+          },
+          {
+            "name": "CMLL",
+            "solution": ""
+          },
+          {
+            "name": "LSE",
+            "solution": ""
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "phase-prefix",
+            "ok": false,
+            "reason": "PHASE_PREFIX_FILTERED_OUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "phase-recovery",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": 24,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "phase-recovery",
+            "ok": true,
+            "reason": "PRE_SOLVED",
+            "key": "",
+            "moveCount": 0,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "CMLL",
+            "method": "phase-recovery",
+            "ok": true,
+            "reason": "PRE_SOLVED",
+            "key": "",
+            "moveCount": 0,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "LSE",
+            "method": "phase-recovery",
+            "ok": true,
+            "reason": "PRE_SOLVED",
+            "key": "",
+            "moveCount": 0,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          }
+        ]
+      }
+    ],
+    "failed": [
+      {
+        "index": 0,
+        "id": 13027,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "U2 L' F' R U' F2 L D L2 F' B R2 F' U2 R2 F' U2 F U'",
+        "ok": false,
+        "source": "INTERNAL_3X3_ROUX",
+        "fallbackFrom": "",
+        "reason": "ROUX_TIMEOUT",
+        "stage": "ROUX",
+        "moveCount": null,
+        "durationMs": 15764,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "y2 R2 U2 F u L U"
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "phase-prefix",
+            "ok": false,
+            "reason": "PHASE2_TIMEOUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "RECOVERY",
+            "method": "phase-recovery",
+            "ok": false,
+            "reason": "ROUX_RECOVERY_TIMEOUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "id": 13026,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "U' R' U L B2 U2 L D L2 B2 D2 L2 B L2 B2 L2 D2 F R2 F",
+        "ok": false,
+        "source": "INTERNAL_3X3_ROUX",
+        "fallbackFrom": "",
+        "reason": "ROUX_TIMEOUT",
+        "stage": "ROUX",
+        "moveCount": null,
+        "durationMs": 15205,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "U' R B U D2 B2 U' y D"
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "RECOVERY",
+            "method": "phase-recovery",
+            "ok": false,
+            "reason": "ROUX_RECOVERY_TIMEOUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "id": 13025,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "L D F2 B D R L' B' U D2 B U2 D2 B U2 B' U2 R2 L2 B2",
+        "ok": false,
+        "source": "INTERNAL_3X3_ROUX",
+        "fallbackFrom": "",
+        "reason": "ROUX_STAGE_TIMEOUT",
+        "stage": "ROUX",
+        "moveCount": null,
+        "durationMs": 15677,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "D2 L B' D B' U R U R U'"
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "RECOVERY",
+            "method": "phase-recovery",
+            "ok": false,
+            "reason": "ROUX_RECOVERY_TIMEOUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "id": 13024,
+        "solver": "Dylan Miller",
+        "method": "CFOP",
+        "scramble": "R2 U2 F2 U L2 U' L2 F2 U2 F2 U2 R B U2 L' R2 D2 B2 D R",
+        "ok": false,
+        "source": "INTERNAL_3X3_ROUX",
+        "fallbackFrom": "",
+        "reason": "ROUX_STAGE_TIMEOUT",
+        "stage": "ROUX",
+        "moveCount": null,
+        "durationMs": 15464,
+        "stages": [
+          {
+            "name": "FB",
+            "solution": "U2 R U' L D2 U' L U2 L U"
+          }
+        ],
+        "stageDiagnostics": [
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": false,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "FB",
+            "method": "",
+            "ok": true,
+            "reason": "",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          },
+          {
+            "stage": "SB",
+            "method": "case-index",
+            "ok": false,
+            "reason": "CASE_MISS",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": 0,
+            "candidatesTotal": 0
+          },
+          {
+            "stage": "RECOVERY",
+            "method": "phase-recovery",
+            "ok": false,
+            "reason": "ROUX_RECOVERY_TIMEOUT",
+            "key": "",
+            "moveCount": null,
+            "candidatesTried": null,
+            "candidatesTotal": null
+          }
+        ]
+      }
+    ]
+  }
+}

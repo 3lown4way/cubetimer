@@ -57,9 +57,28 @@ node tools/benchmark-f2l-style-ab.mjs --input vendor-data/reco/reco-3x3-details.
 
 # 6) 100+ solves + (CFOP/ZB) 통합 수동 배치 파이프라인
 node tools/build-reco-3x3-gte100-pipeline.cjs --index-input vendor-data/reco/reco-all-3x3-index.json --details-input vendor-data/reco/reco-all-3x3-details.json --min-solves 100 --methods CFOP,ZB --benchmark-per-solver-limit 12
+
+# 6-b) 현재 benchmark vs top10 baseline 비교 리포트 + mixed 활성 요약
+node tools/report-reco-style-benchmark.mjs
+
+# 6-c) benchmark / learned / mixed / main.js 회귀 검증
+node tools/validate-reco-style-pipeline.mjs
+
+# 7) Roux 웹 알고리즘 DB 갱신 (CMLL + EO4A/ELL 기반 LSE)
+node tools/fetch-roux-web-dataset.cjs --output solver/rouxDataset.js
+
+# 8) Roux 오프라인 case DB 생성 (FB/SB/CMLL/LSE)
+node tools/generate-roux-case-db.mjs --output solver/rouxCaseDb.js
+
+# 8-b) 100+ dataset 기반 FB/SB augmentation까지 같이 생성
+node tools/generate-roux-case-db.mjs --output solver/rouxCaseDb.js --augment-input vendor-data/reco/reco-all-3x3-gte100-details.json --augment-limit 100 --augment-deadline-ms 15000
+
+# 9) Roux recovery/실패 분석 리포트 생성
+node tools/report-roux-recovery-cases.mjs --input vendor-data/reco/reco-all-3x3-gte100-details.json --output vendor-data/reco/roux-recovery-report.json --limit 100
 ```
 
 기본 timeout은 `strict=3000ms`, `zb=5000ms`입니다. 필요하면 `STRICT_TIMEOUT_MS`, `ZB_TIMEOUT_MS`, `TIMEOUT_MS`로 조정하세요.
+Roux 웹 DB 갱신은 네트워크가 필요합니다. 실패 시 에러 메시지(HTTP 코드/timeout)를 확인해 재시도하세요.
 
 옵션 확인:
 
@@ -70,6 +89,9 @@ node tools/fetch-reco-3x3-details.cjs --help
 node tools/analyze-reco-3x3-details.cjs --help
 node tools/build-reco-3x3-style-features.cjs --help
 node tools/benchmark-f2l-style-ab.mjs --help
+node tools/fetch-roux-web-dataset.cjs --help
+node tools/generate-roux-case-db.mjs --help
+node tools/report-roux-recovery-cases.mjs --help
 ```
 
 ## 기능

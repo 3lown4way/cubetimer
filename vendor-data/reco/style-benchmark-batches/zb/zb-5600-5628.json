@@ -1,0 +1,2731 @@
+{
+  "generatedAt": "2026-04-11T18:25:58.419Z",
+  "sourceInput": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-all-3x3-gte100-details.json",
+  "sourceStyleProfileInput": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-style-features.json",
+  "parameters": {
+    "offset": 5600,
+    "limit": 29,
+    "perSolverLimit": 0,
+    "scrambleConcurrency": 3,
+    "crossColor": "D",
+    "timeoutMs": 5000,
+    "maxWorkers": 6,
+    "timeoutMsByMode": {
+      "strict": 3000,
+      "zb": 5000
+    },
+    "styles": [
+      "legacy",
+      "balanced",
+      "rotationless",
+      "low-auf"
+    ],
+    "modes": [
+      "zb"
+    ],
+    "methods": [
+      "CFOP",
+      "ZB"
+    ],
+    "includedMethods": [
+      "CFOP",
+      "ZB"
+    ],
+    "samplingPolicy": "offset-limit",
+    "acceptanceGate": "balanced"
+  },
+  "sampleCount": 29,
+  "samplesPerSolver": null,
+  "solverCoverage": {
+    "count": 3,
+    "solvers": [
+      {
+        "solver": "Feliks Zemdegs",
+        "samples": 25
+      },
+      {
+        "solver": "Jayden McNeill",
+        "samples": 3
+      },
+      {
+        "solver": "Bill Wang",
+        "samples": 1
+      }
+    ]
+  },
+  "methodCoverage": {
+    "CFOP": 29
+  },
+  "distanceConfig": {
+    "weights": {
+      "rotationRate": 3,
+      "aufRate": 3,
+      "wideTurnRate": 2,
+      "avgF2LSegmentLen": 1,
+      "zbUsageRate": 1
+    },
+    "normalizationBounds": {
+      "rotationRate": {
+        "min": 0.0434945834897147,
+        "max": 0.06824009361739067
+      },
+      "aufRate": {
+        "min": 0.3617306174015612,
+        "max": 0.3908477049439183
+      },
+      "wideTurnRate": {
+        "min": 0.028378682365439088,
+        "max": 0.04850646753360209
+      },
+      "avgF2LSegmentLen": {
+        "min": 0,
+        "max": 0.000001
+      },
+      "zbUsageRate": {
+        "min": 0.017123287671232876,
+        "max": 1
+      }
+    }
+  },
+  "gateThresholds": {
+    "deltaSuccessRateMin": 0.01,
+    "deltaAvgMoveCountSolvedMax": -0.5,
+    "deltaP95DurationRatioMax": 0.1,
+    "deltaStyleDistancePctMax": -0.05
+  },
+  "summariesByMode": {
+    "zb": [
+      {
+        "style": "legacy",
+        "attempted": 29,
+        "solved": 27,
+        "failed": 2,
+        "successRate": 0.9310344827586207,
+        "avgMoveCountSolved": 57.370370370370374,
+        "p50MoveCountSolved": 57,
+        "p90MoveCountSolved": 65,
+        "avgDurationMs": 2247.4137931034484,
+        "p50DurationMs": 2040,
+        "p95DurationMs": 3973,
+        "avgNodesSolved": 304935.8888888889,
+        "avgStyleDistanceToTarget": 1348149.5182892801,
+        "p50StyleDistanceToTarget": 1350001.5998805556,
+        "failureReasonCounts": {
+          "TIMEOUT_5000MS": 2
+        },
+        "failureStageCounts": {
+          "UNKNOWN": 2
+        }
+      },
+      {
+        "style": "balanced",
+        "attempted": 29,
+        "solved": 24,
+        "failed": 5,
+        "successRate": 0.8275862068965517,
+        "avgMoveCountSolved": 59.166666666666664,
+        "p50MoveCountSolved": 58,
+        "p90MoveCountSolved": 67,
+        "avgDurationMs": 2548.1724137931033,
+        "p50DurationMs": 2095,
+        "p95DurationMs": 5150,
+        "avgNodesSolved": 307284.4583333333,
+        "avgStyleDistanceToTarget": 1427084.7451020621,
+        "p50StyleDistanceToTarget": 1400001.0452730753,
+        "failureReasonCounts": {
+          "TIMEOUT_5000MS": 4,
+          "F2L2_SEARCH_LIMIT": 1
+        },
+        "failureStageCounts": {
+          "UNKNOWN": 4,
+          "F2L2": 1
+        }
+      },
+      {
+        "style": "rotationless",
+        "attempted": 29,
+        "solved": 22,
+        "failed": 7,
+        "successRate": 0.7586206896551724,
+        "avgMoveCountSolved": 58.68181818181818,
+        "p50MoveCountSolved": 58,
+        "p90MoveCountSolved": 64,
+        "avgDurationMs": 2739.5172413793102,
+        "p50DurationMs": 2216,
+        "p95DurationMs": 5150,
+        "avgNodesSolved": 297785.3181818182,
+        "avgStyleDistanceToTarget": 1443183.2329805037,
+        "p50StyleDistanceToTarget": 1400001.8877561237,
+        "failureReasonCounts": {
+          "TIMEOUT_5000MS": 6,
+          "F2L2_SEARCH_LIMIT": 1
+        },
+        "failureStageCounts": {
+          "UNKNOWN": 6,
+          "F2L2": 1
+        }
+      },
+      {
+        "style": "low-auf",
+        "attempted": 29,
+        "solved": 26,
+        "failed": 3,
+        "successRate": 0.896551724137931,
+        "avgMoveCountSolved": 62.38461538461539,
+        "p50MoveCountSolved": 61,
+        "p90MoveCountSolved": 71,
+        "avgDurationMs": 2338.2413793103447,
+        "p50DurationMs": 2047,
+        "p95DurationMs": 4039,
+        "avgNodesSolved": 304898.92307692306,
+        "avgStyleDistanceToTarget": 1573078.433220785,
+        "p50StyleDistanceToTarget": 1450001.1950568534,
+        "failureReasonCounts": {
+          "TIMEOUT_5000MS": 2,
+          "F2L2_SEARCH_LIMIT": 1
+        },
+        "failureStageCounts": {
+          "UNKNOWN": 2,
+          "F2L2": 1
+        }
+      }
+    ]
+  },
+  "comparisonVsLegacyByMode": {
+    "zb": [
+      {
+        "mode": "zb",
+        "style": "balanced",
+        "deltaSuccessRate": -0.10344827586206895,
+        "deltaAvgMoveCountSolved": 1.7962962962962905,
+        "deltaAvgDurationMs": 300.7586206896549,
+        "deltaP95DurationMs": 1177,
+        "deltaP95DurationRatio": 0.29624968537629,
+        "deltaStyleDistanceToTarget": 78935.226812782,
+        "deltaStyleDistancePct": 0.05855079554747459
+      },
+      {
+        "mode": "zb",
+        "style": "rotationless",
+        "deltaSuccessRate": -0.1724137931034483,
+        "deltaAvgMoveCountSolved": 1.311447811447806,
+        "deltaAvgDurationMs": 492.10344827586187,
+        "deltaP95DurationMs": 1177,
+        "deltaP95DurationRatio": 0.29624968537629,
+        "deltaStyleDistanceToTarget": 95033.71469122358,
+        "deltaStyleDistancePct": 0.07049196947517779
+      },
+      {
+        "mode": "zb",
+        "style": "low-auf",
+        "deltaSuccessRate": -0.03448275862068961,
+        "deltaAvgMoveCountSolved": 5.014245014245013,
+        "deltaAvgDurationMs": 90.82758620689629,
+        "deltaP95DurationMs": 66,
+        "deltaP95DurationRatio": 0.01661213189025925,
+        "deltaStyleDistanceToTarget": 224928.914931505,
+        "deltaStyleDistancePct": 0.16684270689569072
+      }
+    ]
+  },
+  "gateEvaluationByMode": {
+    "zb": [
+      {
+        "mode": "zb",
+        "style": "balanced",
+        "pass": false,
+        "checks": {
+          "successRate": false,
+          "avgMoveCountSolved": false,
+          "p95DurationRatio": false,
+          "styleDistancePct": false
+        },
+        "thresholds": {
+          "deltaSuccessRateMin": 0.01,
+          "deltaAvgMoveCountSolvedMax": -0.5,
+          "deltaP95DurationRatioMax": 0.1,
+          "deltaStyleDistancePctMax": -0.05
+        }
+      },
+      {
+        "mode": "zb",
+        "style": "rotationless",
+        "pass": false,
+        "checks": {
+          "successRate": false,
+          "avgMoveCountSolved": false,
+          "p95DurationRatio": false,
+          "styleDistancePct": false
+        },
+        "thresholds": {
+          "deltaSuccessRateMin": 0.01,
+          "deltaAvgMoveCountSolvedMax": -0.5,
+          "deltaP95DurationRatioMax": 0.1,
+          "deltaStyleDistancePctMax": -0.05
+        }
+      },
+      {
+        "mode": "zb",
+        "style": "low-auf",
+        "pass": false,
+        "checks": {
+          "successRate": false,
+          "avgMoveCountSolved": false,
+          "p95DurationRatio": true,
+          "styleDistancePct": false
+        },
+        "thresholds": {
+          "deltaSuccessRateMin": 0.01,
+          "deltaAvgMoveCountSolvedMax": -0.5,
+          "deltaP95DurationRatioMax": 0.1,
+          "deltaStyleDistancePctMax": -0.05
+        }
+      }
+    ]
+  },
+  "runsByMode": {
+    "zb": {
+      "legacy": [
+        {
+          "sampleIndex": 1,
+          "id": 649,
+          "scramble": "D R2 U B2 R2 D' L2 U2 B2 L' F L' B' U R2 B D F'",
+          "sourceSolver": "Bill Wang",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.1950568534,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 311030,
+          "durationMs": 3973,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35,
+            "wideTurnRate": 0.03333333333333333,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 2,
+          "id": 554,
+          "scramble": "R U2 R D2 B2 R' F2 U2 F2 R2 D2 U' F' L2 B' L' D B' U' L2 U2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.111473482,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 287262,
+          "durationMs": 1911,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.375,
+            "wideTurnRate": 0.05357142857142857,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 3,
+          "id": 517,
+          "scramble": "F2 L B2 R2 D2 L D2 U2 R' B2 R' D B' R2 F2 L' D F' R B2 F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1100001.6436671945,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 51,
+          "nodes": 266428,
+          "durationMs": 1875,
+          "styleMetrics": {
+            "rotationRate": 0.0392156862745098,
+            "aufRate": 0.29411764705882354,
+            "wideTurnRate": 0.0784313725490196,
+            "avgF2LSegmentLen": 11,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 4,
+          "id": 495,
+          "scramble": "R2 F2 D2 L' B2 D R' U2 F2 D2 L U F2 D F' D2 F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1050001.3913472411,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 52,
+          "nodes": 290440,
+          "durationMs": 2271,
+          "styleMetrics": {
+            "rotationRate": 0.038461538461538464,
+            "aufRate": 0.3076923076923077,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 10.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 5,
+          "id": 494,
+          "scramble": "R2 B' F2 U F L' B D' B' U2 B2 F' R2 B2 D F R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1050001.542550017,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 54,
+          "nodes": 261554,
+          "durationMs": 2132,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3888888888888889,
+            "wideTurnRate": 0.09259259259259259,
+            "avgF2LSegmentLen": 10.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 6,
+          "id": 493,
+          "scramble": "B' F2 D2 F D' F D2 U' B R2 D B2 F2 L B' R2 F' R F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1150001.3930538916,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 58,
+          "nodes": 302150,
+          "durationMs": 2258,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.41379310344827586,
+            "wideTurnRate": 0.05172413793103448,
+            "avgF2LSegmentLen": 11.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 7,
+          "id": 492,
+          "scramble": "R2 D L2 U' F' L2 F' R2 B' L' D2 B' U F2 L D2 U' F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1350001.5998805556,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 321238,
+          "durationMs": 2307,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3157894736842105,
+            "wideTurnRate": 0.017543859649122806,
+            "avgF2LSegmentLen": 13.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 8,
+          "id": 491,
+          "scramble": "U2 F R2 F2 R' U2 B R2 F2 L' U' R F2 L2 U' R' F U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 800000.9496450002,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 45,
+          "nodes": 270966,
+          "durationMs": 1972,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.37777777777777777,
+            "wideTurnRate": 0.044444444444444446,
+            "avgF2LSegmentLen": 8,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 9,
+          "id": 425,
+          "scramble": "B2 U2 L2 R2 U R2 U' L2 F D2 B2 D2 R2 D2 R U' R2 D' F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 950001.6383248558,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 271802,
+          "durationMs": 1832,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38596491228070173,
+            "wideTurnRate": 0.10526315789473684,
+            "avgF2LSegmentLen": 9.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 10,
+          "id": 424,
+          "scramble": "F2 L2 U2 L2 F U2 F2 D R F2 U2 L D F' B' U' F2 L' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1500000.803370091,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 324687,
+          "durationMs": 2012,
+          "styleMetrics": {
+            "rotationRate": 0.03389830508474576,
+            "aufRate": 0.3389830508474576,
+            "wideTurnRate": 0.03389830508474576,
+            "avgF2LSegmentLen": 15,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 11,
+          "id": 423,
+          "scramble": "D L2 D L2 B R U L2 U2 F2 D2 B' D L2 R' U2 R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.2501105005,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 388069,
+          "durationMs": 2153,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38596491228070173,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 12,
+          "id": 422,
+          "scramble": "U2 F2 U L2 U B2 U F' R' F2 U2 R2 B' F' R2 B D' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1750001.118724905,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 376340,
+          "durationMs": 2182,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.3125,
+            "wideTurnRate": 0.03125,
+            "avgF2LSegmentLen": 17.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 13,
+          "id": 421,
+          "scramble": "B2 D' F2 U2 R2 U' L2 F L F L2 F' R2 U' L2 R' B U2 B",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1500001.0471566147,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 50,
+          "nodes": 121151,
+          "durationMs": 844,
+          "styleMetrics": {
+            "rotationRate": 0.04,
+            "aufRate": 0.32,
+            "wideTurnRate": 0.02,
+            "avgF2LSegmentLen": 15,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 14,
+          "id": 392,
+          "scramble": "R2 D B2 R2 D U B2 R' U2 L' R' D' U' L B2 R B' L2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1700001.306942029,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 389661,
+          "durationMs": 2645,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3880597014925373,
+            "wideTurnRate": 0.05970149253731343,
+            "avgF2LSegmentLen": 17,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 15,
+          "id": 352,
+          "scramble": "R' F' B' R' L2 B' D R U R L2 F D2 F' U2 R2 U2 B2 U2 F'",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 900001.4999775544,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 37,
+          "nodes": 284110,
+          "durationMs": 2125,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35135135135135137,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 9,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 16,
+          "id": 163,
+          "scramble": "L2 F2 L2 U' L2 U B2 D B2 U2 L2 U' B' D' F2 L R2 F2 D U2 R'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1700001.3251337186,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 376797,
+          "durationMs": 2194,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.359375,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 17,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 17,
+          "id": 162,
+          "scramble": "R2 B2 D' L2 R2 D2 F2 U' F2 D' L2 U B' D2 L' U2 B F R U R",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 950001.2969405474,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 54,
+          "nodes": 261076,
+          "durationMs": 1802,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35185185185185186,
+            "wideTurnRate": 0.05555555555555555,
+            "avgF2LSegmentLen": 9.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 18,
+          "id": 161,
+          "scramble": "D B2 D' R2 U' B2 U' F2 D' U2 R' U' R2 B R2 D' U2 R' F2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 19,
+          "id": 160,
+          "scramble": "B2 F2 D2 L R' F' L' U' B F' U' R' D R' U2 L F2 D",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 20,
+          "id": 159,
+          "scramble": "L2 R2 F R2 B2 L2 D2 F' D' L' F' U2 B U2 L F2 D' B L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2000001.5289718048,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 404901,
+          "durationMs": 2271,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4225352112676056,
+            "wideTurnRate": 0.056338028169014086,
+            "avgF2LSegmentLen": 20,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 21,
+          "id": 158,
+          "scramble": "L2 B2 U F2 D B2 F2 R' D R F2 L B L' U' F2 D' L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1350001.429903649,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 63,
+          "nodes": 322219,
+          "durationMs": 2199,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3492063492063492,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 13.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 22,
+          "id": 101,
+          "scramble": "B' D2 U2 B U F2 R' U R2 F L' U B' F' D' L' B' R F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1100001.5571254904,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 279300,
+          "durationMs": 1978,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4107142857142857,
+            "wideTurnRate": 0.07142857142857142,
+            "avgF2LSegmentLen": 11,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 23,
+          "id": 100,
+          "scramble": "B F' L2 D2 B2 L R' U' L F' U B2 U2 B F2 L2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.329343006,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 63,
+          "nodes": 353175,
+          "durationMs": 2040,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38095238095238093,
+            "wideTurnRate": 0.07936507936507936,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 24,
+          "id": 99,
+          "scramble": "F2 U2 L2 B' U' B' F L2 D2 U' R2 D' L' D U L2 F2 L'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1600001.0889783502,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 65,
+          "nodes": 398433,
+          "durationMs": 1986,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4,
+            "wideTurnRate": 0.03076923076923077,
+            "avgF2LSegmentLen": 16,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 25,
+          "id": 98,
+          "scramble": "D2 F' U2 L2 R' F' D' L' D L' R2 F2 R D L' R2 U F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1100001.1721527001,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 55,
+          "nodes": 266570,
+          "durationMs": 1902,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.34545454545454546,
+            "wideTurnRate": 0.03636363636363636,
+            "avgF2LSegmentLen": 11,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 26,
+          "id": 97,
+          "scramble": "B2 U2 R2 D U2 F2 L' D' B2 L2 R' B2 F' D L B' U' B U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1900002.4230015515,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 51,
+          "nodes": 136830,
+          "durationMs": 661,
+          "styleMetrics": {
+            "rotationRate": 0.0392156862745098,
+            "aufRate": 0.29411764705882354,
+            "wideTurnRate": 0.1568627450980392,
+            "avgF2LSegmentLen": 19,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 27,
+          "id": 91,
+          "scramble": "D' L2 R2 D2 L2 U2 F2 R2 F' D L R' F2 U F U' B2 D L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1700001.1943149406,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 374908,
+          "durationMs": 1952,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.34328358208955223,
+            "wideTurnRate": 0.029850746268656716,
+            "avgF2LSegmentLen": 17,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 28,
+          "id": 38,
+          "scramble": "U' B2 L2 D2 F2 U L2 D' B' L' U' R F2 D2 F U' R D'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.4308688915,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 270074,
+          "durationMs": 1713,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.40350877192982454,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 29,
+          "id": 22,
+          "scramble": "B2 U2 R2 F L2 R2 F' R2 D2 R2 U' B2 L' R U L' R2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.7257951288,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 322098,
+          "durationMs": 1685,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3220338983050847,
+            "wideTurnRate": 0.06779661016949153,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        }
+      ],
+      "balanced": [
+        {
+          "sampleIndex": 1,
+          "id": 649,
+          "scramble": "D R2 U B2 R2 D' L2 U2 B2 L' F L' B' U R2 B D F'",
+          "sourceSolver": "Bill Wang",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.1950568534,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 301078,
+          "durationMs": 3933,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35,
+            "wideTurnRate": 0.03333333333333333,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 2,
+          "id": 554,
+          "scramble": "R U2 R D2 B2 R' F2 U2 F2 R2 D2 U' F' L2 B' L' D B' U' L2 U2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.111473482,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 287262,
+          "durationMs": 1887,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.375,
+            "wideTurnRate": 0.05357142857142857,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 3,
+          "id": 517,
+          "scramble": "F2 L B2 R2 D2 L D2 U2 R' B2 R' D B' R2 F2 L' D F' R B2 F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400001.8877561237,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 266094,
+          "durationMs": 1820,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.29850746268656714,
+            "wideTurnRate": 0.05970149253731343,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 4,
+          "id": 495,
+          "scramble": "R2 F2 D2 L' B2 D R' U2 F2 D2 L U F2 D F' D2 F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.593446955,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 290327,
+          "durationMs": 2269,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3333333333333333,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 5,
+          "id": 494,
+          "scramble": "R2 B' F2 U F L' B D' B' U2 B2 F' R2 B2 D F R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200000.8650712143,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 260868,
+          "durationMs": 2328,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3728813559322034,
+            "wideTurnRate": 0.03389830508474576,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 6,
+          "id": 493,
+          "scramble": "B' F2 D2 F D' F D2 U' B R2 D B2 F2 L B' R2 F' R F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1100002.0669336657,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 54,
+          "nodes": 302999,
+          "durationMs": 2331,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.25925925925925924,
+            "wideTurnRate": 0.037037037037037035,
+            "avgF2LSegmentLen": 11,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 7,
+          "id": 492,
+          "scramble": "R2 D L2 U' F' L2 F' R2 B' L' D2 B' U F2 L D2 U' F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400001.0452730753,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 320821,
+          "durationMs": 2220,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35714285714285715,
+            "wideTurnRate": 0.03571428571428571,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 8,
+          "id": 491,
+          "scramble": "U2 F R2 F2 R' U2 B R2 F2 L' U' R F2 L2 U' R' F U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 800000.9496450002,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 45,
+          "nodes": 270966,
+          "durationMs": 1909,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.37777777777777777,
+            "wideTurnRate": 0.044444444444444446,
+            "avgF2LSegmentLen": 8,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 9,
+          "id": 425,
+          "scramble": "B2 U2 L2 R2 U R2 U' L2 F D2 B2 D2 R2 D2 R U' R2 D' F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1300001.731817084,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 62,
+          "nodes": 271502,
+          "durationMs": 1813,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4032258064516129,
+            "wideTurnRate": 0.0967741935483871,
+            "avgF2LSegmentLen": 13,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 10,
+          "id": 424,
+          "scramble": "F2 L2 U2 L2 F U2 F2 D R F2 U2 L D F' B' U' F2 L' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1500000.803370091,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 324687,
+          "durationMs": 2001,
+          "styleMetrics": {
+            "rotationRate": 0.03389830508474576,
+            "aufRate": 0.3389830508474576,
+            "wideTurnRate": 0.03389830508474576,
+            "avgF2LSegmentLen": 15,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 11,
+          "id": 423,
+          "scramble": "D L2 D L2 B R U L2 U2 F2 D2 B' D L2 R' U2 R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.2501105005,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 388069,
+          "durationMs": 2214,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38596491228070173,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 12,
+          "id": 422,
+          "scramble": "U2 F2 U L2 U B2 U F' R' F2 U2 R2 B' F' R2 B D' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1750001.5902288794,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 376340,
+          "durationMs": 2145,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.296875,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 17.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 13,
+          "id": 421,
+          "scramble": "B2 D' F2 U2 R2 U' L2 F L F L2 F' R2 U' L2 R' B U2 B",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.7103392712,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 296082,
+          "durationMs": 1957,
+          "styleMetrics": {
+            "rotationRate": 0.03508771929824561,
+            "aufRate": 0.2807017543859649,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 14,
+          "id": 392,
+          "scramble": "R2 D B2 R2 D U B2 R' U2 L' R' D' U' L B2 R B' L2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.2122316763,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 389036,
+          "durationMs": 3208,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.352112676056338,
+            "wideTurnRate": 0.028169014084507043,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 15,
+          "id": 352,
+          "scramble": "R' F' B' R' L2 B' D R U R L2 F D2 F' U2 R2 U2 B2 U2 F'",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1000001.333940077,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 55,
+          "nodes": 285268,
+          "durationMs": 2034,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4,
+            "wideTurnRate": 0.01818181818181818,
+            "avgF2LSegmentLen": 10,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 16,
+          "id": 163,
+          "scramble": "L2 F2 L2 U' L2 U B2 D B2 U2 L2 U' B' D' F2 L R2 F2 D U2 R'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1850001.7285032352,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 376443,
+          "durationMs": 2095,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3283582089552239,
+            "wideTurnRate": 0.07462686567164178,
+            "avgF2LSegmentLen": 18.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 17,
+          "id": 162,
+          "scramble": "R2 B2 D' L2 R2 D2 F2 U' F2 D' L2 U B' D2 L' U2 B F R U R",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1150001.5998805556,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 261142,
+          "durationMs": 1789,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3157894736842105,
+            "wideTurnRate": 0.017543859649122806,
+            "avgF2LSegmentLen": 11.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 18,
+          "id": 161,
+          "scramble": "D B2 D' R2 U' B2 U' F2 D' U2 R' U' R2 B R2 D' U2 R' F2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 19,
+          "id": 160,
+          "scramble": "B2 F2 D2 L R' F' L' U' B F' U' R' D R' U2 L F2 D",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 20,
+          "id": 159,
+          "scramble": "L2 R2 F R2 B2 L2 D2 F' D' L' F' U2 B U2 L F2 D' B L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.1915549655,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 406081,
+          "durationMs": 3422,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38028169014084506,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 21,
+          "id": 158,
+          "scramble": "L2 B2 U F2 D B2 F2 R' D R F2 L B L' U' F2 D' L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1700001.5286467772,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 53,
+          "nodes": 372908,
+          "durationMs": 2368,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.33962264150943394,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 17,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 22,
+          "id": 101,
+          "scramble": "B' D2 U2 B U F2 R' U R2 F L' U B' F' D' L' B' R F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1250001.1815469728,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 58,
+          "nodes": 278741,
+          "durationMs": 2026,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3793103448275862,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 23,
+          "id": 100,
+          "scramble": "B F' L2 D2 B2 L R' U' L F' U B2 U2 B F2 L2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 24,
+          "id": 99,
+          "scramble": "F2 U2 L2 B' U' B' F L2 D2 U' R2 D' L' D U L2 F2 L'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 25,
+          "id": 98,
+          "scramble": "D2 F' U2 L2 R' F' D' L' D L' R2 F2 R D L' R2 U F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400001.9451797092,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 58,
+          "nodes": 266053,
+          "durationMs": 1757,
+          "styleMetrics": {
+            "rotationRate": 0.034482758620689655,
+            "aufRate": 0.25862068965517243,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 26,
+          "id": 97,
+          "scramble": "B2 U2 R2 D U2 F2 L' D' B2 L2 R' B2 F' D L B' U' B U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2200000.9844390703,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 47,
+          "nodes": 137278,
+          "durationMs": 679,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3829787234042553,
+            "wideTurnRate": 0.0425531914893617,
+            "avgF2LSegmentLen": 22,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 27,
+          "id": 91,
+          "scramble": "D' L2 R2 D2 L2 U2 F2 R2 F' D L R' F2 U F U' B2 D L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1850002.0520428296,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 69,
+          "nodes": 374696,
+          "durationMs": 1926,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.2608695652173913,
+            "wideTurnRate": 0.028985507246376812,
+            "avgF2LSegmentLen": 18.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 28,
+          "id": 38,
+          "scramble": "U' B2 L2 D2 F2 U L2 D' B' L' U' R F2 D2 F U' R D'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1300001.3239614358,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 61,
+          "nodes": 270086,
+          "durationMs": 1826,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.32786885245901637,
+            "wideTurnRate": 0.03278688524590164,
+            "avgF2LSegmentLen": 13,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 29,
+          "id": 22,
+          "scramble": "B2 U2 R2 F L2 R2 F' R2 D2 R2 U' B2 L' R U L' R2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "F2L2_SEARCH_LIMIT",
+          "stage": "F2L2",
+          "moveCount": null,
+          "nodes": 221420,
+          "durationMs": 1340,
+          "styleMetrics": null
+        }
+      ],
+      "rotationless": [
+        {
+          "sampleIndex": 1,
+          "id": 649,
+          "scramble": "D R2 U B2 R2 D' L2 U2 B2 L' F L' B' U R2 B D F'",
+          "sourceSolver": "Bill Wang",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.1950568534,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 311030,
+          "durationMs": 3887,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35,
+            "wideTurnRate": 0.03333333333333333,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 2,
+          "id": 554,
+          "scramble": "R U2 R D2 B2 R' F2 U2 F2 R2 D2 U' F' L2 B' L' D B' U' L2 U2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.111473482,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 287262,
+          "durationMs": 1927,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.375,
+            "wideTurnRate": 0.05357142857142857,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 3,
+          "id": 517,
+          "scramble": "F2 L B2 R2 D2 L D2 U2 R' B2 R' D B' R2 F2 L' D F' R B2 F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400001.8877561237,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 266094,
+          "durationMs": 1860,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.29850746268656714,
+            "wideTurnRate": 0.05970149253731343,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 4,
+          "id": 495,
+          "scramble": "R2 F2 D2 L' B2 D R' U2 F2 D2 L U F2 D F' D2 F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.593446955,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 290327,
+          "durationMs": 2214,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3333333333333333,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 5,
+          "id": 494,
+          "scramble": "R2 B' F2 U F L' B D' B' U2 B2 F' R2 B2 D F R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200000.8650712143,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 260868,
+          "durationMs": 2181,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3728813559322034,
+            "wideTurnRate": 0.03389830508474576,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 6,
+          "id": 493,
+          "scramble": "B' F2 D2 F D' F D2 U' B R2 D B2 F2 L B' R2 F' R F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1100002.0669336657,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 54,
+          "nodes": 302999,
+          "durationMs": 2135,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.25925925925925924,
+            "wideTurnRate": 0.037037037037037035,
+            "avgF2LSegmentLen": 11,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 7,
+          "id": 492,
+          "scramble": "R2 D L2 U' F' L2 F' R2 B' L' D2 B' U F2 L D2 U' F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400001.0452730753,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 56,
+          "nodes": 320821,
+          "durationMs": 2387,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35714285714285715,
+            "wideTurnRate": 0.03571428571428571,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 8,
+          "id": 491,
+          "scramble": "U2 F R2 F2 R' U2 B R2 F2 L' U' R F2 L2 U' R' F U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1500001.444124806,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 46,
+          "nodes": 83073,
+          "durationMs": 461,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.34782608695652173,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 15,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 9,
+          "id": 425,
+          "scramble": "B2 U2 L2 R2 U R2 U' L2 F D2 B2 D2 R2 D2 R U' R2 D' F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1300001.731817084,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 62,
+          "nodes": 271502,
+          "durationMs": 1834,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4032258064516129,
+            "wideTurnRate": 0.0967741935483871,
+            "avgF2LSegmentLen": 13,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 10,
+          "id": 424,
+          "scramble": "F2 L2 U2 L2 F U2 F2 D R F2 U2 L D F' B' U' F2 L' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1500000.803370091,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 324687,
+          "durationMs": 2100,
+          "styleMetrics": {
+            "rotationRate": 0.03389830508474576,
+            "aufRate": 0.3389830508474576,
+            "wideTurnRate": 0.03389830508474576,
+            "avgF2LSegmentLen": 15,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 11,
+          "id": 423,
+          "scramble": "D L2 D L2 B R U L2 U2 F2 D2 B' D L2 R' U2 R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.2501105005,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 388069,
+          "durationMs": 2216,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38596491228070173,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 12,
+          "id": 422,
+          "scramble": "U2 F2 U L2 U B2 U F' R' F2 U2 R2 B' F' R2 B D' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1750001.5902288794,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 376340,
+          "durationMs": 2236,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.296875,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 17.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 13,
+          "id": 421,
+          "scramble": "B2 D' F2 U2 R2 U' L2 F L F L2 F' R2 U' L2 R' B U2 B",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.3718721531,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 62,
+          "nodes": 295973,
+          "durationMs": 1996,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3548387096774194,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 14,
+          "id": 392,
+          "scramble": "R2 D B2 R2 D U B2 R' U2 L' R' D' U' L B2 R B' L2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.2122316763,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 389036,
+          "durationMs": 2503,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.352112676056338,
+            "wideTurnRate": 0.028169014084507043,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 15,
+          "id": 352,
+          "scramble": "R' F' B' R' L2 B' D R U R L2 F D2 F' U2 R2 U2 B2 U2 F'",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1000001.333940077,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 55,
+          "nodes": 285268,
+          "durationMs": 2034,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.4,
+            "wideTurnRate": 0.01818181818181818,
+            "avgF2LSegmentLen": 10,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 16,
+          "id": 163,
+          "scramble": "L2 F2 L2 U' L2 U B2 D B2 U2 L2 U' B' D' F2 L R2 F2 D U2 R'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.7651674268,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 376156,
+          "durationMs": 2290,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.31666666666666665,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 17,
+          "id": 162,
+          "scramble": "R2 B2 D' L2 R2 D2 F2 U' F2 D' L2 U B' D2 L' U2 B F R U R",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1150001.5998805556,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 261142,
+          "durationMs": 1795,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3157894736842105,
+            "wideTurnRate": 0.017543859649122806,
+            "avgF2LSegmentLen": 11.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 18,
+          "id": 161,
+          "scramble": "D B2 D' R2 U' B2 U' F2 D' U2 R' U' R2 B R2 D' U2 R' F2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 19,
+          "id": 160,
+          "scramble": "B2 F2 D2 L R' F' L' U' B F' U' R' D R' U2 L F2 D",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 20,
+          "id": 159,
+          "scramble": "L2 R2 F R2 B2 L2 D2 F' D' L' F' U2 B U2 L F2 D' B L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.1915549655,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 406081,
+          "durationMs": 3420,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38028169014084506,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 21,
+          "id": 158,
+          "scramble": "L2 B2 U F2 D B2 F2 R' D R F2 L B L' U' F2 D' L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1700001.5286467772,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 53,
+          "nodes": 372908,
+          "durationMs": 2418,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.33962264150943394,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 17,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 22,
+          "id": 101,
+          "scramble": "B' D2 U2 B U F2 R' U R2 F L' U B' F' D' L' B' R F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1250001.1815469728,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 58,
+          "nodes": 278741,
+          "durationMs": 2006,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3793103448275862,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 12.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 23,
+          "id": 100,
+          "scramble": "B F' L2 D2 B2 L R' U' L F' U B2 U2 B F2 L2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 24,
+          "id": 99,
+          "scramble": "F2 U2 L2 B' U' B' F L2 D2 U' R2 D' L' D U L2 F2 L'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 25,
+          "id": 98,
+          "scramble": "D2 F' U2 L2 R' F' D' L' D L' R2 F2 R D L' R2 U F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400002.3716286756,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 265622,
+          "durationMs": 2590,
+          "styleMetrics": {
+            "rotationRate": 0.03333333333333333,
+            "aufRate": 0.2833333333333333,
+            "wideTurnRate": 0.13333333333333333,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 26,
+          "id": 97,
+          "scramble": "B2 U2 R2 D U2 F2 L' D' B2 L2 R' B2 F' D L B' U' B U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2200000.9844390703,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 47,
+          "nodes": 137278,
+          "durationMs": 695,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.3829787234042553,
+            "wideTurnRate": 0.0425531914893617,
+            "avgF2LSegmentLen": 22,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 27,
+          "id": 91,
+          "scramble": "D' L2 R2 D2 L2 U2 F2 R2 F' D L R' F2 U F U' B2 D L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 28,
+          "id": 38,
+          "scramble": "U' B2 L2 D2 F2 U L2 D' B' L' U' R F2 D2 F U' R D'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 29,
+          "id": 22,
+          "scramble": "B2 U2 R2 F L2 R2 F' R2 D2 R2 U' B2 L' R U L' R2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "F2L2_SEARCH_LIMIT",
+          "stage": "F2L2",
+          "moveCount": null,
+          "nodes": 221420,
+          "durationMs": 1361,
+          "styleMetrics": null
+        }
+      ],
+      "low-auf": [
+        {
+          "sampleIndex": 1,
+          "id": 649,
+          "scramble": "D R2 U B2 R2 D' L2 U2 B2 L' F L' B' U R2 B D F'",
+          "sourceSolver": "Bill Wang",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1450001.1950568534,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 311030,
+          "durationMs": 4039,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.35,
+            "wideTurnRate": 0.03333333333333333,
+            "avgF2LSegmentLen": 14.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 2,
+          "id": 554,
+          "scramble": "R U2 R D2 B2 R' F2 U2 F2 R2 D2 U' F' L2 B' L' D B' U' L2 U2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1300001.775100428,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 287802,
+          "durationMs": 1855,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.3125,
+            "wideTurnRate": 0.09375,
+            "avgF2LSegmentLen": 13,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 3,
+          "id": 517,
+          "scramble": "F2 L B2 R2 D2 L D2 U2 R' B2 R' D B' R2 F2 L' D F' R B2 F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1150001.409038412,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 55,
+          "nodes": 266908,
+          "durationMs": 1740,
+          "styleMetrics": {
+            "rotationRate": 0.03636363636363636,
+            "aufRate": 0.2909090909090909,
+            "wideTurnRate": 0.01818181818181818,
+            "avgF2LSegmentLen": 11.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 4,
+          "id": 495,
+          "scramble": "R2 F2 D2 L' B2 D R' U2 F2 D2 L U F2 D F' D2 F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1250002.2475089296,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 61,
+          "nodes": 290475,
+          "durationMs": 2332,
+          "styleMetrics": {
+            "rotationRate": 0.03278688524590164,
+            "aufRate": 0.26229508196721313,
+            "wideTurnRate": 0.09836065573770492,
+            "avgF2LSegmentLen": 12.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 5,
+          "id": 494,
+          "scramble": "R2 B' F2 U F L' B D' B' U2 B2 F' R2 B2 D F R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1600000.9590346771,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 67,
+          "nodes": 309938,
+          "durationMs": 2348,
+          "styleMetrics": {
+            "rotationRate": 0.04477611940298507,
+            "aufRate": 0.31343283582089554,
+            "wideTurnRate": 0.029850746268656716,
+            "avgF2LSegmentLen": 16,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 6,
+          "id": 493,
+          "scramble": "B' F2 D2 F D' F D2 U' B R2 D B2 F2 L B' R2 F' R F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.6179184278,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 54,
+          "nodes": 302639,
+          "durationMs": 2161,
+          "styleMetrics": {
+            "rotationRate": 0.037037037037037035,
+            "aufRate": 0.25925925925925924,
+            "wideTurnRate": 0.037037037037037035,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 7,
+          "id": 492,
+          "scramble": "R2 D L2 U' F' L2 F' R2 B' L' D2 B' U F2 L D2 U' F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1300001.3594841235,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 55,
+          "nodes": 320773,
+          "durationMs": 2379,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.32727272727272727,
+            "wideTurnRate": 0.03636363636363636,
+            "avgF2LSegmentLen": 13,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 8,
+          "id": 491,
+          "scramble": "U2 F R2 F2 R' U2 B R2 F2 L' U' R F2 L2 U' R' F U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200000.7810478797,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 57,
+          "nodes": 270112,
+          "durationMs": 1880,
+          "styleMetrics": {
+            "rotationRate": 0.05263157894736842,
+            "aufRate": 0.3333333333333333,
+            "wideTurnRate": 0.017543859649122806,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 9,
+          "id": 425,
+          "scramble": "B2 U2 L2 R2 U R2 U' L2 F D2 B2 D2 R2 D2 R U' R2 D' F2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1550001.7626766728,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 320455,
+          "durationMs": 1964,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.25,
+            "wideTurnRate": 0.03125,
+            "avgF2LSegmentLen": 15.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 10,
+          "id": 424,
+          "scramble": "F2 L2 U2 L2 F U2 F2 D R F2 U2 L D F' B' U' F2 L' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 11,
+          "id": 423,
+          "scramble": "D L2 D L2 B R U L2 U2 F2 D2 B' D L2 R' U2 R2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "TIMEOUT_5000MS",
+          "stage": "",
+          "moveCount": null,
+          "nodes": null,
+          "durationMs": 5150,
+          "styleMetrics": null
+        },
+        {
+          "sampleIndex": 12,
+          "id": 422,
+          "scramble": "U2 F2 U L2 U B2 U F' R' F2 U2 R2 B' F' R2 B D' U",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1750001.118724905,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 64,
+          "nodes": 376340,
+          "durationMs": 3049,
+          "styleMetrics": {
+            "rotationRate": 0.03125,
+            "aufRate": 0.3125,
+            "wideTurnRate": 0.03125,
+            "avgF2LSegmentLen": 17.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 13,
+          "id": 421,
+          "scramble": "B2 D' F2 U2 R2 U' L2 F L F L2 F' R2 U' L2 R' B U2 B",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1250002.2595323802,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 61,
+          "nodes": 296735,
+          "durationMs": 1920,
+          "styleMetrics": {
+            "rotationRate": 0.03278688524590164,
+            "aufRate": 0.22950819672131148,
+            "wideTurnRate": 0.06557377049180328,
+            "avgF2LSegmentLen": 12.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 14,
+          "id": 392,
+          "scramble": "R2 D B2 R2 D U B2 R' U2 L' R' D' U' L B2 R B' L2",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1900001.1282865196,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 73,
+          "nodes": 389036,
+          "durationMs": 2703,
+          "styleMetrics": {
+            "rotationRate": 0.0273972602739726,
+            "aufRate": 0.3287671232876712,
+            "wideTurnRate": 0.0273972602739726,
+            "avgF2LSegmentLen": 19,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 15,
+          "id": 352,
+          "scramble": "R' F' B' R' L2 B' D R U R L2 F D2 F' U2 R2 U2 B2 U2 F'",
+          "sourceSolver": "Jayden McNeill",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200000.7825376792,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 58,
+          "nodes": 284904,
+          "durationMs": 1854,
+          "styleMetrics": {
+            "rotationRate": 0.05172413793103448,
+            "aufRate": 0.3275862068965517,
+            "wideTurnRate": 0.034482758620689655,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 16,
+          "id": 163,
+          "scramble": "L2 F2 L2 U' L2 U B2 D B2 U2 L2 U' B' D' F2 L R2 F2 D U2 R'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2100001.915540322,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 74,
+          "nodes": 376787,
+          "durationMs": 2122,
+          "styleMetrics": {
+            "rotationRate": 0.02702702702702703,
+            "aufRate": 0.2702702702702703,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 21,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 17,
+          "id": 162,
+          "scramble": "R2 B2 D' L2 R2 D2 F2 U' F2 D' L2 U B' D2 L' U2 B F R U R",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1550001.6455187711,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 62,
+          "nodes": 261440,
+          "durationMs": 1679,
+          "styleMetrics": {
+            "rotationRate": 0.03225806451612903,
+            "aufRate": 0.2903225806451613,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 15.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 18,
+          "id": 161,
+          "scramble": "D B2 D' R2 U' B2 U' F2 D' U2 R' U' R2 B R2 D' U2 R' F2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1200001.420334235,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 51,
+          "nodes": 291347,
+          "durationMs": 2340,
+          "styleMetrics": {
+            "rotationRate": 0.058823529411764705,
+            "aufRate": 0.2549019607843137,
+            "wideTurnRate": 0.0392156862745098,
+            "avgF2LSegmentLen": 12,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 19,
+          "id": 160,
+          "scramble": "B2 F2 D2 L R' F' L' U' B F' U' R' D R' U2 L F2 D",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.2035704446,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 313680,
+          "durationMs": 1607,
+          "styleMetrics": {
+            "rotationRate": 0.028169014084507043,
+            "aufRate": 0.3380281690140845,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 20,
+          "id": 159,
+          "scramble": "L2 R2 F R2 B2 L2 D2 F' D' L' F' U2 B U2 L F2 D' B L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1800001.1915549655,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 71,
+          "nodes": 406081,
+          "durationMs": 3390,
+          "styleMetrics": {
+            "rotationRate": 0,
+            "aufRate": 0.38028169014084506,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 18,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 21,
+          "id": 158,
+          "scramble": "L2 B2 U F2 D B2 F2 R' D R F2 L B L' U' F2 D' L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1950001.1599005363,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 78,
+          "nodes": 373667,
+          "durationMs": 2328,
+          "styleMetrics": {
+            "rotationRate": 0.02564102564102564,
+            "aufRate": 0.32051282051282054,
+            "wideTurnRate": 0.02564102564102564,
+            "avgF2LSegmentLen": 19.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 22,
+          "id": 101,
+          "scramble": "B' D2 U2 B U F2 R' U R2 F L' U B' F' D' L' B' R F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400000.7971545786,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 59,
+          "nodes": 278457,
+          "durationMs": 2018,
+          "styleMetrics": {
+            "rotationRate": 0.03389830508474576,
+            "aufRate": 0.3559322033898305,
+            "wideTurnRate": 0.05084745762711865,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 23,
+          "id": 100,
+          "scramble": "B F' L2 D2 B2 L R' U' L F' U B2 U2 B F2 L2 U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1650001.6431154567,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 65,
+          "nodes": 352435,
+          "durationMs": 2047,
+          "styleMetrics": {
+            "rotationRate": 0.03076923076923077,
+            "aufRate": 0.2923076923076923,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 16.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 24,
+          "id": 99,
+          "scramble": "F2 U2 L2 B' U' B' F L2 D2 U' R2 D' L' D U L2 F2 L'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2600001.966614617,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 61,
+          "nodes": 204948,
+          "durationMs": 937,
+          "styleMetrics": {
+            "rotationRate": 0.06557377049180328,
+            "aufRate": 0.26229508196721313,
+            "wideTurnRate": 0.09836065573770492,
+            "avgF2LSegmentLen": 26,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 25,
+          "id": 98,
+          "scramble": "D2 F' U2 L2 R' F' D' L' D L' R2 F2 R D L' R2 U F'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1400002.3716286756,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 60,
+          "nodes": 265622,
+          "durationMs": 2715,
+          "styleMetrics": {
+            "rotationRate": 0.03333333333333333,
+            "aufRate": 0.2833333333333333,
+            "wideTurnRate": 0.13333333333333333,
+            "avgF2LSegmentLen": 14,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 26,
+          "id": 97,
+          "scramble": "B2 U2 R2 D U2 F2 L' D' B2 L2 R' B2 F' D L B' U' B U'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2000001.615195259,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 45,
+          "nodes": 131164,
+          "durationMs": 497,
+          "styleMetrics": {
+            "rotationRate": 0.06666666666666667,
+            "aufRate": 0.26666666666666666,
+            "wideTurnRate": 0,
+            "avgF2LSegmentLen": 20,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 27,
+          "id": 91,
+          "scramble": "D' L2 R2 D2 L2 U2 F2 R2 F' D L R' F2 U F U' B2 D L2",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 2000002.9098812635,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 69,
+          "nodes": 374922,
+          "durationMs": 1898,
+          "styleMetrics": {
+            "rotationRate": 0.043478260869565216,
+            "aufRate": 0.18840579710144928,
+            "wideTurnRate": 0.10144927536231885,
+            "avgF2LSegmentLen": 20,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 28,
+          "id": 38,
+          "scramble": "U' B2 L2 D2 F2 U L2 D' B' L' U' R F2 D2 F U' R D'",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": 1350001.027783403,
+          "ok": true,
+          "reason": null,
+          "stage": null,
+          "moveCount": 63,
+          "nodes": 269675,
+          "durationMs": 1737,
+          "styleMetrics": {
+            "rotationRate": 0.047619047619047616,
+            "aufRate": 0.30158730158730157,
+            "wideTurnRate": 0.031746031746031744,
+            "avgF2LSegmentLen": 13.5,
+            "zbUsageRate": 1,
+            "llApproach": "ZB"
+          }
+        },
+        {
+          "sampleIndex": 29,
+          "id": 22,
+          "scramble": "B2 U2 R2 F L2 R2 F' R2 D2 R2 U' B2 L' R U L' R2 D F",
+          "sourceSolver": "Feliks Zemdegs",
+          "sourceMethod": "CFOP",
+          "styleDistanceToTarget": null,
+          "ok": false,
+          "reason": "F2L2_SEARCH_LIMIT",
+          "stage": "F2L2",
+          "moveCount": null,
+          "nodes": 221420,
+          "durationMs": 1970,
+          "styleMetrics": null
+        }
+      ]
+    }
+  }
+}

@@ -17,7 +17,11 @@ const DEFAULT_PUZZLE = "3x3";
 const DEFAULT_METHODS = ["CFOP", "ZB"];
 const DEFAULT_SMOOTHING_ALPHA = 2;
 const DEFAULT_MAX_CASES = 8;
-const SCHEMA_VERSION = "reco-f2l-ll-prediction.v1";
+const DEFAULT_MAX_FORMULAS = 12;
+const SCHEMA_VERSION = "reco-f2l-ll-prediction.v2";
+const FORMULA_ROTATIONS = ["", "y", "y2", "y'"];
+const FORMULA_AUF = ["", "U", "U2", "U'"];
+const FRAME_ROTATION_TOKENS = new Set(["x", "x2", "x'", "z", "z2", "z'"]);
 
 const POPCOUNT_12 = new Uint8Array(1 << 12);
 for (let i = 1; i < POPCOUNT_12.length; i++) {
@@ -51,6 +55,7 @@ function parseArgs(argv) {
     methods: DEFAULT_METHODS.slice(),
     smoothingAlpha: DEFAULT_SMOOTHING_ALPHA,
     maxCases: DEFAULT_MAX_CASES,
+    maxFormulas: DEFAULT_MAX_FORMULAS,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -89,6 +94,9 @@ function parseArgs(argv) {
     } else if (flag === "--max-cases") {
       opts.maxCases = Math.max(1, parseIntOrFallback(value, opts.maxCases));
       if (consumeNext) i += 1;
+    } else if (flag === "--max-formulas") {
+      opts.maxFormulas = Math.max(1, parseIntOrFallback(value, opts.maxFormulas));
+      if (consumeNext) i += 1;
     }
   }
 
@@ -105,6 +113,7 @@ function printHelp() {
   console.log("  --methods <csv>          Methods to include (default: CFOP,ZB)");
   console.log("  --smoothing-alpha <n>    Smoothing pseudo-count against global prior (default: 2)");
   console.log("  --max-cases <n>          Keep top N LL case labels per state (default: 8)");
+  console.log("  --max-formulas <n>       Keep top N LL formulas per state (default: 12)");
 }
 
 function loadRecords(inputPath) {
@@ -160,6 +169,40 @@ function normalizeAlgorithmText(text) {
   return out.join(" ");
 }
 
+function invertToken(tok) {
+  if (!tok) return tok;
+  if (tok.endsWith("2")) return tok;
+  if (tok.endsWith("'")) return tok.slice(0, -1);
+  return `${tok}'`;
+}
+
+function invertRotation(rot) {
+  if (!rot) return "";
+  if (rot === "y2") return "y2";
+  if (rot === "y") return "y'";
+  if (rot === "y'") return "y";
+  return "";
+}
+
+function buildFormulaCandidate(rot, preAuf, alg, postAuf = "") {
+  return [rot, preAuf, alg, invertRotation(rot), postAuf].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function stripOuterFrameRotations(tokens) {
+  let start = 0;
+  let end = tokens.length;
+  while (start < end && FRAME_ROTATION_TOKENS.has(tokens[start])) start += 1;
+  while (end > start && FRAME_ROTATION_TOKENS.has(tokens[end - 1])) end -= 1;
+  return tokens.slice(start, end);
+}
+
+function normalizeFormulaMatchText(text) {
+  const tokens = splitMoveTokens(text)
+    .map((token) => normalizeMoveToken(token))
+    .filter(Boolean);
+  return stripOuterFrameRotations(tokens).join(" ");
+}
+
 function normalizeCaseLabel(label) {
   return String(label || "")
     .replace(/\s+/g, " ")
@@ -177,6 +220,16 @@ function classifyStepLabel(label) {
     return "f2l";
   }
   return "other";
+}
+
+function classifyLlFormulaFamily(label) {
+  const text = String(label || "").trim().toLowerCase();
+  if (!text) return "OTHER";
+  if (text.includes("zbls")) return "ZBLS";
+  if (text.includes("eo+zbll") || text.includes("zbll")) return "ZBLL";
+  if (text.includes("epll") || text.includes("pll")) return "PLL";
+  if (text.includes("oll")) return "OLL";
+  return "OTHER";
 }
 
 function collectChangedPositions(before, after) {
@@ -271,6 +324,75 @@ async function buildF2LContext() {
   };
 }
 
+async function loadFormulaLibraries() {
+  const [{ SCDB_CFOP_ALGS }, { ZB_FORMULAS }] = await Promise.all([
+    import("../solver/scdbCfopAlgs.js"),
+    import("../solver/zbDataset.js"),
+  ]);
+
+  function dedupeNormalizedFormulas(list) {
+    const seen = new Set();
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const normalized = normalizeAlgorithmText(list[i]);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
+  }
+
+  return {
+    OLL: dedupeNormalizedFormulas(SCDB_CFOP_ALGS.OLL || []),
+    PLL: dedupeNormalizedFormulas(SCDB_CFOP_ALGS.PLL || []),
+    ZBLL: dedupeNormalizedFormulas(ZB_FORMULAS.ZBLL || []),
+    ZBLS: dedupeNormalizedFormulas(ZB_FORMULAS.ZBLS || []),
+  };
+}
+
+function buildFormulaReverseIndex(formulaLibraries) {
+  const result = {
+    libraries: {},
+    reverseMaps: {},
+  };
+
+  for (const family of Object.keys(formulaLibraries || {})) {
+    const formulas = Array.isArray(formulaLibraries[family]) ? formulaLibraries[family] : [];
+    const reverseMap = new Map();
+    const entries = [];
+    for (let i = 0; i < formulas.length; i++) {
+      const formula = normalizeAlgorithmText(formulas[i]);
+      if (!formula) continue;
+      const entry = {
+        family,
+        formula,
+        index: i,
+        key: `${family}:${i}`,
+      };
+      entries.push(entry);
+      for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
+        const rot = FORMULA_ROTATIONS[r];
+        for (let a = 0; a < FORMULA_AUF.length; a++) {
+          const preAuf = FORMULA_AUF[a];
+          for (let p = 0; p < FORMULA_AUF.length; p++) {
+            const postAuf = FORMULA_AUF[p];
+            const candidate = normalizeFormulaMatchText(buildFormulaCandidate(rot, preAuf, formula, postAuf));
+            if (!candidate) continue;
+            const existing = reverseMap.get(candidate);
+            if (!existing || entry.index < existing.index) {
+              reverseMap.set(candidate, entry);
+            }
+          }
+        }
+      }
+    }
+    result.libraries[family] = entries;
+    result.reverseMaps[family] = reverseMap;
+  }
+
+  return result;
+}
+
 function createStateAccumulator() {
   return {
     sampleCount: 0,
@@ -278,12 +400,24 @@ function createStateAccumulator() {
     pllMoveSum: 0,
     llMoveSum: 0,
     caseCounts: new Map(),
+    formulaCounts: new Map(),
   };
 }
 
 function addCaseCount(caseCounts, caseTag) {
   if (!caseTag) return;
   caseCounts.set(caseTag, (caseCounts.get(caseTag) || 0) + 1);
+}
+
+function addFormulaCount(formulaCounts, family, formula) {
+  if (!formulaCounts || !family || !formula) return;
+  const key = `${family}::${formula}`;
+  const existing = formulaCounts.get(key);
+  if (existing) {
+    existing.count += 1;
+    return;
+  }
+  formulaCounts.set(key, { family, formula, count: 1 });
 }
 
 function addStateSample(stateMap, stateKey, sample) {
@@ -298,6 +432,28 @@ function addStateSample(stateMap, stateKey, sample) {
   acc.pllMoveSum += sample.pllMoveCount;
   acc.llMoveSum += sample.llMoveCount;
   addCaseCount(acc.caseCounts, sample.firstCaseTag);
+  if (sample.formulaFamily && sample.formulaKey) {
+    addFormulaCount(acc.formulaCounts, sample.formulaFamily, sample.formulaKey);
+  }
+}
+
+function matchFormulaForStep(movesText, family, formulaIndex) {
+  if (!formulaIndex || !family) return null;
+  const normalizedStep = normalizeFormulaMatchText(movesText);
+  if (!normalizedStep) return null;
+  const reverseMap = formulaIndex.reverseMaps?.[family];
+  if (!reverseMap) return null;
+  const entry = reverseMap.get(normalizedStep);
+  if (entry) return entry;
+
+  const tokens = splitMoveTokens(normalizedStep);
+  if (tokens.length > 1) {
+    const stripped = stripOuterFrameRotations(tokens).join(" ");
+    if (stripped && stripped !== normalizedStep) {
+      return reverseMap.get(stripped) || null;
+    }
+  }
+  return null;
 }
 
 function createProfileStats() {
@@ -333,6 +489,7 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
   const globalPrior = priorMeans && priorMeans.sampleCount > 0 ? priorMeans : ownMeans;
   const alpha = Math.max(0, Number(opts.smoothingAlpha) || DEFAULT_SMOOTHING_ALPHA);
   const maxCases = Math.max(1, Number(opts.maxCases) || DEFAULT_MAX_CASES);
+  const maxFormulas = Math.max(1, Number(opts.maxFormulas) || DEFAULT_MAX_FORMULAS);
 
   const baselineOll = Number(globalPrior.expectedOllMoves) || 0;
   const baselinePll = Number(globalPrior.expectedPllMoves) || 0;
@@ -353,6 +510,26 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
       })
       .slice(0, maxCases);
 
+    const formulaFamilyCounts = {};
+    const formulaEntries = Array.from(acc.formulaCounts.values())
+      .map((entry) => ({
+        family: String(entry.family || "OTHER"),
+        formula: String(entry.formula || ""),
+        count: Number(entry.count || 0),
+      }))
+      .filter((entry) => entry.formula && Number.isFinite(entry.count) && entry.count > 0)
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        const familyCmp = a.family.localeCompare(b.family);
+        if (familyCmp !== 0) return familyCmp;
+        return a.formula.localeCompare(b.formula);
+      });
+    for (let i = 0; i < formulaEntries.length; i++) {
+      const entry = formulaEntries[i];
+      formulaFamilyCounts[entry.family] = (formulaFamilyCounts[entry.family] || 0) + entry.count;
+    }
+    const topFormulas = formulaEntries.slice(0, maxFormulas);
+
     states.push({
       key: Number(key),
       sampleCount: acc.sampleCount,
@@ -361,6 +538,8 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
       expectedLlMoves: round6(expectedLlMoves),
       deltaExpectedLlMoves: round6(expectedLlMoves - baselineLl),
       topCases,
+      formulaFamilyCounts,
+      topFormulas,
     });
   }
 
@@ -386,7 +565,7 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
   };
 }
 
-async function buildDownstreamProfiles(rows, ctx, opts) {
+async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
   const methodSet = new Set(opts.methods);
   const seenIds = new Set();
   const seenSecondaryKeys = new Set();
@@ -463,6 +642,8 @@ async function buildDownstreamProfiles(rows, ctx, opts) {
     let llStarted = false;
     let llStateKey = null;
     let firstCaseTag = "";
+    let firstFormulaFamily = null;
+    let firstFormulaKey = null;
     let ollMoveCount = 0;
     let pllMoveCount = 0;
     let llMoveCount = 0;
@@ -472,6 +653,7 @@ async function buildDownstreamProfiles(rows, ctx, opts) {
       const step = steps[s];
       const label = String(step?.label || "").trim();
       const labelKind = classifyStepLabel(label);
+      const formulaFamily = classifyLlFormulaFamily(label);
       const movesText = normalizeAlgorithmText(String(step?.moves || "").trim());
       const moveCount = movesText ? splitMoveTokens(movesText).length : 0;
 
@@ -487,6 +669,19 @@ async function buildDownstreamProfiles(rows, ctx, opts) {
           ollMoveCount += moveCount;
         } else if (labelKind === "pll") {
           pllMoveCount += moveCount;
+        }
+      }
+      if (
+        llStarted &&
+        !firstFormulaKey &&
+        formulaIndex &&
+        formulaFamily !== "OTHER" &&
+        (labelKind === "oll" || labelKind === "pll")
+      ) {
+        const formulaMatch = matchFormulaForStep(movesText, formulaFamily, formulaIndex);
+        if (formulaMatch) {
+          firstFormulaFamily = formulaMatch.family;
+          firstFormulaKey = formulaMatch.formula;
         }
       }
 
@@ -518,6 +713,8 @@ async function buildDownstreamProfiles(rows, ctx, opts) {
       pllMoveCount,
       llMoveCount,
       firstCaseTag,
+      formulaFamily: firstFormulaFamily,
+      formulaKey: firstFormulaKey,
     };
 
     addStateSample(globalStateMap, llStateKey, sample);
@@ -567,6 +764,8 @@ async function main() {
 
   const records = loadRecords(opts.input);
   const ctx = await buildF2LContext();
+  const formulaLibraries = await loadFormulaLibraries();
+  const formulaIndex = buildFormulaReverseIndex(formulaLibraries);
 
   const methodCounts = new Map();
   for (let i = 0; i < records.length; i++) {
@@ -582,7 +781,7 @@ async function main() {
     playerDownstreamProfiles,
     duplicateByIdCount,
     duplicateBySecondaryCount,
-  } = await buildDownstreamProfiles(records, ctx, opts);
+  } = await buildDownstreamProfiles(records, ctx, opts, formulaIndex);
 
   const payload = {
     schemaVersion: SCHEMA_VERSION,
@@ -593,7 +792,9 @@ async function main() {
       methods: opts.methods,
       smoothingAlpha: opts.smoothingAlpha,
       maxCases: opts.maxCases,
+      maxFormulas: opts.maxFormulas,
       llBoundaryRule: "first step label matching OLL|PLL|ZBLS|ZBLL",
+      formulaRule: "match normalized LL moves against SCDB/ZB formula libraries",
     },
     totals: {
       records: records.length,

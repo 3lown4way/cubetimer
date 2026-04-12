@@ -1,0 +1,315 @@
+{
+  "schemaVersion": "reco-ll-family-calibration.v1",
+  "generatedAt": "2026-04-12T05:49:14.974Z",
+  "sourceDownstreamInput": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-f2l-ll-prediction.json",
+  "sourceMixedInput": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-top10-mixed-cfop-profile.json",
+  "holdoutRatio": 0.2,
+  "globalLlFamilyCalibration": {
+    "stage3Temperature": 1.62,
+    "stage4Temperature": 1.09,
+    "zbllScale": 0.55,
+    "zblsScale": 0.55
+  },
+  "playerLlFamilyCalibrationProfiles": [
+    {
+      "solver": "Max Park",
+      "solveCount": 935,
+      "stateCount": 54,
+      "trainStateCount": 45,
+      "validationStateCount": 9,
+      "stage3Temperature": 1.3,
+      "stage4Temperature": 1.1,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.19932977,
+      "mixedSummary": {
+        "solveCount": 959,
+        "zbllRate": 0.033368,
+        "zblsRate": 0.001043
+      }
+    },
+    {
+      "solver": "Tymon Kolasiński",
+      "solveCount": 726,
+      "stateCount": 196,
+      "trainStateCount": 156,
+      "validationStateCount": 40,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.40149408,
+      "mixedSummary": {
+        "solveCount": 602,
+        "zbllRate": 0.237542,
+        "zblsRate": 0.033223
+      }
+    },
+    {
+      "solver": "Feliks Zemdegs",
+      "solveCount": 702,
+      "stateCount": 72,
+      "trainStateCount": 60,
+      "validationStateCount": 12,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.43705726,
+      "mixedSummary": {
+        "solveCount": 771,
+        "zbllRate": 0.155642,
+        "zblsRate": 0.015564
+      }
+    },
+    {
+      "solver": "Yiheng Wang",
+      "solveCount": 574,
+      "stateCount": 26,
+      "trainStateCount": 20,
+      "validationStateCount": 6,
+      "stage3Temperature": 1.3,
+      "stage4Temperature": 1.7,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.03796458,
+      "mixedSummary": {
+        "solveCount": 583,
+        "zbllRate": 0.010292,
+        "zblsRate": 0.008576
+      }
+    },
+    {
+      "solver": "Matty Hiroto Inaba",
+      "solveCount": 496,
+      "stateCount": 44,
+      "trainStateCount": 35,
+      "validationStateCount": 9,
+      "stage3Temperature": 1.6,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.24475596,
+      "mixedSummary": {
+        "solveCount": 515,
+        "zbllRate": 0.058252,
+        "zblsRate": 0.001942
+      }
+    },
+    {
+      "solver": "Dylan Miller",
+      "solveCount": 423,
+      "stateCount": 16,
+      "trainStateCount": 10,
+      "validationStateCount": 6,
+      "stage3Temperature": 1.45,
+      "stage4Temperature": 1.25,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.11297135,
+      "mixedSummary": {
+        "solveCount": 434,
+        "zbllRate": 0.036866,
+        "zblsRate": 0.004608
+      }
+    },
+    {
+      "solver": "Ruihang Xu",
+      "solveCount": 298,
+      "stateCount": 16,
+      "trainStateCount": 14,
+      "validationStateCount": 16,
+      "stage3Temperature": 1.3,
+      "stage4Temperature": 1.4,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.13378684,
+      "mixedSummary": {
+        "solveCount": 308,
+        "zbllRate": 0.035714,
+        "zblsRate": 0
+      }
+    },
+    {
+      "solver": "Luke Garrett",
+      "solveCount": 280,
+      "stateCount": 34,
+      "trainStateCount": 24,
+      "validationStateCount": 10,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.33298793,
+      "mixedSummary": {
+        "solveCount": 310,
+        "zbllRate": 0.054839,
+        "zblsRate": 0
+      }
+    },
+    {
+      "solver": "Seung Hyuk Nahm",
+      "solveCount": 265,
+      "stateCount": 45,
+      "trainStateCount": 35,
+      "validationStateCount": 10,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.32126541,
+      "mixedSummary": {
+        "solveCount": 272,
+        "zbllRate": 0.198529,
+        "zblsRate": 0.055147
+      }
+    },
+    {
+      "solver": "Xuanyi Geng",
+      "solveCount": 239,
+      "stateCount": 222,
+      "trainStateCount": 171,
+      "validationStateCount": 51,
+      "stage3Temperature": 1.15,
+      "stage4Temperature": 1.4,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.59816317,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    },
+    {
+      "solver": "Leo Borromeo",
+      "solveCount": 221,
+      "stateCount": 38,
+      "trainStateCount": 30,
+      "validationStateCount": 8,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.5122096,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    },
+    {
+      "solver": "Kyle Santucci",
+      "solveCount": 185,
+      "stateCount": 22,
+      "trainStateCount": 17,
+      "validationStateCount": 5,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.45716643,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    },
+    {
+      "solver": "Bill Wang",
+      "solveCount": 183,
+      "stateCount": 30,
+      "trainStateCount": 20,
+      "validationStateCount": 10,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.34898521,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    },
+    {
+      "solver": "Jayden McNeill",
+      "solveCount": 155,
+      "stateCount": 26,
+      "trainStateCount": 21,
+      "validationStateCount": 5,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.25021724,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    },
+    {
+      "solver": "Sei Sugama",
+      "solveCount": 87,
+      "stateCount": 5,
+      "trainStateCount": 5,
+      "validationStateCount": 5,
+      "stage3Temperature": 1.8,
+      "stage4Temperature": 0.95,
+      "zbllScale": 0.55,
+      "zblsScale": 0.55,
+      "stage3ZbllCap": 0,
+      "stage3ZblsCap": 0,
+      "stage4ZbllCap": 0,
+      "validationLoss": 0.0460061,
+      "mixedSummary": {
+        "solveCount": 4754,
+        "zbllRate": 0.09024,
+        "zblsRate": 0.01178
+      }
+    }
+  ]
+}

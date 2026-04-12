@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("url");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DEFAULT_DETAILS_INPUT_PRIMARY = path.join(
@@ -491,12 +492,14 @@ function computeCrossSamplingCalibration(mixedSummary, scrambles) {
   };
 }
 
-function main() {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
     printHelp();
     return;
   }
+
+  const activation = await import(pathToFileURL(path.join(ROOT_DIR, "solver", "mixed-cfop-activation.js")).href);
 
   const detailsPayload = loadJsonFile(opts.details);
   const stylePayload = loadJsonFile(opts.styleDetails);
@@ -540,15 +543,45 @@ function main() {
         stylePlayer.detailedStyleProfile ||
         stylePlayer.learnedStyleProfile ||
         globalMixedCfopStyleProfile;
-      const recommendedF2LMethod = forcePureCfop ? "legacy" : stylePlayer.recommendedF2LMethod || "mixed";
+      const caseBias = toCaseBias(mixedCfopSummary);
+      const activationScore = activation.estimateMixedActivationScore(
+        {
+          solver,
+          mixedEligible: true,
+          forcePureCfop,
+          mixedCfopSummary,
+          caseBias,
+        },
+        mixedStyleProfile,
+        mixedCfopSummary,
+        caseBias,
+      );
+      const mixedEligible = activationScore >= activation.MIXED_ACTIVATION_THRESHOLD;
+      const recommendedF2LMethod = activation.resolvePlayerRecommendedF2LMethod({
+        ...stylePlayer,
+        forcePureCfop,
+        mixedEligible,
+        mixedCfopSummary,
+        caseBias,
+        mixedCfopStyleProfile: forcePureCfop
+          ? null
+          : {
+              preset: "top10-mixed",
+              rotationWeight: Number(mixedStyleProfile.rotationWeight) || DEFAULT_STYLE_PROFILE.rotationWeight,
+              aufWeight: Number(mixedStyleProfile.aufWeight) || DEFAULT_STYLE_PROFILE.aufWeight,
+              wideTurnWeight: Number(mixedStyleProfile.wideTurnWeight) || DEFAULT_STYLE_PROFILE.wideTurnWeight,
+            },
+      });
       return {
         solver,
         solveCount: mixedCfopSummary.solveCount,
         primaryMethod,
         primaryMethodGroup: primaryMethod === "ZB" ? "ZB" : "CFOP",
         primaryMethodRatio: toFiniteNumber(stylePlayer.primaryMethodRatio, null),
-        mixedEligible: SUPPORTED_PRIMARY_METHODS.has(primaryMethod),
-        caseBias: toCaseBias(mixedCfopSummary),
+        mixedEligible,
+        mixedActivationScore: activationScore,
+        mixedActivationThreshold: activation.MIXED_ACTIVATION_THRESHOLD,
+        caseBias,
         crossSamplingCalibration: computeCrossSamplingCalibration(
           mixedCfopSummary,
           scramblesBySolver.get(solver) || [],
@@ -577,6 +610,7 @@ function main() {
     sourceDetailsInput: opts.details,
     sourceStyleDetailsInput: opts.styleDetails,
     minSolves: opts.minSolves,
+    mixedActivationThreshold: activation.MIXED_ACTIVATION_THRESHOLD,
     filter: {
       puzzle: opts.puzzle,
       methods: opts.methods,
@@ -606,9 +640,7 @@ function main() {
   console.log(`Wrote ${opts.output} (players=${playerMixedCfopProfiles.length}, solves=${globalMixedCfopSummary.solveCount})`);
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
-}
+});

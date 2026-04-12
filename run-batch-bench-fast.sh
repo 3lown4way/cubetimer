@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+export BATCH_SIZE="${BATCH_SIZE:-200}"
+export BATCH_PARALLEL="${BATCH_PARALLEL:-1}"
+export MAX_BENCH_WORKERS="${MAX_BENCH_WORKERS:-6}"
+export SCRAMBLE_CONCURRENCY="${SCRAMBLE_CONCURRENCY:-3}"
+export PROGRESS="${PROGRESS:-0}"
+export PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-15}"
+export PROGRESS_LINES="${PROGRESS_LINES:-2}"
+export STRICT_TIMEOUT_MS="${STRICT_TIMEOUT_MS:-2500}"
+export ZB_TIMEOUT_MS="${ZB_TIMEOUT_MS:-4000}"
+export BENCH_RETRIES="${BENCH_RETRIES:-1}"
+
+exec ./run-batch-bench.sh "$@"

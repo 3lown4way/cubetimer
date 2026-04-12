@@ -84,6 +84,7 @@ function parseArgs(argv) {
     modes: DEFAULT_MODES.slice(),
     methods: ["CFOP", "ZB"],
     solvers: [],
+    maxWorkers: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -155,6 +156,9 @@ function parseArgs(argv) {
     } else if (flag === "--solvers") {
       opts.solvers = parseCsvList(value, opts.solvers);
       if (consumeNext) i += 1;
+    } else if (flag === "--max-workers") {
+      opts.maxWorkers = Math.max(1, parseIntOrFallback(value, opts.maxWorkers || 1));
+      if (consumeNext) i += 1;
     } else if (flag === "--mode") {
       const mode = String(value || "").trim().toLowerCase();
       if (mode === "strict" || mode === "zb") {
@@ -186,6 +190,7 @@ function printHelp() {
   console.log("  --modes <csv>              Modes to benchmark (default: strict,zb)");
   console.log("  --methods <csv>            Methods to include (default: CFOP,ZB)");
   console.log("  --solvers <csv>            Solver names to include (default: all found in input)");
+  console.log("  --max-workers <n>          Upper bound on worker threads (default: styles count)");
   console.log("  --mode <strict|zb>         Single mode alias (backward compatible)");
 }
 
@@ -841,7 +846,11 @@ function evaluateBalancedGate(comparison) {
 async function runModeBenchmarks(mode, scrambleSet, opts, targetProfiles) {
   const parallelismLimit = getParallelismLimit();
   const requestedWorkerCount = Math.max(1, opts.scrambleConcurrency * opts.styles.length);
-  const workerCount = Math.max(1, Math.min(requestedWorkerCount, parallelismLimit));
+  const maxWorkers =
+    Number.isFinite(opts.maxWorkers) && opts.maxWorkers > 0
+      ? Math.floor(opts.maxWorkers)
+      : Math.max(1, opts.styles.length);
+  const workerCount = Math.max(1, Math.min(requestedWorkerCount, parallelismLimit, maxWorkers));
   const maxSafeScrambleConcurrency = Math.max(1, Math.floor(workerCount / Math.max(1, opts.styles.length)));
   const scrambleConcurrency = Math.min(
     Math.max(1, opts.scrambleConcurrency),
@@ -851,7 +860,7 @@ async function runModeBenchmarks(mode, scrambleSet, opts, targetProfiles) {
 
   if (workerCount < requestedWorkerCount || scrambleConcurrency < opts.scrambleConcurrency) {
     console.log(
-      `[${mode}] parallelism capped: requested workers=${requestedWorkerCount}, using workers=${workerCount}, requested scrambleConcurrency=${opts.scrambleConcurrency}, using scrambleConcurrency=${scrambleConcurrency}, limit=${parallelismLimit}`,
+      `[${mode}] parallelism capped: requested workers=${requestedWorkerCount}, using workers=${workerCount}, maxWorkers=${maxWorkers}, requested scrambleConcurrency=${opts.scrambleConcurrency}, using scrambleConcurrency=${scrambleConcurrency}, limit=${parallelismLimit}`,
     );
   }
 
@@ -969,6 +978,11 @@ async function main() {
     modeResults.push(modeResult);
   }
 
+  const configuredMaxWorkers =
+    Number.isFinite(opts.maxWorkers) && opts.maxWorkers > 0
+      ? Math.floor(opts.maxWorkers)
+      : Math.max(1, opts.styles.length);
+
   const runsByMode = {};
   const summariesByMode = {};
   const comparisonsByMode = {};
@@ -992,6 +1006,7 @@ async function main() {
       scrambleConcurrency: opts.scrambleConcurrency,
       crossColor: opts.crossColor,
       timeoutMs: opts.timeoutMs ?? DEFAULT_GLOBAL_TIMEOUT_MS,
+      maxWorkers: configuredMaxWorkers,
       timeoutMsByMode: {
         strict: resolveTimeoutMsForMode("strict", opts),
         zb: resolveTimeoutMsForMode("zb", opts),

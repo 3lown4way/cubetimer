@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-04-11T08:33:01.566Z",
-  "sourceBenchmark": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-style-benchmark.json",
+  "generatedAt": "2026-04-12T02:24:41.308Z",
+  "sourceBenchmark": "vendor-data/reco/reco-3x3-style-benchmark.json",
   "sourceBenchmarks": [
-    "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-style-benchmark.json"
+    "vendor-data/reco/reco-3x3-style-benchmark.json"
   ],
-  "sourcePlayers": "/home/jhkang/바탕화면/CubeTimer/vendor-data/reco/reco-3x3-style-details.json",
+  "sourcePlayers": "vendor-data/reco/reco-3x3-style-details.json",
   "modes": [
     "strict",
     "zb"
@@ -22,21 +22,27 @@
   "playerCount": 15,
   "speedProfile": {
     "generatedFrom": "lowest-average-duration-across-strict-cfop-solvers",
-    "playerCount": 0,
-    "bestStyle": null,
+    "playerCount": 15,
+    "bestStyle": "legacy",
     "preset": "speed",
-    "rotationWeight": 5,
-    "aufWeight": 1,
-    "wideTurnWeight": 2
+    "rotationWeight": 0,
+    "aufWeight": 0,
+    "wideTurnWeight": 0,
+    "sampleCount": 4742,
+    "avgDurationMs": 1596.3137916490932,
+    "avgMoveCount": 61.23808519611978
   },
   "globalSpeedStyleProfile": {
     "generatedFrom": "lowest-average-duration-across-strict-cfop-solvers",
-    "playerCount": 0,
-    "bestStyle": null,
+    "playerCount": 15,
+    "bestStyle": "legacy",
     "preset": "speed",
-    "rotationWeight": 5,
-    "aufWeight": 1,
-    "wideTurnWeight": 2
+    "rotationWeight": 0,
+    "aufWeight": 0,
+    "wideTurnWeight": 0,
+    "sampleCount": 4742,
+    "avgDurationMs": 1596.3137916490932,
+    "avgMoveCount": 61.23808519611978
   },
   "players": [
     {
@@ -55,14 +61,27 @@
         "preset": "ml-aggressive",
         "rotationWeight": 2,
         "aufWeight": 0,
-        "wideTurnWeight": 3
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 2,
+        "aufWeight": 1,
+        "wideTurnWeight": 1,
+        "bestStyle": "balanced",
+        "sampleCount": 1635,
+        "avgDurationMs": 1889.5345565749235,
+        "avgMoveCount": 61.9565749235474
+      },
+      "speedBestStyle": "balanced",
+      "speedObservation": {
+        "sampleCount": 1635,
+        "avgDurationMs": 1889.5345565749235,
+        "avgMoveCount": 61.9565749235474
+      },
       "coverage": {
         "totalSolves": 959,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 1866,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -73,8 +92,78 @@
         "aufRate": 0.39126723791672247,
         "wideTurnRate": 0.04771388405409024
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1608,
+          "metrics": {
+            "rotationRate": 0.009602976827811345,
+            "aufRate": 0.3594035546100181,
+            "wideTurnRate": 0.05847449369915706
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1635,
+          "metrics": {
+            "rotationRate": 0.0037962988820944062,
+            "aufRate": 0.33463705687162487,
+            "wideTurnRate": 0.0317532502796701
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1642,
+          "metrics": {
+            "rotationRate": 0.004237895304546509,
+            "aufRate": 0.3349605529621874,
+            "wideTurnRate": 0.028711295545494946
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1613,
+          "metrics": {
+            "rotationRate": 0.03942740852226235,
+            "aufRate": 0.2953020578261942,
+            "wideTurnRate": 0.041170832298243816
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1608,
+          "metrics": {
+            "durationMs": 1900.1380597014925,
+            "moveCount": 60.47761194029851
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1635,
+          "metrics": {
+            "durationMs": 1889.5345565749235,
+            "moveCount": 61.9565749235474
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1642,
+          "metrics": {
+            "durationMs": 1920.8075517661389,
+            "moveCount": 61.96224116930573
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1613,
+          "metrics": {
+            "durationMs": 2016.6534407935524,
+            "moveCount": 63.21140731556107
+          }
+        }
+      ]
     },
     {
       "solver": "Feliks Zemdegs",
@@ -90,16 +179,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 2,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 1232,
+        "avgDurationMs": 1753.2573051948052,
+        "avgMoveCount": 60.49512987012987
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 1232,
+        "avgDurationMs": 1753.2573051948052,
+        "avgMoveCount": 60.49512987012987
+      },
       "coverage": {
         "totalSolves": 771,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 1444,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -110,8 +212,78 @@
         "aufRate": 0.3754681445240621,
         "wideTurnRate": 0.03180135518368584
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1232,
+          "metrics": {
+            "rotationRate": 0.00978314878791314,
+            "aufRate": 0.35729451463771156,
+            "wideTurnRate": 0.059642752296736504
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1229,
+          "metrics": {
+            "rotationRate": 0.0040825002435581495,
+            "aufRate": 0.33305360686026253,
+            "wideTurnRate": 0.03139016105705837
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1246,
+          "metrics": {
+            "rotationRate": 0.004227610542768798,
+            "aufRate": 0.3342812514761627,
+            "wideTurnRate": 0.027214559860267305
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1242,
+          "metrics": {
+            "rotationRate": 0.03900350302930631,
+            "aufRate": 0.29576468114516496,
+            "wideTurnRate": 0.038920789195357325
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1232,
+          "metrics": {
+            "durationMs": 1753.2573051948052,
+            "moveCount": 60.49512987012987
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1229,
+          "metrics": {
+            "durationMs": 1762.5028478437755,
+            "moveCount": 61.92432872253865
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1246,
+          "metrics": {
+            "durationMs": 1782.733547351525,
+            "moveCount": 62.00882825040129
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1242,
+          "metrics": {
+            "durationMs": 1884.1030595813204,
+            "moveCount": 63.02012882447665
+          }
+        }
+      ]
     },
     {
       "solver": "Tymon Kolasiński",
@@ -127,16 +299,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 2,
-        "aufWeight": 3,
-        "wideTurnWeight": 3
+        "rotationWeight": 1,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 1109,
+        "avgDurationMs": 1853.3155996393148,
+        "avgMoveCount": 60.1605049594229
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 1109,
+        "avgDurationMs": 1853.3155996393148,
+        "avgMoveCount": 60.1605049594229
+      },
       "coverage": {
         "totalSolves": 756,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 1286,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -147,8 +332,78 @@
         "aufRate": 0.3721360295883568,
         "wideTurnRate": 0.04652000576396561
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1109,
+          "metrics": {
+            "rotationRate": 0.010525908352399182,
+            "aufRate": 0.3561290162714095,
+            "wideTurnRate": 0.05809423837952377
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1105,
+          "metrics": {
+            "rotationRate": 0.00411689344974123,
+            "aufRate": 0.3342993498462433,
+            "wideTurnRate": 0.0316809697402393
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1099,
+          "metrics": {
+            "rotationRate": 0.00391998479655164,
+            "aufRate": 0.3361721436875929,
+            "wideTurnRate": 0.028710490574127754
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1111,
+          "metrics": {
+            "rotationRate": 0.03933647359138265,
+            "aufRate": 0.2977401057236078,
+            "wideTurnRate": 0.04049265557275969
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 1109,
+          "metrics": {
+            "durationMs": 1853.3155996393148,
+            "moveCount": 60.1605049594229
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 1105,
+          "metrics": {
+            "durationMs": 1855.3058823529411,
+            "moveCount": 61.42171945701357
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 1099,
+          "metrics": {
+            "durationMs": 1910.0691537761602,
+            "moveCount": 61.696087352138306
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 1111,
+          "metrics": {
+            "durationMs": 2004.12601260126,
+            "moveCount": 63.13951395139514
+          }
+        }
+      ]
     },
     {
       "solver": "Yiheng Wang",
@@ -164,16 +419,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 2,
-        "aufWeight": 2,
-        "wideTurnWeight": 2
+        "rotationWeight": 1,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 914,
+        "avgDurationMs": 1909.2275711159737,
+        "avgMoveCount": 60.74617067833698
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 914,
+        "avgDurationMs": 1909.2275711159737,
+        "avgMoveCount": 60.74617067833698
+      },
       "coverage": {
         "totalSolves": 584,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 1036,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -184,8 +452,78 @@
         "aufRate": 0.374655889416037,
         "wideTurnRate": 0.03329819012475839
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 914,
+          "metrics": {
+            "rotationRate": 0.01000403300551892,
+            "aufRate": 0.3570693920444614,
+            "wideTurnRate": 0.06003156620228561
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 901,
+          "metrics": {
+            "rotationRate": 0.004158483646229093,
+            "aufRate": 0.3353580194351897,
+            "wideTurnRate": 0.032493188300628376
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 903,
+          "metrics": {
+            "rotationRate": 0.003879532648905023,
+            "aufRate": 0.3361391668642224,
+            "wideTurnRate": 0.0287033674965367
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 893,
+          "metrics": {
+            "rotationRate": 0.038936286291404665,
+            "aufRate": 0.29621843259997765,
+            "wideTurnRate": 0.04051052025945322
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 914,
+          "metrics": {
+            "durationMs": 1909.2275711159737,
+            "moveCount": 60.74617067833698
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 901,
+          "metrics": {
+            "durationMs": 1930.7758046614872,
+            "moveCount": 61.81354051054384
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 903,
+          "metrics": {
+            "durationMs": 1941.28349944629,
+            "moveCount": 62.09856035437431
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 893,
+          "metrics": {
+            "durationMs": 2033.3852183650615,
+            "moveCount": 63.48824188129899
+          }
+        }
+      ]
     },
     {
       "solver": "Matty Hiroto Inaba",
@@ -201,16 +539,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 2,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 789,
+        "avgDurationMs": 1876.2585551330799,
+        "avgMoveCount": 59.874524714828894
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 789,
+        "avgDurationMs": 1876.2585551330799,
+        "avgMoveCount": 59.874524714828894
+      },
       "coverage": {
         "totalSolves": 515,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 926,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -221,8 +572,78 @@
         "aufRate": 0.3756970648145056,
         "wideTurnRate": 0.0390022372858717
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 789,
+          "metrics": {
+            "rotationRate": 0.010259070075599069,
+            "aufRate": 0.3570853492902995,
+            "wideTurnRate": 0.05682896427404033
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 795,
+          "metrics": {
+            "rotationRate": 0.004702414413007728,
+            "aufRate": 0.3352106141933309,
+            "wideTurnRate": 0.032181082283162334
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 809,
+          "metrics": {
+            "rotationRate": 0.004673576115097927,
+            "aufRate": 0.33556489473859336,
+            "wideTurnRate": 0.02913090523988487
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 797,
+          "metrics": {
+            "rotationRate": 0.039211261636203684,
+            "aufRate": 0.29639872670940604,
+            "wideTurnRate": 0.03938186880721508
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 789,
+          "metrics": {
+            "durationMs": 1876.2585551330799,
+            "moveCount": 59.874524714828894
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 795,
+          "metrics": {
+            "durationMs": 1890.2993710691824,
+            "moveCount": 61.432704402515725
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 809,
+          "metrics": {
+            "durationMs": 1930.7466007416563,
+            "moveCount": 61.46847960444994
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 797,
+          "metrics": {
+            "durationMs": 2005.4065244667504,
+            "moveCount": 62.65244667503137
+          }
+        }
+      ]
     },
     {
       "solver": "Dylan Miller",
@@ -239,15 +660,28 @@
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
         "rotationWeight": 2,
-        "aufWeight": 2,
-        "wideTurnWeight": 2
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 777,
+        "avgDurationMs": 1846.823680823681,
+        "avgMoveCount": 59.988416988416986
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 777,
+        "avgDurationMs": 1846.823680823681,
+        "avgMoveCount": 59.988416988416986
+      },
       "coverage": {
         "totalSolves": 441,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 882,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -258,8 +692,78 @@
         "aufRate": 0.3734696924455061,
         "wideTurnRate": 0.03631681098835473
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 777,
+          "metrics": {
+            "rotationRate": 0.01041310892453478,
+            "aufRate": 0.35601580987544407,
+            "wideTurnRate": 0.05816485390235247
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 767,
+          "metrics": {
+            "rotationRate": 0.004276014009628,
+            "aufRate": 0.3339745980616251,
+            "wideTurnRate": 0.030704611156910526
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 771,
+          "metrics": {
+            "rotationRate": 0.004191612184171443,
+            "aufRate": 0.33598530494783413,
+            "wideTurnRate": 0.02672191830487688
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 744,
+          "metrics": {
+            "rotationRate": 0.0386969509649293,
+            "aufRate": 0.2951583022724121,
+            "wideTurnRate": 0.04105821163550939
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 777,
+          "metrics": {
+            "durationMs": 1846.823680823681,
+            "moveCount": 59.988416988416986
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 767,
+          "metrics": {
+            "durationMs": 1867.5267275097783,
+            "moveCount": 61.47718383311604
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 771,
+          "metrics": {
+            "durationMs": 1904.1089494163425,
+            "moveCount": 61.69520103761349
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 744,
+          "metrics": {
+            "durationMs": 1993.1922043010752,
+            "moveCount": 62.91532258064516
+          }
+        }
+      ]
     },
     {
       "solver": "Luke Garrett",
@@ -275,16 +779,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 4,
-        "aufWeight": 2,
-        "wideTurnWeight": 1
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 3
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 490,
+        "avgDurationMs": 1843.965306122449,
+        "avgMoveCount": 59.72857142857143
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 490,
+        "avgDurationMs": 1843.965306122449,
+        "avgMoveCount": 59.72857142857143
+      },
       "coverage": {
         "totalSolves": 310,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 564,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -295,8 +812,78 @@
         "aufRate": 0.37566844919786097,
         "wideTurnRate": 0.02801916221033868
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 490,
+          "metrics": {
+            "rotationRate": 0.010989449395647468,
+            "aufRate": 0.3560165527974626,
+            "wideTurnRate": 0.057476757123384424
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 475,
+          "metrics": {
+            "rotationRate": 0.002912004294570717,
+            "aufRate": 0.33619521765780397,
+            "wideTurnRate": 0.03269229432200471
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 475,
+          "metrics": {
+            "rotationRate": 0.0029320353449322047,
+            "aufRate": 0.3361809234604084,
+            "wideTurnRate": 0.029836607749925463
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 473,
+          "metrics": {
+            "rotationRate": 0.03763495858792531,
+            "aufRate": 0.2965248303161461,
+            "wideTurnRate": 0.038514470452543664
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 490,
+          "metrics": {
+            "durationMs": 1843.965306122449,
+            "moveCount": 59.72857142857143
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 475,
+          "metrics": {
+            "durationMs": 1871.8905263157894,
+            "moveCount": 61.688421052631575
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 475,
+          "metrics": {
+            "durationMs": 1934.6526315789474,
+            "moveCount": 61.80421052631579
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 473,
+          "metrics": {
+            "durationMs": 1988.1289640591965,
+            "moveCount": 62.59196617336152
+          }
+        }
+      ]
     },
     {
       "solver": "Ruihang Xu",
@@ -312,16 +899,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 3,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 496,
+        "avgDurationMs": 1848.1754032258063,
+        "avgMoveCount": 60.296370967741936
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 496,
+        "avgDurationMs": 1848.1754032258063,
+        "avgMoveCount": 60.296370967741936
+      },
       "coverage": {
         "totalSolves": 308,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 588,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -332,8 +932,78 @@
         "aufRate": 0.37089274643521386,
         "wideTurnRate": 0.033168009919404835
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 496,
+          "metrics": {
+            "rotationRate": 0.010288975193902,
+            "aufRate": 0.35612075742023935,
+            "wideTurnRate": 0.061138850033900155
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 497,
+          "metrics": {
+            "rotationRate": 0.004482628233093409,
+            "aufRate": 0.33422371527205386,
+            "wideTurnRate": 0.03409122647870415
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 512,
+          "metrics": {
+            "rotationRate": 0.00448392263277435,
+            "aufRate": 0.33498309413948163,
+            "wideTurnRate": 0.03159837476336003
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 498,
+          "metrics": {
+            "rotationRate": 0.039397841826529285,
+            "aufRate": 0.29566118747669495,
+            "wideTurnRate": 0.03960776351828891
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 496,
+          "metrics": {
+            "durationMs": 1848.1754032258063,
+            "moveCount": 60.296370967741936
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 497,
+          "metrics": {
+            "durationMs": 1894.4325955734407,
+            "moveCount": 61.62374245472837
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 512,
+          "metrics": {
+            "durationMs": 1940,
+            "moveCount": 61.58984375
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 498,
+          "metrics": {
+            "durationMs": 2026.9056224899598,
+            "moveCount": 62.92570281124498
+          }
+        }
+      ]
     },
     {
       "solver": "Seung Hyuk Nahm",
@@ -349,16 +1019,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 3,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 2,
+        "aufWeight": 1,
+        "wideTurnWeight": 1,
+        "bestStyle": "balanced",
+        "sampleCount": 437,
+        "avgDurationMs": 1951.1945080091534,
+        "avgMoveCount": 61.90617848970252
+      },
+      "speedBestStyle": "balanced",
+      "speedObservation": {
+        "sampleCount": 437,
+        "avgDurationMs": 1951.1945080091534,
+        "avgMoveCount": 61.90617848970252
+      },
       "coverage": {
         "totalSolves": 272,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 504,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -369,8 +1052,78 @@
         "aufRate": 0.3727131782945736,
         "wideTurnRate": 0.0328062015503876
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 425,
+          "metrics": {
+            "rotationRate": 0.009292249898672743,
+            "aufRate": 0.3563568693957139,
+            "wideTurnRate": 0.06284833900734428
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 437,
+          "metrics": {
+            "rotationRate": 0.003965739801886133,
+            "aufRate": 0.3336020045121273,
+            "wideTurnRate": 0.0314076168055224
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 439,
+          "metrics": {
+            "rotationRate": 0.004360904635357756,
+            "aufRate": 0.3324432599788969,
+            "wideTurnRate": 0.028947248362873296
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 433,
+          "metrics": {
+            "rotationRate": 0.03927737708694933,
+            "aufRate": 0.29115880246053216,
+            "wideTurnRate": 0.03795139132286983
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 425,
+          "metrics": {
+            "durationMs": 1980.5670588235294,
+            "moveCount": 60.83529411764706
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 437,
+          "metrics": {
+            "durationMs": 1951.1945080091534,
+            "moveCount": 61.90617848970252
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 439,
+          "metrics": {
+            "durationMs": 1989.6742596810934,
+            "moveCount": 61.747152619589976
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 433,
+          "metrics": {
+            "durationMs": 2069.295612009238,
+            "moveCount": 62.91916859122402
+          }
+        }
+      ]
     },
     {
       "solver": "Xuanyi Geng",
@@ -386,16 +1139,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 2,
-        "aufWeight": 5,
-        "wideTurnWeight": 2
+        "rotationWeight": 1,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 379,
+        "avgDurationMs": 1676.8416886543537,
+        "avgMoveCount": 60.62269129287599
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 379,
+        "avgDurationMs": 1676.8416886543537,
+        "avgMoveCount": 60.62269129287599
+      },
       "coverage": {
         "totalSolves": 240,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 436,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -406,8 +1172,78 @@
         "aufRate": 0.36254208754208755,
         "wideTurnRate": 0.04040404040404041
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 379,
+          "metrics": {
+            "rotationRate": 0.01040064034066408,
+            "aufRate": 0.35672564240065685,
+            "wideTurnRate": 0.058113651855535416
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 380,
+          "metrics": {
+            "rotationRate": 0.0036389625750506303,
+            "aufRate": 0.33264209543936846,
+            "wideTurnRate": 0.02912673790450925
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 380,
+          "metrics": {
+            "rotationRate": 0.0031740612459379403,
+            "aufRate": 0.3342610535621752,
+            "wideTurnRate": 0.02622684342947006
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 368,
+          "metrics": {
+            "rotationRate": 0.038366916891193065,
+            "aufRate": 0.2941023729973053,
+            "wideTurnRate": 0.03995967963681438
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 379,
+          "metrics": {
+            "durationMs": 1676.8416886543537,
+            "moveCount": 60.62269129287599
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 380,
+          "metrics": {
+            "durationMs": 1691.3552631578948,
+            "moveCount": 62.02105263157895
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 380,
+          "metrics": {
+            "durationMs": 1701.4842105263158,
+            "moveCount": 62.10526315789474
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 368,
+          "metrics": {
+            "durationMs": 1810.4673913043478,
+            "moveCount": 63.00815217391305
+          }
+        }
+      ]
     },
     {
       "solver": "Leo Borromeo",
@@ -423,16 +1259,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 1,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 2,
+        "aufWeight": 1,
+        "wideTurnWeight": 1,
+        "bestStyle": "balanced",
+        "sampleCount": 376,
+        "avgDurationMs": 1747.4202127659576,
+        "avgMoveCount": 60.96010638297872
+      },
+      "speedBestStyle": "balanced",
+      "speedObservation": {
+        "sampleCount": 376,
+        "avgDurationMs": 1747.4202127659576,
+        "avgMoveCount": 60.96010638297872
+      },
       "coverage": {
         "totalSolves": 238,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 436,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -443,8 +1292,78 @@
         "aufRate": 0.3785557986870897,
         "wideTurnRate": 0.031582786287381474
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 375,
+          "metrics": {
+            "rotationRate": 0.012319396549467723,
+            "aufRate": 0.35530481736036656,
+            "wideTurnRate": 0.06033833610095679
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 376,
+          "metrics": {
+            "rotationRate": 0.004804165248918636,
+            "aufRate": 0.33434835429592513,
+            "wideTurnRate": 0.03328634035100578
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 386,
+          "metrics": {
+            "rotationRate": 0.004878178294784364,
+            "aufRate": 0.33522532729504506,
+            "wideTurnRate": 0.02901703760962571
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 369,
+          "metrics": {
+            "rotationRate": 0.03813899728711736,
+            "aufRate": 0.29981389281423815,
+            "wideTurnRate": 0.040457362244823984
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 375,
+          "metrics": {
+            "durationMs": 1751.6133333333332,
+            "moveCount": 59.794666666666664
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 376,
+          "metrics": {
+            "durationMs": 1747.4202127659576,
+            "moveCount": 60.96010638297872
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 386,
+          "metrics": {
+            "durationMs": 1790.479274611399,
+            "moveCount": 61.082901554404145
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 369,
+          "metrics": {
+            "durationMs": 1916.4932249322494,
+            "moveCount": 62.15989159891599
+          }
+        }
+      ]
     },
     {
       "solver": "Kyle Santucci",
@@ -460,16 +1379,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 2,
-        "aufWeight": 2,
-        "wideTurnWeight": 3
+        "rotationWeight": 1,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 288,
+        "avgDurationMs": 2061.0798611111113,
+        "avgMoveCount": 60.079861111111114
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 288,
+        "avgDurationMs": 2061.0798611111113,
+        "avgMoveCount": 60.079861111111114
+      },
       "coverage": {
         "totalSolves": 197,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 342,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -480,8 +1412,78 @@
         "aufRate": 0.3765676000687167,
         "wideTurnRate": 0.04569661570176946
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 288,
+          "metrics": {
+            "rotationRate": 0.010723776398435818,
+            "aufRate": 0.3535958001891477,
+            "wideTurnRate": 0.05553134681842645
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 267,
+          "metrics": {
+            "rotationRate": 0.00456934291949104,
+            "aufRate": 0.33490143037479597,
+            "wideTurnRate": 0.03273658732042711
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 276,
+          "metrics": {
+            "rotationRate": 0.0042114735466336605,
+            "aufRate": 0.3365726025649371,
+            "wideTurnRate": 0.030301616047251546
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 280,
+          "metrics": {
+            "rotationRate": 0.037297305427681574,
+            "aufRate": 0.2942814463442186,
+            "wideTurnRate": 0.04318444429472969
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 288,
+          "metrics": {
+            "durationMs": 2061.0798611111113,
+            "moveCount": 60.079861111111114
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 267,
+          "metrics": {
+            "durationMs": 2073.2022471910113,
+            "moveCount": 61.86516853932584
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 276,
+          "metrics": {
+            "durationMs": 2117.7427536231885,
+            "moveCount": 62
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 280,
+          "metrics": {
+            "durationMs": 2202.5035714285714,
+            "moveCount": 63.43928571428572
+          }
+        }
+      ]
     },
     {
       "solver": "Bill Wang",
@@ -497,16 +1499,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 3,
-        "aufWeight": 1,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 334,
+        "avgDurationMs": 1743.820359281437,
+        "avgMoveCount": 60.33832335329341
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 334,
+        "avgDurationMs": 1743.820359281437,
+        "avgMoveCount": 60.33832335329341
+      },
       "coverage": {
         "totalSolves": 196,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 392,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -517,8 +1532,78 @@
         "aufRate": 0.38363105462040537,
         "wideTurnRate": 0.031776021985571966
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 334,
+          "metrics": {
+            "rotationRate": 0.011038576657235505,
+            "aufRate": 0.35854891465160793,
+            "wideTurnRate": 0.06118270230165362
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 316,
+          "metrics": {
+            "rotationRate": 0.004300699855129444,
+            "aufRate": 0.33588571959776004,
+            "wideTurnRate": 0.03357705055256187
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 329,
+          "metrics": {
+            "rotationRate": 0.00465209245970757,
+            "aufRate": 0.3368200675543894,
+            "wideTurnRate": 0.02939808927123707
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 332,
+          "metrics": {
+            "rotationRate": 0.039859894225640055,
+            "aufRate": 0.2955367480461412,
+            "wideTurnRate": 0.039556173204447785
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 334,
+          "metrics": {
+            "durationMs": 1743.820359281437,
+            "moveCount": 60.33832335329341
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 316,
+          "metrics": {
+            "durationMs": 1774.3037974683543,
+            "moveCount": 61.610759493670884
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 329,
+          "metrics": {
+            "durationMs": 1811.9908814589667,
+            "moveCount": 61.483282674772035
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 332,
+          "metrics": {
+            "durationMs": 1898.6234939759036,
+            "moveCount": 63.256024096385545
+          }
+        }
+      ]
     },
     {
       "solver": "Jayden McNeill",
@@ -534,16 +1619,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 4,
-        "aufWeight": 2,
-        "wideTurnWeight": 2
+        "rotationWeight": 2,
+        "aufWeight": 0,
+        "wideTurnWeight": 1
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 2,
+        "aufWeight": 1,
+        "wideTurnWeight": 1,
+        "bestStyle": "balanced",
+        "sampleCount": 312,
+        "avgDurationMs": 1743.371794871795,
+        "avgMoveCount": 61.794871794871796
+      },
+      "speedBestStyle": "balanced",
+      "speedObservation": {
+        "sampleCount": 312,
+        "avgDurationMs": 1743.371794871795,
+        "avgMoveCount": 61.794871794871796
+      },
       "coverage": {
         "totalSolves": 181,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 354,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -554,8 +1652,78 @@
         "aufRate": 0.3738738738738739,
         "wideTurnRate": 0.03331456456456457
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 311,
+          "metrics": {
+            "rotationRate": 0.010431302438781185,
+            "aufRate": 0.35518847066975884,
+            "wideTurnRate": 0.05879472274256102
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 312,
+          "metrics": {
+            "rotationRate": 0.003933196445138515,
+            "aufRate": 0.3331706982560947,
+            "wideTurnRate": 0.03186286298509757
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 310,
+          "metrics": {
+            "rotationRate": 0.005223657687205976,
+            "aufRate": 0.3367577522997729,
+            "wideTurnRate": 0.027087115690483582
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 315,
+          "metrics": {
+            "rotationRate": 0.03797899466723602,
+            "aufRate": 0.2958066417034307,
+            "wideTurnRate": 0.03673446658255975
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 311,
+          "metrics": {
+            "durationMs": 1752.3118971061094,
+            "moveCount": 60.0096463022508
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 312,
+          "metrics": {
+            "durationMs": 1743.371794871795,
+            "moveCount": 61.794871794871796
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 310,
+          "metrics": {
+            "durationMs": 1761.316129032258,
+            "moveCount": 62.05161290322581
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 315,
+          "metrics": {
+            "durationMs": 1859.0603174603175,
+            "moveCount": 63.22222222222222
+          }
+        }
+      ]
     },
     {
       "solver": "Sei Sugama",
@@ -571,16 +1739,29 @@
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
-        "rotationWeight": 4,
+        "rotationWeight": 2,
         "aufWeight": 0,
         "wideTurnWeight": 2
       },
-      "speedStyleProfile": null,
-      "speedBestStyle": null,
-      "speedObservation": null,
+      "speedStyleProfile": {
+        "preset": "speed",
+        "rotationWeight": 0,
+        "aufWeight": 0,
+        "wideTurnWeight": 0,
+        "bestStyle": "legacy",
+        "sampleCount": 172,
+        "avgDurationMs": 1724.906976744186,
+        "avgMoveCount": 60.77906976744186
+      },
+      "speedBestStyle": "legacy",
+      "speedObservation": {
+        "sampleCount": 172,
+        "avgDurationMs": 1724.906976744186,
+        "avgMoveCount": 60.77906976744186
+      },
       "coverage": {
         "totalSolves": 101,
-        "benchmarkSamples": 2,
+        "benchmarkSamples": 202,
         "benchmarkModes": [
           "strict",
           "zb"
@@ -591,8 +1772,78 @@
         "aufRate": 0.38885647607934654,
         "wideTurnRate": 0.03150525087514586
       },
-      "observations": [],
-      "speedObservations": []
+      "observations": [
+        {
+          "style": "legacy",
+          "sampleCount": 172,
+          "metrics": {
+            "rotationRate": 0.013263884627464313,
+            "aufRate": 0.35491906806167034,
+            "wideTurnRate": 0.05882018122893283
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 181,
+          "metrics": {
+            "rotationRate": 0.004642220364182513,
+            "aufRate": 0.3315907900776086,
+            "wideTurnRate": 0.034507653896724444
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 179,
+          "metrics": {
+            "rotationRate": 0.004002337861456792,
+            "aufRate": 0.3315773354406979,
+            "wideTurnRate": 0.029975456561255075
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 178,
+          "metrics": {
+            "rotationRate": 0.042380638015707184,
+            "aufRate": 0.2912168642992539,
+            "wideTurnRate": 0.044782072825624304
+          }
+        }
+      ],
+      "speedObservations": [
+        {
+          "style": "legacy",
+          "sampleCount": 172,
+          "metrics": {
+            "durationMs": 1724.906976744186,
+            "moveCount": 60.77906976744186
+          }
+        },
+        {
+          "style": "balanced",
+          "sampleCount": 181,
+          "metrics": {
+            "durationMs": 1746.3259668508288,
+            "moveCount": 62.110497237569064
+          }
+        },
+        {
+          "style": "rotationless",
+          "sampleCount": 179,
+          "metrics": {
+            "durationMs": 1801.1061452513966,
+            "moveCount": 62.24022346368715
+          }
+        },
+        {
+          "style": "low-auf",
+          "sampleCount": 178,
+          "metrics": {
+            "durationMs": 1840.4831460674156,
+            "moveCount": 64.19662921348315
+          }
+        }
+      ]
     }
   ]
 }

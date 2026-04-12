@@ -592,8 +592,43 @@ function splitMoves(alg) {
     .filter(Boolean);
 }
 
+function normalizeMoveToken(token) {
+  const match = /^([A-Za-z]+)(2'?|')?$/.exec(String(token || "").trim());
+  if (!match) return "";
+  const face = match[1];
+  const suffix = match[2] || "";
+  if (!face) return "";
+  if (suffix === "2'" || suffix === "2") return `${face}2`;
+  if (suffix === "'") return `${face}'`;
+  return face;
+}
+
 function joinMoves(parts) {
   return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeAlgorithmText(text) {
+  return splitMoves(text)
+    .map((token) => normalizeMoveToken(token))
+    .filter(Boolean)
+    .join(" ");
+}
+
+const FRAME_ROTATION_TOKENS = new Set(["x", "x2", "x'", "z", "z2", "z'"]);
+
+function stripOuterFrameRotations(tokens) {
+  let start = 0;
+  let end = Array.isArray(tokens) ? tokens.length : 0;
+  while (start < end && FRAME_ROTATION_TOKENS.has(tokens[start])) start += 1;
+  while (end > start && FRAME_ROTATION_TOKENS.has(tokens[end - 1])) end -= 1;
+  return tokens.slice(start, end);
+}
+
+function normalizeFormulaMatchText(text) {
+  const tokens = splitMoves(text)
+    .map((token) => normalizeMoveToken(token))
+    .filter(Boolean);
+  return stripOuterFrameRotations(tokens).join(" ");
 }
 
 function tryApplyAlg(pattern, algText) {
@@ -1568,6 +1603,260 @@ function getF2LDownstreamPenalty(downstreamProfile, nextStateKey, predictionWeig
   return Math.max(-MAX_F2L_DOWNSTREAM_PENALTY, Math.min(MAX_F2L_DOWNSTREAM_PENALTY, rawPenalty));
 }
 
+function normalizeLlCaseFamilyLabel(label) {
+  const text = String(label || "").trim().toUpperCase();
+  if (!text) return "OTHER";
+  if (text.includes("NOT ZBLL")) return "OLL";
+  if (text.includes("4TH PAIR/ZBLS") || text.includes("ZBLS")) return "ZBLS";
+  if (text.includes("EO+ZBLL") || text.includes("ZBLL")) return "ZBLL";
+  if (text.includes("EPLL") || text.includes("PLL")) return "PLL";
+  if (text.includes("OLL")) return "OLL";
+  if (text.includes("F2L")) return "F2L";
+  return "OTHER";
+}
+
+function normalizeLlFormulaEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const family = normalizeLlCaseFamilyLabel(entry.family || entry.label || entry.caseFamily || "");
+  const formula = String(entry.formula || entry.algorithm || entry.text || "").trim();
+  const count = Number(entry.count ?? entry.sampleCount ?? entry.value ?? 0);
+  if (!formula || !Number.isFinite(count) || count <= 0) return null;
+  return {
+    family,
+    formula,
+    count,
+  };
+}
+
+function buildLlFamilyScoresFromStateEntry(stateEntry, mixedCaseBias = null) {
+  const familyScores = {
+    OLL: 0,
+    PLL: 0,
+    ZBLL: 0,
+    ZBLS: 0,
+    F2L: 0,
+    OTHER: 0,
+  };
+  const topCases = Array.isArray(stateEntry?.topCases) ? stateEntry.topCases : [];
+  const topFormulas = Array.isArray(stateEntry?.topFormulas) ? stateEntry.topFormulas : [];
+  const formulaPriorityMap = new Map();
+  const formulaFamilyScores = {
+    OLL: 0,
+    PLL: 0,
+    ZBLL: 0,
+    ZBLS: 0,
+    F2L: 0,
+    OTHER: 0,
+  };
+  const preferredFormulaByFamily = {};
+  let topCaseTotal = 0;
+  for (let i = 0; i < topCases.length; i++) {
+    const entry = topCases[i];
+    const label = Array.isArray(entry) ? entry[0] : entry?.label;
+    const count = Number(Array.isArray(entry) ? entry[1] : entry?.count);
+    if (!Number.isFinite(count) || count <= 0) continue;
+    const family = normalizeLlCaseFamilyLabel(label);
+    familyScores[family] = (familyScores[family] || 0) + count;
+    topCaseTotal += count;
+  }
+
+  for (let i = 0; i < topFormulas.length; i++) {
+    const normalized = normalizeLlFormulaEntry(topFormulas[i]);
+    if (!normalized) continue;
+    const current = formulaPriorityMap.get(normalized.formula) || 0;
+    const next = current + normalized.count;
+    formulaPriorityMap.set(normalized.formula, next);
+    formulaFamilyScores[normalized.family] = (formulaFamilyScores[normalized.family] || 0) + normalized.count;
+    const currentPreferred = preferredFormulaByFamily[normalized.family];
+    if (!currentPreferred || normalized.count > currentPreferred.count) {
+      preferredFormulaByFamily[normalized.family] = {
+        formula: normalized.formula,
+        count: normalized.count,
+      };
+    }
+  }
+
+  const sampleCount = Number(stateEntry?.sampleCount) || topCaseTotal || 0;
+  const deltaExpectedLlMoves = Number(stateEntry?.deltaExpectedLlMoves);
+  if (Number.isFinite(deltaExpectedLlMoves) && deltaExpectedLlMoves !== 0) {
+    if (deltaExpectedLlMoves < 0) {
+      familyScores.ZBLL += Math.min(2.2, -deltaExpectedLlMoves * 1.35);
+    } else {
+      familyScores.OLL += Math.min(1.6, deltaExpectedLlMoves * 1.1);
+      familyScores.PLL += Math.min(1.5, deltaExpectedLlMoves * 0.85);
+    }
+  }
+
+  const biasZbllRate = clampRate01(mixedCaseBias?.zbllRate) ?? 0;
+  const biasZblsRate = clampRate01(mixedCaseBias?.zblsRate) ?? 0;
+  const biasScale = Math.log1p(Math.max(1, sampleCount || topCaseTotal || 1));
+  familyScores.ZBLL += biasZbllRate * biasScale * 0.18;
+  familyScores.ZBLS += biasZblsRate * biasScale * 0.18;
+
+  const orderedFamilies = Object.entries(familyScores)
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([family]) => family);
+
+  const totalScore = Object.values(familyScores).reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const primaryFamily = orderedFamilies[0] || "OLL";
+  const secondaryFamily = orderedFamilies[1] || "OLL";
+  const confidence = totalScore > 0 ? (familyScores[primaryFamily] || 0) / totalScore : 0;
+  const preferredFormulaEntries = Array.from(formulaPriorityMap.entries())
+    .map(([formula, count]) => ({ formula, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.formula.localeCompare(b.formula);
+    });
+  const preferredFormula = preferredFormulaEntries[0]?.formula || null;
+
+  return {
+    familyScores,
+    formulaFamilyScores,
+    orderedFamilies,
+    primaryFamily,
+    secondaryFamily,
+    preferredNonZbFamily: familyScores.ZBLL >= familyScores.OLL ? "ZBLL" : "OLL",
+    preferredZbStage3Family: familyScores.ZBLS >= familyScores.OLL ? "ZBLS" : "OLL",
+    preferredZbStage4Family: familyScores.ZBLL >= familyScores.PLL ? "ZBLL" : "PLL",
+    formulaPriorityMap,
+    preferredFormula,
+    preferredFormulaEntries,
+    preferredFormulaByFamily,
+    confidence,
+    sampleCount,
+    topCaseTotal,
+    topFormulaTotal: topFormulas.length,
+    deltaExpectedLlMoves: Number.isFinite(deltaExpectedLlMoves) ? deltaExpectedLlMoves : null,
+  };
+}
+
+function normalizeLlFamilyTemperature(value, fallback = 1.5) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0.6, Math.min(3.5, n));
+}
+
+function normalizeLlFamilyCalibrationRecord(calibration) {
+  if (!calibration || typeof calibration !== "object") {
+    return {
+      stage3Temperature: 1.4,
+      stage4Temperature: 1.25,
+      stage3ZbllCap: null,
+      stage3ZblsCap: null,
+      stage4ZbllCap: null,
+      zbllScale: 1,
+      zblsScale: 1,
+    };
+  }
+  const nested =
+    calibration.calibration && typeof calibration.calibration === "object"
+      ? calibration.calibration
+      : calibration;
+  return {
+    stage3Temperature: normalizeLlFamilyTemperature(nested.stage3Temperature, 1.4),
+    stage4Temperature: normalizeLlFamilyTemperature(nested.stage4Temperature, 1.25),
+    stage3ZbllCap: clampRate01(nested.stage3ZbllCap),
+    stage3ZblsCap: clampRate01(nested.stage3ZblsCap),
+    stage4ZbllCap: clampRate01(nested.stage4ZbllCap),
+    zbllScale: Math.max(0.25, Math.min(2.5, Number(nested.zbllScale) || 1)),
+    zblsScale: Math.max(0.25, Math.min(2.5, Number(nested.zblsScale) || 1)),
+  };
+}
+
+function computeLlFamilySelectionProbability(scoreA, scoreB, temperature) {
+  const temp = normalizeLlFamilyTemperature(temperature, 1.5);
+  const weightA = Math.pow(Math.max(1e-6, Number(scoreA) || 0), 1 / temp);
+  const weightB = Math.pow(Math.max(1e-6, Number(scoreB) || 0), 1 / temp);
+  const denom = weightA + weightB;
+  if (!Number.isFinite(denom) || denom <= 0) return 0.5;
+  return weightB / denom;
+}
+
+function chooseLlFamilyForStage({
+  preference,
+  mixedCaseBias,
+  calibration,
+  scrambleSeed,
+  stateKey,
+  useZbStages,
+  stageKey,
+}) {
+  const normalizedCalibration = normalizeLlFamilyCalibrationRecord(calibration);
+  const familyScores = preference?.familyScores || null;
+  const confidence = Number(preference?.confidence) || 0;
+  const sampleCount = Number(preference?.sampleCount) || 0;
+  const stage3Temperature = normalizeLlFamilyTemperature(
+    normalizedCalibration.stage3Temperature,
+    1.4,
+  );
+  const stage4Temperature = normalizeLlFamilyTemperature(
+    normalizedCalibration.stage4Temperature,
+    1.25,
+  );
+  const stage3Cap = useZbStages
+    ? clampRate01(
+        (normalizedCalibration.stage3ZblsCap ?? mixedCaseBias?.zblsRate) *
+          normalizedCalibration.zblsScale,
+      )
+    : clampRate01(
+        (normalizedCalibration.stage3ZbllCap ?? mixedCaseBias?.zbllRate) *
+          normalizedCalibration.zbllScale,
+      );
+  const stage4Cap = clampRate01(
+    (normalizedCalibration.stage4ZbllCap ?? mixedCaseBias?.zbllRate) * normalizedCalibration.zbllScale,
+  );
+
+  let familyA = "OLL";
+  let familyB = useZbStages ? "ZBLS" : "ZBLL";
+  let probabilityB = 0.5;
+  let temperature = stage3Temperature;
+  let capB = stage3Cap;
+
+  if (stageKey === "stage4") {
+    familyA = "PLL";
+    familyB = "ZBLL";
+    temperature = stage4Temperature;
+    capB = stage4Cap;
+  }
+
+  const baseA = Number(familyScores?.[familyA]) || 0;
+  const baseB = Number(familyScores?.[familyB]) || 0;
+  const primaryFamily = preference?.primaryFamily || null;
+  const primaryFamilyBoost = primaryFamily === familyB ? Math.max(0.5, confidence * 2.5) : 0;
+  const confidenceBoost = Math.max(0, confidence - 0.5);
+  const sampleBoost = sampleCount < 24 ? 0.08 : sampleCount < 60 ? 0.03 : 0;
+  const capBoost = Number.isFinite(capB) && capB !== null && capB < 0.2 ? 0.05 : 0;
+  const effectiveTemperature = normalizeLlFamilyTemperature(
+    temperature + confidenceBoost * 0.3 + sampleBoost + capBoost,
+    temperature,
+  );
+  probabilityB = computeLlFamilySelectionProbability(baseA, baseB + primaryFamilyBoost, effectiveTemperature);
+  if (Number.isFinite(capB) && capB !== null) {
+    const capBlend = capB < 0.1 ? 0.55 : capB < 0.2 ? 0.45 : 0.35;
+    probabilityB = probabilityB * (1 - capBlend) + capB * capBlend;
+  }
+  probabilityB = Math.max(0, Math.min(1, probabilityB));
+  const rollSeed = `${scrambleSeed}|${stateKey}|${stageKey}|${familyA}|${familyB}|${effectiveTemperature.toFixed(3)}`;
+  const roll = hashStringToUnitInterval(rollSeed);
+  const selectedFamily = roll < probabilityB ? familyB : familyA;
+  return {
+    familyA,
+    familyB,
+    selectedFamily,
+    alternateFamily: selectedFamily === familyA ? familyB : familyA,
+    probabilityB,
+    temperature: effectiveTemperature,
+    capB,
+    roll,
+    confidence,
+    sampleCount,
+    familyScores,
+  };
+}
+
 function isTopEdgeOrientationSolvedForLL(data, ctx) {
   return orbitMatches(
     data.EDGES,
@@ -1636,6 +1925,9 @@ function getMixedCfopLlSignal(
       ? findF2LDownstreamStateEntry(downstreamProfile, nextStateKey)
       : null;
   const downstreamStateEntry = downstreamMatch?.stateEntry || null;
+  const llFamilyPreference = downstreamStateEntry
+    ? buildLlFamilyScoresFromStateEntry(downstreamStateEntry, mixedCaseBias)
+    : null;
   const zbllRate = clampRate01(downstreamStateEntry?.zbllRate) ?? 0;
   const zblsRate = clampRate01(downstreamStateEntry?.zblsRate) ?? 0;
   const eoLikeRate = clampRate01(downstreamStateEntry?.eoLikeRate) ?? 0;
@@ -1643,6 +1935,8 @@ function getMixedCfopLlSignal(
   const biasXXCrossRate = clampRate01(mixedCaseBias?.xxcrossRate) ?? 0;
   const biasZbllRate = clampRate01(mixedCaseBias?.zbllRate) ?? 0;
   const biasZblsRate = clampRate01(mixedCaseBias?.zblsRate) ?? 0;
+  const preferredLlFamily = llFamilyPreference?.primaryFamily || "OLL";
+  const preferredLlConfidence = llFamilyPreference?.confidence || 0;
 
   if (!Number.isFinite(pairProgress) || pairProgress < minProgressForLLSignal) {
     return {
@@ -1655,6 +1949,8 @@ function getMixedCfopLlSignal(
       zbllRate,
       zblsRate,
       eoLikeRate,
+      preferredLlFamily,
+      preferredLlConfidence,
     };
   }
 
@@ -1662,12 +1958,20 @@ function getMixedCfopLlSignal(
   const isLlWindow = pairProgress >= targetPairs;
   const llSupportRateBase = isLlWindow ? Math.max(zbllRate, eoLikeRate) : Math.max(zblsRate, eoLikeRate);
   const llSupportRate = clampRate01(
-    llSupportRateBase +
+      llSupportRateBase +
       (isLlWindow ? biasZbllRate * 0.22 : biasZblsRate * 0.18) +
       biasXCrossRate * 0.08 +
       biasXXCrossRate * 0.06,
   ) ?? llSupportRateBase;
   const biasAggression = 1 + biasZbllRate * 0.45 + biasXCrossRate * 0.2 + biasXXCrossRate * 0.15;
+  const familyAggression =
+    preferredLlFamily === "ZBLL"
+      ? 1.12
+      : preferredLlFamily === "ZBLS"
+        ? 1.08
+        : preferredLlFamily === "PLL"
+          ? 1.03
+          : 1;
   let llPriority = 0;
   let downstreamBonus = 0;
   let preserveCandidate = false;
@@ -1679,21 +1983,30 @@ function getMixedCfopLlSignal(
     }
     downstreamBonus = -Math.min(
       MAX_F2L_MIXED_LL_SIGNAL_BONUS,
-      (1.2 + normalizedWeight * 1.25 + llSupportRate * 2.4) * biasAggression,
+      (1.2 + normalizedWeight * 1.25 + llSupportRate * 2.4 + preferredLlConfidence * 0.9) *
+        biasAggression *
+        familyAggression,
     );
     preserveCandidate = true;
   } else if (topEdgeOrientationRate >= 0.75) {
     llPriority = isLlWindow ? 2 : 1;
     downstreamBonus = -Math.min(
       MAX_F2L_ZBLL_OPPORTUNITY_BONUS,
-      ((topEdgeOrientationRate - 0.5) * (1 + normalizedWeight) + llSupportRate * 1.75) * biasAggression,
+      ((topEdgeOrientationRate - 0.5) * (1 + normalizedWeight) + llSupportRate * 1.75 + preferredLlConfidence * 0.55) *
+        biasAggression *
+        familyAggression,
     );
-    preserveCandidate = llSupportRate >= 0.12 || isLastSlotWindow || biasZbllRate >= 0.35;
+    preserveCandidate =
+      llSupportRate >= 0.12 ||
+      isLastSlotWindow ||
+      biasZbllRate >= 0.35 ||
+      preferredLlFamily === "ZBLL" ||
+      preferredLlFamily === "ZBLS";
   } else if (isLastSlotWindow && llSupportRate >= 0.2) {
     llPriority = 1;
     downstreamBonus = -Math.min(
       MAX_F2L_ZBLL_OPPORTUNITY_BONUS * 0.9,
-      (0.35 + llSupportRate * 1.4) * biasAggression,
+      (0.35 + llSupportRate * 1.4 + preferredLlConfidence * 0.35) * biasAggression * familyAggression,
     );
     preserveCandidate = true;
   }
@@ -1711,6 +2024,8 @@ function getMixedCfopLlSignal(
     zbllRate,
     zblsRate,
     eoLikeRate,
+    preferredLlFamily,
+    preferredLlConfidence,
   };
 }
 
@@ -2159,6 +2474,8 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     options.f2lDownstreamProfile !== undefined
       ? options.f2lDownstreamProfile
       : options.downstreamProfile;
+  const llFamilyCalibrationInput =
+    options.llFamilyCalibration !== undefined ? options.llFamilyCalibration : null;
   const hasStyleOptIn = styleProfileInput !== undefined && styleProfileInput !== null;
   const f2lStyleProfile = hasStyleOptIn
     ? normalizeF2LStyleProfile(styleProfileInput)
@@ -2178,6 +2495,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     options.ollPllPredictionWeight,
     DEFAULT_F2L_DOWNSTREAM_WEIGHT,
   );
+  const llFamilyCalibration = normalizeLlFamilyCalibrationRecord(llFamilyCalibrationInput);
   const enableStyleFallback = hasStyleOptIn && options.enableStyleFallback !== false;
   const deadlineTs = normalizeNonNegativeDepth(options.deadlineTs, 0);
   const mixedXCrossRate = clampRate01(mixedCaseBias.xcrossRate) ?? 0;
@@ -2216,12 +2534,53 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   const stage3FormulaKeys = useZbStages ? ["ZBLS", "OLL"] : ["OLL"];
   const stage4Name = useZbStages ? "ZBLL" : "PLL";
   const stage4FormulaKeys = useZbStages ? ["ZBLL", "PLL"] : ["PLL"];
-  const shouldPreferMixedZBLL = (pattern) =>
-    !useZbStages &&
-    mixedCfopStages &&
-    mixedCaseBias.zbllRate >= 0.08 &&
-    Boolean(pattern?.patternData) &&
-    isTopEdgeOrientationSolvedForLL(pattern.patternData, ctx);
+  const llFamilyPreferenceCache = new Map();
+  const llFamilySelectionCache = new Map();
+
+  function getLlFamilyPreference(startPattern) {
+    if (!startPattern || !startPattern.patternData) return null;
+    const stateKey = getF2LStateKey(startPattern.patternData, ctx);
+    const cacheKey = `${stateKey}::${useZbStages ? "zb" : "cfop"}`;
+    if (llFamilyPreferenceCache.has(cacheKey)) {
+      return llFamilyPreferenceCache.get(cacheKey);
+    }
+    const downstreamMatch =
+      f2lDownstreamProfile && stateKey !== undefined && stateKey !== null
+        ? findF2LDownstreamStateEntry(f2lDownstreamProfile, stateKey)
+        : null;
+    const downstreamStateEntry = downstreamMatch?.stateEntry || null;
+    const preference = downstreamStateEntry
+      ? buildLlFamilyScoresFromStateEntry(downstreamStateEntry, mixedCaseBias)
+      : null;
+    llFamilyPreferenceCache.set(cacheKey, preference);
+    return preference;
+  }
+
+  function getLlFamilySelection(startPattern, stageKey) {
+    if (!startPattern || !startPattern.patternData) return null;
+    const stateKey = getF2LStateKey(startPattern.patternData, ctx);
+    const cacheKey = `${stateKey}::${useZbStages ? "zb" : "cfop"}::${stageKey}`;
+    if (llFamilySelectionCache.has(cacheKey)) {
+      return llFamilySelectionCache.get(cacheKey);
+    }
+    const preference = getLlFamilyPreference(startPattern);
+    const selection = chooseLlFamilyForStage({
+      preference,
+      mixedCaseBias,
+      calibration: llFamilyCalibration,
+      scrambleSeed,
+      stateKey,
+      useZbStages,
+      stageKey,
+    });
+    llFamilySelectionCache.set(cacheKey, selection);
+    return selection;
+  }
+
+  function shouldPreferMixedZBLL(startPattern) {
+    if (!mixedCfopStages || useZbStages) return false;
+    return getLlFamilySelection(startPattern, "stage3")?.selectedFamily === "ZBLL";
+  }
 
   function getF2LMismatch(data) {
     const c = countOrbitMismatches(
@@ -2365,36 +2724,55 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       allowRelaxedSearch,
       formulaKeys: stage3FormulaKeys,
       getFormulaKeys(startPattern) {
-        if (useZbStages) return stage3FormulaKeys;
-        if (shouldPreferMixedZBLL(startPattern)) {
+        const selection = getLlFamilySelection(startPattern, "stage3");
+        if (useZbStages) {
+          return selection?.selectedFamily === "ZBLS" ? ["ZBLS"] : ["OLL"];
+        }
+        if (mixedCfopStages && selection?.selectedFamily === "ZBLL") {
           return ["ZBLL"];
         }
         return stage3FormulaKeys;
       },
+      getFormulaPreferenceMap(startPattern) {
+        const preference = getLlFamilyPreference(startPattern);
+        return preference?.formulaPriorityMap || null;
+      },
       getFallbackFormulaKeys(startPattern) {
-        if (useZbStages) return null;
-        if (shouldPreferMixedZBLL(startPattern)) {
-          return ["OLL"];
+        if (useZbStages) {
+          const selection = getLlFamilySelection(startPattern, "stage3");
+          return selection?.selectedFamily === "ZBLS" ? ["OLL"] : ["ZBLS"];
+        }
+        if (mixedCfopStages) {
+          const selection = getLlFamilySelection(startPattern, "stage3");
+          return selection?.selectedFamily === "ZBLL" ? ["OLL"] : ["ZBLL"];
         }
         return null;
       },
       getDisplayName(startPattern) {
-        if (useZbStages) return stage3Name;
-        if (shouldPreferMixedZBLL(startPattern)) {
-          return "ZBLL (fallback OLL)";
+        if (useZbStages) {
+          const selection = getLlFamilySelection(startPattern, "stage3");
+          if (selection?.selectedFamily === "ZBLS") return "ZBLS (case policy)";
+          return stage3Name;
+        }
+        if (mixedCfopStages && shouldPreferMixedZBLL(startPattern)) {
+          return "ZBLL (case policy)";
         }
         return stage3Name;
       },
       getSolvedDisplayName(result, startPattern) {
         if (useZbStages) return stage3Name;
-        if (!shouldPreferMixedZBLL(startPattern)) {
-          return stage3Name;
-        }
+        if (!mixedCfopStages) return stage3Name;
         return result?.formulaKey === "ZBLL" ? "ZBLL" : "OLL";
       },
       acceptFormulaResult(nextPattern, formulaKey, startPattern) {
-        if (useZbStages || !shouldPreferMixedZBLL(startPattern)) {
-          return isOLLSolved(nextPattern.patternData, ctx);
+        if (useZbStages) {
+          if (formulaKey === "ZBLS") {
+            return isZBLSSolved(nextPattern.patternData, ctx);
+          }
+          if (formulaKey === "OLL") {
+            return isOLLSolved(nextPattern.patternData, ctx);
+          }
+          return isZBLSSolved(nextPattern.patternData, ctx) || isOLLSolved(nextPattern.patternData, ctx);
         }
         if (formulaKey === "ZBLL") {
           return isStrictSolvedPattern(nextPattern, nextPattern.patternData, ctx);
@@ -2476,6 +2854,45 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       displayName: stage4Name,
       allowRelaxedSearch,
       formulaKeys: stage4FormulaKeys,
+      getDisplayName(startPattern) {
+        const selection = getLlFamilySelection(startPattern, "stage4");
+        if (!useZbStages) {
+          if (mixedCfopStages && selection?.selectedFamily === "ZBLL") {
+            return "ZBLL (case policy)";
+          }
+          return stage4Name;
+        }
+        if (selection?.selectedFamily === "ZBLL") return "ZBLL (case policy)";
+        return stage4Name;
+      },
+      getSolvedDisplayName(result, startPattern) {
+        if (!useZbStages) return result?.formulaKey === "ZBLL" ? "ZBLL" : "PLL";
+        return result?.formulaKey === "ZBLL" ? "ZBLL" : "PLL";
+      },
+      getFormulaKeys(startPattern) {
+        const selection = getLlFamilySelection(startPattern, "stage4");
+        if (!useZbStages) {
+          if (mixedCfopStages && selection?.selectedFamily === "ZBLL") {
+            return ["ZBLL"];
+          }
+          return stage4FormulaKeys;
+        }
+        return selection?.selectedFamily === "ZBLL" ? ["ZBLL"] : ["PLL"];
+      },
+      getFormulaPreferenceMap(startPattern) {
+        const preference = getLlFamilyPreference(startPattern);
+        return preference?.formulaPriorityMap || null;
+      },
+      getFallbackFormulaKeys(startPattern) {
+        const selection = getLlFamilySelection(startPattern, "stage4");
+        if (!useZbStages) {
+          if (mixedCfopStages) {
+            return selection?.selectedFamily === "ZBLL" ? ["PLL"] : ["ZBLL"];
+          }
+          return null;
+        }
+        return selection?.selectedFamily === "ZBLL" ? ["PLL"] : ["ZBLL"];
+      },
       omitIfNoMoves: mixedCfopStages === true,
       deadlineTs,
       formulaPreAufList: FORMULA_AUF,
@@ -2640,25 +3057,173 @@ function shouldUseSingleStageCaseLibrary(stage, formulas) {
   return stage.name === "CMLL" || stage.name === "LSE";
 }
 
-function getSingleStageCaseLibraryKey(stage, formulas, preAufList, postAufList, formulaKeys = null) {
+function buildFormulaPreferenceSignature(formulaPreferenceMap, limit = 24) {
+  if (!formulaPreferenceMap || typeof formulaPreferenceMap.size !== "number" || formulaPreferenceMap.size <= 0) {
+    return "";
+  }
+  const entries = Array.from(formulaPreferenceMap.entries())
+    .map(([formula, count]) => ({
+      formula: String(formula || "").trim(),
+      count: Number(count) || 0,
+    }))
+    .filter((entry) => entry.formula && entry.count > 0)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.formula.localeCompare(b.formula);
+    })
+    .slice(0, Math.max(1, Math.floor(limit)));
+  return `${formulaPreferenceMap.size}:${entries
+    .map((entry) => `${entry.formula}:${entry.count}`)
+    .join("|")}`;
+}
+
+function getFormulaPreferenceScore(formulaPreferenceMap, formula, formulaCanonicalLookup = null) {
+  if (!formulaPreferenceMap || typeof formulaPreferenceMap.get !== "function") return 0;
+  const normalized = normalizeFormulaMatchText(formula);
+  if (!normalized) return 0;
+  const directScore = Number(formulaPreferenceMap.get(formula) || 0);
+  if (directScore > 0) return directScore;
+  const canonicalFormula = formulaCanonicalLookup?.get(normalized) || normalized;
+  const canonicalScore = Number(formulaPreferenceMap.get(canonicalFormula) || 0);
+  if (canonicalScore > 0) return canonicalScore;
+  return Number(formulaPreferenceMap.get(normalized) || 0);
+}
+
+function getFormulaKeyPreferenceScore(formulaKey, formulaPreferenceMap) {
+  if (!formulaKey || !formulaPreferenceMap || typeof formulaPreferenceMap.get !== "function") return 0;
+  const sourceFormulas = getFormulaListByKey(formulaKey);
+  let total = 0;
+  for (let i = 0; i < sourceFormulas.length; i++) {
+    total += getFormulaPreferenceScore(formulaPreferenceMap, sourceFormulas[i]);
+  }
+  return total;
+}
+
+function sortFormulaKeysByPreference(formulaKeys, formulaPreferenceMap) {
+  if (!Array.isArray(formulaKeys) || formulaKeys.length <= 1 || !formulaPreferenceMap) {
+    return Array.isArray(formulaKeys) ? formulaKeys.slice() : [];
+  }
+  return formulaKeys
+    .map((key, index) => ({
+      key,
+      index,
+      score: getFormulaKeyPreferenceScore(key, formulaPreferenceMap),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.key);
+}
+
+function sortFormulasByPreference(formulas, formulaPreferenceMap) {
+  if (!Array.isArray(formulas) || formulas.length <= 1 || !formulaPreferenceMap) {
+    return Array.isArray(formulas) ? formulas.slice() : [];
+  }
+  return formulas
+    .map((formula, index) => ({
+      formula,
+      index,
+      score: getFormulaPreferenceScore(formulaPreferenceMap, formula),
+      length: splitMoves(formula).length,
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.length !== b.length) return a.length - b.length;
+      if (a.formula !== b.formula) return a.formula.localeCompare(b.formula);
+      return a.index - b.index;
+    })
+    .map((entry) => entry.formula);
+}
+
+function buildFormulaKeyLookup(formulaKeys) {
+  const lookup = new Map();
+  if (!Array.isArray(formulaKeys) || !formulaKeys.length) return lookup;
+  for (let k = 0; k < formulaKeys.length; k++) {
+    const formulaKey = formulaKeys[k];
+    const sourceFormulas = getFormulaListByKey(formulaKey);
+    for (let i = 0; i < sourceFormulas.length; i++) {
+      const normalized = normalizeFormulaMatchText(sourceFormulas[i]);
+      if (!normalized || lookup.has(normalized)) continue;
+      lookup.set(normalized, formulaKey);
+    }
+  }
+  return lookup;
+}
+
+function buildFormulaCanonicalLookup(formulaKeys) {
+  const lookup = new Map();
+  if (!Array.isArray(formulaKeys) || !formulaKeys.length) return lookup;
+  for (let k = 0; k < formulaKeys.length; k++) {
+    const formulaKey = formulaKeys[k];
+    const sourceFormulas = getFormulaListByKey(formulaKey);
+    for (let i = 0; i < sourceFormulas.length; i++) {
+      const rawFormula = normalizeAlgorithmText(sourceFormulas[i]);
+      if (!rawFormula) continue;
+      for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
+        const rot = FORMULA_ROTATIONS[r];
+        for (let a = 0; a < FORMULA_AUF.length; a++) {
+          const preAuf = FORMULA_AUF[a];
+          for (let p = 0; p < FORMULA_AUF.length; p++) {
+            const postAuf = FORMULA_AUF[p];
+            const candidate = normalizeFormulaMatchText(
+              buildFormulaCandidate(rot, preAuf, rawFormula, postAuf),
+            );
+            if (!candidate || lookup.has(candidate)) continue;
+            lookup.set(candidate, rawFormula);
+          }
+        }
+      }
+    }
+  }
+  return lookup;
+}
+
+function getSingleStageCaseLibraryKey(
+  stage,
+  formulas,
+  preAufList,
+  postAufList,
+  formulaKeys = null,
+  formulaPreferenceSignature = "",
+) {
   const keySig =
     Array.isArray(formulaKeys) && formulaKeys.length
       ? formulaKeys.join(",")
       : Array.isArray(stage?.formulaKeys) && stage.formulaKeys.length
         ? stage.formulaKeys.join(",")
-      : stage?.name || "";
+        : stage?.name || "";
   return [
     stage?.name || "",
     keySig,
     formulas.length,
+    formulaPreferenceSignature || "",
     preAufList.join("|"),
     postAufList.join("|"),
   ].join("::");
 }
 
-function getSingleStageFormulaCaseLibrary(stage, ctx, formulas, preAufList, postAufList, formulaKeys = null) {
+function getSingleStageFormulaCaseLibrary(
+  stage,
+  ctx,
+  formulas,
+  preAufList,
+  postAufList,
+  formulaKeys = null,
+  formulaPreferenceMap = null,
+  formulaKeyLookup = null,
+  formulaCanonicalLookup = null,
+) {
   if (!shouldUseSingleStageCaseLibrary(stage, formulas)) return null;
-  const cacheKey = getSingleStageCaseLibraryKey(stage, formulas, preAufList, postAufList, formulaKeys);
+  const formulaPreferenceSignature = buildFormulaPreferenceSignature(formulaPreferenceMap);
+  const cacheKey = getSingleStageCaseLibraryKey(
+    stage,
+    formulas,
+    preAufList,
+    postAufList,
+    formulaKeys,
+    formulaPreferenceSignature,
+  );
   const cached = singleStageFormulaCaseLibraryCache.get(cacheKey);
   if (cached) return cached;
 
@@ -2681,16 +3246,31 @@ function getSingleStageFormulaCaseLibrary(stage, ctx, formulas, preAufList, post
           const candidateMoves = splitMoves(candidate);
           if (!candidateMoves.length) continue;
           if (candidateMoves.length > stage.maxDepth) continue;
+          const normalizedCandidate = normalizeFormulaMatchText(candidate);
+          const formulaScore = getFormulaPreferenceScore(
+            formulaPreferenceMap,
+            normalizedCandidate,
+            formulaCanonicalLookup,
+          );
+          const formulaKey = formulaKeyLookup?.get(normalizedCandidate) || null;
           const caseKey = stage.key(casePattern.patternData);
           const existing = caseMap.get(caseKey);
           if (
             !existing ||
-            candidateMoves.length < existing.moves.length ||
-            (candidateMoves.length === existing.moves.length && candidate < existing.text)
+            formulaScore > existing.formulaScore ||
+            (formulaScore === existing.formulaScore && candidateMoves.length < existing.moves.length) ||
+            (
+              formulaScore === existing.formulaScore &&
+              candidateMoves.length === existing.moves.length &&
+              candidate < existing.text
+            )
           ) {
             caseMap.set(caseKey, {
               text: candidate,
+              normalizedText: normalizedCandidate,
               moves: candidateMoves,
+              formulaScore,
+              formulaKey,
             });
           }
         }
@@ -2698,7 +3278,7 @@ function getSingleStageFormulaCaseLibrary(stage, ctx, formulas, preAufList, post
     }
   }
 
-  const library = { caseMap };
+  const library = { caseMap, preferenceSignature: formulaPreferenceSignature };
   singleStageFormulaCaseLibraryCache.set(cacheKey, library);
   if (singleStageFormulaCaseLibraryCache.size > SINGLE_STAGE_LIBRARY_CACHE_LIMIT) {
     const oldest = singleStageFormulaCaseLibraryCache.keys().next().value;
@@ -2709,6 +3289,15 @@ function getSingleStageFormulaCaseLibrary(stage, ctx, formulas, preAufList, post
 
 function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
   const formulaKeys = resolveStageFormulaKeys(stage, startPattern, ctx);
+  const formulaPreferenceMap =
+    typeof stage.getFormulaPreferenceMap === "function"
+      ? stage.getFormulaPreferenceMap(startPattern, ctx)
+      : null;
+  const hasFormulaPreference =
+    Boolean(formulaPreferenceMap && typeof formulaPreferenceMap.size === "number" && formulaPreferenceMap.size > 0);
+  const orderedFormulaKeys = sortFormulaKeysByPreference(formulaKeys, formulaPreferenceMap);
+  const formulaKeyLookup = buildFormulaKeyLookup(orderedFormulaKeys);
+  const formulaCanonicalLookup = hasFormulaPreference ? buildFormulaCanonicalLookup(orderedFormulaKeys) : null;
   const formulas = filterValidFormulas(getFormulaListForStage(stage, startPattern, ctx), ctx);
   if (!formulas.length) return null;
   const acceptsFormulaResult =
@@ -2738,19 +3327,23 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
     preAufList,
     postAufList,
     formulaKeys,
+    formulaPreferenceMap,
+    formulaKeyLookup,
+    formulaCanonicalLookup,
   );
   if (library?.caseMap?.size) {
     const startKey = stage.key(startPattern.patternData);
     const direct = library.caseMap.get(startKey);
     if (direct && Array.isArray(direct.moves) && direct.moves.length <= stage.maxDepth) {
       const nextPattern = tryApplyMoves(startPattern, direct.moves);
-      if (nextPattern && acceptsFormulaResult(nextPattern, null)) {
+      if (nextPattern && acceptsFormulaResult(nextPattern, direct.formulaKey || null)) {
         return {
           ok: true,
           moves: direct.moves.slice(),
           depth: direct.moves.length,
           nodes: 1,
           bound: direct.moves.length,
+          formulaKey: direct.formulaKey || null,
         };
       }
     }
@@ -2761,8 +3354,8 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
     for (let a = 0; a < preAufList.length; a++) {
       const preAuf = preAufList[a];
       const seen = new Set();
-      for (let k = 0; k < formulaKeys.length; k++) {
-        const formulaKey = formulaKeys[k];
+      for (let k = 0; k < orderedFormulaKeys.length; k++) {
+        const formulaKey = orderedFormulaKeys[k];
         const keyFormulas = [];
         const sourceFormulas = getFormulaListByKey(formulaKey);
         for (let i = 0; i < sourceFormulas.length; i++) {
@@ -2771,7 +3364,9 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
           seen.add(alg);
           keyFormulas.push(alg);
         }
-        const validKeyFormulas = filterValidFormulas(keyFormulas, ctx);
+        const validKeyFormulas = hasFormulaPreference
+          ? sortFormulasByPreference(filterValidFormulas(keyFormulas, ctx), formulaPreferenceMap)
+          : filterValidFormulas(keyFormulas, ctx);
         for (let i = 0; i < validKeyFormulas.length; i++) {
           const alg = validKeyFormulas[i];
           for (let p = 0; p < postAufList.length; p++) {

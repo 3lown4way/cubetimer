@@ -1,0 +1,156 @@
+[zb] parallelism capped: requested workers=12, using workers=6, maxWorkers=6, requested scrambleConcurrency=3, using scrambleConcurrency=1, limit=16
+[zb] [1/100] #1 scramble id=13027 (sample 1)
+  - legacy: ok moves=76, 3407ms
+  - balanced: ok moves=71, 3396ms
+  - rotationless: ok moves=71, 3371ms
+  - low-auf: ok moves=71, 3421ms
+[zb] [2/100] #1 scramble id=13026 (sample 2)
+  - legacy: ok moves=65, 2122ms
+  - balanced: ok moves=69, 2187ms
+  - rotationless: ok moves=69, 2143ms
+  - low-auf: ok moves=69, 2118ms
+[zb] [3/100] #1 scramble id=13025 (sample 3)
+  - legacy: ok moves=55, 2473ms
+  - balanced: ok moves=62, 2661ms
+  - rotationless: ok moves=62, 2487ms
+  - low-auf: ok moves=62, 2418ms
+[zb] [4/100] #1 scramble id=13024 (sample 4)
+  - legacy: ok moves=50, 1216ms
+  - balanced: ok moves=54, 2463ms
+  - rotationless: ok moves=54, 2219ms
+  - low-auf: ok moves=54, 2392ms
+[zb] [5/100] #1 scramble id=13023 (sample 5)
+  - legacy: ok moves=52, 3002ms
+  - balanced: ok moves=52, 2616ms
+  - rotationless: ok moves=52, 3193ms
+  - low-auf: ok moves=52, 2597ms
+[zb] [6/100] #1 scramble id=13022 (sample 6)
+  - legacy: ok moves=58, 3387ms
+  - balanced: ok moves=67, 3329ms
+  - rotationless: ok moves=67, 3209ms
+  - low-auf: ok moves=67, 3306ms
+[zb] [7/100] #1 scramble id=13021 (sample 7)
+  - legacy: ok moves=43, 2461ms
+  - balanced: ok moves=43, 2394ms
+  - rotationless: ok moves=43, 2436ms
+  - low-auf: ok moves=43, 2405ms
+[zb] [8/100] #1 scramble id=12988 (sample 8)
+  - legacy: ok moves=52, 560ms
+  - balanced: ok moves=52, 574ms
+  - rotationless: ok moves=52, 560ms
+  - low-auf: ok moves=52, 539ms
+[zb] [9/100] #1 scramble id=12987 (sample 9)
+  - legacy: ok moves=68, 2144ms
+  - balanced: ok moves=66, 2053ms
+  - rotationless: ok moves=66, 2044ms
+  - low-auf: ok moves=66, 1977ms
+[zb] [10/100] #1 scramble id=12986 (sample 10)
+  - legacy: ok moves=59, 1762ms
+  - balanced: ok moves=49, 573ms
+  - rotationless: ok moves=49, 614ms
+  - low-auf: ok moves=49, 592ms
+[zb] [11/100] #1 scramble id=12985 (sample 11)
+  - legacy: ok moves=69, 1962ms
+  - balanced: ok moves=54, 2113ms
+  - rotationless: ok moves=54, 2173ms
+  - low-auf: ok moves=54, 2114ms
+[zb] [12/100] #1 scramble id=12984 (sample 12)
+  - legacy: ok moves=65, 2227ms
+  - balanced: ok moves=63, 2259ms
+  - rotationless: ok moves=63, 2259ms
+  - low-auf: ok moves=63, 2350ms
+[zb] [13/100] #1 scramble id=12982 (sample 13)
+  - legacy: ok moves=60, 2069ms
+  - balanced: ok moves=64, 2028ms
+  - rotationless: ok moves=64, 2090ms
+  - low-auf: ok moves=64, 2007ms
+[zb] [14/100] #1 scramble id=12981 (sample 14)
+  - legacy: ok moves=70, 2223ms
+  - balanced: ok moves=70, 2195ms
+  - rotationless: ok moves=70, 2184ms
+  - low-auf: ok moves=70, 2235ms
+[zb] [15/100] #1 scramble id=12980 (sample 15)
+  - legacy: ok moves=52, 2073ms
+  - balanced: ok moves=57, 2037ms
+  - rotationless: ok moves=57, 2103ms
+  - low-auf: ok moves=57, 2087ms
+[zb] [16/100] #1 scramble id=12979 (sample 16)
+  - legacy: ok moves=55, 1862ms
+  - balanced: ok moves=56, 1855ms
+  - rotationless: ok moves=56, 1831ms
+  - low-auf: ok moves=56, 1809ms
+[zb] [17/100] #1 scramble id=12977 (sample 17)
+  - legacy: fail TIMEOUT_4000MS, 4150ms
+  - balanced: fail F2L2_SEARCH_LIMIT, 1686ms
+  - rotationless: fail F2L2_SEARCH_LIMIT, 1912ms
+  - low-auf: fail F2L2_SEARCH_LIMIT, 1611ms
+[zb] [18/100] #1 scramble id=12976 (sample 18)
+  - legacy: fail TIMEOUT_4000MS, 4150ms
+  - balanced: fail TIMEOUT_4000MS, 4150ms
+  - rotationless: fail TIMEOUT_4000MS, 4150ms
+  - low-auf: fail TIMEOUT_4000MS, 4150ms
+[zb] [19/100] #1 scramble id=12975 (sample 19)
+  - legacy: fail TIMEOUT_4000MS, 4150ms
+  - balanced: fail TIMEOUT_4000MS, 4150ms
+  - rotationless: fail TIMEOUT_4000MS, 4150ms
+  - low-auf: ok moves=57, 2207ms
+[zb] [20/100] #1 scramble id=12974 (sample 20)
+  - legacy: ok moves=53, 770ms
+  - balanced: fail TIMEOUT_4000MS, 4150ms
+  - rotationless: fail TIMEOUT_4000MS, 4150ms
+  - low-auf: fail TIMEOUT_4000MS, 4150ms
+[zb] [21/100] #1 scramble id=12968 (sample 21)
+  - legacy: ok moves=63, 1774ms
+  - balanced: fail TIMEOUT_4000MS, 4150ms
+  - rotationless: fail TIMEOUT_4000MS, 4150ms
+  - low-auf: fail TIMEOUT_4000MS, 4150ms
+[zb] [22/100] #1 scramble id=12967 (sample 22)
+  - legacy: ok moves=62, 2881ms
+  - balanced: ok moves=62, 3578ms
+  - rotationless: ok moves=62, 3762ms
+  - low-auf: ok moves=62, 3824ms
+[zb] [23/100] #1 scramble id=12966 (sample 23)
+  - legacy: ok moves=69, 2654ms
+  - balanced: ok moves=63, 2441ms
+  - rotationless: ok moves=63, 2350ms
+  - low-auf: ok moves=63, 2716ms
+[zb] [24/100] #1 scramble id=12965 (sample 24)
+  - legacy: ok moves=68, 2502ms
+  - balanced: ok moves=67, 2914ms
+  - rotationless: ok moves=67, 2403ms
+  - low-auf: ok moves=67, 2705ms
+[zb] [25/100] #1 scramble id=12964 (sample 25)
+  - legacy: ok moves=58, 3203ms
+  - balanced: ok moves=58, 3420ms
+  - rotationless: ok moves=58, 3291ms
+  - low-auf: ok moves=58, 3448ms
+[zb] [26/100] #1 scramble id=12963 (sample 26)
+  - legacy: ok moves=73, 2856ms
+  - balanced: ok moves=74, 2808ms
+  - rotationless: ok moves=74, 3034ms
+  - low-auf: ok moves=74, 2656ms
+[zb] [27/100] #1 scramble id=12962 (sample 27)
+  - legacy: ok moves=72, 3983ms
+  - balanced: fail ZBLS_SEARCH_LIMIT, 3900ms
+  - rotationless: ok moves=61, 3947ms
+  - low-auf: fail ZBLS_SEARCH_LIMIT, 3953ms
+[zb] [28/100] #1 scramble id=12961 (sample 28)
+  - legacy: ok moves=53, 840ms
+  - balanced: ok moves=58, 963ms
+  - rotationless: ok moves=58, 980ms
+  - low-auf: ok moves=58, 895ms
+[zb] [29/100] #1 scramble id=12960 (sample 29)
+  - legacy: ok moves=56, 2860ms
+  - balanced: ok moves=59, 3183ms
+  - rotationless: ok moves=59, 3210ms
+  - low-auf: ok moves=59, 3182ms
+[zb] [30/100] #1 scramble id=12959 (sample 30)
+  - legacy: ok moves=55, 2962ms
+  - balanced: ok moves=55, 2769ms
+  - rotationless: ok moves=55, 2827ms
+  - low-auf: ok moves=55, 2885ms
+[zb] [31/100] #1 scramble id=12943 (sample 31)
+  - legacy: ok moves=47, 2991ms
+  - balanced: ok moves=52, 3032ms
+  - rotationless: ok moves=52, 3200ms
+  - low-auf: ok moves=52, 2998ms

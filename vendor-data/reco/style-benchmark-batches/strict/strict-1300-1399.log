@@ -1,0 +1,502 @@
+[strict] parallelism capped: requested workers=12, using workers=6, maxWorkers=6, requested scrambleConcurrency=3, using scrambleConcurrency=1, limit=16
+[strict] [1/100] #1 scramble id=9894 (sample 1)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=67, 3575ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [2/100] #1 scramble id=9893 (sample 2)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=66, 1464ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [3/100] #1 scramble id=9892 (sample 3)
+  - legacy: ok moves=65, 1320ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=67, 2230ms
+[strict] [4/100] #1 scramble id=9891 (sample 4)
+  - legacy: ok moves=68, 1244ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=64, 1173ms
+[strict] [5/100] #1 scramble id=9890 (sample 5)
+  - legacy: ok moves=61, 1873ms
+  - balanced: ok moves=66, 1761ms
+  - rotationless: ok moves=66, 2769ms
+  - low-auf: ok moves=65, 2904ms
+[strict] [6/100] #1 scramble id=9889 (sample 6)
+  - legacy: ok moves=56, 1462ms
+  - balanced: ok moves=58, 1660ms
+  - rotationless: ok moves=58, 1781ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [7/100] #1 scramble id=9888 (sample 7)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=61, 1346ms
+  - rotationless: ok moves=61, 1482ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [8/100] #1 scramble id=9880 (sample 8)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=65, 1388ms
+  - rotationless: ok moves=65, 1581ms
+  - low-auf: ok moves=65, 2175ms
+[strict] [9/100] #1 scramble id=9879 (sample 9)
+  - legacy: ok moves=58, 1194ms
+  - balanced: ok moves=63, 1390ms
+  - rotationless: ok moves=62, 1168ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [10/100] #1 scramble id=9878 (sample 10)
+  - legacy: ok moves=65, 1821ms
+  - balanced: ok moves=60, 2015ms
+  - rotationless: ok moves=65, 1764ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [11/100] #1 scramble id=9877 (sample 11)
+  - legacy: ok moves=61, 2202ms
+  - balanced: ok moves=66, 2248ms
+  - rotationless: ok moves=68, 1992ms
+  - low-auf: ok moves=68, 3285ms
+[strict] [12/100] #1 scramble id=9876 (sample 12)
+  - legacy: ok moves=56, 1769ms
+  - balanced: ok moves=67, 1701ms
+  - rotationless: ok moves=67, 1566ms
+  - low-auf: ok moves=58, 1742ms
+[strict] [13/100] #1 scramble id=9875 (sample 13)
+  - legacy: ok moves=68, 1755ms
+  - balanced: ok moves=60, 2017ms
+  - rotationless: ok moves=70, 1861ms
+  - low-auf: ok moves=59, 2169ms
+[strict] [14/100] #1 scramble id=9874 (sample 14)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=58, 2642ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [15/100] #1 scramble id=9873 (sample 15)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=60, 1035ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [16/100] #1 scramble id=9872 (sample 16)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=61, 2434ms
+  - rotationless: ok moves=61, 2412ms
+  - low-auf: ok moves=66, 2423ms
+[strict] [17/100] #1 scramble id=9871 (sample 17)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=62, 1695ms
+  - rotationless: ok moves=74, 1834ms
+  - low-auf: ok moves=70, 1637ms
+[strict] [18/100] #1 scramble id=9858 (sample 18)
+  - legacy: ok moves=58, 1270ms
+  - balanced: ok moves=70, 1247ms
+  - rotationless: ok moves=70, 1201ms
+  - low-auf: ok moves=60, 2174ms
+[strict] [19/100] #1 scramble id=9857 (sample 19)
+  - legacy: ok moves=54, 1723ms
+  - balanced: ok moves=69, 1531ms
+  - rotationless: ok moves=63, 1458ms
+  - low-auf: ok moves=66, 1749ms
+[strict] [20/100] #1 scramble id=9856 (sample 20)
+  - legacy: ok moves=57, 1748ms
+  - balanced: ok moves=61, 1791ms
+  - rotationless: ok moves=61, 1491ms
+  - low-auf: ok moves=65, 1574ms
+[strict] [21/100] #1 scramble id=9855 (sample 21)
+  - legacy: ok moves=62, 1723ms
+  - balanced: ok moves=58, 1667ms
+  - rotationless: ok moves=58, 1783ms
+  - low-auf: ok moves=71, 1851ms
+[strict] [22/100] #1 scramble id=9854 (sample 22)
+  - legacy: ok moves=61, 1408ms
+  - balanced: ok moves=62, 1344ms
+  - rotationless: ok moves=67, 1424ms
+  - low-auf: ok moves=59, 1289ms
+[strict] [23/100] #1 scramble id=9851 (sample 23)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=69, 2444ms
+  - rotationless: ok moves=69, 2480ms
+  - low-auf: ok moves=75, 2420ms
+[strict] [24/100] #1 scramble id=9850 (sample 24)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=69, 1591ms
+  - rotationless: ok moves=68, 1563ms
+  - low-auf: ok moves=70, 1551ms
+[strict] [25/100] #1 scramble id=9849 (sample 25)
+  - legacy: ok moves=65, 1978ms
+  - balanced: ok moves=69, 1912ms
+  - rotationless: ok moves=69, 2226ms
+  - low-auf: ok moves=74, 3079ms
+[strict] [26/100] #1 scramble id=9848 (sample 26)
+  - legacy: ok moves=67, 1966ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=72, 2285ms
+  - low-auf: ok moves=62, 1917ms
+[strict] [27/100] #1 scramble id=9847 (sample 27)
+  - legacy: ok moves=63, 2017ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=57, 1953ms
+  - low-auf: ok moves=68, 2145ms
+[strict] [28/100] #1 scramble id=9846 (sample 28)
+  - legacy: ok moves=60, 1743ms
+  - balanced: ok moves=56, 1600ms
+  - rotationless: ok moves=56, 1729ms
+  - low-auf: ok moves=64, 2548ms
+[strict] [29/100] #1 scramble id=9845 (sample 29)
+  - legacy: ok moves=66, 1923ms
+  - balanced: ok moves=71, 1900ms
+  - rotationless: ok moves=61, 2061ms
+  - low-auf: ok moves=71, 2303ms
+[strict] [30/100] #1 scramble id=9844 (sample 30)
+  - legacy: ok moves=61, 1985ms
+  - balanced: ok moves=66, 1816ms
+  - rotationless: ok moves=66, 1870ms
+  - low-auf: ok moves=73, 1898ms
+[strict] [31/100] #1 scramble id=9843 (sample 31)
+  - legacy: ok moves=59, 1226ms
+  - balanced: ok moves=59, 1285ms
+  - rotationless: ok moves=59, 1333ms
+  - low-auf: ok moves=65, 1253ms
+[strict] [32/100] #1 scramble id=9837 (sample 32)
+  - legacy: ok moves=58, 1484ms
+  - balanced: ok moves=65, 1550ms
+  - rotationless: ok moves=65, 1443ms
+  - low-auf: ok moves=65, 1765ms
+[strict] [33/100] #1 scramble id=9836 (sample 33)
+  - legacy: ok moves=57, 1240ms
+  - balanced: ok moves=58, 1294ms
+  - rotationless: ok moves=58, 1296ms
+  - low-auf: ok moves=61, 1348ms
+[strict] [34/100] #1 scramble id=9835 (sample 34)
+  - legacy: ok moves=76, 1255ms
+  - balanced: ok moves=70, 1246ms
+  - rotationless: ok moves=70, 1338ms
+  - low-auf: ok moves=73, 1332ms
+[strict] [35/100] #1 scramble id=9834 (sample 35)
+  - legacy: ok moves=58, 1885ms
+  - balanced: ok moves=65, 1915ms
+  - rotationless: ok moves=70, 1971ms
+  - low-auf: ok moves=69, 2058ms
+[strict] [36/100] #1 scramble id=9771 (sample 36)
+  - legacy: ok moves=57, 1460ms
+  - balanced: ok moves=57, 1374ms
+  - rotationless: ok moves=57, 1423ms
+  - low-auf: ok moves=59, 1488ms
+[strict] [37/100] #1 scramble id=9770 (sample 37)
+  - legacy: ok moves=51, 1419ms
+  - balanced: ok moves=58, 1602ms
+  - rotationless: ok moves=58, 1500ms
+  - low-auf: ok moves=59, 1421ms
+[strict] [38/100] #1 scramble id=9769 (sample 38)
+  - legacy: ok moves=77, 1388ms
+  - balanced: ok moves=77, 1339ms
+  - rotationless: ok moves=77, 1428ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [39/100] #1 scramble id=9768 (sample 39)
+  - legacy: ok moves=64, 1335ms
+  - balanced: ok moves=60, 1350ms
+  - rotationless: ok moves=60, 1379ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [40/100] #1 scramble id=9767 (sample 40)
+  - legacy: ok moves=68, 2036ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=66, 1872ms
+  - low-auf: ok moves=62, 2822ms
+[strict] [41/100] #1 scramble id=9766 (sample 41)
+  - legacy: ok moves=66, 1294ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: ok moves=66, 1345ms
+  - low-auf: ok moves=70, 1220ms
+[strict] [42/100] #1 scramble id=9761 (sample 42)
+  - legacy: ok moves=60, 1209ms
+  - balanced: ok moves=65, 1313ms
+  - rotationless: ok moves=44, 1126ms
+  - low-auf: ok moves=64, 1960ms
+[strict] [43/100] #1 scramble id=9760 (sample 43)
+  - legacy: ok moves=58, 1208ms
+  - balanced: ok moves=56, 1260ms
+  - rotationless: ok moves=56, 1126ms
+  - low-auf: ok moves=58, 1219ms
+[strict] [44/100] #1 scramble id=9759 (sample 44)
+  - legacy: ok moves=59, 1648ms
+  - balanced: ok moves=62, 1655ms
+  - rotationless: ok moves=62, 1522ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [45/100] #1 scramble id=9758 (sample 45)
+  - legacy: ok moves=58, 1735ms
+  - balanced: ok moves=54, 1640ms
+  - rotationless: ok moves=54, 1372ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [46/100] #1 scramble id=9757 (sample 46)
+  - legacy: ok moves=61, 1818ms
+  - balanced: ok moves=61, 1620ms
+  - rotationless: ok moves=61, 1678ms
+  - low-auf: ok moves=61, 2653ms
+[strict] [47/100] #1 scramble id=9723 (sample 47)
+  - legacy: ok moves=55, 1063ms
+  - balanced: ok moves=50, 1094ms
+  - rotationless: ok moves=50, 1089ms
+  - low-auf: ok moves=58, 1151ms
+[strict] [48/100] #1 scramble id=9722 (sample 48)
+  - legacy: ok moves=65, 1744ms
+  - balanced: ok moves=64, 1582ms
+  - rotationless: ok moves=64, 1591ms
+  - low-auf: ok moves=63, 1633ms
+[strict] [49/100] #1 scramble id=9721 (sample 49)
+  - legacy: ok moves=63, 2091ms
+  - balanced: ok moves=58, 1900ms
+  - rotationless: ok moves=66, 1717ms
+  - low-auf: ok moves=63, 2271ms
+[strict] [50/100] #1 scramble id=9720 (sample 50)
+  - legacy: ok moves=74, 1822ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [51/100] #1 scramble id=9718 (sample 51)
+  - legacy: ok moves=63, 1213ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [52/100] #1 scramble id=9709 (sample 52)
+  - legacy: ok moves=60, 1953ms
+  - balanced: ok moves=65, 2776ms
+  - rotationless: ok moves=65, 2763ms
+  - low-auf: ok moves=64, 2781ms
+[strict] [53/100] #1 scramble id=9708 (sample 53)
+  - legacy: ok moves=73, 1382ms
+  - balanced: ok moves=68, 1231ms
+  - rotationless: ok moves=68, 1214ms
+  - low-auf: ok moves=67, 1172ms
+[strict] [54/100] #1 scramble id=9707 (sample 54)
+  - legacy: ok moves=63, 1345ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=72, 1387ms
+[strict] [55/100] #1 scramble id=9706 (sample 55)
+  - legacy: ok moves=66, 1845ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=69, 1803ms
+[strict] [56/100] #1 scramble id=9705 (sample 56)
+  - legacy: ok moves=61, 1699ms
+  - balanced: ok moves=53, 1619ms
+  - rotationless: ok moves=53, 2936ms
+  - low-auf: ok moves=68, 2709ms
+[strict] [57/100] #1 scramble id=9703 (sample 57)
+  - legacy: ok moves=59, 1757ms
+  - balanced: ok moves=59, 1513ms
+  - rotationless: ok moves=59, 1770ms
+  - low-auf: ok moves=61, 1670ms
+[strict] [58/100] #1 scramble id=9702 (sample 58)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=61, 2076ms
+  - rotationless: ok moves=69, 2056ms
+  - low-auf: ok moves=65, 1783ms
+[strict] [59/100] #1 scramble id=9701 (sample 59)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=64, 1798ms
+  - rotationless: ok moves=71, 1908ms
+  - low-auf: ok moves=65, 1767ms
+[strict] [60/100] #1 scramble id=9700 (sample 60)
+  - legacy: ok moves=69, 1562ms
+  - balanced: ok moves=69, 1597ms
+  - rotationless: ok moves=71, 1380ms
+  - low-auf: ok moves=77, 2249ms
+[strict] [61/100] #1 scramble id=9699 (sample 61)
+  - legacy: ok moves=55, 1623ms
+  - balanced: ok moves=54, 1599ms
+  - rotationless: ok moves=54, 1692ms
+  - low-auf: ok moves=63, 1576ms
+[strict] [62/100] #1 scramble id=9698 (sample 62)
+  - legacy: ok moves=62, 1924ms
+  - balanced: ok moves=67, 2132ms
+  - rotationless: ok moves=62, 2192ms
+  - low-auf: ok moves=65, 2236ms
+[strict] [63/100] #1 scramble id=9697 (sample 63)
+  - legacy: ok moves=55, 1544ms
+  - balanced: ok moves=65, 1815ms
+  - rotationless: ok moves=65, 1704ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [64/100] #1 scramble id=9696 (sample 64)
+  - legacy: ok moves=61, 1328ms
+  - balanced: ok moves=67, 1295ms
+  - rotationless: ok moves=67, 1193ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [65/100] #1 scramble id=9695 (sample 65)
+  - legacy: ok moves=61, 1603ms
+  - balanced: ok moves=72, 1641ms
+  - rotationless: ok moves=61, 1509ms
+  - low-auf: ok moves=66, 2364ms
+[strict] [66/100] #1 scramble id=9694 (sample 66)
+  - legacy: ok moves=58, 1190ms
+  - balanced: ok moves=56, 1133ms
+  - rotationless: ok moves=53, 1054ms
+  - low-auf: ok moves=65, 1071ms
+[strict] [67/100] #1 scramble id=9693 (sample 67)
+  - legacy: ok moves=66, 1951ms
+  - balanced: ok moves=61, 1975ms
+  - rotationless: ok moves=67, 1640ms
+  - low-auf: ok moves=72, 1861ms
+[strict] [68/100] #1 scramble id=9692 (sample 68)
+  - legacy: ok moves=75, 2073ms
+  - balanced: ok moves=69, 1801ms
+  - rotationless: ok moves=68, 1659ms
+  - low-auf: ok moves=73, 2031ms
+[strict] [69/100] #1 scramble id=9691 (sample 69)
+  - legacy: ok moves=69, 2027ms
+  - balanced: ok moves=67, 2035ms
+  - rotationless: ok moves=59, 1749ms
+  - low-auf: ok moves=59, 2085ms
+[strict] [70/100] #1 scramble id=9690 (sample 70)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=62, 1826ms
+  - rotationless: ok moves=62, 1490ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [71/100] #1 scramble id=9689 (sample 71)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: ok moves=69, 1560ms
+  - rotationless: ok moves=69, 1524ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [72/100] #1 scramble id=9688 (sample 72)
+  - legacy: ok moves=60, 1402ms
+  - balanced: ok moves=62, 1259ms
+  - rotationless: ok moves=62, 2237ms
+  - low-auf: ok moves=61, 2066ms
+[strict] [73/100] #1 scramble id=9687 (sample 73)
+  - legacy: ok moves=61, 1835ms
+  - balanced: ok moves=56, 1944ms
+  - rotationless: ok moves=56, 1974ms
+  - low-auf: ok moves=56, 1793ms
+[strict] [74/100] #1 scramble id=9686 (sample 74)
+  - legacy: ok moves=57, 1513ms
+  - balanced: ok moves=61, 1341ms
+  - rotationless: ok moves=61, 1382ms
+  - low-auf: ok moves=68, 1440ms
+[strict] [75/100] #1 scramble id=9685 (sample 75)
+  - legacy: ok moves=66, 2176ms
+  - balanced: ok moves=66, 2203ms
+  - rotationless: ok moves=66, 2320ms
+  - low-auf: ok moves=71, 2193ms
+[strict] [76/100] #1 scramble id=9684 (sample 76)
+  - legacy: ok moves=57, 1496ms
+  - balanced: ok moves=57, 1488ms
+  - rotationless: ok moves=57, 1544ms
+  - low-auf: ok moves=59, 1487ms
+[strict] [77/100] #1 scramble id=9683 (sample 77)
+  - legacy: ok moves=68, 1652ms
+  - balanced: ok moves=70, 1527ms
+  - rotationless: ok moves=70, 1646ms
+  - low-auf: ok moves=70, 1502ms
+[strict] [78/100] #1 scramble id=9682 (sample 78)
+  - legacy: ok moves=60, 1704ms
+  - balanced: ok moves=58, 1502ms
+  - rotationless: ok moves=58, 1675ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [79/100] #1 scramble id=9681 (sample 79)
+  - legacy: ok moves=59, 1307ms
+  - balanced: ok moves=69, 1251ms
+  - rotationless: ok moves=69, 1302ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [80/100] #1 scramble id=9680 (sample 80)
+  - legacy: ok moves=62, 1305ms
+  - balanced: ok moves=57, 1259ms
+  - rotationless: ok moves=67, 1316ms
+  - low-auf: ok moves=62, 2025ms
+[strict] [81/100] #1 scramble id=9679 (sample 81)
+  - legacy: ok moves=64, 1531ms
+  - balanced: ok moves=59, 1442ms
+  - rotationless: ok moves=59, 1531ms
+  - low-auf: ok moves=57, 1445ms
+[strict] [82/100] #1 scramble id=9678 (sample 82)
+  - legacy: ok moves=48, 1454ms
+  - balanced: ok moves=56, 1500ms
+  - rotationless: ok moves=56, 1393ms
+  - low-auf: ok moves=51, 1420ms
+[strict] [83/100] #1 scramble id=9669 (sample 83)
+  - legacy: ok moves=57, 1606ms
+  - balanced: ok moves=57, 1726ms
+  - rotationless: ok moves=57, 1733ms
+  - low-auf: ok moves=67, 1838ms
+[strict] [84/100] #1 scramble id=9668 (sample 84)
+  - legacy: ok moves=58, 2009ms
+  - balanced: ok moves=64, 1661ms
+  - rotationless: ok moves=64, 1760ms
+  - low-auf: ok moves=63, 1784ms
+[strict] [85/100] #1 scramble id=9667 (sample 85)
+  - legacy: ok moves=63, 1671ms
+  - balanced: ok moves=63, 1712ms
+  - rotationless: ok moves=63, 1848ms
+  - low-auf: ok moves=65, 1579ms
+[strict] [86/100] #1 scramble id=9666 (sample 86)
+  - legacy: ok moves=66, 2051ms
+  - balanced: ok moves=71, 2267ms
+  - rotationless: ok moves=68, 2251ms
+  - low-auf: ok moves=62, 1991ms
+[strict] [87/100] #1 scramble id=9665 (sample 87)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [88/100] #1 scramble id=9664 (sample 88)
+  - legacy: fail TIMEOUT_3500MS, 3650ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [89/100] #1 scramble id=9663 (sample 89)
+  - legacy: ok moves=65, 2590ms
+  - balanced: ok moves=63, 2567ms
+  - rotationless: ok moves=63, 2623ms
+  - low-auf: ok moves=77, 2532ms
+[strict] [90/100] #1 scramble id=9662 (sample 90)
+  - legacy: ok moves=52, 1465ms
+  - balanced: ok moves=52, 1471ms
+  - rotationless: ok moves=52, 1450ms
+  - low-auf: ok moves=68, 1415ms
+[strict] [91/100] #1 scramble id=9661 (sample 91)
+  - legacy: ok moves=66, 1559ms
+  - balanced: ok moves=72, 1766ms
+  - rotationless: ok moves=70, 1701ms
+  - low-auf: ok moves=60, 1702ms
+[strict] [92/100] #1 scramble id=9660 (sample 92)
+  - legacy: ok moves=59, 1329ms
+  - balanced: ok moves=62, 1533ms
+  - rotationless: ok moves=67, 1474ms
+  - low-auf: ok moves=64, 1337ms
+[strict] [93/100] #1 scramble id=9659 (sample 93)
+  - legacy: ok moves=65, 1683ms
+  - balanced: ok moves=68, 1719ms
+  - rotationless: ok moves=73, 1796ms
+  - low-auf: ok moves=68, 1715ms
+[strict] [94/100] #1 scramble id=9658 (sample 94)
+  - legacy: ok moves=65, 2073ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=67, 1867ms
+[strict] [95/100] #1 scramble id=9657 (sample 95)
+  - legacy: ok moves=63, 1109ms
+  - balanced: fail TIMEOUT_3500MS, 3650ms
+  - rotationless: fail TIMEOUT_3500MS, 3650ms
+  - low-auf: ok moves=69, 1127ms
+[strict] [96/100] #1 scramble id=9656 (sample 96)
+  - legacy: ok moves=66, 1831ms
+  - balanced: ok moves=62, 1961ms
+  - rotationless: ok moves=73, 3132ms
+  - low-auf: ok moves=60, 3112ms
+[strict] [97/100] #1 scramble id=9655 (sample 97)
+  - legacy: ok moves=61, 1532ms
+  - balanced: ok moves=65, 1671ms
+  - rotationless: ok moves=65, 1815ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [98/100] #1 scramble id=9654 (sample 98)
+  - legacy: ok moves=58, 1047ms
+  - balanced: ok moves=66, 1096ms
+  - rotationless: ok moves=66, 1138ms
+  - low-auf: fail TIMEOUT_3500MS, 3650ms
+[strict] [99/100] #1 scramble id=9653 (sample 99)
+  - legacy: ok moves=61, 1899ms
+  - balanced: ok moves=61, 1941ms
+  - rotationless: ok moves=61, 1720ms
+  - low-auf: ok moves=76, 3208ms
+[strict] [100/100] #1 scramble id=9651 (sample 100)
+  - legacy: ok moves=56, 1716ms
+  - balanced: ok moves=73, 1861ms
+  - rotationless: ok moves=73, 1874ms
+  - low-auf: ok moves=46, 1568ms
+Wrote /home/jhkang/바탕화면/CubeTimer/vendor-data/reco/style-benchmark-batches/strict/strict-1300-1399.json
