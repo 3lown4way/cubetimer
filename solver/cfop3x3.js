@@ -27,7 +27,9 @@ const STRICT_CFOP_PROFILE = {
   f2lFormulaExpansionLimit: 12,
   f2lFormulaMaxAttempts: 240000,
   // Max ms the formula beam may run before falling through to compact IDA*.
-  f2lFormulaBeamBudgetMs: 250,
+  // Compact IDA* solves in ~15-30ms, so keeping the beam budget small avoids
+  // wasting 250ms when the beam fails to find a style-matched solution.
+  f2lFormulaBeamBudgetMs: 50,
   f2lSearchMaxDepth: 11,
   f2lNodeLimit: 220000,
   ollMaxDepth: 22,
@@ -40,7 +42,7 @@ const FAST_CFOP_PROFILE = {
   f2lFormulaBeamWidth: 6,
   f2lFormulaExpansionLimit: 10,
   f2lFormulaMaxAttempts: 180000,
-  f2lFormulaBeamBudgetMs: 200,
+  f2lFormulaBeamBudgetMs: 30,
   f2lSearchMaxDepth: 8,
   f2lNodeLimit: 150000,
   ollMaxDepth: 22,
@@ -295,6 +297,32 @@ function encodeF2LPairState(cornerPos, cornerOri, edgePos, edgeOri) {
   return ((((cornerPos * 3 + (cornerOri % 3)) * 12 + edgePos) * 2) + (edgeOri & 1));
 }
 
+// Compact F2L pair move table: pairMoveTable[state * 18 + moveIndex] = nextState.
+// All 18 HTM moves included; use same moveIndex as MOVE_NAMES.
+function buildF2LPairMoveTable(pairDef, cornerMoveTables, edgeMoveTables) {
+  const numMoves = cornerMoveTables.length; // 18
+  const table = new Uint16Array(576 * numMoves);
+  for (let state = 0; state < 576; state++) {
+    const edgeOri = state & 1;
+    let rem = state >> 1;
+    const edgePos = rem % 12;
+    rem = Math.floor(rem / 12);
+    const cornerOri = rem % 3;
+    const cornerPos = Math.floor(rem / 3);
+    const base = state * numMoves;
+    for (let mi = 0; mi < numMoves; mi++) {
+      const cMap = cornerMoveTables[mi];
+      const eMap = edgeMoveTables[mi];
+      const np = cMap.cornerPosMap[cornerPos];
+      const no = (cornerOri + cMap.cornerOriDelta[cornerPos]) % 3;
+      const nep = eMap.edgePosMap[edgePos];
+      const neo = edgeOri ^ eMap.edgeOriDelta[edgePos];
+      table[base + mi] = encodeF2LPairState(np, no, nep, neo);
+    }
+  }
+  return table;
+}
+
 function buildF2LPairPruneTable(pairDef, cornerMoveTables, edgeMoveTables, allowedMoveIndices) {
   const table = new Int8Array(576);
   table.fill(-1);
@@ -442,6 +470,49 @@ function buildCrossPruneTable(bottomEdgePositions, solvedData, edgeMoveTables) {
   }
 
   return distance;
+}
+
+// Compact cross move table: crossMoveTable[stateIdx * numMoves + moveIdx] = nextStateIdx.
+// Enables pure-integer cross IDA* (~10x faster than KPattern IDA*).
+function buildCrossMoveTable(edgeMoveTables) {
+  const numMoves = edgeMoveTables.length;
+  const table = new Uint32Array(CROSS_STATE_COUNT * numMoves);
+  for (let state = 0; state < CROSS_STATE_COUNT; state++) {
+    const oriBits = state & 15;
+    let rankRemainder = state >> 4;
+    let usedMask = 0;
+    const d0 = Math.floor(rankRemainder / CROSS_RANK_FACTORS[0]);
+    rankRemainder %= CROSS_RANK_FACTORS[0];
+    const dp0 = nthUnusedPosition(d0, usedMask);
+    usedMask |= 1 << dp0;
+    const d1 = Math.floor(rankRemainder / CROSS_RANK_FACTORS[1]);
+    rankRemainder %= CROSS_RANK_FACTORS[1];
+    const dp1 = nthUnusedPosition(d1, usedMask);
+    usedMask |= 1 << dp1;
+    const d2 = Math.floor(rankRemainder / CROSS_RANK_FACTORS[2]);
+    rankRemainder %= CROSS_RANK_FACTORS[2];
+    const dp2 = nthUnusedPosition(d2, usedMask);
+    usedMask |= 1 << dp2;
+    const dp3 = nthUnusedPosition(rankRemainder, usedMask);
+    const do0 = oriBits & 1;
+    const do1 = (oriBits >> 1) & 1;
+    const do2 = (oriBits >> 2) & 1;
+    const do3 = (oriBits >> 3) & 1;
+    const base = state * numMoves;
+    for (let moveIndex = 0; moveIndex < numMoves; moveIndex++) {
+      const move = edgeMoveTables[moveIndex];
+      const np0 = move.edgePosMap[dp0];
+      const np1 = move.edgePosMap[dp1];
+      const np2 = move.edgePosMap[dp2];
+      const np3 = move.edgePosMap[dp3];
+      const no0 = do0 ^ move.edgeOriDelta[dp0];
+      const no1 = do1 ^ move.edgeOriDelta[dp1];
+      const no2 = do2 ^ move.edgeOriDelta[dp2];
+      const no3 = do3 ^ move.edgeOriDelta[dp3];
+      table[base + moveIndex] = encodeCrossStateFromParts(np0, np1, np2, np3, no0, no1, no2, no3);
+    }
+  }
+  return table;
 }
 
 function getCrossStateIndexFromData(data, ctx) {
@@ -2602,6 +2673,20 @@ async function getCfopContext() {
     const edgeMoveTables = buildEdgeMoveTables(solvedPattern, solvedData);
     const cornerMoveTables = buildCornerMoveTables(solvedPattern, solvedData);
     const crossPruneTable = buildCrossPruneTable(bottomEdgePositions, solvedData, edgeMoveTables);
+    const crossMoveTable = buildCrossMoveTable(edgeMoveTables);
+    const solvedCrossStateIndex = (() => {
+      const p0 = bottomEdgePositions[0];
+      const p1 = bottomEdgePositions[1];
+      const p2 = bottomEdgePositions[2];
+      const p3 = bottomEdgePositions[3];
+      return encodeCrossStateFromParts(
+        p0, p1, p2, p3,
+        solvedData.EDGES.orientation[p0] & 1,
+        solvedData.EDGES.orientation[p1] & 1,
+        solvedData.EDGES.orientation[p2] & 1,
+        solvedData.EDGES.orientation[p3] & 1,
+      );
+    })();
     const crossEdgePieceIds = bottomEdgePositions.map((pos) => solvedData.EDGES.pieces[pos]);
     const crossPieceIndexById = new Map();
     for (let i = 0; i < crossEdgePieceIds.length; i++) {
@@ -2631,10 +2716,19 @@ async function getCfopContext() {
           edgeMoveTables,
           noDMoveIndices,
         ),
+        moveTable: buildF2LPairMoveTable(
+          { cornerTargetPos, edgeTargetPos },
+          cornerMoveTables,
+          edgeMoveTables,
+        ),
       });
     }
 
-    return {
+    const f2lSolvedPairStates = f2lPairDefs.map((def) =>
+      encodeF2LPairState(def.cornerTargetPos, def.cornerTargetOri, def.edgeTargetPos, def.edgeTargetOri),
+    );
+
+    const ctx = {
       solvedPattern,
       solvedData,
       topEdgePositions,
@@ -2648,14 +2742,67 @@ async function getCfopContext() {
       allMoveIndices,
       noDMoveIndices,
       crossPruneTable,
+      crossMoveTable,
+      solvedCrossStateIndex,
       crossEdgePieceIds,
       crossPieceIndexById,
       f2lPairDefs,
+      f2lSolvedPairStates,
       cornerMoveTables,
       edgeMoveTables,
     };
+
+    // Pre-warm OLL and PLL case libraries so the first real solve doesn't pay
+    // a 130ms + 210ms cold-start penalty for these stage formula lookups.
+    _warmOllPllLibraries(ctx);
+
+    return ctx;
   })();
   return contextPromise;
+}
+
+function _warmOllPllLibraries(ctx) {
+  const ollStage = {
+    name: "OLL",
+    formulaKeys: ["OLL"],
+    maxDepth: 22,
+    formulaPreAufList: FORMULA_AUF,
+    key(data) {
+      const f2lC = buildKeyForOrbit(data.CORNERS, ctx.f2lCornerPositions, true, true);
+      const f2lE = buildKeyForOrbit(data.EDGES, ctx.f2lEdgePositions, true, true);
+      const ollC = buildKeyForOrbit(data.CORNERS, ctx.topCornerPositions, false, true);
+      const ollE = buildKeyForOrbit(data.EDGES, ctx.topEdgePositions, false, true);
+      return `FC:${f2lC}|FE:${f2lE}|OC:${ollC}|OE:${ollE}`;
+    },
+  };
+  const pllStage = {
+    name: "PLL",
+    formulaKeys: ["PLL"],
+    maxDepth: 22,
+    formulaPreAufList: FORMULA_AUF,
+    formulaPostAufList: FORMULA_AUF,
+    key(data) {
+      const c = buildKeyForOrbit(data.CORNERS, [0, 1, 2, 3, 4, 5, 6, 7], true, true);
+      const e = buildKeyForOrbit(data.EDGES, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], true, true);
+      return `C:${c}|E:${e}`;
+    },
+  };
+
+  // Use getFormulaListForStage (not getFormulaListByKey) to match the sanitization
+  // and deduplication that solveWithFormulaDbSingleStage uses, ensuring cache key match.
+  const ollFormulas = filterValidFormulas(getFormulaListForStage(ollStage), ctx);
+  const pllFormulas = filterValidFormulas(getFormulaListForStage(pllStage), ctx);
+
+  if (ollFormulas.length) {
+    getSingleStageFormulaCaseLibrary(
+      ollStage, ctx, ollFormulas, FORMULA_AUF, [""], ["OLL"], null, null, null,
+    );
+  }
+  if (pllFormulas.length) {
+    getSingleStageFormulaCaseLibrary(
+      pllStage, ctx, pllFormulas, FORMULA_AUF, FORMULA_AUF, ["PLL"], null, null, null,
+    );
+  }
 }
 
 async function getF2LCaseLibrary(ctx) {
@@ -3841,9 +3988,9 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
 
 // Fast F2L IDA* using precomputed integer move tables — avoids KPattern allocations entirely.
 // Solves each F2L pair SEQUENTIALLY (pair 0 → pair 1 → pair 2 → pair 3) so the
-// heuristic stays tight (BFS-exact for the current pair alone).  The combined
-// 4-pair IDA* had a gap of ~16 between heuristic and true depth, requiring 15^16
-// nodes. Sequential solving keeps the gap ≤ 4 per pair → tiny search trees.
+// heuristic stays tight (BFS-exact per pair).
+// Uses pure state-index arithmetic: no per-node piece array updates.
+// Heuristic = max(crossDist, pairDist[0..k]) keeps previously solved pairs from being disturbed.
 function solveF2LCompactIDA(startPattern, stage, ctx) {
   const startData = startPattern.patternData;
   if (stage.isSolved(startData, ctx)) {
@@ -3853,119 +4000,83 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
   const deadlineTs = Number.isFinite(stage.deadlineTs) && stage.deadlineTs > 0 ? stage.deadlineTs : 0;
   if (deadlineTs > 0 && Date.now() >= deadlineTs) return null;
 
-  const cornerMoveTables = ctx.cornerMoveTables;
-  const edgeMoveTables = ctx.edgeMoveTables;
-  if (!cornerMoveTables || !edgeMoveTables) return null;
+  const f2lPairDefs = ctx.f2lPairDefs;
+  const f2lSolvedPairStates = ctx.f2lSolvedPairStates;
+  if (!f2lPairDefs || !f2lSolvedPairStates) return null;
 
   const moveIndices = ctx.noDMoveIndices;
   const numMoves = moveIndices.length;
-  const bottomEdgePositions = ctx.bottomEdgePositions;
-  const crossEdgePieceIds = ctx.crossEdgePieceIds;
-  const solvedEdgeOri = ctx.solvedData.EDGES.orientation;
-  const f2lPairDefs = ctx.f2lPairDefs;
   const f2lTargetPairs = Math.min(
     Number.isFinite(stage.f2lTargetPairs) ? stage.f2lTargetPairs : 4,
     f2lPairDefs.length,
   );
-  // Per-pair max depth. 18 moves is more than enough for any F2L pair.
   const MAX_PAIR_DEPTH = 18;
-  const NODE_LIMIT = deadlineTs > 0 ? 200000000 : 12000000; // generous limit; deadline is the real cap
-  const NXEDGE = 4;       // cross edges
+  const NODE_LIMIT = deadlineTs > 0 ? 200000000 : 12000000;
   const NPAIRS = f2lTargetPairs;
   const STACK_SIZE = MAX_PAIR_DEPTH + 2;
 
-  // Track only 12 relevant pieces: 4 cross edges + 4 F2L corners + 4 F2L edges
-  // Indexed as [level * NTRACK + pieceIndex]
-  const NTRACK = NXEDGE + NPAIRS + NPAIRS; // 12 total
-  const tPos = new Uint8Array(STACK_SIZE * NTRACK);
-  const tOri = new Uint8Array(STACK_SIZE * NTRACK);
+  // State stacks: one per cross + one per pair (all 4 pairs tracked simultaneously).
+  const crossStack = new Int32Array(STACK_SIZE);
+  const pairStacks = [];
+  for (let j = 0; j < NPAIRS; j++) pairStacks.push(new Uint16Array(STACK_SIZE));
 
-  // Target positions/orientations (fixed for the whole solve)
-  const tTargetPos = new Uint8Array(NTRACK);
-  const tTargetOri = new Uint8Array(NTRACK);
+  const crossMoveTable = ctx.crossMoveTable;
+  const crossPruneTable = ctx.crossPruneTable;
+  const allNumMoves = ctx.allMoveIndices.length;
+  const solvedCrossIdx = ctx.solvedCrossStateIndex;
+  const pruneTables = f2lPairDefs.slice(0, NPAIRS).map((d) => d.pruneTable);
+  const pairMoveTables = f2lPairDefs.slice(0, NPAIRS).map((d) => d.moveTable);
 
+  // Compute initial cross state once.
+  let initCrossState = getCrossStateIndexFromData(startData, ctx);
+  if (initCrossState < 0) return null;
+
+  // Compute initial pair states.
   const startCorners = startData.CORNERS;
   const startEdges = startData.EDGES;
-
   const cornerPosById = new Uint8Array(8);
   const edgePosById = new Uint8Array(12);
   for (let p = 0; p < 8; p++) cornerPosById[startCorners.pieces[p]] = p;
   for (let p = 0; p < 12; p++) edgePosById[startEdges.pieces[p]] = p;
 
-  for (let i = 0; i < NXEDGE; i++) {
-    const pieceId = crossEdgePieceIds[i];
-    const pos = edgePosById[pieceId];
-    tPos[i] = pos;
-    tOri[i] = startEdges.orientation[pos] & 1;
-    tTargetPos[i] = bottomEdgePositions[i];
-    tTargetOri[i] = solvedEdgeOri[bottomEdgePositions[i]] & 1;
-  }
-  for (let k = 0; k < NPAIRS; k++) {
-    const def = f2lPairDefs[k];
+  const initPairStates = new Uint16Array(NPAIRS);
+  for (let j = 0; j < NPAIRS; j++) {
+    const def = f2lPairDefs[j];
     const cpos = cornerPosById[def.cornerPieceId];
-    tPos[NXEDGE + k] = cpos;
-    tOri[NXEDGE + k] = startCorners.orientation[cpos] % 3;
-    tTargetPos[NXEDGE + k] = def.cornerTargetPos;
-    tTargetOri[NXEDGE + k] = def.cornerTargetOri;
     const epos = edgePosById[def.edgePieceId];
-    tPos[NXEDGE + NPAIRS + k] = epos;
-    tOri[NXEDGE + NPAIRS + k] = startEdges.orientation[epos] & 1;
-    tTargetPos[NXEDGE + NPAIRS + k] = def.edgeTargetPos;
-    tTargetOri[NXEDGE + NPAIRS + k] = def.edgeTargetOri;
+    initPairStates[j] = encodeF2LPairState(cpos, startCorners.orientation[cpos] % 3, epos, startEdges.orientation[epos] & 1);
   }
 
-  const pruneTables = f2lPairDefs.slice(0, NPAIRS).map((d) => d.pruneTable);
-  const crossPruneTable = ctx.crossPruneTable;
-
-  function applyMoveAt(fromBase, toBase, moveIndex) {
-    const cMap = cornerMoveTables[moveIndex];
-    const eMap = edgeMoveTables[moveIndex];
-    for (let i = 0; i < NXEDGE; i++) {
-      const oldPos = tPos[fromBase + i];
-      tPos[toBase + i] = eMap.edgePosMap[oldPos];
-      tOri[toBase + i] = tOri[fromBase + i] ^ eMap.edgeOriDelta[oldPos];
-    }
-    for (let k = 0; k < NPAIRS; k++) {
-      const idx = NXEDGE + k;
-      const oldPos = tPos[fromBase + idx];
-      tPos[toBase + idx] = cMap.cornerPosMap[oldPos];
-      tOri[toBase + idx] = (tOri[fromBase + idx] + cMap.cornerOriDelta[oldPos]) % 3;
-    }
-    for (let k = 0; k < NPAIRS; k++) {
-      const idx = NXEDGE + NPAIRS + k;
-      const oldPos = tPos[fromBase + idx];
-      tPos[toBase + idx] = eMap.edgePosMap[oldPos];
-      tOri[toBase + idx] = tOri[fromBase + idx] ^ eMap.edgeOriDelta[oldPos];
-    }
-  }
-
-  // movePath is reused across sequential pair solves
+  // movePath stores actual MOVE_NAMES indices (not moveIndices position).
   const movePath = new Uint8Array(MAX_PAIR_DEPTH + 1);
   let totalNodes = 0;
   let nodeLimitHit = false;
   let deadlineHit = false;
   const allMoves = [];
 
-  // Solve each pair in order. Each sub-IDA* has a tight single-pair heuristic.
+  // Running accumulated states (updated after each pair's solution).
+  let curCrossState = initCrossState;
+  const curPairStates = new Uint16Array(NPAIRS);
+  for (let j = 0; j < NPAIRS; j++) curPairStates[j] = initPairStates[j];
+
+  // Solve each pair sequentially.
   for (let k = 0; k < NPAIRS; k++) {
-    const ci = NXEDGE + k;
-    const ei = NXEDGE + NPAIRS + k;
     const pruneTableK = pruneTables[k];
+    const pairMoveTableK = pairMoveTables[k];
+    const solvedPairStateK = f2lSolvedPairStates[k];
 
-    // Check if pair k (and cross + previously solved pairs) are already satisfied
-    function isPairGoalMet(base) {
-      for (let i = 0; i < NXEDGE; i++) {
-        if (tPos[base + i] !== tTargetPos[i] || tOri[base + i] !== tTargetOri[i]) return false;
+    // Seed stacks from accumulated running state.
+    crossStack[0] = curCrossState;
+    for (let j = 0; j < NPAIRS; j++) pairStacks[j][0] = curPairStates[j];
+
+    // Check if already satisfied (cross + pairs 0..k all solved).
+    let alreadySolved = crossStack[0] === solvedCrossIdx && pairStacks[k][0] === solvedPairStateK;
+    if (alreadySolved) {
+      for (let j = 0; j < k; j++) {
+        if (pairStacks[j][0] !== f2lSolvedPairStates[j]) { alreadySolved = false; break; }
       }
-      for (let j = 0; j <= k; j++) {
-        const ci2 = NXEDGE + j, ei2 = NXEDGE + NPAIRS + j;
-        if (tPos[base + ci2] !== tTargetPos[ci2] || tOri[base + ci2] !== tTargetOri[ci2]) return false;
-        if (tPos[base + ei2] !== tTargetPos[ei2] || tOri[base + ei2] !== tTargetOri[ei2]) return false;
-      }
-      return true;
     }
-
-    if (isPairGoalMet(0)) continue; // already solved, move to next pair
+    if (alreadySolved) continue;
 
     let solutionDepth = -1;
 
@@ -3974,23 +4085,21 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
         if (totalNodes >= NODE_LIMIT) { nodeLimitHit = true; return Infinity; }
         if (deadlineTs > 0 && Date.now() >= deadlineTs) { deadlineHit = true; return Infinity; }
       }
-      const base = level * NTRACK;
-      // Combined admissible heuristic: max(pair_dist, cross_dist).
-      // Adding the cross heuristic prevents exploring paths where the cross
-      // gets disturbed (F/B moves), which was the main cause of node explosion.
-      const hPair = pruneTableK[encodeF2LPairState(
-        tPos[base + ci], tOri[base + ci],
-        tPos[base + ei], tOri[base + ei],
-      )];
-      const hCross = crossPruneTable[encodeCrossStateFromParts(
-        tPos[base], tPos[base + 1], tPos[base + 2], tPos[base + 3],
-        tOri[base], tOri[base + 1], tOri[base + 2], tOri[base + 3],
-      )];
-      const h = hPair > hCross ? hPair : hCross;
+      // Heuristic: max(cross distance, pair distance for all pairs 0..k).
+      // This prevents disturbing previously solved pairs (j < k) from going unpunished.
+      let h = crossPruneTable[crossStack[level]];
+      for (let j = 0; j <= k; j++) {
+        const hj = pruneTables[j][pairStacks[j][level]];
+        if (hj > h) h = hj;
+      }
       const f = level + h;
       if (f > bound) return f;
-      if (isPairGoalMet(base)) { solutionDepth = level; return true; }
-      const nextBase = (level + 1) * NTRACK;
+      // Goal: cross solved AND pairs 0..k all solved.
+      if (h === 0) {
+        solutionDepth = level;
+        return true;
+      }
+      const nextLevel = level + 1;
       let minNext = Infinity;
       for (let mi = 0; mi < numMoves; mi++) {
         const moveIndex = moveIndices[mi];
@@ -4000,9 +4109,13 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
           if (face === OPPOSITE_FACE[lastFace] && face < lastFace) continue;
         }
         totalNodes++;
-        applyMoveAt(base, nextBase, moveIndex);
+        // Update all states via precomputed move tables — O(1) per state.
+        crossStack[nextLevel] = crossMoveTable[crossStack[level] * allNumMoves + moveIndex];
+        for (let j = 0; j < NPAIRS; j++) {
+          pairStacks[j][nextLevel] = pairMoveTables[j][pairStacks[j][level] * allNumMoves + moveIndex];
+        }
         movePath[level] = moveIndex;
-        const res = dfs(level + 1, bound, face);
+        const res = dfs(nextLevel, bound, face);
         if (res === true) return true;
         if (nodeLimitHit || deadlineHit) return Infinity;
         if (res < minNext) minNext = res;
@@ -4010,18 +4123,18 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
       return minNext;
     }
 
-    let bound = Math.max(
-      pruneTableK[encodeF2LPairState(tPos[ci], tOri[ci], tPos[ei], tOri[ei])],
-      crossPruneTable[encodeCrossStateFromParts(tPos[0],tPos[1],tPos[2],tPos[3],tOri[0],tOri[1],tOri[2],tOri[3])],
-      1,
-    );
+    // Initial bound: max heuristic over cross + pairs 0..k.
+    let bound = crossPruneTable[curCrossState];
+    for (let j = 0; j <= k; j++) {
+      const hj = pruneTables[j][curPairStates[j]];
+      if (hj > bound) bound = hj;
+    }
+    bound = Math.max(bound, 1);
+
     let pairSolved = false;
     while (bound <= MAX_PAIR_DEPTH && !nodeLimitHit && !deadlineHit) {
       const res = dfs(0, bound, -1);
-      if (res === true) {
-        pairSolved = true;
-        break;
-      }
+      if (res === true) { pairSolved = true; break; }
       if (!Number.isFinite(res)) break;
       bound = res;
     }
@@ -4039,15 +4152,13 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
       };
     }
 
-    // Collect the moves from this pair's solution
-    for (let d = 0; d < solutionDepth; d++) allMoves.push(MOVE_NAMES[movePath[d]]);
-
-    // Advance the level-0 state to the state after applying this pair's solution
-    if (solutionDepth > 0) {
-      const solvedBase = solutionDepth * NTRACK;
-      for (let i = 0; i < NTRACK; i++) {
-        tPos[i] = tPos[solvedBase + i];
-        tOri[i] = tOri[solvedBase + i];
+    // Collect moves and advance accumulated running states.
+    for (let d = 0; d < solutionDepth; d++) {
+      const mi = movePath[d];
+      allMoves.push(MOVE_NAMES[mi]);
+      curCrossState = crossMoveTable[curCrossState * allNumMoves + mi];
+      for (let j = 0; j < NPAIRS; j++) {
+        curPairStates[j] = pairMoveTables[j][curPairStates[j] * allNumMoves + mi];
       }
     }
   }
@@ -4665,6 +4776,72 @@ function solveStageByFormulaDb(startPattern, stage, ctx) {
   return null;
 }
 
+// Pure-integer cross IDA* using precomputed move tables.
+// Only used for plain "Cross" stage (no pair targets). ~10x faster than KPattern IDA*.
+function solveCrossCompact(startPattern, stage, ctx) {
+  const startStateIdx = getCrossStateIndexFromData(startPattern.patternData, ctx);
+  if (startStateIdx < 0) return null;
+  const solvedStateIdx = ctx.solvedCrossStateIndex;
+  const pruneTable = ctx.crossPruneTable;
+  const crossMoveTable = ctx.crossMoveTable;
+  const numMoves = ctx.allMoveIndices.length;
+  const moveFace = ctx.moveFace;
+  const maxDepth = Number.isFinite(stage.maxDepth) ? stage.maxDepth : 8;
+  const deadlineTs = Number.isFinite(stage.deadlineTs) && stage.deadlineTs > 0 ? stage.deadlineTs : 0;
+
+  if (startStateIdx === solvedStateIdx) {
+    return { ok: true, moves: [], solution: "", nodes: 0, bound: 0, moveCount: 0 };
+  }
+
+  const movePath = new Int32Array(maxDepth + 1);
+  let nodes = 0;
+  let deadlineHit = false;
+  let solutionDepth = -1;
+
+  function dfs(stateIdx, depth, bound, lastFace) {
+    if ((nodes & 4095) === 0 && deadlineTs > 0 && Date.now() >= deadlineTs) {
+      deadlineHit = true;
+      return Infinity;
+    }
+    nodes++;
+    const h = pruneTable[stateIdx];
+    const f = depth + h;
+    if (f > bound) return f;
+    if (h === 0) {
+      solutionDepth = depth;
+      return true;
+    }
+    const remaining = bound - depth;
+    if (remaining === 0) return f;
+    const base = stateIdx * numMoves;
+    let minExcess = Infinity;
+    for (let mi = 0; mi < numMoves; mi++) {
+      const face = moveFace[mi];
+      if (face === lastFace) continue;
+      const nextState = crossMoveTable[base + mi];
+      movePath[depth] = mi;
+      const result = dfs(nextState, depth + 1, bound, face);
+      if (result === true) return true;
+      if (result === Infinity) return Infinity;
+      if (result < minExcess) minExcess = result;
+    }
+    return minExcess;
+  }
+
+  let bound = Math.max(pruneTable[startStateIdx], 1);
+  while (bound <= maxDepth && !deadlineHit) {
+    const result = dfs(startStateIdx, 0, bound, -1);
+    if (result === true) {
+      const moves = Array.from(movePath.slice(0, solutionDepth)).map((idx) => MOVE_NAMES[idx]);
+      const solution = moves.join(" ");
+      return { ok: true, moves, solution, nodes, bound: solutionDepth, moveCount: solutionDepth };
+    }
+    if (result === Infinity) break;
+    bound = result;
+  }
+  return null;
+}
+
 function solveStage(startPattern, stage, ctx) {
   const startData = startPattern.patternData;
   if (stage.isSolved(startData, ctx)) {
@@ -4672,6 +4849,18 @@ function solveStage(startPattern, stage, ctx) {
   }
 
   const stageDeadlineTs = Number.isFinite(stage.deadlineTs) && stage.deadlineTs > 0 ? stage.deadlineTs : 0;
+
+  // For plain cross stage: use compact integer IDA* (~10x faster than KPattern).
+  // XCross/XXCross require pair tracking which the compact solver doesn't support.
+  if (stage.isCrossLike && stage.name === "Cross" && ctx.crossMoveTable) {
+    const compactResult = solveCrossCompact(startPattern, stage, ctx);
+    if (compactResult?.ok) return compactResult;
+    if (stageDeadlineTs > 0 && Date.now() >= stageDeadlineTs) {
+      return { ok: false, reason: "CROSS_SEARCH_LIMIT", nodes: compactResult?.nodes || 0, bound: STAGE_NOT_SET };
+    }
+    // Fall through to KPattern IDA* only if compact solver returned null (shouldn't happen)
+  }
+
   const formulaResult = solveStageByFormulaDb(startPattern, stage, ctx);
   if (formulaResult?.ok) {
     return formulaResult;
