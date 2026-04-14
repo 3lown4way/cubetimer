@@ -18,7 +18,8 @@ const DEFAULT_METHODS = ["CFOP", "ZB"];
 const DEFAULT_SMOOTHING_ALPHA = 2;
 const DEFAULT_MAX_CASES = 8;
 const DEFAULT_MAX_FORMULAS = 12;
-const SCHEMA_VERSION = "reco-f2l-ll-prediction.v3";
+const SCHEMA_VERSION = "reco-f2l-ll-prediction.v4";
+const DEFAULT_MAX_LL_CASE_STATS = 48;
 const FORMULA_ROTATIONS = ["", "y", "y2", "y'"];
 const FORMULA_AUF = ["", "U", "U2", "U'"];
 const FRAME_ROTATION_TOKENS = new Set(["x", "x2", "x'", "z", "z2", "z'"]);
@@ -114,6 +115,10 @@ function printHelp() {
   console.log("  --smoothing-alpha <n>    Smoothing pseudo-count against global prior (default: 2)");
   console.log("  --max-cases <n>          Keep top N LL case labels per state (default: 8)");
   console.log("  --max-formulas <n>       Keep top N LL formulas per state (default: 12)");
+}
+
+function normalizeStageKey(value) {
+  return value === "stage4" ? "stage4" : "stage3";
 }
 
 function loadRecords(inputPath) {
@@ -402,6 +407,7 @@ function createStateAccumulator() {
     caseCounts: new Map(),
     formulaCounts: new Map(),
     formulaVariantCounts: new Map(),
+    llCaseCounts: new Map(),
   };
 }
 
@@ -437,6 +443,35 @@ function addFormulaVariantCount(formulaVariantCounts, family, canonicalFormula, 
   });
 }
 
+function addLlCaseCount(llCaseCounts, sample) {
+  if (!llCaseCounts || !sample || !sample.family) return;
+  const stageKey = normalizeStageKey(sample.stageKey);
+  const family = String(sample.family || "").trim().toUpperCase();
+  const caseTag = normalizeCaseLabel(sample.caseTag || family);
+  const canonicalFormula = normalizeAlgorithmText(String(sample.canonicalFormula || "").trim());
+  const variantFormula = normalizeAlgorithmText(String(sample.variantFormula || "").trim());
+  const key = [
+    stageKey,
+    family,
+    caseTag,
+    canonicalFormula || "-",
+    variantFormula || "-",
+  ].join("::");
+  const existing = llCaseCounts.get(key);
+  if (existing) {
+    existing.count += 1;
+    return;
+  }
+  llCaseCounts.set(key, {
+    stageKey,
+    family,
+    caseTag,
+    canonicalFormula,
+    variantFormula,
+    count: 1,
+  });
+}
+
 function addStateSample(stateMap, stateKey, sample) {
   const key = String(stateKey);
   let acc = stateMap.get(key);
@@ -464,6 +499,11 @@ function addStateSample(stateMap, stateKey, sample) {
       sample.formulaCanonicalKey,
       sample.formulaVariantKey,
     );
+  }
+  if (Array.isArray(sample.llCaseSamples)) {
+    for (let i = 0; i < sample.llCaseSamples.length; i++) {
+      addLlCaseCount(acc.llCaseCounts, sample.llCaseSamples[i]);
+    }
   }
 }
 
@@ -514,12 +554,95 @@ function computeRawMeans(stateMap) {
   };
 }
 
-function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = null) {
+function aggregateLlCaseEntries(entries) {
+  const familyTotals = new Map();
+  const stageFamilyTotals = new Map();
+  const caseTotals = new Map();
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const count = Number(entry.count || 0);
+    if (!Number.isFinite(count) || count <= 0) continue;
+    const familyKey = `${entry.family}`;
+    const stageFamilyKey = `${entry.stageKey}::${entry.family}`;
+    const caseKey = `${entry.stageKey}::${entry.family}::${entry.caseTag}`;
+    familyTotals.set(familyKey, (familyTotals.get(familyKey) || 0) + count);
+    stageFamilyTotals.set(stageFamilyKey, (stageFamilyTotals.get(stageFamilyKey) || 0) + count);
+    caseTotals.set(caseKey, (caseTotals.get(caseKey) || 0) + count);
+  }
+  return { familyTotals, stageFamilyTotals, caseTotals };
+}
+
+function buildLlCaseEntries(
+  acc,
+  priorAcc = null,
+  maxEntries = DEFAULT_MAX_LL_CASE_STATS,
+) {
+  const rawEntries = Array.from(acc?.llCaseCounts?.values?.() || [])
+    .map((entry) => ({
+      stageKey: normalizeStageKey(entry.stageKey),
+      family: String(entry.family || "").trim().toUpperCase(),
+      caseTag: normalizeCaseLabel(entry.caseTag || entry.family),
+      canonicalFormula: normalizeAlgorithmText(String(entry.canonicalFormula || "").trim()),
+      variantFormula: normalizeAlgorithmText(String(entry.variantFormula || "").trim()),
+      count: Number(entry.count || 0),
+    }))
+    .filter((entry) => entry.family && Number.isFinite(entry.count) && entry.count > 0)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      const stageCmp = a.stageKey.localeCompare(b.stageKey);
+      if (stageCmp !== 0) return stageCmp;
+      const familyCmp = a.family.localeCompare(b.family);
+      if (familyCmp !== 0) return familyCmp;
+      const caseCmp = a.caseTag.localeCompare(b.caseTag);
+      if (caseCmp !== 0) return caseCmp;
+      const canonicalCmp = a.canonicalFormula.localeCompare(b.canonicalFormula);
+      if (canonicalCmp !== 0) return canonicalCmp;
+      return a.variantFormula.localeCompare(b.variantFormula);
+    });
+  const { familyTotals, stageFamilyTotals, caseTotals } = aggregateLlCaseEntries(rawEntries);
+  const priorEntries = Array.from(priorAcc?.llCaseCounts?.values?.() || []);
+  const priorAggregates = aggregateLlCaseEntries(
+    priorEntries.map((entry) => ({
+      stageKey: normalizeStageKey(entry.stageKey),
+      family: String(entry.family || "").trim().toUpperCase(),
+      caseTag: normalizeCaseLabel(entry.caseTag || entry.family),
+      count: Number(entry.count || 0),
+    })),
+  );
+
+  return rawEntries.slice(0, Math.max(1, maxEntries)).map((entry) => {
+    const familyKey = `${entry.family}`;
+    const stageFamilyKey = `${entry.stageKey}::${entry.family}`;
+    const caseKey = `${entry.stageKey}::${entry.family}::${entry.caseTag}`;
+    const familyTotal = Number(familyTotals.get(familyKey) || 0);
+    const stageFamilyTotal = Number(stageFamilyTotals.get(stageFamilyKey) || 0);
+    const caseSampleCount = Number(caseTotals.get(caseKey) || 0);
+    const priorStageFamilyTotal = Number(priorAggregates.stageFamilyTotals.get(stageFamilyKey) || 0);
+    return {
+      stateKey: null,
+      stageKey: entry.stageKey,
+      family: entry.family,
+      caseTag: entry.caseTag,
+      canonicalFormula: entry.canonicalFormula || "",
+      variantFormula: entry.variantFormula || "",
+      count: entry.count,
+      sampleCount: caseSampleCount,
+      playerWeight:
+        caseSampleCount > 0 ? round6(entry.count / caseSampleCount) : familyTotal > 0 ? round6(entry.count / familyTotal) : 0,
+      globalWeight: priorStageFamilyTotal > 0 ? round6(entry.count / priorStageFamilyTotal) : 0,
+      familySampleCount: familyTotal,
+      stageFamilySampleCount: stageFamilyTotal,
+    };
+  });
+}
+
+function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = null, priorStateMap = null) {
   const ownMeans = computeRawMeans(stateMap);
   const globalPrior = priorMeans && priorMeans.sampleCount > 0 ? priorMeans : ownMeans;
   const alpha = Math.max(0, Number(opts.smoothingAlpha) || DEFAULT_SMOOTHING_ALPHA);
   const maxCases = Math.max(1, Number(opts.maxCases) || DEFAULT_MAX_CASES);
   const maxFormulas = Math.max(1, Number(opts.maxFormulas) || DEFAULT_MAX_FORMULAS);
+  const maxLlCaseStats = Math.max(maxFormulas * 4, DEFAULT_MAX_LL_CASE_STATS);
 
   const baselineOll = Number(globalPrior.expectedOllMoves) || 0;
   const baselinePll = Number(globalPrior.expectedPllMoves) || 0;
@@ -584,6 +707,11 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
         return a.formula.localeCompare(b.formula);
       });
     const topFormulaVariants = formulaVariantEntries.slice(0, maxFormulas * 2);
+    const priorAcc = priorStateMap instanceof Map ? priorStateMap.get(String(key)) || null : null;
+    const llCaseStats = buildLlCaseEntries(acc, priorAcc, maxLlCaseStats).map((entry) => ({
+      ...entry,
+      stateKey: Number(key),
+    }));
 
     states.push({
       key: Number(key),
@@ -596,6 +724,7 @@ function serializeDownstreamProfile(solver, stateMap, stats, opts, priorMeans = 
       formulaFamilyCounts,
       topFormulas,
       topFormulaVariants,
+      llCaseStats,
     });
   }
 
@@ -704,6 +833,8 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
     let ollMoveCount = 0;
     let pllMoveCount = 0;
     let llMoveCount = 0;
+    let llFormulaOrdinal = 0;
+    const llCaseSamples = [];
     let rowFailed = false;
 
     for (let s = 0; s < steps.length; s++) {
@@ -730,16 +861,24 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
       }
       if (
         llStarted &&
-        !firstFormulaKey &&
         formulaIndex &&
         formulaFamily !== "OTHER" &&
         (labelKind === "oll" || labelKind === "pll")
       ) {
         const formulaMatch = matchFormulaForStep(movesText, formulaFamily, formulaIndex);
         if (formulaMatch) {
-          firstFormulaFamily = formulaMatch.family;
-          firstFormulaKey = formulaMatch.formula;
-          firstFormulaVariantKey = movesText;
+          if (!firstFormulaKey) {
+            firstFormulaFamily = formulaMatch.family;
+            firstFormulaKey = formulaMatch.formula;
+            firstFormulaVariantKey = movesText;
+          }
+          llCaseSamples.push({
+            stageKey: llFormulaOrdinal === 0 ? "stage3" : "stage4",
+            family: formulaMatch.family,
+            caseTag: normalizeCaseLabel(label) || formulaMatch.family,
+            canonicalFormula: formulaMatch.formula,
+            variantFormula: movesText,
+          });
         }
       }
 
@@ -750,6 +889,9 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
           rowFailed = true;
           break;
         }
+      }
+      if (llStarted && (labelKind === "oll" || labelKind === "pll") && moveCount > 0) {
+        llFormulaOrdinal += 1;
       }
     }
 
@@ -776,6 +918,7 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
       formulaVariantFamily: firstFormulaFamily,
       formulaCanonicalKey: firstFormulaKey,
       formulaVariantKey: firstFormulaVariantKey,
+      llCaseSamples,
     };
 
     addStateSample(globalStateMap, llStateKey, sample);
@@ -791,6 +934,7 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
     globalStats,
     opts,
     globalPriorMeans,
+    globalStateMap,
   );
 
   const playerDownstreamProfiles = Array.from(perSolverStateMap.entries())
@@ -801,6 +945,7 @@ async function buildDownstreamProfiles(rows, ctx, opts, formulaIndex = null) {
         perSolverStats.get(solver),
         opts,
         globalPriorMeans,
+        globalStateMap,
       ),
     )
     .sort((a, b) => {

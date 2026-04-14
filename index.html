@@ -24,110 +24,148 @@
   </head>
   <body>
     <main class="app">
-      <header class="top">
-        <div class="top-left">
-          <h1>CubeTimer</h1>
-          <div class="sub"></div>
-        </div>
-        <button id="settingsBtn" class="ghost icon-btn" aria-label="설정">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Zm9 3.2a7.3 7.3 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-2-.9l-.4-2.5H8.9l-.4 2.5a7.7 7.7 0 0 0-2 .9l-2.4-1-2 3.4 2 1.6a7.3 7.3 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 2 .9l.4 2.5h6.2l.4-2.5a7.7 7.7 0 0 0 2-.9l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
-      </header>
-
       <div class="layout">
-        <aside class="sidebar">
-          <section class="controls">
-            <div class="panel">
-              <h2>스크램블 옵션</h2>
-              <label>
-                종목
-                <select id="eventSelect">
-                    <option value="222">2x2</option>
-                    <option value="333" selected>3x3</option>
-                    <option value="444">4x4</option>
-                    <option value="555">5x5</option>
-                    <option value="666">6x6</option>
-                    <option value="777">7x7</option>
-                    <option value="333oh">3x3 OH</option>
-                    <option value="333bf">3x3 BLD</option>
-                    <option value="333fm">3x3 FMC</option>
-                    <option value="333mbf">3x3 MBLD</option>
-                    <option value="clock">Clock</option>
-                    <option value="minx">Megaminx</option>
-                    <option value="pyram">Pyraminx</option>
-                    <option value="skewb">Skewb</option>
-                    <option value="sq1">Square-1</option>
-                    <option value="444bf">4x4 BLD</option>
-                    <option value="555bf">5x5 BLD</option>
-                  </select>
-              </label>
-              <div class="row scramble-row">
-                <button id="prevScrambleBtn">이전 스크램블</button>
-                <button id="nextScrambleBtn">다음 스크램블</button>
-              </div>
+        <div class="dashboard-header glass">
+          <h1 class="brand">CubeTimer</h1>
+          <div class="dashboard-actions">
+            <button id="solverOpenBtn" class="ghost icon-btn" title="해 찾기">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            </button>
+            <button id="settingsBtn" class="ghost icon-btn" aria-label="설정">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="left-dashboard">
+          <section class="session panel glass">
+            <h3>세션</h3>
+            <div class="field">
+              <select id="sessionSelect"></select>
             </div>
-            <div class="panel">
-              <h2>세션</h2>
-              <div class="row session-row">
-                <select id="sessionSelect"></select>
-                <button id="newSessionBtn">새 세션</button>
-                <button id="renameSessionBtn">이름 변경</button>
-              </div>
-              <div class="row session-row">
-                <button id="exportBtn">내보내기</button>
-                <button id="deleteSessionBtn" class="danger session-delete">삭제</button>
-                <button id="resetSessionBtn" class="danger session-reset">세션 초기화</button>
-              </div>
+            <div class="session-actions-grid">
+              <button id="newSessionBtn" class="ghost sm icon-btn" title="세션 추가">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <button id="renameSessionBtn" class="ghost sm icon-btn" title="세션 수정">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
+              </button>
+              <button id="exportBtn" class="ghost sm icon-btn" title="기록 내보내기">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+              </button>
+              <button id="deleteSessionBtn" class="ghost text-danger sm icon-btn" title="세션 삭제">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+              <button id="resetSessionBtn" class="ghost text-danger sm icon-btn" title="세션 초기화">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              </button>
             </div>
-          </section>
-          <section class="stats">
-            <h2>통계</h2>
-            <div class="stats-grid" id="statsGrid">
-              <div class="stat" data-export="best">
-                <div class="label">Best</div>
-                <div class="value" id="statBest">-</div>
-              </div>
-              <div class="stat" data-export="mean">
-                <div class="label">평균</div>
-                <div class="value" id="statMean">-</div>
-              </div>
-              <div class="stat" data-export="ao5">
-                <div class="label">ao5</div>
-                <div class="value" id="statAo5">-</div>
-              </div>
-              <div class="stat" data-export="ao12">
-                <div class="label">ao12</div>
-                <div class="value" id="statAo12">-</div>
-              </div>
-            </div>
-            <div class="note">각 항목을 클릭하면 내보내기 팝업이 열립니다.</div>
           </section>
 
-          <section class="history">
-            <h2>기록</h2>
-            <ul id="historyList"></ul>
-            <div class="history-fade"></div>
+          <section class="history-standalone panel glass">
+            <h3>최근 기록</h3>
+            <div class="history-list-wrapper">
+              <div class="history-header">
+                <span>Time</span>
+                <span>Event</span>
+                <span>ao5</span>
+                <span>ao12</span>
+              </div>
+              <ul id="historyList"></ul>
+            </div>
           </section>
-        </aside>
+        </div>
 
-        <div class="main-col">
-          <section class="main-stack">
-            <section class="scramble">
-              <div class="scramble-text" id="scrambleText">로딩 중...</div>
+        <div class="main-content">
+          <div class="focus-group">
+            <section class="scramble-card glass">
+              <div class="scramble-content">
+                <div class="scramble-text-wrapper">
+                  <div class="scramble-text" id="scrambleText">로딩 중...</div>
+                </div>
+                <div class="scramble-side-controls">
+                  <div class="scramble-row-dock">
+                    <select id="eventSelect">
+                      <option value="222">2x2</option>
+                      <option value="333" selected>3x3</option>
+                      <option value="444">4x4</option>
+                      <option value="555">5x5</option>
+                      <option value="666">6x6</option>
+                      <option value="777">7x7</option>
+                      <option value="333oh">3x3 OH</option>
+                      <option value="333bf">3x3 BLD</option>
+                      <option value="333fm">3x3 FMC</option>
+                      <option value="333mbf">3x3 MBLD</option>
+                      <option value="clock">Clock</option>
+                      <option value="minx">Megaminx</option>
+                      <option value="pyram">Pyraminx</option>
+                      <option value="skewb">Skewb</option>
+                      <option value="sq1">Square-1</option>
+                      <option value="444bf">4x4 BLD</option>
+                      <option value="555bf">5x5 BLD</option>
+                    </select>
+                    <div class="scramble-arrows">
+                      <button id="prevScrambleBtn" class="ghost icon-btn" title="이전">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                      </button>
+                      <button id="nextScrambleBtn" class="ghost icon-btn" title="다음">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
 
-            <section class="timer">
+            <section class="timer-card">
               <div class="timer-display" id="timerDisplay">0.00</div>
+              <div class="quick-stats" id="statsGrid">
+                <div class="q-stat" data-export="best">
+                  <span class="q-label">Best</span>
+                  <span class="q-value" id="statBest">-</span>
+                </div>
+                <div class="q-stat" data-export="mean">
+                  <span class="q-label">Mean</span>
+                  <span class="q-value" id="statMean">-</span>
+                </div>
+                <div class="q-stat" data-export="ao5">
+                  <span class="q-label">ao5</span>
+                  <span class="q-value" id="statAo5">-</span>
+                </div>
+                <div class="q-stat" data-export="ao12">
+                  <span class="q-label">ao12</span>
+                  <span class="q-value" id="statAo12">-</span>
+                </div>
+              </div>
             </section>
-          </section>
+          </div>
 
-          <section class="visual-row">
-            <section class="preview preview-side">
+
+
+          <div class="bottom-group">
+            <section class="chart-section glass" id="progressChartSection">
+              <div class="section-header">
+                <div class="chart-controls">
+                  <button id="chartZoomOutBtn" class="ghost sm">-</button>
+                  <button id="chartZoomInBtn" class="ghost sm">+</button>
+                </div>
+              </div>
+              <div class="chart-container">
+                <canvas id="progressChart"></canvas>
+                <div id="chartTooltip" class="chart-tooltip" aria-hidden="true"></div>
+              </div>
+              <div class="chart-legend">
+                <span class="legend-item"><span class="dot time"></span> 기록</span>
+                <span class="legend-item"><span class="line ao5"></span> Ao5</span>
+                <span class="legend-item"><span class="line ao12"></span> Ao12</span>
+              </div>
+            </section>
+
+            <section class="visualizer glass" id="scramblePreviewSection">
               <scramble-display
                 id="scramblePreview"
                 event="333"
@@ -135,117 +173,117 @@
                 hint-facelets="none"
               ></scramble-display>
             </section>
+          </div>
+        </div>
+    </main>
 
-            <section class="chart-card">
-              <h2>기록 변화</h2>
-              <canvas id="progressChart" width="480" height="240"></canvas>
-              <div id="chartTooltip" class="chart-tooltip" aria-hidden="true"></div>
-              <div class="chart-controls">
-                <button id="chartZoomOutBtn" class="ghost">-</button>
-                <div class="chart-hint"></div>
-                <button id="chartZoomInBtn" class="ghost">+</button>
+    <div class="modal" id="solverModal" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="solveTitle">
+        <button class="modal-close" id="solverCloseBtn" aria-label="닫기">&times;</button>
+        <h2 id="solveTitle">해 찾기</h2>
+        <div class="solver-body">
+          <div class="solver-pane-left">
+            <div id="solverStatus" class="solver-status">
+              스크램블이 준비되면 해를 구할 수 있습니다.
+            </div>
+            <div class="row cross-color-row">
+              <label for="crossColorSelect">
+                Cross 색상
+                <select id="crossColorSelect">
+                  <option value="CN">Color Neutral (best cross)</option>
+                  <option value="D">Yellow (D)</option>
+                  <option value="U">White (U)</option>
+                  <option value="F">Green (F)</option>
+                  <option value="B">Blue (B)</option>
+                  <option value="R">Red (R)</option>
+                  <option value="L">Orange (L)</option>
+                </select>
+              </label>
+              <label for="solverModeSelect">
+                탐색 모드
+                <select id="solverModeSelect">
+                  <option value="strict">CFOP 단계형 (빠름)</option>
+                  <option value="zb">ZB Hybrid (실험)</option>
+                  <option value="roux">Roux 단계형 (실험)</option>
+                  <option value="fmc">FMC 스타일 (짧은 해 우선)</option>
+                  <option value="optimal">최소 수 우선 (느릴 수 있음)</option>
+                </select>
+              </label>
+              <label for="f2lMethodSelect">
+                F2L 스타일
+                <select id="f2lMethodSelect">
+                  <option value="legacy">기본 (기존)</option>
+                  <option value="balanced">균형형</option>
+                  <option value="rotationless">회전 최소</option>
+                  <option value="low-auf">AUF 최소</option>
+                  <option value="speed">속도 우선 (전체 학습)</option>
+                  <option value="mixed" selected>조건부 CFOP (XCross/ZBLL)</option>
+                </select>
+              </label>
+            </div>
+            <div class="row solver-style-row">
+              <label for="stylePlayerSelect">
+                3x3 상위 15명 스타일 적용
+                <div class="field-row">
+                  <select id="stylePlayerSelect"></select>
+                  <button id="styleProfileReloadBtn" class="ghost icon-btn" title="새로고침">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                  </button>
+                </div>
+              </label>
+            </div>
+            <div id="styleProfileMeta" class="solver-style-meta">3x3 상위 10명 스타일 프로파일 로딩 전입니다.</div>
+            <div class="solver-header">
+              <button id="findSolutionBtn" class="secondary icon-btn" type="button" title="해 찾기 시작">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              </button>
+              <div class="solver-stats-inline">
+                <span id="solverMoveCount">0 수</span>
+                <button id="solverCopyBtn" class="ghost sm icon-btn" type="button" disabled title="복사">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
               </div>
-              <div class="chart-legend">
-                <span class="legend-item">
-                  <span class="legend-dot legend-time"></span>
-                  기록
-                </span>
-                <span class="legend-item">
-                  <span class="legend-line legend-ao5"></span>
-                  Ao5
-                </span>
-                <span class="legend-item">
-                  <span class="legend-line legend-ao12"></span>
-                  Ao12
-                </span>
+            </div>
+            <pre id="solverSolution" class="solver-solution">-</pre>
+          </div>
+          <div class="solver-pane-right">
+            <section id="solverVisualPanel" class="solver-visual" hidden>
+              <div class="solver-visual-header">
+                <span id="solverStepLabel" class="solver-step-label">0/0 수</span>
+              </div>
+              <div id="solverTwistyHost" class="solver-twisty-host"></div>
+              <div class="solver-visual-controls">
+                <button id="solverStepResetBtn" class="ghost icon-btn" type="button" title="처음">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg>
+                </button>
+                <button id="solverStepPrevBtn" class="ghost icon-btn" type="button" title="이전">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+                <button id="solverPlayBtn" class="ghost icon-btn" type="button" title="자동 재생">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                </button>
+                <button id="solverStepNextBtn" class="ghost icon-btn" type="button" title="다음">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
               </div>
             </section>
-          </section>
-
-          <section class="panel solver-panel">
-            <div class="solver-header">
-              <h2>해 찾기</h2>
-              <button id="findSolutionBtn" class="ghost" type="button">해 찾기</button>
-            </div>
-            <div class="solver-body">
-              <div id="solverStatus" class="solver-status">
-                스크램블이 준비되면 해를 구할 수 있습니다.
-              </div>
-              <div class="row cross-color-row">
-                <label for="crossColorSelect">
-                  Cross 색상
-                  <select id="crossColorSelect">
-                    <option value="D">Yellow (D)</option>
-                    <option value="U">White (U)</option>
-                    <option value="F">Green (F)</option>
-                    <option value="B">Blue (B)</option>
-                    <option value="R">Red (R)</option>
-                    <option value="L">Orange (L)</option>
-                  </select>
-                </label>
-                <label for="solverModeSelect">
-                  탐색 모드
-                  <select id="solverModeSelect">
-                    <option value="strict">CFOP 단계형 (빠름)</option>
-                    <option value="zb">ZB Hybrid (실험)</option>
-                    <option value="roux">Roux 단계형 (실험)</option>
-                    <option value="fmc">FMC 스타일 (짧은 해 우선)</option>
-                    <option value="optimal">최소 수 우선 (느릴 수 있음)</option>
-                  </select>
-                </label>
-                <label for="f2lMethodSelect">
-                  F2L 스타일
-                  <select id="f2lMethodSelect">
-                    <option value="legacy">기본 (기존)</option>
-                    <option value="balanced">균형형</option>
-                    <option value="rotationless">회전 최소</option>
-                    <option value="low-auf">AUF 최소</option>
-                    <option value="speed">속도 우선 (전체 학습)</option>
-                    <option value="mixed" selected>조건부 CFOP (XCross/ZBLL)</option>
-                  </select>
-                </label>
-              </div>
-              <div class="row solver-style-row">
-                <label for="stylePlayerSelect">
-                  3x3 상위 10명 스타일 적용
-                  <select id="stylePlayerSelect">
-                    <option value="">선수 스타일 미적용</option>
-                  </select>
-                </label>
-                <button id="styleProfileReloadBtn" class="ghost" type="button">스타일 목록 새로고침</button>
-              </div>
-              <div id="styleProfileMeta" class="solver-style-meta">3x3 상위 10명 스타일 프로파일 로딩 전입니다.</div>
-              <pre id="solverSolution" class="solver-solution">-</pre>
-              <div class="solver-footer">
-                <span id="solverMoveCount">0 수</span>
-                <button id="solverCopyBtn" class="ghost" type="button" disabled>복사</button>
-              </div>
-              <section id="solverVisualPanel" class="solver-visual" hidden>
-                <div class="solver-visual-header">
-                  <span id="solverStepLabel" class="solver-step-label">0/0 수</span>
-                </div>
-                <div id="solverTwistyHost" class="solver-twisty-host"></div>
-                <div class="solver-visual-controls">
-                  <button id="solverStepResetBtn" class="ghost" type="button">처음</button>
-                  <button id="solverStepPrevBtn" class="ghost" type="button">이전 수</button>
-                  <button id="solverPlayBtn" class="ghost" type="button">자동 재생</button>
-                  <button id="solverStepNextBtn" class="ghost" type="button">다음 수</button>
-                </div>
-                <ol id="solverStageList" class="solver-stage-list"></ol>
-              </section>
-            </div>
-          </section>
+            <ol id="solverStageList" class="solver-stage-list"></ol>
+          </div>
         </div>
       </div>
-    </main>
+    </div>
 
     <div class="modal" id="exportModal" aria-hidden="true">
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
         <h2 id="exportTitle">기록 내보내기</h2>
         <textarea id="exportText" readonly></textarea>
-        <div class="modal-actions">
-          <button id="exportCopyBtn" class="secondary">복사</button>
-          <button id="exportCloseBtn" class="ghost">닫기</button>
+        <div class="modal-actions premium-actions">
+          <button id="exportCopyBtn" class="premium-btn primary icon-only" title="복사">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+          </button>
+          <button id="exportCloseBtn" class="premium-btn ghost icon-only" title="닫기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          </button>
         </div>
       </div>
     </div>
@@ -254,102 +292,163 @@
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="solveTitle">
         <button class="modal-close" id="solveCloseBtn" aria-label="닫기">×</button>
         <h2 id="solveTitle">기록 메뉴</h2>
-        <div class="solve-modal-meta" id="solveModalMeta"></div>
+        <div id="solveModalInfo" class="solve-info-box"></div>
         <div class="solve-modal-status" id="solveModalStatus"></div>
-        <div class="modal-actions split">
-          <div class="actions-left">
-            <button id="solveShareBtn" class="secondary">공유</button>
-            <button id="solveEditBtn">수정</button>
-            <button id="solveDeleteBtn" class="ghost">삭제</button>
-          </div>
-          <div class="actions-right">
-            <button id="solveOkBtn">OK</button>
-            <button id="solvePlus2Btn" class="danger">+2</button>
-            <button id="solveDnfBtn" class="danger">DNF</button>
-          </div>
+        
+        <div class="modal-actions grid-2x3">
+          <button id="solveShareBtn" class="oval-btn" title="공유">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          </button>
+          <button id="solveEditBtn" class="oval-btn" title="수정">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
+          </button>
+          <button id="solveDeleteBtn" class="oval-btn danger-red" title="삭제">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          </button>
+          
+          <button id="solveOkBtn" class="oval-btn primary-blue" title="OK">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+          <button id="solvePlus2Btn" class="oval-btn danger-red">+2</button>
+          <button id="solveDnfBtn" class="oval-btn danger-red">DNF</button>
         </div>
       </div>
     </div>
 
     <div class="modal" id="settingsModal" aria-hidden="true">
-      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-card premium" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <button class="modal-close" id="settingsCloseBtn" aria-label="닫기">×</button>
         <h2 id="settingsTitle">설정</h2>
-        <div class="settings-group">
-          <div class="settings-label">테마</div>
-          <div class="settings-actions">
-            <button id="themeSystemBtn" class="theme-btn">시스템</button>
-            <button id="themeLightBtn" class="theme-btn ghost">라이트</button>
-            <button id="themeDarkBtn" class="theme-btn ghost">다크</button>
-          </div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-label">버튼 컬러</div>
-          <div class="settings-actions">
-            <button class="swatch-btn" data-accent="ocean" title="Ocean"></button>
-            <button class="swatch-btn" data-accent="mint" title="Mint"></button>
-            <button class="swatch-btn" data-accent="amber" title="Amber"></button>
-            <button class="swatch-btn" data-accent="berry" title="Berry"></button>
-            <button class="swatch-btn" data-accent="coral" title="Coral"></button>
-            <button class="swatch-btn" data-accent="teal" title="Teal"></button>
-            <button class="swatch-btn" data-accent="violet" title="Violet"></button>
-            <button class="swatch-btn" data-accent="slate" title="Slate"></button>
-            <button class="swatch-btn" data-accent="lime" title="Lime"></button>
-          </div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-label">표시</div>
-          <div class="settings-actions">
-            <label class="toggle">
-              <input type="checkbox" id="togglePreview" checked />
-              <span>스크램블 미리보기</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="toggleChart" checked />
-              <span>그래프</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="toggleAo5" checked />
-              <span>Ao5 라인</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="toggleAo12" checked />
-              <span>Ao12 라인</span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-label">타이머</div>
-          <div class="settings-actions">
-            <label class="toggle">
-              <input type="checkbox" id="toggleInspection" />
-              <span>15초 Inspection (WCA)</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="toggleHideLive" />
-              <span>진행 중 시간 숨김</span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-label">솔버</div>
-          <div class="settings-actions">
-            <label class="toggle">
-              <input type="checkbox" id="toggleStyleFallback" checked />
-              <span>F2L 스타일 자동 완화</span>
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="toggleOllPllPrediction" checked />
-              <span>OLL/PLL 다운스트림 예측</span>
-            </label>
-          </div>
+        
+        <div class="settings-scroll-area">
+          <section class="settings-section">
+            <h3 class="section-title">디자인 스타일</h3>
+            <div class="settings-card glass">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">시스템 테마</span>
+                </div>
+                <div class="segmented-control theme-selector">
+                  <button id="themeSystemBtn" class="theme-btn">자동</button>
+                  <button id="themeLightBtn" class="theme-btn">라이트</button>
+                  <button id="themeDarkBtn" class="theme-btn">다크</button>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">강조 색상</span>
+                </div>
+                <div class="swatch-grid">
+                  <button class="swatch-btn" data-accent="ocean" title="Ocean"></button>
+                  <button class="swatch-btn" data-accent="mint" title="Mint"></button>
+                  <button class="swatch-btn" data-accent="amber" title="Amber"></button>
+                  <button class="swatch-btn" data-accent="berry" title="Berry"></button>
+                  <button class="swatch-btn" data-accent="coral" title="Coral"></button>
+                  <button class="swatch-btn" data-accent="teal" title="Teal"></button>
+                  <button class="swatch-btn" data-accent="violet" title="Violet"></button>
+                  <button class="swatch-btn" data-accent="slate" title="Slate"></button>
+                  <button class="swatch-btn" data-accent="lime" title="Lime"></button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3 class="section-title">디스플레이</h3>
+            <div class="settings-card glass">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">스크램블 미리보기</span>
+                  <p class="setting-desc">화면 하단에 큐브 상태를 보여줍니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="togglePreview" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">진행 그래프</span>
+                  <p class="setting-desc">기록 변화를 시각화합니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleChart" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">Ao5 평균선</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleAo5" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">Ao12 평균선</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleAo12" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3 class="section-title">타이머 & 솔버</h3>
+            <div class="settings-card glass">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">WCA 인스펙션</span>
+                  <p class="setting-desc">15초 미리보기 제한을 적용합니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleInspection" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">실시간 시간 숨김</span>
+                  <p class="setting-desc">몰입을 위해 타이머 진행 중 시간을 가립니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleHideLive" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">패턴 최적화 해법</span>
+                  <p class="setting-desc">솔버가 고급 스타일을 자동으로 제안합니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleStyleFallback" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-label">단계별 예측 분석</span>
+                  <p class="setting-desc">다음 단계를 미리 계산하여 보여줍니다.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggleOllPllPrediction" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
 
     <footer class="site-footer">
-      <div>© 2026 CubeTimer. Licensed under GPL-3.0. v1.9</div>
-      <div>Made with OpenAI GPT-5.2 Codex</div>
+      © 2026 CubeTimer. Licensed under GPL-3.0. v2.0 Made with AI
     </footer>
     <script type="module" src="main.js"></script>
   </body>

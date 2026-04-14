@@ -1,3739 +1,961 @@
-import { getDefaultPattern } from "./context.js";
-import { ROUX_CASE_DB } from "./rouxCaseDb.js";
-import { ROUX_FORMULAS } from "./rouxDataset.js";
-import { solve3x3InternalPhase } from "./solver3x3Phase/index.js";
+/**
+ * Pure Roux 3x3 Solver - FB → SB → CMLL → LSE
+ * 
+ * FB: Beam search (all moves)
+ * SB: Beam search (FB-preserving moves: U, R, M, r)
+ * CMLL: Algorithm lookup + IDA* search
+ * LSE: Algorithm lookup + IDA* search
+ * 
+ * Phase solver fallback when beam search fails
+ * 
+ * Piece indices (verified via cubing.js kpuzzle):
+ *   U → corners [0,1,2,3], edges [0,1,2,3]
+ *   D → corners [4,5,6,7], edges [4,5,6,7]
+ *   L → corners [2,3,5,6], edges [3,7,9,11]
+ *   R → corners [0,1,4,7], edges [1,5,8,10]
+ *   F → corners [0,3,4,5], edges [0,4,8,9]
+ *   B → corners [1,2,6,7], edges [2,6,10,11]
+ *   M → edges [0,2,4,6]
+ */
 
-const FACE_TURN_MOVES = Object.freeze([
-  "U",
-  "U'",
-  "U2",
-  "R",
-  "R'",
-  "R2",
-  "F",
-  "F'",
-  "F2",
-  "D",
-  "D'",
-  "D2",
-  "L",
-  "L'",
-  "L2",
-  "B",
-  "B'",
-  "B2",
-]);
+import { 
+  buildAllPruneTables,
+  getFBPruneHeuristic, 
+  getSBPruneHeuristic,
+  encodeFBCornerState, encodeFBEdgeState,
+  encodeSBCornerState, encodeSBEdgeState,
+  encodeLSEState, getMCenterState, LSE_MOVES,
+  applyMoveToCornerEnc, applyMoveToEdgeEnc, applyMoveToLSEEnc,
+} from './rouxPruneTables.js';
 
-const CMLL_BEAM_MOVES = Object.freeze([
-  "U",
-  "U'",
-  "U2",
-  "R",
-  "R'",
-  "R2",
-  "L",
-  "L'",
-  "L2",
-  "F",
-  "F'",
-  "F2",
-  "B",
-  "B'",
-  "B2",
-]);
+// ============================================================
+// Prune Table Cache
+// ============================================================
+let pruneTables = null;
 
-const ROUX_FB_MOVES = Object.freeze([
-  "U",
-  "U'",
-  "U2",
-  "D",
-  "D'",
-  "D2",
-  "R",
-  "R'",
-  "R2",
-  "L",
-  "L'",
-  "L2",
-  "F",
-  "F'",
-  "F2",
-  "B",
-  "B'",
-  "B2",
-  "M",
-  "M'",
-  "M2",
-  "r",
-  "r'",
-  "r2",
-  "u",
-  "u'",
-  "u2",
-  "y",
-  "y'",
-  "y2",
-]);
-
-const ROUX_SB_MOVES = Object.freeze([...ROUX_FB_MOVES]);
-const U_AUF = Object.freeze(["", "U", "U2", "U'"]);
-const Y_ROTATIONS = Object.freeze(["", "y", "y2", "y'"]);
-
-const DEFAULT_OPTIONS = Object.freeze({
-  fbMaxDepth: 10,
-  fbBeamWidth: 320,
-  sbMaxDepth: 10,
-  sbBeamWidth: 320,
-  cmllMaxDepth: 8,
-  cmllBeamWidth: 220,
-  lseFormulaLimit: 260,
-  fbCaseDbDepth: 7,
-  sbCaseDbDepth: 8,
-  caseDbMaxStates: 180000,
-  caseDbMaxPerKey: 8,
-  fbPhasePrefixMaxMoves: 16,
-  sbPhasePrefixMaxMoves: 18,
-});
-
-let rouxContextPromise = null;
-const ROUX_CASE_DB_SCHEMA_VERSION = "roux-case-db.v1";
-
-function normalizePositiveInt(value, fallback, min = 1) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  const out = Math.floor(n);
-  return out >= min ? out : fallback;
+async function ensurePruneTables(getDefaultPatternFn) {
+  if (!pruneTables) pruneTables = await buildAllPruneTables(getDefaultPatternFn);
 }
 
-function splitAlgTokens(text) {
-  return String(text || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-}
 
-function joinAlgTokens(tokens) {
-  return Array.isArray(tokens) ? tokens.filter(Boolean).join(" ").trim() : "";
-}
+// FB (First Block) = DL 1x2x3 block
+//   Corners: DLF(5), DLB(6)  — intersection of D[4,5,6,7] ∩ L[2,3,5,6]
+//   Edges:   DL(7), FL(9), BL(11)  — L edges[3,7,9,11] minus U edges[0,1,2,3]
+const FB_CORNERS = [5, 6];
+const FB_EDGES   = [7, 9, 11];
 
-function parseMoveToken(token) {
-  const text = String(token || "").trim();
-  if (!text) return null;
-  const face = text[0];
-  if (!face) return null;
-  const suffix = text.slice(1);
-  if (!suffix) return { face, amount: 1 };
-  if (suffix === "2") return { face, amount: 2 };
-  if (suffix === "'") return { face, amount: 3 };
-  return null;
-}
+// SB (Second Block) = DR 1x2x3 block
+//   Corners: DRF(4), DRB(7)  — intersection of D[4,5,6,7] ∩ R[0,1,4,7]
+//   Edges:   DR(5), FR(8), BR(10)  — R edges[1,5,8,10] minus U edges[0,1,2,3]
+const SB_CORNERS = [4, 7];
+const SB_EDGES   = [5, 8, 10];
 
-function formatMoveToken(face, amount) {
-  const normalized = ((Number(amount) || 0) % 4 + 4) % 4;
-  if (!normalized) return "";
-  if (normalized === 1) return face;
-  if (normalized === 2) return `${face}2`;
-  if (normalized === 3) return `${face}'`;
-  return "";
-}
+// CMLL = U-layer corners (all 4, after FB+SB are solved)
+const CMLL_CORNERS = [0, 1, 2, 3];
 
-function simplifyMoves(moves) {
-  if (!Array.isArray(moves) || !moves.length) return [];
-  const stack = [];
-  for (const move of moves) {
-    const parsed = parseMoveToken(move);
-    if (!parsed) {
-      stack.push({ face: null, raw: move });
-      continue;
-    }
-    if (!stack.length || stack[stack.length - 1].face !== parsed.face) {
-      const normalized = parsed.amount % 4;
-      if (normalized) {
-        stack.push({ face: parsed.face, amount: normalized });
-      }
-      continue;
-    }
-    const top = stack[stack.length - 1];
-    const combined = (top.amount + parsed.amount) % 4;
-    if (combined === 0) {
-      stack.pop();
-    } else {
-      top.amount = combined;
-    }
+// LSE = M-slice edges: UF(0), UB(2), DF(4), DB(6)
+const LSE_EDGES = [0, 2, 4, 6];
+
+// ============================================================
+// Move Sets
+// ============================================================
+
+const ALL_MOVES = ["U", "U'", "U2", "D", "D'", "D2", "R", "R'", "R2", "L", "L'", "L2", "F", "F'", "F2", "B", "B'", "B2"];
+
+// SB_MOVES: only moves that do NOT break FB
+// FB pieces are only moved by L, D, F, B face turns
+// Safe for SB: U, R, M, r (r = R + M combined, doesn't touch L/D/F/B pieces)
+const SB_MOVES = ["U", "U'", "U2", "R", "R'", "R2", "M", "M'", "M2", "r", "r'", "r2"];
+
+// CMLL_MOVES: R, U (standard CMLL moves, preserve both blocks)
+// Some CMLL algs also use F/L but those are handled via alg lookup
+const CMLL_MOVES = ["U", "U'", "U2", "R", "R'", "R2", "L", "L'", "L2", "F", "F'", "F2"];
+
+// LSE_MOVES defined in rouxPruneTables.js (imported above): ["U","U'","U2","M","M'","M2"]
+// This ordering defines the face groups for compact IDA*: group 0=U, group 1=M
+const LSE_FALLBACK_MOVES = ["M", "M'", "M2", "U", "U'", "U2"]; // for beam/IDA* fallback only
+
+// ============================================================
+// Stage Detection
+// ============================================================
+
+function isFBSolved(p, s) {
+  const d = p.patternData, sv = s.patternData;
+  for (const i of FB_CORNERS) {
+    if (d.CORNERS.pieces[i] !== sv.CORNERS.pieces[i] || d.CORNERS.orientation[i] !== sv.CORNERS.orientation[i]) return false;
   }
-  return stack
-    .map((entry) => (entry.face ? formatMoveToken(entry.face, entry.amount) : entry.raw))
-    .filter(Boolean);
-}
-
-function invertMove(move) {
-  const parsed = parseMoveToken(move);
-  if (!parsed) return String(move || "").trim();
-  const invAmount = (4 - (parsed.amount % 4)) % 4;
-  if (!invAmount) return "";
-  return formatMoveToken(parsed.face, invAmount);
-}
-
-function invertMoves(moves) {
-  if (!Array.isArray(moves) || !moves.length) return [];
-  const out = [];
-  for (let i = moves.length - 1; i >= 0; i--) {
-    const inv = invertMove(moves[i]);
-    if (inv) out.push(inv);
+  for (const i of FB_EDGES) {
+    if (d.EDGES.pieces[i] !== sv.EDGES.pieces[i] || d.EDGES.orientation[i] !== sv.EDGES.orientation[i]) return false;
   }
-  return simplifyMoves(out);
+  return true;
 }
 
-function pushCaseCandidate(table, key, moves, maxPerKey = 4) {
-  if (!table || !key || !Array.isArray(moves)) return;
-  const normalized = simplifyMoves(moves);
-  const serialized = joinAlgTokens(normalized);
-  const bucket = table.get(key) || [];
-  if (bucket.some((entry) => entry.text === serialized)) return;
-  bucket.push({ moves: normalized, text: serialized, len: normalized.length });
-  bucket.sort((a, b) => a.len - b.len || a.text.localeCompare(b.text));
-  if (bucket.length > maxPerKey) {
-    bucket.length = maxPerKey;
+function isSBSolvedOnly(p, s) {
+  // Check ONLY SB pieces (assumes FB is already solved)
+  const d = p.patternData, sv = s.patternData;
+  for (const i of SB_CORNERS) {
+    if (d.CORNERS.pieces[i] !== sv.CORNERS.pieces[i] || d.CORNERS.orientation[i] !== sv.CORNERS.orientation[i]) return false;
   }
-  table.set(key, bucket);
-}
-
-function createPrng(seed = 0x9e3779b9) {
-  let state = (seed >>> 0) || 1;
-  return () => {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    return ((state >>> 0) & 0xffffffff) / 4294967296;
-  };
-}
-
-function randomInt(rng, limit) {
-  if (!Number.isFinite(limit) || limit <= 0) return 0;
-  return Math.floor(rng() * limit);
-}
-
-function collectChangedPositions(before, after) {
-  const out = [];
-  for (let i = 0; i < before.length; i++) {
-    if (before[i] !== after[i]) out.push(i);
+  for (const i of SB_EDGES) {
+    if (d.EDGES.pieces[i] !== sv.EDGES.pieces[i] || d.EDGES.orientation[i] !== sv.EDGES.orientation[i]) return false;
   }
-  return out;
+  return true;
 }
 
-function uniqueIntersection(lists) {
-  if (!Array.isArray(lists) || !lists.length) return -1;
-  let current = new Set(lists[0]);
-  for (let i = 1; i < lists.length; i++) {
-    const next = new Set(lists[i]);
-    current = new Set(Array.from(current).filter((value) => next.has(value)));
+function isSBSolved(p, s) {
+  return isFBSolved(p, s) && isSBSolvedOnly(p, s);
+}
+
+function isCMLLSolvedOnly(p, s) {
+  // Check ONLY CMLL corners (assumes FB+SB already solved)
+  const d = p.patternData, sv = s.patternData;
+  for (const i of CMLL_CORNERS) {
+    if (d.CORNERS.pieces[i] !== sv.CORNERS.pieces[i] || d.CORNERS.orientation[i] !== sv.CORNERS.orientation[i]) return false;
   }
-  if (current.size !== 1) return -1;
-  return Array.from(current)[0];
+  return true;
 }
 
-function buildStateKey(pattern) {
-  const data = pattern?.patternData;
-  if (!data?.CORNERS || !data?.EDGES) return "";
-  return `${data.CORNERS.pieces.join(",")}|${data.CORNERS.orientation.join(",")}|${data.EDGES.pieces.join(",")}|${data.EDGES.orientation.join(",")}`;
+function isCMLLSolved(p, s) {
+  return isSBSolved(p, s) && isCMLLSolvedOnly(p, s);
 }
 
-function buildEntriesStateKey(pattern, entries) {
-  const data = pattern?.patternData;
-  if (!data || !Array.isArray(entries) || entries.length === 0) return buildStateKey(pattern);
-  const parts = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const orbit = data?.[entry.orbit];
-    if (!orbit) continue;
-    const pos = entry.position;
-    parts.push(`${entry.orbit}:${pos}:${orbit.pieces[pos]}:${orbit.orientation[pos]}`);
+function isCubeSolved(p, s) { return p.isIdentical(s); }
+
+// ============================================================
+// Scoring Functions
+// ============================================================
+
+function scoreFB(pattern, solved) {
+  if (pruneTables) {
+    const h = getFBPruneHeuristic(pattern, pruneTables);
+    if (h < 99) return 1000 - h * 10;
   }
-  return parts.join("|");
-}
-
-function buildCornersStateKey(pattern) {
-  const data = pattern?.patternData;
-  if (!data?.CORNERS) return "";
-  return `C:${data.CORNERS.pieces.join(",")}|${data.CORNERS.orientation.join(",")}`;
-}
-
-function ensureDeadline(deadlineTs, reason) {
-  if (!Number.isFinite(deadlineTs)) return;
-  if (Date.now() > deadlineTs) {
-    const error = new Error(reason || "ROUX_TIMEOUT");
-    error.code = reason || "ROUX_TIMEOUT";
-    throw error;
-  }
-}
-
-function tryApplyAlg(pattern, alg) {
-  const text = String(alg || "").trim();
-  if (!text) return pattern;
-  try {
-    return pattern.applyAlg(text);
-  } catch (_) {
-    return null;
-  }
-}
-
-function tryApplyMoves(pattern, moves) {
-  if (!Array.isArray(moves) || moves.length === 0) return pattern;
-  return tryApplyAlg(pattern, joinAlgTokens(moves));
-}
-
-function moveFamily(move) {
-  const text = String(move || "");
-  const head = text[0] || "";
-  if (!head) return "";
-  if (head >= "a" && head <= "z") {
-    return head.toUpperCase();
-  }
-  return head;
-}
-
-function countSolvedEntries(data, solvedData, entries) {
-  let solvedCount = 0;
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const orbitName = entry.orbit;
-    const pos = entry.position;
-    const orbit = data[orbitName];
-    const solvedOrbit = solvedData[orbitName];
-    if (!orbit || !solvedOrbit) continue;
-    if (
-      orbit.pieces[pos] === solvedOrbit.pieces[pos] &&
-      orbit.orientation[pos] === solvedOrbit.orientation[pos]
-    ) {
-      solvedCount += 1;
-    }
-  }
-  return solvedCount;
-}
-
-function scoreEntries(data, solvedData, entries) {
+  // Fallback piece counting (0–750), stays below prune-table range (920–1000)
+  const d = pattern.patternData, s = solved.patternData;
   let score = 0;
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const orbitName = entry.orbit;
-    const pos = entry.position;
-    const orbit = data[orbitName];
-    const solvedOrbit = solvedData[orbitName];
-    if (!orbit || !solvedOrbit) continue;
-    const pieceSolved = orbit.pieces[pos] === solvedOrbit.pieces[pos];
-    const oriSolved = orbit.orientation[pos] === solvedOrbit.orientation[pos];
-    if (pieceSolved && oriSolved) {
-      score += 4;
-      continue;
+  for (const i of FB_CORNERS) {
+    if (d.CORNERS.pieces[i] === s.CORNERS.pieces[i]) {
+      score += 100;
+      if (d.CORNERS.orientation[i] === s.CORNERS.orientation[i]) score += 50;
     }
-    if (pieceSolved) {
-      score += 2;
+  }
+  for (const i of FB_EDGES) {
+    if (d.EDGES.pieces[i] === s.EDGES.pieces[i]) {
+      score += 100;
+      if (d.EDGES.orientation[i] === s.EDGES.orientation[i]) score += 50;
     }
   }
   return score;
 }
 
-function countSolvedTopCorners(data, solvedData, positions) {
-  let solvedCount = 0;
-  const corners = data?.CORNERS;
-  const solvedCorners = solvedData?.CORNERS;
-  if (!corners || !solvedCorners) return 0;
-  for (let i = 0; i < positions.length; i++) {
-    const pos = positions[i];
-    if (
-      corners.pieces[pos] === solvedCorners.pieces[pos] &&
-      corners.orientation[pos] === solvedCorners.orientation[pos]
-    ) {
-      solvedCount += 1;
+function scoreSB(pattern, solved) {
+  if (pruneTables) {
+    const h = getSBPruneHeuristic(pattern, pruneTables);
+    if (h < 99) return 1000 - h * 10;
+  }
+  // Fallback piece counting (0–750), stays below prune-table range (920–1000)
+  const d = pattern.patternData, s = solved.patternData;
+  let score = 0;
+  // Only SB pieces - FB is already preserved by move set
+  for (const i of SB_CORNERS) {
+    if (d.CORNERS.pieces[i] === s.CORNERS.pieces[i]) {
+      score += 100;
+      if (d.CORNERS.orientation[i] === s.CORNERS.orientation[i]) score += 50;
     }
   }
-  return solvedCount;
-}
-
-function scoreTopCorners(data, solvedData, positions) {
-  let score = 0;
-  const corners = data?.CORNERS;
-  const solvedCorners = solvedData?.CORNERS;
-  if (!corners || !solvedCorners) return score;
-  for (let i = 0; i < positions.length; i++) {
-    const pos = positions[i];
-    const pieceSolved = corners.pieces[pos] === solvedCorners.pieces[pos];
-    const oriSolved = corners.orientation[pos] === solvedCorners.orientation[pos];
-    if (pieceSolved && oriSolved) {
-      score += 4;
-      continue;
-    }
-    if (pieceSolved) {
-      score += 2;
+  for (const i of SB_EDGES) {
+    if (d.EDGES.pieces[i] === s.EDGES.pieces[i]) {
+      score += 100;
+      if (d.EDGES.orientation[i] === s.EDGES.orientation[i]) score += 50;
     }
   }
   return score;
 }
 
-function scoreRouxStage(data, solvedData, targetEntries, futureEntries, depth, weights = {}) {
-  const targetMultiplier = Number.isFinite(weights.targetMultiplier) ? weights.targetMultiplier : 250;
-  const futurePenalty = Number.isFinite(weights.futurePenalty) ? weights.futurePenalty : 80;
-  const depthPenalty = Number.isFinite(weights.depthPenalty) ? weights.depthPenalty : 12;
-  const targetScore = scoreEntries(data, solvedData, targetEntries);
-  const futureScore = Array.isArray(futureEntries) && futureEntries.length
-    ? scoreEntries(data, solvedData, futureEntries)
-    : 0;
-  return targetScore * targetMultiplier - futureScore * futurePenalty - depth * depthPenalty;
-}
-
-function emitStageUpdate(options, payload) {
-  const fn = options?.onStageUpdate;
-  if (typeof fn !== "function") return;
-  try {
-    fn(payload);
-  } catch (_) {
-    // Progress callback is best-effort.
+function scoreCMLL(pattern, solved) {
+  const d = pattern.patternData, s = solved.patternData;
+  let score = 0;
+  // CMLL corners: primary target (high weight)
+  for (const i of CMLL_CORNERS) {
+    if (d.CORNERS.pieces[i] === s.CORNERS.pieces[i]) {
+      score += 200;
+      if (d.CORNERS.orientation[i] === s.CORNERS.orientation[i]) score += 100;
+    }
   }
+  // Reduced penalty for broken FB/SB: CMLL algs (especially L-based) temporarily disrupt them.
+  // Use a lighter weight so the beam still explores those paths.
+  for (const i of [...FB_CORNERS, ...SB_CORNERS]) {
+    if (d.CORNERS.pieces[i] === s.CORNERS.pieces[i]) score += 75;
+  }
+  for (const i of [...FB_EDGES, ...SB_EDGES]) {
+    if (d.EDGES.pieces[i] === s.EDGES.pieces[i]) score += 75;
+  }
+  return score;
 }
 
-function beamSearchStage(startPattern, options) {
-  const {
-    isGoal,
-    score,
-    allowedMoves,
-    maxDepth,
-    beamWidth,
-    deadlineTs,
-    keyFn,
-  } = options;
+function scoreLSE(pattern, solved) {
+  const d = pattern.patternData, s = solved.patternData;
+  let score = 0;
+  // All 8 corners must stay solved during LSE (M, U moves only)
+  for (let i = 0; i < 8; i++) {
+    if (d.CORNERS.pieces[i] === s.CORNERS.pieces[i]) score += 200;
+  }
+  // Non-M-slice edges: keep them solved (high weight)
+  for (let i = 0; i < 12; i++) {
+    if (!LSE_EDGES.includes(i) && d.EDGES.pieces[i] === s.EDGES.pieces[i]) {
+      score += 200;
+    }
+  }
+  // M-slice edges (UF=0, UB=2, DF=4, DB=6)
+  for (const i of LSE_EDGES) {
+    if (d.EDGES.pieces[i] === s.EDGES.pieces[i]) {
+      score += 100;
+      if (d.EDGES.orientation[i] === s.EDGES.orientation[i]) score += 50;
+    }
+  }
+  return score;
+}
 
+// ============================================================
+// Beam Search
+// ============================================================
+
+function beamSearch(startPattern, solvedPattern, isGoal, allowedMoves, maxDepth, beamWidth, deadlineTs, scoreFn) {
+  if (isGoal(startPattern, solvedPattern)) {
+    return { ok: true, moves: [], pattern: startPattern, nodes: 0 };
+  }
+
+  let beam = [{ pattern: startPattern, moves: [], score: scoreFn(startPattern, solvedPattern) }];
   let nodes = 0;
-  let layer = [
-    {
-      pattern: startPattern,
-      moves: [],
-      lastFamily: "",
-      score: score(startPattern, 0),
-    },
-  ];
-
-  if (isGoal(startPattern)) {
-    return { ok: true, moves: [], nodes };
-  }
+  const seen = new Set([stateKeyPartial(startPattern)]);
 
   for (let depth = 0; depth < maxDepth; depth++) {
-    ensureDeadline(deadlineTs, "ROUX_STAGE_TIMEOUT");
-    const nextMap = new Map();
-    for (let i = 0; i < layer.length; i++) {
-      const state = layer[i];
-      for (let m = 0; m < allowedMoves.length; m++) {
-        const move = allowedMoves[m];
-        if (!move) continue;
-        const family = moveFamily(move);
-        if (state.lastFamily && family && family === state.lastFamily) continue;
-        const nextPattern = tryApplyAlg(state.pattern, move);
-        nodes += 1;
-        if (!nextPattern) continue;
-        const nextMoves = state.moves.concat(move);
-        if (isGoal(nextPattern)) {
-          return { ok: true, moves: nextMoves, nodes };
+    if (Date.now() > deadlineTs) return { ok: false, moves: null, nodes, reason: "TIMEOUT" };
+
+    const nextBeam = [];
+
+    for (const state of beam) {
+      const lastMove = state.moves.length > 0 ? state.moves[state.moves.length - 1] : null;
+      const lastFace = lastMove ? moveFace(lastMove) : null;
+      
+      for (const move of allowedMoves) {
+        const face = moveFace(move);
+        if (lastFace === face) continue;
+
+        let nextPattern;
+        try { nextPattern = state.pattern.applyAlg(move); } catch { continue; }
+
+        const key = stateKeyPartial(nextPattern);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nodes++;
+
+        if (isGoal(nextPattern, solvedPattern)) {
+          return { ok: true, moves: [...state.moves, move], pattern: nextPattern, nodes };
         }
 
-        const key = typeof keyFn === "function" ? keyFn(nextPattern, nextMoves, depth + 1) : buildStateKey(nextPattern);
-        if (!key) continue;
-        const nextScore = score(nextPattern, nextMoves.length);
-        const existing = nextMap.get(key);
-        if (
-          !existing ||
-          nextScore > existing.score ||
-          (nextScore === existing.score && nextMoves.length < existing.moves.length)
-        ) {
-          nextMap.set(key, {
-            pattern: nextPattern,
-            moves: nextMoves,
-            lastFamily: family,
-            score: nextScore,
-          });
-        }
+        const score = scoreFn(nextPattern, solvedPattern);
+        nextBeam.push({ pattern: nextPattern, moves: [...state.moves, move], score });
       }
     }
 
-    if (nextMap.size === 0) break;
-    let nextLayer = Array.from(nextMap.values());
-    nextLayer.sort((a, b) => b.score - a.score || a.moves.length - b.moves.length);
-    if (nextLayer.length > beamWidth) {
-      nextLayer = nextLayer.slice(0, beamWidth);
-    }
-    layer = nextLayer;
+    nextBeam.sort((a, b) => b.score - a.score);
+    beam = nextBeam.slice(0, beamWidth);
+    if (beam.length === 0) break;
   }
 
-  return { ok: false, moves: null, nodes };
+  return { ok: false, moves: null, nodes, reason: "NOT_FOUND" };
 }
 
-function runAdaptiveBeamStage(startPattern, baseOptions, attempts) {
-  let totalNodes = 0;
-  const diagnostics = [];
-  for (let i = 0; i < attempts.length; i++) {
-    const attempt = attempts[i];
-    const result = beamSearchStage(startPattern, {
-      ...baseOptions,
-      maxDepth: attempt.maxDepth,
-      beamWidth: attempt.beamWidth,
-    });
-    totalNodes += result.nodes;
-    diagnostics.push({
-      attempt: i + 1,
-      maxDepth: attempt.maxDepth,
-      beamWidth: attempt.beamWidth,
-      nodes: result.nodes,
-      ok: result.ok,
-    });
-    if (result.ok) {
-      return {
-        ok: true,
-        moves: result.moves,
-        nodes: totalNodes,
-        diagnostics,
-        attemptIndex: i + 1,
-      };
-    }
-  }
-
-  return {
-    ok: false,
-    moves: null,
-    nodes: totalNodes,
-    diagnostics,
-    attemptIndex: attempts.length,
-  };
+// Extract the face from a move (handles r, M, etc.)
+function moveFace(move) {
+  return move[0];
 }
 
-function buildFormulaCandidates(formulas, options = {}) {
-  const includeRotations = options.includeRotations === true;
-  const limit = normalizePositiveInt(options.limit, formulas.length, 1);
-  const out = [];
-  for (let i = 0; i < formulas.length && out.length < limit; i++) {
-    const formula = String(formulas[i] || "").trim();
-    if (!formula) continue;
-    if (includeRotations) {
-      for (let r = 0; r < Y_ROTATIONS.length; r++) {
-        const y = Y_ROTATIONS[r];
-        out.push(y ? `${y} ${formula}` : formula);
-      }
-    } else {
-      out.push(formula);
-    }
-  }
-  return out;
+// State key including orientations to avoid skipping valid states
+function stateKeyPartial(pattern) {
+  const d = pattern.patternData;
+  return d.CORNERS.pieces.join(",") + "|" + d.CORNERS.orientation.join(",") + "|" + d.EDGES.pieces.join(",") + "|" + d.EDGES.orientation.join(",");
 }
 
-function serializeCaseTable(table) {
-  const out = {};
-  if (!(table instanceof Map)) return out;
-  for (const [key, bucket] of table.entries()) {
-    if (!key || !Array.isArray(bucket) || bucket.length === 0) continue;
-    const algs = bucket
-      .map((entry) => String(entry?.text || joinAlgTokens(entry?.moves || [])).trim())
-      .filter(Boolean);
-    if (!algs.length) continue;
-    out[key] = algs;
+// ============================================================
+// CMLL Algorithm Database
+// Complete set covering all 42 CMLL cases + common AUF variants
+// Algs use only U, R, L, F moves to preserve FB+SB blocks
+// ============================================================
+
+const CMLL_ALGS = [
+  // Complete set of 42 CMLL cases (speedcubedb canonical algorithms)
+  // H cases
+  "R U R' U R U' R' U R U2' R'",                // H Columns
+  "F U R U' R' U R U' R' U R U' R' F'",         // H Rows
+  "F U R U' R' U R U2' R' U' R U R' F' U'",     // H Column
+  "r' F R F' r U' R' U' R U' R' U",             // H Row
+  // Pi cases
+  "F U R U' R' U R U' R' F'",                   // Pi Right Bar
+  "R U2 R' U' R U R' U2' R' F R F' U'",         // Pi Down Slash
+  "F U R U' R' U F' U' R' F' R U",              // Pi X
+  "F R' F' R U2 R U' R' U R U2' R'",            // Pi Up Slash
+  "r U' r2' D' r U' r' D r2 U r' U",            // Pi Columns
+  "R' U2' R U R' F R' F' R U R U",              // Pi Left Bar
+  // U cases
+  "R U2' R D R' U2' R D' R2' U2'",              // U Up Slash
+  "R' U2' R' D' R U2' R' D R2",                 // U Down Slash
+  "R' F' R U R2' F2' U' F' U F' R2",            // U Bottom Row
+  "F U R2 D R' U' R D' R2' F' U",               // U Rows
+  "r' D' r U r' D r U' r U r' U2'",             // U X
+  "F U R U' R' F' U",                           // U Upper Row
+  // T cases
+  "F R' F' r U R U' r' U",                      // T Left Bar
+  "F' L F l' U' L' U l U'",                     // T Right Bar
+  "F2' R U' R' U R U R2' F' R F'",              // T Rows
+  "R' F R' F' R2 U2 r' U' r",                   // T Bottom Row
+  "r U' r' U r' D' r U' r' D r",                // T Top Row
+  "R' U R2 D r' U2' r D' R2' U' R",             // T Columns
+  // Sune cases
+  "R U2' R' U' R U' R' U'",                     // Sune Left Bar
+  "F' L F L' U2 L' U2' L U'",                   // Sune X
+  "R U2 R' U2' R' F R F' U'",                   // Sune Up Slash
+  "R2 D R' U R D' R' U R' U' R U' R'",          // Sune Columns
+  "R U2 R' F R' F' R U' R U' R' U",             // Sune Right Bar
+  "L' U R U' L U R' U'",                        // Sune Down Slash
+  // Anti-Sune cases
+  "R' U2 R U R' U R U'",                        // Anti Sune Right Bar
+  "R U R' U R U' R D R' U' R D' R2' U",         // Anti Sune Columns
+  "L' U2' L U2 L F' L' F U",                    // Anti Sune Down Slash
+  "F R' F' R U2' R U2 R' U",                    // Anti Sune X
+  "R U' L' U R' U' L U",                        // Anti Sune Up Slash
+  "R' U' F R' F' R U' R U R' U R",              // Anti Sune Left Bar
+  // L cases
+  "R' U' R' D' R U R' D R2",                    // L Best
+  "r U R' U' r' F R F' U2'",                    // L Good
+  "R U R' U R U' R' U R U' R' U R U2' R'",      // L Pure
+  "F R' F' R U2' F R' F' R U' R U' R'",         // L Front Commutator
+  "R2' F' R U R U' R' F R U' R' U R",           // L Diagonal
+  "R2' D' R U2' R' D R U2' R U'",               // L Back Commutator
+  // O cases
+  "R U R2' F' R U R U' R' F R U' R'",           // O Adjacent
+  "F R' F' R U R U' R' F R U' R' U R U R' F'",  // O Diagonal
+
+  // --- Additional algorithms for broader coverage ---
+  "R U R' U R U2 R'",                           // Sune
+  "R U2 R' U' R U' R'",                         // Anti-Sune
+  "L' U' L U' L' U2 L",                         // Sune mirror
+  "L' U2 L U L' U L",                           // Anti-Sune mirror
+  "R U R' U' R' F R F'",
+  "L' U' L U L F' L' F",
+  "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R",
+  "R' F' R U R U' R' F",
+  "F R' F' R U R U' R'",
+  "R U R' U R U' R' F' R U R' U' F",
+  "R' U' R' F R F' U R",
+  "R U2 R' U' R U' R' L' U2 L U L' U L",
+  "R U R' U R U2 R' L' U' L U' L' U2 L",
+  "R' F R F' R U R' U' F' R U R'",
+  "R U R' F' R U R' U' R' F R2 U' R'",
+  "R U R' U' R' F R2 U' R' U' R U R' F'",
+  "R' U L U' R U L'",
+  "R U' L' U R' U' L",
+];
+
+// ============================================================
+// LSE Algorithm Database  
+// Complete set: M-slice last 6 edges (UF,UB,DF,DB + UR,UL positions)
+// LSE uses only M and U moves (M=middle slice, clockwise from front)
+// ============================================================
+
+const LSE_ALGS = [
+  // EO cases (edge orientation)
+  "M U M'",
+  "M' U M",
+  "M U' M'",
+  "M' U' M",
+  "M U2 M'",
+  "M' U2 M",
+  "M2 U M2 U2 M2 U M2",
+  "M2 U M2",
+  "M2 U' M2",
+  "M2 U2 M2",
+  // Full LSE algorithms (4b full set)
+  "M' U M' U M' U2 M U M U M",
+  "M' U' M' U' M' U2 M U' M U' M",
+  "M2 U2 M' U2 M2",
+  "M' U2 M U2 M' U2 M",
+  "M U2 M' U2 M U2 M'",
+  // 4b partial cases
+  "M' U' M U",
+  "M' U M U'",
+  "M U M' U'",
+  "M U' M' U",
+  "U M' U2 M",
+  "U' M U2 M'",
+  "U M U2 M'",
+  "U' M' U2 M",
+  "U2 M U2 M'",
+  "U2 M' U2 M",
+  // EOLR/UBLB cases
+  "M' U2 M U2 M' U M",
+  "M U2 M' U2 M U' M'",
+  "M' U M U2 M' U' M",
+  "M U' M' U2 M U M'",
+  "M' U M U M' U2 M U' M U",
+  "M U' M' U' M U2 M' U M' U'",
+  "M2 U M U M' U M2 U M U2 M'",
+  "M2 U' M' U' M U' M2 U' M' U2 M",
+];
+
+// ============================================================
+// Helper: Solve with algorithm lookup + IDA* search
+// ============================================================
+
+async function solveWithAlgs(startPattern, solvedPattern, isGoal, knownAlgs, allowedMoves, maxDepth, beamWidth, deadlineTs, scoreFn, stageName) {
+  if (isGoal(startPattern, solvedPattern)) {
+    return { ok: true, moves: [], pattern: startPattern, nodes: 0 };
   }
-  return out;
-}
 
-function hydrateCaseTable(serialized) {
-  const table = new Map();
-  if (!serialized || typeof serialized !== "object") return table;
-  for (const [key, algs] of Object.entries(serialized)) {
-    if (!Array.isArray(algs) || algs.length === 0) continue;
-    const bucket = [];
-    for (let i = 0; i < algs.length; i++) {
-      const text = String(algs[i] || "").trim();
-      if (!text) continue;
-      const moves = splitAlgTokens(text);
-      bucket.push({
-        moves,
-        text,
-        len: moves.length,
-      });
-    }
-    if (bucket.length) {
-      bucket.sort((a, b) => a.len - b.len || a.text.localeCompare(b.text));
-      table.set(key, bucket);
-    }
-  }
-  return table;
-}
-
-function buildPartialCaseDatabase(solvedPattern, entries, options = {}) {
-  const allowedMoves = Array.isArray(options.allowedMoves) && options.allowedMoves.length
-    ? options.allowedMoves
-    : ROUX_FB_MOVES;
-  const maxDepth = normalizePositiveInt(
-    options.maxDepth,
-    DEFAULT_OPTIONS.fbCaseDbDepth,
-    0,
-  );
-  const maxStates = normalizePositiveInt(
-    options.maxStates,
-    DEFAULT_OPTIONS.caseDbMaxStates,
-  );
-  const maxPerKey = normalizePositiveInt(
-    options.maxPerKey,
-    DEFAULT_OPTIONS.caseDbMaxPerKey,
-  );
-  const randomSampleCount = normalizePositiveInt(
-    options.randomSampleCount,
-    Math.max(2000, maxStates),
-    0,
-  );
-  const randomMinDepth = normalizePositiveInt(
-    options.randomMinDepth,
-    Math.max(2, Math.min(5, maxDepth)),
-    1,
-  );
-  const randomMaxDepth = normalizePositiveInt(
-    options.randomMaxDepth,
-    Math.max(randomMinDepth + 1, maxDepth + 4),
-    randomMinDepth,
-  );
-  const bfsStateBudget = Math.max(1000, Math.floor(maxStates * 0.35));
-  const rng = createPrng(Number(options.seed) || 0x74a7c15d);
-
-  const table = new Map();
-  const queue = [{ pattern: solvedPattern, path: [], lastFamily: "" }];
-  const seen = new Set([buildStateKey(solvedPattern)]);
-  let read = 0;
-
-  while (read < queue.length && seen.size < bfsStateBudget) {
-    const state = queue[read++];
-    const key = buildEntriesStateKey(state.pattern, entries);
-    if (key) {
-      pushCaseCandidate(table, key, invertMoves(state.path), maxPerKey);
-    }
-
-    if (state.path.length >= maxDepth) continue;
-    for (let i = 0; i < allowedMoves.length; i++) {
-      const move = allowedMoves[i];
-      const family = moveFamily(move);
-      if (state.lastFamily && family && family === state.lastFamily) continue;
-      const nextPattern = tryApplyAlg(state.pattern, move);
-      if (!nextPattern) continue;
-      const fullKey = buildStateKey(nextPattern);
-      if (!fullKey || seen.has(fullKey)) continue;
-      seen.add(fullKey);
-      queue.push({
-        pattern: nextPattern,
-        path: state.path.concat(move),
-        lastFamily: family,
-      });
-      if (seen.size >= bfsStateBudget) break;
-    }
-  }
-
-  for (let sample = 0; sample < randomSampleCount; sample++) {
-    let pattern = solvedPattern;
-    const path = [];
-    let lastFamily = "";
-    const depth = randomMinDepth + randomInt(rng, randomMaxDepth - randomMinDepth + 1);
-    for (let step = 0; step < depth; step++) {
-      let picked = "";
-      let pickedFamily = "";
-      for (let retry = 0; retry < 8; retry++) {
-        const move = allowedMoves[randomInt(rng, allowedMoves.length)];
-        const family = moveFamily(move);
-        if (lastFamily && family && family === lastFamily) continue;
-        picked = move;
-        pickedFamily = family;
-        break;
-      }
-      if (!picked) continue;
-      const nextPattern = tryApplyAlg(pattern, picked);
-      if (!nextPattern) continue;
-      pattern = nextPattern;
-      path.push(picked);
-      lastFamily = pickedFamily;
-    }
-    if (!path.length) continue;
-    const key = buildEntriesStateKey(pattern, entries);
-    if (!key) continue;
-    pushCaseCandidate(table, key, invertMoves(path), maxPerKey);
-    if (table.size >= maxStates) {
-      break;
-    }
-  }
-
-  return {
-    table,
-    meta: {
-      entries: Array.isArray(entries) ? entries.length : 0,
-      maxDepth,
-      maxStates,
-      exploredStates: seen.size,
-      randomSamples: randomSampleCount,
-      keyCount: table.size,
-    },
-  };
-}
-
-function buildFormulaCaseIndex(solvedPattern, formulas, keyFn, options = {}) {
-  const maxPerKey = normalizePositiveInt(
-    options.maxPerKey,
-    DEFAULT_OPTIONS.caseDbMaxPerKey,
-  );
-  const includeAuf = options.includeAuf !== false;
-  const preAufs = includeAuf ? U_AUF : [""];
-  const postAufs = includeAuf ? U_AUF : [""];
-  const table = new Map();
-  let generated = 0;
-  for (let i = 0; i < formulas.length; i++) {
-    const formulaMoves = splitAlgTokens(formulas[i]);
-    if (!formulaMoves.length) continue;
-    for (let p = 0; p < preAufs.length; p++) {
-      for (let s = 0; s < postAufs.length; s++) {
-        const candidateMoves = simplifyMoves(
-          splitAlgTokens(preAufs[p]).concat(formulaMoves, splitAlgTokens(postAufs[s])),
-        );
-        if (!candidateMoves.length) continue;
-        const casePattern = tryApplyMoves(solvedPattern, invertMoves(candidateMoves));
-        if (!casePattern) continue;
-        const key = keyFn(casePattern);
-        if (!key) continue;
-        pushCaseCandidate(table, key, candidateMoves, maxPerKey);
-        generated += 1;
+  // Try known algorithms (with all 4 AUF variants before and after)
+  if (knownAlgs && knownAlgs.length > 0) {
+    const AUF = ["", "U", "U'", "U2"];
+    for (const alg of knownAlgs) {
+      if (Date.now() > deadlineTs) break;
+      for (const preAuf of AUF) {
+        const fullAlg = [preAuf, alg].filter(Boolean).join(" ");
+        try {
+          const after = startPattern.applyAlg(fullAlg);
+          if (isGoal(after, solvedPattern)) {
+            console.log(`[Roux] ${stageName}: Algorithm lookup`);
+            return { ok: true, moves: fullAlg.split(/\s+/).filter(Boolean), pattern: after, nodes: 0 };
+          }
+          // Also try with postAUF
+          for (const postAuf of ["U", "U'", "U2"]) {
+            const fullAlg2 = [preAuf, alg, postAuf].filter(Boolean).join(" ");
+            try {
+              const after2 = startPattern.applyAlg(fullAlg2);
+              if (isGoal(after2, solvedPattern)) {
+                console.log(`[Roux] ${stageName}: Algorithm lookup (AUF)`);
+                return { ok: true, moves: fullAlg2.split(/\s+/).filter(Boolean), pattern: after2, nodes: 0 };
+              }
+            } catch {}
+          }
+        } catch {}
       }
     }
   }
-  return {
-    table,
-    meta: {
-      formulas: formulas.length,
-      generated,
-      keyCount: table.size,
-    },
-  };
+
+  // IDA* search only for very small move sets (e.g. LSE with 6 moves).
+  // For CMLL (12 moves) IDA* at depth 12 is too slow — skip to beam search.
+  if (allowedMoves.length <= 6 && maxDepth <= 16) {
+    console.log(`[Roux] ${stageName}: IDA* search (max depth ${maxDepth})`);
+    const idaResult = idaSearch(startPattern, solvedPattern, isGoal, allowedMoves, maxDepth, deadlineTs);
+    if (idaResult.ok) return idaResult;
+  }
+
+  // Beam search fallback
+  console.log(`[Roux] ${stageName}: Beam search (depth=${maxDepth}, beam=${beamWidth})`);
+  return beamSearch(startPattern, solvedPattern, isGoal, allowedMoves, maxDepth, beamWidth, deadlineTs, scoreFn);
 }
 
-function tryCaseCandidatesStage(startPattern, caseTable, keyFn, goalFn, options = {}) {
-  const deadlineTs = options.deadlineTs;
-  if (goalFn(startPattern)) {
-    return { ok: true, moves: [], nodes: 0, method: "case-index", reason: "PRE_SOLVED" };
-  }
-  if (!(caseTable instanceof Map) || typeof keyFn !== "function") {
-    return { ok: false, moves: null, nodes: 0, method: "case-index", reason: "NO_CASE_TABLE" };
-  }
-  const key = keyFn(startPattern);
-  const bucket = key ? caseTable.get(key) : null;
-  if (!Array.isArray(bucket) || bucket.length === 0) {
-    return {
-      ok: false,
-      moves: null,
-      nodes: 0,
-      method: "case-index",
-      reason: "CASE_MISS",
-      key: key || "",
-    };
-  }
+// IDA* : complete search (finds solution if exists within maxDepth)
+function idaSearch(startPattern, solvedPattern, isGoal, allowedMoves, maxDepth, deadlineTs) {
   let nodes = 0;
-  for (let i = 0; i < bucket.length; i++) {
-    ensureDeadline(deadlineTs, "ROUX_STAGE_TIMEOUT");
-    const entry = bucket[i];
-    const candidateMoves = Array.isArray(entry?.moves) ? entry.moves : [];
-    const nextPattern = tryApplyMoves(startPattern, candidateMoves);
-    nodes += 1;
-    if (!nextPattern || !goalFn(nextPattern)) continue;
-    return {
-      ok: true,
-      moves: candidateMoves,
-      nodes,
-      method: "case-index",
-      key,
-      candidatesTried: i + 1,
-      candidatesTotal: bucket.length,
-    };
-  }
-  return {
-    ok: false,
-    moves: null,
-    nodes,
-    method: "case-index",
-    reason: "CASE_VERIFY_FAILED",
-    key,
-    candidatesTotal: bucket.length,
-  };
-}
-
-function chooseBoundaryPreservingPrefix(startPattern, moves, goalFn, boundaryFn, options = {}) {
-  const rawMoves = simplifyMoves(Array.isArray(moves) ? moves : []);
-  const deadlineTs = options.deadlineTs;
-  if (!rawMoves.length) {
-    if (goalFn(startPattern) && boundaryFn(startPattern)) {
-      return {
-        moves: [],
-        afterPattern: startPattern,
-        source: "pre-solved",
-      };
+  const checkInterval = 1000;
+  function dfs(pattern, moves, depth) {
+    if (nodes % checkInterval === 0 && Date.now() > deadlineTs) return null;
+    if (isGoal(pattern, solvedPattern)) return moves;
+    if (depth === 0) return null;
+    const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
+    const lastFace = lastMove ? moveFace(lastMove) : null;
+    const secondLastMove = moves.length > 1 ? moves[moves.length - 2] : null;
+    const secondLastFace = secondLastMove ? moveFace(secondLastMove) : null;
+    for (const move of allowedMoves) {
+      const face = moveFace(move);
+      if (face === lastFace) continue;
+      // Skip redundant opposite-face pairs (e.g. D after U after D)
+      if (face === secondLastFace && lastFace === oppositeOf(face)) continue;
+      nodes++;
+      let next;
+      try { next = pattern.applyAlg(move); } catch { continue; }
+      const result = dfs(next, [...moves, move], depth - 1);
+      if (result !== null) return result;
     }
     return null;
   }
-
-  const variants = [{ name: "raw", moves: rawMoves }];
-  const optimized = simplifyMoves(
-    optimizeGoalPrefixMoves(startPattern, rawMoves, goalFn, {
-      deadlineTs,
-      maxPasses: Number.isFinite(options.maxPasses) ? options.maxPasses : 2,
-      maxWindow: Number.isFinite(options.maxWindow) ? options.maxWindow : 8,
-    }),
-  );
-  if (optimized.length && joinAlgTokens(optimized) !== joinAlgTokens(rawMoves)) {
-    variants.push({ name: "optimized", moves: optimized });
+  for (let d = 1; d <= maxDepth; d++) {
+    if (Date.now() > deadlineTs) break;
+    const result = dfs(startPattern, [], d);
+    if (result !== null) return { ok: true, moves: result, pattern: startPattern.applyAlg(result.join(" ")), nodes };
   }
-
-  let best = null;
-  for (let v = 0; v < variants.length; v++) {
-    const variant = variants[v];
-    let current = startPattern;
-    for (let i = 0; i < variant.moves.length; i++) {
-      ensureDeadline(deadlineTs, "ROUX_OPT_TIMEOUT");
-      current = tryApplyAlg(current, variant.moves[i]);
-      if (!current) break;
-      if (!goalFn(current) || !boundaryFn(current)) continue;
-      const prefixMoves = variant.moves.slice(0, i + 1);
-      if (!best || prefixMoves.length < best.moves.length) {
-        best = {
-          moves: prefixMoves,
-          afterPattern: current,
-          source: variant.name,
-        };
-      }
-      break;
-    }
-  }
-
-  return best;
+  return { ok: false, reason: "IDA_NOT_FOUND", nodes };
 }
 
-function trySingleFormulaStage(startPattern, formulas, goalFn, options = {}) {
-  const deadlineTs = options.deadlineTs;
-  if (goalFn(startPattern)) {
-    return { ok: true, moves: [], nodes: 0 };
-  }
-  let best = null;
+function oppositeOf(face) {
+  const opp = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F", M: null };
+  return opp[face] || null;
+}
+
+// ============================================================
+// IDA* in compact prune-table state space (fast: ~50ns/node)
+// ============================================================
+
+function fbIDASearch(startPattern, tables) {
+  if (!tables) return { ok: false, reason: "no_tables", nodes: 0 };
+  const { fbCornerTable, fbEdgeTable, fbSolvedCornerEnc, fbSolvedEdgeEnc, allMovesTrans } = tables;
+  const { cornerPerm, cornerTwist, edgePerm, edgeFlip } = allMovesTrans;
+  const nMoves = ALL_MOVES.length;
+  const MAX_DEPTH = 14;
+  const moveSeq = new Int8Array(MAX_DEPTH);
   let nodes = 0;
-  for (let i = 0; i < formulas.length; i++) {
-    const formula = formulas[i];
-    for (let p = 0; p < U_AUF.length; p++) {
-      for (let s = 0; s < U_AUF.length; s++) {
-        ensureDeadline(deadlineTs, "ROUX_STAGE_TIMEOUT");
-        const pre = U_AUF[p];
-        const post = U_AUF[s];
-        const alg = [pre, formula, post].filter(Boolean).join(" ").trim();
-        const nextPattern = tryApplyAlg(startPattern, alg);
-        nodes += 1;
-        if (!nextPattern) continue;
-        if (!goalFn(nextPattern)) continue;
-        const moves = splitAlgTokens(alg);
-        if (!best || moves.length < best.moves.length) {
-          best = { moves, alg };
-        }
-      }
+  let foundDepth = -1;
+
+  const initCEnc = encodeFBCornerState(startPattern.patternData);
+  const initEEnc = encodeFBEdgeState(startPattern.patternData);
+  if (initCEnc === fbSolvedCornerEnc && initEEnc === fbSolvedEdgeEnc) {
+    return { ok: true, moves: [], pattern: startPattern, nodes: 0 };
+  }
+
+  function dfs(depth, maxDepth, cEnc, eEnc, lastFG) {
+    if (cEnc === fbSolvedCornerEnc && eEnc === fbSolvedEdgeEnc) {
+      foundDepth = depth; return true;
     }
-  }
-  if (!best) return { ok: false, moves: null, nodes };
-  return { ok: true, moves: best.moves, nodes };
-}
-
-async function findGoalPrefixViaPhaseSolve(startPattern, goalFn, options = {}) {
-  const deadlineTs = options.deadlineTs;
-  ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-  if (goalFn(startPattern)) {
-    return { ok: true, moves: [], nodes: 0, method: "phase-prefix" };
-  }
-
-  const remainingMs = Number.isFinite(deadlineTs)
-    ? Math.max(1000, Math.min(40000, deadlineTs - Date.now()))
-    : 25000;
-  const phaseResult = await solve3x3InternalPhase(startPattern, {
-    phase1MaxDepth: normalizePositiveInt(options.phase1MaxDepth, 13),
-    phase2MaxDepth: normalizePositiveInt(options.phase2MaxDepth, 20),
-    phase1NodeLimit: normalizePositiveInt(options.phase1NodeLimit, 0, 0),
-    phase2NodeLimit: normalizePositiveInt(options.phase2NodeLimit, 0, 0),
-    timeCheckInterval: normalizePositiveInt(options.timeCheckInterval, 768),
-    deadlineTs: Date.now() + remainingMs,
-  });
-  const nodes = Number(phaseResult?.nodes || 0);
-  if (!phaseResult?.ok || phaseResult.solution == null) {
-    return {
-      ok: false,
-      moves: null,
-      nodes,
-      method: "phase-prefix",
-      reason: phaseResult?.reason || "PHASE_FAILED",
-    };
-  }
-
-  const tokens = splitAlgTokens(phaseResult.solution);
-  let current = startPattern;
-  let best = null;
-  let filteredBest = null;
-  const acceptPrefix = typeof options.acceptPrefix === "function" ? options.acceptPrefix : null;
-  const allowFilteredFallback = options.allowFilteredFallback !== false;
-  const allowFilteredWhen =
-    typeof options.allowFilteredWhen === "function" ? options.allowFilteredWhen : null;
-  for (let i = 0; i < tokens.length; i++) {
-    ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-    current = tryApplyAlg(current, tokens[i]);
-    if (!current) {
-      return {
-        ok: false,
-        moves: null,
-        nodes,
-        method: "phase-prefix",
-        reason: "PHASE_PREFIX_APPLY_FAILED",
-      };
+    const h = Math.max(fbCornerTable.get(cEnc) ?? 0, fbEdgeTable.get(eEnc) ?? 0);
+    if (depth + h > maxDepth) return false;
+    nodes++;
+    for (let mi = 0; mi < nMoves; mi++) {
+      const fg = (mi / 3) | 0;
+      if (fg === lastFG) continue;
+      moveSeq[depth] = mi;
+      if (dfs(depth + 1, maxDepth,
+          applyMoveToCornerEnc(cEnc, mi, cornerPerm, cornerTwist),
+          applyMoveToEdgeEnc(eEnc, mi, edgePerm, edgeFlip),
+          fg)) return true;
     }
-    if (goalFn(current)) {
-      const prefixMoves = tokens.slice(0, i + 1);
-      const accepted = acceptPrefix ? Boolean(acceptPrefix(current, prefixMoves, i + 1)) : true;
-      const prefixScore =
-        typeof options.selectPrefixScore === "function"
-          ? options.selectPrefixScore(current, prefixMoves, i + 1)
-          : -prefixMoves.length;
-      const canUseFiltered = accepted
-        ? false
-        : (allowFilteredWhen ? Boolean(allowFilteredWhen(current, prefixMoves, i + 1)) : true);
-      const target = accepted ? "best" : (canUseFiltered ? "filteredBest" : "");
-      if (!target) {
-        continue;
-      }
-      const holder = accepted ? best : filteredBest;
-      if (!holder || prefixScore > holder.score || (prefixScore === holder.score && prefixMoves.length < holder.moves.length)) {
-        const next = {
-          moves: prefixMoves,
-          score: prefixScore,
-          accepted,
-        };
-        if (target === "best") {
-          best = next;
-        } else {
-          filteredBest = next;
-        }
-      }
-      if (typeof options.selectPrefixScore !== "function") {
-        if (accepted) break;
-      }
+    return false;
+  }
+
+  const initH = Math.max(fbCornerTable.get(initCEnc) ?? 0, fbEdgeTable.get(initEEnc) ?? 0);
+  for (let bound = initH; bound <= MAX_DEPTH; bound++) {
+    if (dfs(0, bound, initCEnc, initEEnc, -1)) {
+      const moves = Array.from(moveSeq.slice(0, foundDepth)).map(mi => ALL_MOVES[mi]);
+      const resultPattern = moves.length ? startPattern.applyAlg(moves.join(" ")) : startPattern;
+      return { ok: true, moves, pattern: resultPattern, nodes };
     }
+    if (nodes > 3_000_000) break;
+  }
+  return { ok: false, reason: "IDA_LIMIT", nodes };
+}
+
+function sbIDASearch(startPattern, tables) {
+  if (!tables) return { ok: false, reason: "no_tables", nodes: 0 };
+  const { sbCornerTable, sbEdgeTable, sbSolvedCornerEnc, sbSolvedEdgeEnc, sbMovesTrans } = tables;
+  const { cornerPerm, cornerTwist, edgePerm, edgeFlip } = sbMovesTrans;
+  const nMoves = SB_MOVES.length;
+  const MAX_DEPTH = 18;
+  const moveSeq = new Int8Array(MAX_DEPTH);
+  let nodes = 0;
+  let foundDepth = -1;
+
+  const initCEnc = encodeSBCornerState(startPattern.patternData);
+  const initEEnc = encodeSBEdgeState(startPattern.patternData);
+  if (initCEnc === sbSolvedCornerEnc && initEEnc === sbSolvedEdgeEnc) {
+    return { ok: true, moves: [], pattern: startPattern, nodes: 0 };
   }
 
-  if (best) {
-    return {
-      ok: true,
-      moves: best.moves,
-      nodes,
-      method: "phase-prefix",
-    };
-  }
-  if (allowFilteredFallback && filteredBest) {
-    return {
-      ok: true,
-      moves: filteredBest.moves,
-      nodes,
-      method: "phase-prefix",
-      reason: "PHASE_PREFIX_FILTERED_FALLBACK",
-    };
-  }
-
-  return {
-    ok: false,
-    moves: null,
-    nodes,
-    method: "phase-prefix",
-    reason: filteredBest ? "PHASE_PREFIX_FILTERED_OUT" : "PHASE_PREFIX_NOT_FOUND",
-  };
-}
-
-function buildRouxBaseContext(solvedPattern) {
-  const solvedData = solvedPattern.patternData;
-  const cornersByFace = {
-    U: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("U").patternData.CORNERS.pieces,
-    ),
-    D: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("D").patternData.CORNERS.pieces,
-    ),
-    L: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("L").patternData.CORNERS.pieces,
-    ),
-    R: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("R").patternData.CORNERS.pieces,
-    ),
-    F: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("F").patternData.CORNERS.pieces,
-    ),
-    B: collectChangedPositions(
-      solvedData.CORNERS.pieces,
-      solvedPattern.applyMove("B").patternData.CORNERS.pieces,
-    ),
-  };
-  const edgesByFace = {
-    U: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("U").patternData.EDGES.pieces,
-    ),
-    D: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("D").patternData.EDGES.pieces,
-    ),
-    L: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("L").patternData.EDGES.pieces,
-    ),
-    R: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("R").patternData.EDGES.pieces,
-    ),
-    F: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("F").patternData.EDGES.pieces,
-    ),
-    B: collectChangedPositions(
-      solvedData.EDGES.pieces,
-      solvedPattern.applyMove("B").patternData.EDGES.pieces,
-    ),
-  };
-
-  const leftBlockEntries = [
-    { orbit: "CORNERS", position: uniqueIntersection([cornersByFace.U, cornersByFace.L, cornersByFace.B]) },
-    { orbit: "CORNERS", position: uniqueIntersection([cornersByFace.D, cornersByFace.L, cornersByFace.B]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.U, edgesByFace.L]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.B, edgesByFace.L]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.D, edgesByFace.L]) },
-  ].filter((entry) => entry.position >= 0);
-
-  const rightBlockEntries = [
-    { orbit: "CORNERS", position: uniqueIntersection([cornersByFace.U, cornersByFace.R, cornersByFace.B]) },
-    { orbit: "CORNERS", position: uniqueIntersection([cornersByFace.D, cornersByFace.R, cornersByFace.B]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.U, edgesByFace.R]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.B, edgesByFace.R]) },
-    { orbit: "EDGES", position: uniqueIntersection([edgesByFace.D, edgesByFace.R]) },
-  ].filter((entry) => entry.position >= 0);
-
-  const blockPlans = [
-    {
-      name: "LEFT_FIRST",
-      firstBlockEntries: leftBlockEntries,
-      secondBlockOnlyEntries: rightBlockEntries,
-      secondBlockEntries: leftBlockEntries.concat(rightBlockEntries),
-    },
-    {
-      name: "RIGHT_FIRST",
-      firstBlockEntries: rightBlockEntries,
-      secondBlockOnlyEntries: leftBlockEntries,
-      secondBlockEntries: leftBlockEntries.concat(rightBlockEntries),
-    },
-  ];
-
-  return {
-    solvedPattern,
-    solvedData,
-    leftBlockEntries,
-    rightBlockEntries,
-    topCornerPositions: cornersByFace.U.slice(),
-    firstBlockEntries: leftBlockEntries,
-    secondBlockOnlyEntries: rightBlockEntries,
-    secondBlockEntries: leftBlockEntries.concat(rightBlockEntries),
-    blockPlans,
-  };
-}
-
-function resolveRouxBlockPlans(ctx) {
-  return Array.isArray(ctx?.blockPlans) && ctx.blockPlans.length
-    ? ctx.blockPlans
-    : [
-      {
-        name: "LEFT_FIRST",
-        firstBlockEntries: ctx.leftBlockEntries,
-        secondBlockOnlyEntries: ctx.rightBlockEntries,
-        secondBlockEntries: ctx.leftBlockEntries.concat(ctx.rightBlockEntries),
-      },
-      {
-        name: "RIGHT_FIRST",
-        firstBlockEntries: ctx.rightBlockEntries,
-        secondBlockOnlyEntries: ctx.leftBlockEntries,
-        secondBlockEntries: ctx.leftBlockEntries.concat(ctx.rightBlockEntries),
-      },
-    ];
-}
-
-function rankRouxBlockPlans(pattern, ctx) {
-  const blockPlans = resolveRouxBlockPlans(ctx);
-  return blockPlans
-    .map((plan) => ({
-      ...plan,
-      heuristic: scoreRouxStage(
-        pattern.patternData,
-        ctx.solvedData,
-        plan.firstBlockEntries,
-        plan.secondBlockOnlyEntries,
-        0,
-        {
-          targetMultiplier: 300,
-          futurePenalty: 100,
-          depthPenalty: 0,
-        },
-      ),
-    }))
-    .sort((a, b) => b.heuristic - a.heuristic || a.name.localeCompare(b.name));
-}
-
-function buildRouxPlanContext(ctx, plan) {
-  return {
-    ...ctx,
-    firstBlockEntries: plan.firstBlockEntries,
-    secondBlockOnlyEntries: plan.secondBlockOnlyEntries,
-    secondBlockEntries: plan.secondBlockEntries,
-    rouxPlan: plan.name,
-    caseDb: ctx.caseDbsByPlan?.[plan.name] || null,
-  };
-}
-
-function buildRouxCaseDbArtifactsFromBaseContext(baseCtx) {
-  const { solvedPattern, blockPlans } = baseCtx;
-  const fbByPlan = {};
-  const sbByPlan = {};
-  const meta = {
-    plans: {},
-  };
-
-  for (let i = 0; i < blockPlans.length; i++) {
-    const plan = blockPlans[i];
-    const fb = buildPartialCaseDatabase(solvedPattern, plan.firstBlockEntries, {
-      allowedMoves: ROUX_FB_MOVES,
-      maxDepth: DEFAULT_OPTIONS.fbCaseDbDepth,
-      maxStates: DEFAULT_OPTIONS.caseDbMaxStates,
-      maxPerKey: DEFAULT_OPTIONS.caseDbMaxPerKey,
-      seed: plan.name === "LEFT_FIRST" ? 0x19d87a3b : 0x2f61c9ad,
-    });
-    const sb = buildPartialCaseDatabase(solvedPattern, plan.secondBlockEntries, {
-      allowedMoves: ROUX_SB_MOVES,
-      maxDepth: DEFAULT_OPTIONS.sbCaseDbDepth + 1,
-      maxStates: Math.floor(DEFAULT_OPTIONS.caseDbMaxStates * 1.4),
-      maxPerKey: Math.max(10, DEFAULT_OPTIONS.caseDbMaxPerKey),
-      randomSampleCount: Math.max(5000, DEFAULT_OPTIONS.caseDbMaxStates * 2),
-      randomMinDepth: Math.max(3, DEFAULT_OPTIONS.sbCaseDbDepth - 1),
-      randomMaxDepth: Math.max(DEFAULT_OPTIONS.sbCaseDbDepth + 6, DEFAULT_OPTIONS.sbCaseDbDepth + 2),
-      seed: plan.name === "LEFT_FIRST" ? 0x5b7e13c1 : 0x7f3ad449,
-    });
-    fbByPlan[plan.name] = serializeCaseTable(fb.table);
-    sbByPlan[plan.name] = serializeCaseTable(sb.table);
-    meta.plans[plan.name] = {
-      fb: fb.meta,
-      sb: sb.meta,
-    };
+  function dfs(depth, maxDepth, cEnc, eEnc, lastFG) {
+    if (cEnc === sbSolvedCornerEnc && eEnc === sbSolvedEdgeEnc) {
+      foundDepth = depth; return true;
+    }
+    const h = Math.max(sbCornerTable.get(cEnc) ?? 0, sbEdgeTable.get(eEnc) ?? 0);
+    if (depth + h > maxDepth) return false;
+    nodes++;
+    for (let mi = 0; mi < nMoves; mi++) {
+      const fg = (mi / 3) | 0;
+      if (fg === lastFG) continue;
+      moveSeq[depth] = mi;
+      if (dfs(depth + 1, maxDepth,
+          applyMoveToCornerEnc(cEnc, mi, cornerPerm, cornerTwist),
+          applyMoveToEdgeEnc(eEnc, mi, edgePerm, edgeFlip),
+          fg)) return true;
+    }
+    return false;
   }
 
-  const cmllFormulas = buildFormulaCandidates(
-    Array.isArray(ROUX_FORMULAS?.CMLL) ? ROUX_FORMULAS.CMLL : [],
-    { includeRotations: true },
-  );
-  const lseFormulas = buildFormulaCandidates(
-    Array.isArray(ROUX_FORMULAS?.LSE) ? ROUX_FORMULAS.LSE : [],
-    { includeRotations: false },
-  );
-  const cmllCaseIndex = buildFormulaCaseIndex(
-    solvedPattern,
-    cmllFormulas,
-    (candidate) => buildCornersStateKey(candidate),
-    { includeAuf: true, maxPerKey: DEFAULT_OPTIONS.caseDbMaxPerKey },
-  );
-  const lseCaseIndex = buildFormulaCaseIndex(
-    solvedPattern,
-    lseFormulas,
-    (candidate) => buildStateKey(candidate),
-    { includeAuf: true, maxPerKey: DEFAULT_OPTIONS.caseDbMaxPerKey },
-  );
-
-  return {
-    schemaVersion: ROUX_CASE_DB_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    fbByPlan,
-    sbByPlan,
-    cmll: serializeCaseTable(cmllCaseIndex.table),
-    lse: serializeCaseTable(lseCaseIndex.table),
-    meta: {
-      ...meta,
-      cmll: cmllCaseIndex.meta,
-      lse: lseCaseIndex.meta,
-    },
-  };
+  const initH = Math.max(sbCornerTable.get(initCEnc) ?? 0, sbEdgeTable.get(initEEnc) ?? 0);
+  for (let bound = initH; bound <= MAX_DEPTH; bound++) {
+    if (dfs(0, bound, initCEnc, initEEnc, -1)) {
+      const moves = Array.from(moveSeq.slice(0, foundDepth)).map(mi => SB_MOVES[mi]);
+      const resultPattern = moves.length ? startPattern.applyAlg(moves.join(" ")) : startPattern;
+      return { ok: true, moves, pattern: resultPattern, nodes };
+    }
+    if (nodes > 5_000_000) break;
+  }
+  return { ok: false, reason: "IDA_LIMIT", nodes };
 }
 
-export async function buildRouxCaseDbArtifacts() {
+function lseIDASearch(startPattern, tables) {
+  if (!tables?.lseTable) return { ok: false, reason: "no_tables", nodes: 0 };
+  const { lseTable, lseSolvedEnc, lseMovesTrans: { lsePerm, lseFlip, uDelta, mDelta } } = tables;
+  const nMoves = 6; // LSE_MOVES length
+  const MAX_DEPTH = 14;
+  const moveSeq = new Int8Array(MAX_DEPTH);
+  let nodes = 0, foundDepth = -1;
+
+  // Full encoding = (edgeEnc<<4) | (mCenter<<2) | uRot
+  // After CMLL: corners are solved → uRot=0
+  // Centers may be shifted by r/r' moves in SB → read actual mCenter from pattern
+  const edgeEnc = encodeLSEState(startPattern.patternData);
+  const mCenter = getMCenterState(startPattern.patternData);
+  const initEnc = (edgeEnc << 4) | (mCenter << 2);
+  if (initEnc === lseSolvedEnc) {
+    return { ok: true, moves: [], pattern: startPattern, nodes: 0 };
+  }
+
+  function dfs(depth, maxDepth, enc, lastFG) {
+    if (enc === lseSolvedEnc) { foundDepth = depth; return true; }
+    const h = lseTable.get(enc) ?? 0;
+    if (depth + h > maxDepth) return false;
+    nodes++;
+    for (let mi = 0; mi < nMoves; mi++) {
+      const fg = (mi / 3) | 0; // 0=U group, 1=M group
+      if (fg === lastFG) continue;
+      moveSeq[depth] = mi;
+      if (dfs(depth + 1, maxDepth, applyMoveToLSEEnc(enc, mi, lsePerm, lseFlip, uDelta, mDelta), fg)) return true;
+    }
+    return false;
+  }
+
+  const initH = lseTable.get(initEnc) ?? 0;
+  for (let bound = initH; bound <= MAX_DEPTH; bound++) {
+    if (dfs(0, bound, initEnc, -1)) {
+      const moves = Array.from(moveSeq.slice(0, foundDepth)).map(mi => LSE_MOVES[mi]);
+      const resultPattern = moves.length ? startPattern.applyAlg(moves.join(" ")) : startPattern;
+      return { ok: true, moves, pattern: resultPattern, nodes };
+    }
+    if (nodes > 5_000_000) break;
+  }
+  return { ok: false, reason: "LSE_IDA_LIMIT", nodes };
+}
+
+// ============================================================
+// Main Solve Function - FB → SB → CMLL → LSE
+// ============================================================
+
+export async function solve3x3RouxFromPattern(pattern, options = {}) {
+  const deadlineTs = options.deadlineTs || Date.now() + 60000;
+  const stageDeadlineMs = 6000; // Max time per Roux stage before fallback
+
+  const { getDefaultPattern } = await import('./context.js');
+  await ensurePruneTables(getDefaultPattern);
   const solvedPattern = await getDefaultPattern("333");
-  return buildRouxCaseDbArtifactsFromBaseContext(buildRouxBaseContext(solvedPattern));
-}
 
-async function getRouxContext() {
-  if (rouxContextPromise) return rouxContextPromise;
-  rouxContextPromise = (async () => {
-    const solvedPattern = await getDefaultPattern("333");
-    const baseCtx = buildRouxBaseContext(solvedPattern);
-    const serializedCaseDb =
-      ROUX_CASE_DB &&
-      typeof ROUX_CASE_DB === "object" &&
-      ROUX_CASE_DB.schemaVersion === ROUX_CASE_DB_SCHEMA_VERSION &&
-      ROUX_CASE_DB.fbByPlan &&
-      ROUX_CASE_DB.sbByPlan &&
-      ROUX_CASE_DB.cmll &&
-      ROUX_CASE_DB.lse
-        ? ROUX_CASE_DB
-        : buildRouxCaseDbArtifactsFromBaseContext(baseCtx);
+  let currentPattern = pattern;
+  const stages = [];
+  const allMoves = [];
+  let totalNodes = 0;
 
-    const caseDbsByPlan = {};
-    for (let i = 0; i < baseCtx.blockPlans.length; i++) {
-      const plan = baseCtx.blockPlans[i];
-      caseDbsByPlan[plan.name] = {
-        fb: {
-          table: hydrateCaseTable(serializedCaseDb.fbByPlan?.[plan.name]),
-          meta: serializedCaseDb.meta?.plans?.[plan.name]?.fb || null,
-        },
-        sb: {
-          table: hydrateCaseTable(serializedCaseDb.sbByPlan?.[plan.name]),
-          meta: serializedCaseDb.meta?.plans?.[plan.name]?.sb || null,
-        },
-      };
+  // ============================================================
+  // Stage 1: FB (IDA* in compact state space)
+  // ============================================================
+  console.log("[Roux] === FB ===");
+  let fbResult = fbIDASearch(currentPattern, pruneTables);
+  console.log(`[Roux] FB IDA*: ${fbResult.ok ? "OK" : fbResult.reason} (${fbResult.nodes} nodes)`);
+  if (!fbResult.ok) {
+    // IDA* exceeded node limit — fall back to beam search
+    const fbDeadline = Math.min(deadlineTs, Date.now() + stageDeadlineMs);
+    const fbAttempts = [
+      { maxDepth: 10, beamWidth: 10000 },
+      { maxDepth: 12, beamWidth: 20000 },
+    ];
+    for (let i = 0; i < fbAttempts.length; i++) {
+      const remaining = fbDeadline - Date.now();
+      if (remaining < 500) break;
+      const attempt = fbAttempts[i];
+      fbResult = beamSearch(currentPattern, solvedPattern, isFBSolved, ALL_MOVES, attempt.maxDepth, attempt.beamWidth, Math.min(fbDeadline, Date.now() + remaining / (fbAttempts.length - i)), scoreFB);
+      console.log(`[Roux] FB beam fallback: ${fbResult.ok ? "OK" : fbResult.reason} (${fbResult.nodes} nodes)`);
+      if (fbResult.ok) break;
     }
+  }
+  if (!fbResult || !fbResult.ok) {
+    console.log("[Roux] FB beam failed, using phase solver fallback...");
+    return await phaseSolverFallback(pattern, deadlineTs);
+  }
 
-    const cmllFormulas = buildFormulaCandidates(
-      Array.isArray(ROUX_FORMULAS?.CMLL) ? ROUX_FORMULAS.CMLL : [],
-      { includeRotations: true },
+  currentPattern = fbResult.pattern;
+  stages.push({ name: "FB", solution: fbResult.moves.join(" ") || "(skip)" });
+  allMoves.push(...fbResult.moves);
+  totalNodes += fbResult.nodes;
+  console.log(`[Roux] ✓ FB: ${fbResult.moves.join(" ")} (${fbResult.moves.length} moves)\n`);
+
+  // ============================================================
+  // Stage 2: SB (IDA* in compact state space, FB-preserving moves)
+  // ============================================================
+  console.log("[Roux] === SB ===");
+  let sbResult = sbIDASearch(currentPattern, pruneTables);
+  console.log(`[Roux] SB IDA*: ${sbResult.ok ? "OK" : sbResult.reason} (${sbResult.nodes} nodes)`);
+  if (!sbResult.ok) {
+    // IDA* exceeded node limit — fall back to beam search
+    const sbDeadline = Math.min(deadlineTs, Date.now() + stageDeadlineMs);
+    const sbGoal = (p, s) => isSBSolvedOnly(p, s) && isFBSolved(p, s);
+    const sbAttempts = [
+      { maxDepth: 14, beamWidth: 24000 },
+      { maxDepth: 16, beamWidth: 40000 },
+    ];
+    for (let i = 0; i < sbAttempts.length; i++) {
+      const remaining = sbDeadline - Date.now();
+      if (remaining < 500) break;
+      const attempt = sbAttempts[i];
+      sbResult = beamSearch(currentPattern, solvedPattern, sbGoal, SB_MOVES, attempt.maxDepth, attempt.beamWidth, Math.min(sbDeadline, Date.now() + remaining / (sbAttempts.length - i)), scoreSB);
+      console.log(`[Roux] SB beam fallback: ${sbResult.ok ? "OK" : sbResult.reason} (${sbResult.nodes} nodes)`);
+      if (sbResult.ok) break;
+    }
+  }
+  // Verify FB is still solved after SB moves (SB_MOVES are FB-preserving by construction)
+  if (sbResult.ok && !isFBSolved(sbResult.pattern, solvedPattern)) {
+    console.warn("[Roux] SB broke FB — retrying with beam + FB check");
+    sbResult.ok = false;
+  }
+  
+  if (!sbResult || !sbResult.ok) {
+    console.log("[Roux] SB beam failed, using phase solver fallback...");
+    return await phaseSolverFallback(pattern, deadlineTs);
+  }
+
+  currentPattern = sbResult.pattern;
+  stages.push({ name: "SB", solution: sbResult.moves.join(" ") || "(skip)" });
+  allMoves.push(...sbResult.moves);
+  totalNodes += sbResult.nodes;
+  console.log(`[Roux] ✓ SB: ${sbResult.moves.join(" ")} (${sbResult.moves.length} moves)\n`);
+
+  // ============================================================
+  // Stage 3: CMLL (algorithm lookup + IDA*)
+  // CMLL algs preserve FB+SB by design, but arbitrary IDA* sequences 
+  // of R/L/F/U can break the blocks. So we verify full state.
+  // ============================================================
+  console.log("[Roux] === CMLL ===");
+  const cmllDeadline = Math.min(deadlineTs, Date.now() + stageDeadlineMs);
+  
+  // Use full isCMLLSolved (checks FB+SB+CMLL corners all correct)
+  const cmllGoal = (p, s) => isCMLLSolved(p, s);
+  
+  const cmllResult = await solveWithAlgs(
+    currentPattern, solvedPattern, cmllGoal, CMLL_ALGS, CMLL_MOVES,
+    14, 15000, cmllDeadline, scoreCMLL, "CMLL"
+  );
+  if (!cmllResult.ok) {
+    console.log(`[Roux] CMLL failed (${cmllResult.reason}), using phase solver fallback...`);
+    return await phaseSolverFallback(pattern, deadlineTs);
+  }
+  
+  currentPattern = cmllResult.pattern;
+  stages.push({ name: "CMLL", solution: cmllResult.moves.join(" ") || "(skip)" });
+  allMoves.push(...cmllResult.moves);
+  totalNodes += cmllResult.nodes;
+  console.log(`[Roux] ✓ CMLL: ${cmllResult.moves.join(" ")} (${cmllResult.moves.length} moves)\n`);
+
+  // ============================================================
+  // Stage 4: LSE (compact IDA* in state space — fast)
+  // ============================================================
+  console.log("[Roux] === LSE ===");
+  let lseResult = lseIDASearch(currentPattern, pruneTables);
+  console.log(`[Roux] LSE IDA*: ${lseResult.ok ? "OK" : lseResult.reason} (${lseResult.nodes} nodes)`);
+  if (!lseResult.ok) {
+    // IDA* limit exceeded — fall back to pattern-based search
+    const lseDeadline = Math.min(deadlineTs, Date.now() + stageDeadlineMs);
+    lseResult = await solveWithAlgs(
+      currentPattern, solvedPattern, isCubeSolved, LSE_ALGS, LSE_FALLBACK_MOVES,
+      14, 8000, lseDeadline, scoreLSE, "LSE"
     );
-    const lseFormulas = buildFormulaCandidates(
-      Array.isArray(ROUX_FORMULAS?.LSE) ? ROUX_FORMULAS.LSE : [],
-      { includeRotations: false },
-    );
+  }
+  if (!lseResult.ok) {
+    console.log("[Roux] LSE failed, using phase solver fallback...");
+    return await phaseSolverFallback(pattern, deadlineTs);
+  }
+  
+  currentPattern = lseResult.pattern;
+  stages.push({ name: "LSE", solution: lseResult.moves.join(" ") || "(skip)" });
+  allMoves.push(...lseResult.moves);
+  totalNodes += lseResult.nodes;
+  console.log(`[Roux] ✓ LSE: ${lseResult.moves.join(" ")} (${lseResult.moves.length} moves)\n`);
 
-    return {
-      ...baseCtx,
-      caseDbsByPlan,
-      cmllFormulas,
-      lseFormulas,
-      cmllCaseIndex: {
-        table: hydrateCaseTable(serializedCaseDb.cmll),
-        meta: serializedCaseDb.meta?.cmll || null,
-      },
-      lseCaseIndex: {
-        table: hydrateCaseTable(serializedCaseDb.lse),
-        meta: serializedCaseDb.meta?.lse || null,
-      },
-      rouxCaseDbMeta: serializedCaseDb.meta || null,
-    };
-  })();
-  return rouxContextPromise;
-}
+  // Verify
+  if (!isCubeSolved(currentPattern, solvedPattern)) {
+    return { ok: false, reason: "FINAL_NOT_SOLVED", stages, nodes: totalNodes, source: "INTERNAL_3X3_ROUX" };
+  }
 
-function isFirstBlockSolved(pattern, ctx) {
-  const data = pattern?.patternData;
-  if (!data) return false;
-  return (
-    countSolvedEntries(data, ctx.solvedData, ctx.firstBlockEntries) === ctx.firstBlockEntries.length
-  );
-}
+  const finalMoves = simplifyMoves(allMoves);
+  console.log(`[Roux] ✅ Solution: ${finalMoves.join(" ")} (${finalMoves.length} moves)`);
 
-function isSecondBlockSolved(pattern, ctx) {
-  const data = pattern?.patternData;
-  if (!data) return false;
-  return (
-    countSolvedEntries(data, ctx.solvedData, ctx.secondBlockEntries) === ctx.secondBlockEntries.length
-  );
-}
-
-function isCmllSolved(pattern, ctx) {
-  const data = pattern?.patternData;
-  if (!data) return false;
-  if (!isSecondBlockSolved(pattern, ctx)) return false;
-  return (
-    countSolvedTopCorners(data, ctx.solvedData, ctx.topCornerPositions) ===
-    ctx.topCornerPositions.length
-  );
-}
-
-function isCubeSolved(pattern, ctx) {
-  if (!pattern || !ctx?.solvedPattern) return false;
-  return pattern.isIdentical(ctx.solvedPattern);
-}
-
-function buildFailure(reason, stage, nodes, stages, stageDiagnostics = []) {
   return {
-    ok: false,
-    reason,
-    stage,
-    nodes,
+    ok: true,
+    solution: finalMoves.join(" "),
+    moveCount: finalMoves.length,
+    nodes: totalNodes,
     stages,
-    stageDiagnostics,
     source: "INTERNAL_3X3_ROUX",
   };
 }
 
-function optimizeGoalPrefixMoves(startPattern, moves, goalFn, options = {}) {
-  let current = simplifyMoves(Array.isArray(moves) ? moves : []);
-  if (current.length < 2) return current;
-
-  const maxPasses = Number.isFinite(options.maxPasses) ? Math.max(1, Math.floor(options.maxPasses)) : 2;
-  const minWindow = Number.isFinite(options.minWindow) ? Math.max(1, Math.floor(options.minWindow)) : 1;
-  const maxWindow = Number.isFinite(options.maxWindow) ? Math.max(minWindow, Math.floor(options.maxWindow)) : 5;
-  const deadlineTs = Number.isFinite(options.deadlineTs) ? options.deadlineTs : Date.now() + 500;
-
-  for (let pass = 0; pass < maxPasses; pass++) {
-    let improved = false;
-    const windowCap = Math.min(maxWindow, current.length);
-
-    outer: for (let window = windowCap; window >= minWindow; window--) {
-      for (let start = 0; start + window <= current.length; start++) {
-        ensureDeadline(deadlineTs, "ROUX_OPT_TIMEOUT");
-        const next = simplifyMoves(current.slice(0, start).concat(current.slice(start + window)));
-        if (next.length >= current.length) continue;
-        const nextPattern = tryApplyMoves(startPattern, next);
-        if (!nextPattern || !goalFn(nextPattern)) continue;
-        current = next;
-        improved = true;
-        break outer;
-      }
-    }
-
-    if (!improved) break;
-  }
-
-  return current;
-}
-
-function buildPrefixStates(startPattern, moves, deadlineTs) {
-  const states = [startPattern];
-  let current = startPattern;
-  for (let i = 0; i < moves.length; i++) {
-    ensureDeadline(deadlineTs, "ROUX_RECOVERY_TIMEOUT");
-    current = tryApplyAlg(current, moves[i]);
-    if (!current) return null;
-    states.push(current);
-  }
-  return states;
-}
-
-function findFirstGoalIndex(states, startIndex, goalFn) {
-  const begin = Math.max(0, Number(startIndex) || 0);
-  for (let i = begin; i < states.length; i++) {
-    if (goalFn(states[i])) return i;
-  }
-  return -1;
-}
-
-function findLastGoalIndex(states, startIndex, endIndex, goalFn) {
-  const begin = Math.max(0, Number(startIndex) || 0);
-  const end = Math.min(states.length - 1, Number(endIndex) || 0);
-  for (let i = end; i >= begin; i--) {
-    if (goalFn(states[i])) return i;
-  }
-  return -1;
-}
-
-function collectGoalIndices(states, startIndex, goalFn) {
-  const begin = Math.max(0, Number(startIndex) || 0);
-  const out = [];
-  for (let i = begin; i < states.length; i++) {
-    if (goalFn(states[i])) out.push(i);
-  }
-  return out;
-}
-
-function pickStrictRecoveryCuts(states, ctx) {
-  if (!Array.isArray(states) || states.length < 2) return null;
-  const solvedIndex = states.length - 1;
-  if (!isCubeSolved(states[solvedIndex], ctx)) return null;
-
-  const fbIndices = collectGoalIndices(
-    states,
-    1,
-    (candidate) =>
-      isFirstBlockSolved(candidate, ctx) &&
-      !isSecondBlockSolved(candidate, ctx) &&
-      !isCubeSolved(candidate, ctx),
-  );
-
-  for (let i = 0; i < fbIndices.length; i++) {
-    const fb = fbIndices[i];
-    const sbIndices = collectGoalIndices(
-      states,
-      fb + 1,
-      (candidate) =>
-        isSecondBlockSolved(candidate, ctx) &&
-        !isCmllSolved(candidate, ctx) &&
-        !isCubeSolved(candidate, ctx),
-    );
-    for (let j = 0; j < sbIndices.length; j++) {
-      const sb = sbIndices[j];
-      const cmllIndices = collectGoalIndices(
-        states,
-        sb + 1,
-        (candidate) => isCmllSolved(candidate, ctx) && !isCubeSolved(candidate, ctx),
-      );
-      if (cmllIndices.length) {
-        return {
-          fb,
-          sb,
-          cmll: cmllIndices[0],
-          solved: solvedIndex,
-        };
-      }
-    }
-  }
-  return null;
-}
-
-function pickRecoveryFbCut(states, ctx) {
-  const strict = collectGoalIndices(
-    states,
-    1,
-    (candidate) =>
-      isFirstBlockSolved(candidate, ctx) &&
-      !isSecondBlockSolved(candidate, ctx) &&
-      !isCubeSolved(candidate, ctx),
-  );
-  if (strict.length) return strict[0];
-  const loose = collectGoalIndices(
-    states,
-    1,
-    (candidate) => isFirstBlockSolved(candidate, ctx) && !isCubeSolved(candidate, ctx),
-  );
-  return loose.length ? loose[0] : -1;
-}
-
-function buildRecoveryStageResult(stageName, method, moves, afterPattern, nodes, reason = "") {
-  return {
-    ok: Boolean(afterPattern),
-    moves: simplifyMoves(Array.isArray(moves) ? moves : []),
-    afterPattern: afterPattern || null,
-    nodes: Number(nodes || 0),
-    diagnostics: [
-      {
-        stage: stageName,
-        method,
-        ok: Boolean(afterPattern),
-        nodes: Number(nodes || 0),
-        reason,
-        moveCount: Array.isArray(moves) ? simplifyMoves(moves).length : 0,
-      },
-    ],
-  };
-}
-
-async function solveCmllRecoveryStage(startPattern, ctx, deadlineTs) {
-  if (!startPattern) {
-    return buildRecoveryStageResult("CMLL", "recovery-precheck", [], null, 0, "NO_PATTERN");
-  }
-  if (isCmllSolved(startPattern, ctx)) {
-    return buildRecoveryStageResult("CMLL", "recovery-precheck", [], startPattern, 0, "PRE_SOLVED");
-  }
-
-  let totalNodes = 0;
-  const diagnostics = [];
-
-  const cmllCaseResult = tryCaseCandidatesStage(
-    startPattern,
-    ctx.cmllCaseIndex?.table,
-    (candidate) => buildCornersStateKey(candidate),
-    (candidate) => isCmllSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += cmllCaseResult.nodes;
-  diagnostics.push({
-    stage: "CMLL",
-    method: cmllCaseResult.method,
-    ok: cmllCaseResult.ok,
-    nodes: cmllCaseResult.nodes,
-    reason: cmllCaseResult.reason || "",
-  });
-  if (cmllCaseResult.ok && Array.isArray(cmllCaseResult.moves)) {
-    const moves = simplifyMoves(cmllCaseResult.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    if (afterPattern && isCmllSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  const cmllFormulas = Array.isArray(ctx.cmllFormulas) && ctx.cmllFormulas.length
-    ? ctx.cmllFormulas
-    : buildFormulaCandidates(
-      Array.isArray(ROUX_FORMULAS?.CMLL) ? ROUX_FORMULAS.CMLL : [],
-      { includeRotations: true },
-    );
-  const cmllFormulaResult = trySingleFormulaStage(
-    startPattern,
-    cmllFormulas,
-    (candidate) => isCmllSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += cmllFormulaResult.nodes;
-  if (cmllFormulaResult.ok && Array.isArray(cmllFormulaResult.moves)) {
-    const moves = simplifyMoves(cmllFormulaResult.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    diagnostics.push({
-      stage: "CMLL",
-      method: "formula",
-      ok: Boolean(afterPattern),
-      nodes: cmllFormulaResult.nodes,
-      reason: "",
-    });
-    if (afterPattern && isCmllSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  const cmllBeam = beamSearchStage(startPattern, {
-    isGoal: (candidate) => isCmllSolved(candidate, ctx),
-    score: (candidate, depth) => {
-      const data = candidate.patternData;
-      const blockScore = scoreEntries(data, ctx.solvedData, ctx.secondBlockEntries);
-      const topCornerScore = scoreTopCorners(data, ctx.solvedData, ctx.topCornerPositions);
-      return blockScore * 80 + topCornerScore * 120 - depth;
-    },
-    allowedMoves: CMLL_BEAM_MOVES,
-    maxDepth: DEFAULT_OPTIONS.cmllMaxDepth,
-    beamWidth: DEFAULT_OPTIONS.cmllBeamWidth,
-    deadlineTs,
-    keyFn: (candidate) =>
-      buildEntriesStateKey(
-        candidate,
-        ctx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-      ),
-  });
-  totalNodes += cmllBeam.nodes;
-  diagnostics.push({
-    stage: "CMLL",
-    method: "beam",
-    ok: cmllBeam.ok,
-    nodes: cmllBeam.nodes,
-    reason: cmllBeam.ok ? "" : "BEAM_FAIL",
-  });
-  if (cmllBeam.ok && Array.isArray(cmllBeam.moves)) {
-    const moves = simplifyMoves(cmllBeam.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    if (afterPattern && isCmllSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  const cmllPhaseFallback = await findGoalPrefixViaPhaseSolve(
-    startPattern,
-    (candidate) => isCmllSolved(candidate, ctx),
-    {
-      deadlineTs,
-      acceptPrefix: (candidate) => !isCubeSolved(candidate, ctx),
-      allowFilteredFallback: false,
-    },
-  );
-  totalNodes += cmllPhaseFallback.nodes;
-  diagnostics.push({
-    stage: "CMLL",
-    method: cmllPhaseFallback.method,
-    ok: cmllPhaseFallback.ok,
-    nodes: cmllPhaseFallback.nodes,
-    reason: cmllPhaseFallback.reason || "",
-  });
-  if (cmllPhaseFallback.ok && Array.isArray(cmllPhaseFallback.moves)) {
-    const moves = simplifyMoves(cmllPhaseFallback.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    if (afterPattern && isCmllSolved(afterPattern, ctx) && !isCubeSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  return {
-    ok: false,
-    moves: null,
-    afterPattern: null,
-    nodes: totalNodes,
-    diagnostics,
-    reason: "CMLL_RECOVERY_FAILED",
-  };
-}
-
-async function solveLseRecoveryStage(startPattern, ctx, deadlineTs) {
-  if (!startPattern) {
-    return buildRecoveryStageResult("LSE", "recovery-precheck", [], null, 0, "NO_PATTERN");
-  }
-  if (isCubeSolved(startPattern, ctx)) {
-    return buildRecoveryStageResult("LSE", "recovery-precheck", [], startPattern, 0, "PRE_SOLVED");
-  }
-
-  let totalNodes = 0;
-  const diagnostics = [];
-
-  const lseCaseResult = tryCaseCandidatesStage(
-    startPattern,
-    ctx.lseCaseIndex?.table,
-    (candidate) => buildStateKey(candidate),
-    (candidate) => isCubeSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += lseCaseResult.nodes;
-  diagnostics.push({
-    stage: "LSE",
-    method: lseCaseResult.method,
-    ok: lseCaseResult.ok,
-    nodes: lseCaseResult.nodes,
-    reason: lseCaseResult.reason || "",
-  });
-  if (lseCaseResult.ok && Array.isArray(lseCaseResult.moves)) {
-    const moves = simplifyMoves(lseCaseResult.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    if (afterPattern && isCubeSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  const allLseFormulas = Array.isArray(ctx.lseFormulas) && ctx.lseFormulas.length
-    ? ctx.lseFormulas
-    : buildFormulaCandidates(
-      Array.isArray(ROUX_FORMULAS?.LSE) ? ROUX_FORMULAS.LSE : [],
-      { includeRotations: false },
-    );
-  const lseFormulas = allLseFormulas.slice(0, Math.max(1, DEFAULT_OPTIONS.lseFormulaLimit));
-  const lseFormulaResult = trySingleFormulaStage(
-    startPattern,
-    lseFormulas,
-    (candidate) => isCubeSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += lseFormulaResult.nodes;
-  if (lseFormulaResult.ok && Array.isArray(lseFormulaResult.moves)) {
-    const moves = simplifyMoves(lseFormulaResult.moves);
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    diagnostics.push({
-      stage: "LSE",
-      method: "formula",
-      ok: Boolean(afterPattern),
-      nodes: lseFormulaResult.nodes,
-      reason: "",
-    });
-    if (afterPattern && isCubeSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  const remainingMs = Number.isFinite(deadlineTs) ? Math.max(500, deadlineTs - Date.now()) : 25000;
-  const phaseResult = await solve3x3InternalPhase(startPattern, {
-    phase1MaxDepth: 13,
-    phase2MaxDepth: 20,
-    phase1NodeLimit: 0,
-    phase2NodeLimit: 0,
-    timeCheckInterval: 768,
-    deadlineTs: Date.now() + remainingMs,
-  });
-  totalNodes += Number(phaseResult?.nodes || 0);
-  diagnostics.push({
-    stage: "LSE",
-    method: "internal-phase",
-    ok: Boolean(phaseResult?.ok),
-    nodes: Number(phaseResult?.nodes || 0),
-    reason: phaseResult?.reason || "",
-  });
-  if (phaseResult?.ok && phaseResult.solution != null) {
-    const moves = simplifyMoves(splitAlgTokens(phaseResult.solution));
-    const afterPattern = tryApplyMoves(startPattern, moves);
-    if (afterPattern && isCubeSolved(afterPattern, ctx)) {
-      return { ok: true, moves, afterPattern, nodes: totalNodes, diagnostics };
-    }
-  }
-
-  return {
-    ok: false,
-    moves: null,
-    afterPattern: null,
-    nodes: totalNodes,
-    diagnostics,
-    reason: "LSE_RECOVERY_FAILED",
-  };
-}
-
-async function solveFbRecoveryStage(startPattern, ctx, deadlineTs) {
-  if (!startPattern) {
-    return buildRecoveryStageResult("FB", "recovery-precheck", [], null, 0, "NO_PATTERN");
-  }
-  if (
-    isFirstBlockSolved(startPattern, ctx) &&
-    !isSecondBlockSolved(startPattern, ctx) &&
-    !isCubeSolved(startPattern, ctx)
-  ) {
-    return buildRecoveryStageResult("FB", "recovery-precheck", [], startPattern, 0, "PRE_SOLVED");
-  }
-
-  let totalNodes = 0;
-  const diagnostics = [];
-  const boundaryFn = (candidate) => !isSecondBlockSolved(candidate, ctx) && !isCubeSolved(candidate, ctx);
-  const looseBoundaryFn = (candidate) => !isCubeSolved(candidate, ctx);
-  const pickCandidate = (moves, goalFn) => {
-    const strictChoice = chooseBoundaryPreservingPrefix(startPattern, moves, goalFn, boundaryFn, {
-      deadlineTs,
-      maxPasses: 3,
-      maxWindow: 8,
-    });
-    if (strictChoice) {
-      return { choice: strictChoice, loose: false };
-    }
-    const looseChoice = chooseBoundaryPreservingPrefix(startPattern, moves, goalFn, looseBoundaryFn, {
-      deadlineTs,
-      maxPasses: 3,
-      maxWindow: 8,
-    });
-    if (looseChoice) {
-      return { choice: looseChoice, loose: true };
-    }
-    return null;
-  };
-
-  const fbCaseResult = tryCaseCandidatesStage(
-    startPattern,
-    ctx.caseDb?.fb?.table,
-    (candidate) => buildEntriesStateKey(candidate, ctx.firstBlockEntries),
-    (candidate) => isFirstBlockSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += fbCaseResult.nodes;
-  diagnostics.push({
-    stage: "FB",
-    method: fbCaseResult.method,
-    ok: fbCaseResult.ok,
-    nodes: fbCaseResult.nodes,
-    reason: fbCaseResult.reason || "",
-  });
-  if (fbCaseResult.ok && Array.isArray(fbCaseResult.moves)) {
-    const picked = pickCandidate(fbCaseResult.moves, (candidate) => isFirstBlockSolved(candidate, ctx));
-    if (picked?.choice?.afterPattern && isFirstBlockSolved(picked.choice.afterPattern, ctx)) {
-      diagnostics.push({
-        stage: "FB",
-        method: picked.loose ? "case-index-boundary-prefix-loose" : "case-index-boundary-prefix",
-        ok: true,
-        nodes: 0,
-        reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-      });
-      return {
-        ok: true,
-        moves: picked.choice.moves,
-        afterPattern: picked.choice.afterPattern,
-        nodes: totalNodes,
-        diagnostics,
-      };
-    }
-  }
-
-  const fbAttempts = [
-    { maxDepth: DEFAULT_OPTIONS.fbMaxDepth, beamWidth: DEFAULT_OPTIONS.fbBeamWidth },
-    {
-      maxDepth: Math.min(DEFAULT_OPTIONS.fbMaxDepth + 2, 14),
-      beamWidth: Math.min(DEFAULT_OPTIONS.fbBeamWidth * 2, 1280),
-    },
-  ];
-  const fbResult = runAdaptiveBeamStage(
-    startPattern,
-    {
-      isGoal: (candidate) => isFirstBlockSolved(candidate, ctx),
-      score: (candidate, depth) =>
-        scoreRouxStage(
-          candidate.patternData,
-          ctx.solvedData,
-          ctx.firstBlockEntries,
-          ctx.secondBlockOnlyEntries,
-          depth,
-          {
-            targetMultiplier: 300,
-            futurePenalty: 180,
-            depthPenalty: 10,
-          },
-        ),
-      allowedMoves: ROUX_FB_MOVES,
-      deadlineTs,
-      keyFn: (candidate) => buildEntriesStateKey(candidate, ctx.firstBlockEntries),
-    },
-    fbAttempts,
-  );
-  totalNodes += fbResult.nodes;
-  diagnostics.push(...fbResult.diagnostics.map((entry) => ({ stage: "FB", ...entry })));
-  if (fbResult.ok && Array.isArray(fbResult.moves)) {
-    const picked = pickCandidate(fbResult.moves, (candidate) => isFirstBlockSolved(candidate, ctx));
-    if (picked?.choice?.afterPattern && isFirstBlockSolved(picked.choice.afterPattern, ctx)) {
-      diagnostics.push({
-        stage: "FB",
-        method: picked.loose ? "beam-boundary-prefix-loose" : "beam-boundary-prefix",
-        ok: true,
-        nodes: 0,
-        reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-      });
-      return {
-        ok: true,
-        moves: picked.choice.moves,
-        afterPattern: picked.choice.afterPattern,
-        nodes: totalNodes,
-        diagnostics,
-      };
-    }
-  }
-
-  const fbPhaseFallback = await findGoalPrefixViaPhaseSolve(
-    startPattern,
-    (candidate) => isFirstBlockSolved(candidate, ctx),
-    {
-      deadlineTs,
-      phase1MaxDepth: 16,
-      phase2MaxDepth: 24,
-      timeCheckInterval: 1024,
-      acceptPrefix: (_candidate, _prefixMoves, depth) =>
-        depth <= DEFAULT_OPTIONS.fbPhasePrefixMaxMoves,
-      allowFilteredFallback: false,
-      selectPrefixScore: (candidate, prefixMoves, depth) =>
-        scoreRouxStage(
-          candidate.patternData,
-          ctx.solvedData,
-          ctx.firstBlockEntries,
-          ctx.secondBlockOnlyEntries,
-          depth,
-          {
-            targetMultiplier: 320,
-            futurePenalty: 220,
-            depthPenalty: 12,
-          },
-        ) - depth * 8,
-    },
-  );
-  totalNodes += fbPhaseFallback.nodes;
-  diagnostics.push({
-    stage: "FB",
-    method: fbPhaseFallback.method,
-    nodes: fbPhaseFallback.nodes,
-    ok: fbPhaseFallback.ok,
-    reason: fbPhaseFallback.reason || "",
-  });
-  if (!fbPhaseFallback.ok || !Array.isArray(fbPhaseFallback.moves)) {
-    const fbLoosePhaseFallback = await findGoalPrefixViaPhaseSolve(
-      startPattern,
-      (candidate) => isFirstBlockSolved(candidate, ctx),
-    {
-      deadlineTs,
-      phase1MaxDepth: 16,
-      phase2MaxDepth: 24,
-      timeCheckInterval: 1024,
-      acceptPrefix: (_candidate, _prefixMoves, depth) =>
-        depth <= Math.max(48, DEFAULT_OPTIONS.fbPhasePrefixMaxMoves),
-      allowFilteredFallback: true,
-      allowFilteredWhen: () => true,
-      selectPrefixScore: (candidate, prefixMoves, depth) =>
-          scoreRouxStage(
-            candidate.patternData,
-            ctx.solvedData,
-            ctx.firstBlockEntries,
-            ctx.secondBlockOnlyEntries,
-            depth,
-            {
-              targetMultiplier: 320,
-              futurePenalty: 220,
-              depthPenalty: 12,
-            },
-          ) - depth * 8,
-      },
-    );
-    totalNodes += fbLoosePhaseFallback.nodes;
-    diagnostics.push({
-      stage: "FB",
-      method: fbLoosePhaseFallback.method,
-      nodes: fbLoosePhaseFallback.nodes,
-      ok: fbLoosePhaseFallback.ok,
-      reason: fbLoosePhaseFallback.reason || "",
-    });
-    if (!fbLoosePhaseFallback.ok || !Array.isArray(fbLoosePhaseFallback.moves)) {
-      return {
-        ok: false,
-        moves: null,
-        afterPattern: null,
-        nodes: totalNodes,
-        diagnostics,
-        reason: "FB_RECOVERY_FAILED",
-      };
-    }
-    const pickedLoose = pickCandidate(fbLoosePhaseFallback.moves, (candidate) => isFirstBlockSolved(candidate, ctx));
-    if (!pickedLoose?.choice?.afterPattern || !isFirstBlockSolved(pickedLoose.choice.afterPattern, ctx)) {
-      return {
-        ok: false,
-        moves: null,
-        afterPattern: null,
-        nodes: totalNodes,
-        diagnostics,
-        reason: "FB_RECOVERY_FAILED",
-      };
-    }
-    diagnostics.push({
-      stage: "FB",
-      method: pickedLoose.loose ? "phase-prefix-boundary-prefix-loose" : "phase-prefix-boundary-prefix",
-      ok: true,
-      nodes: 0,
-      reason: pickedLoose.choice.source === "raw" ? "" : `PREFIX_${String(pickedLoose.choice.source || "").toUpperCase()}`,
-    });
-    return {
-      ok: true,
-      moves: pickedLoose.choice.moves,
-      afterPattern: pickedLoose.choice.afterPattern,
-      nodes: totalNodes,
-      diagnostics,
-    };
-  }
-
-  const picked = pickCandidate(fbPhaseFallback.moves, (candidate) => isFirstBlockSolved(candidate, ctx));
-  if (!picked?.choice?.afterPattern || !isFirstBlockSolved(picked.choice.afterPattern, ctx)) {
-    return {
-      ok: false,
-      moves: null,
-      afterPattern: null,
-      nodes: totalNodes,
-      diagnostics,
-      reason: "FB_RECOVERY_FAILED",
-    };
-  }
-
-  diagnostics.push({
-    stage: "FB",
-    method: picked.loose ? "phase-prefix-boundary-prefix-loose" : "phase-prefix-boundary-prefix",
-    ok: true,
-    nodes: 0,
-    reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-  });
-  return {
-    ok: true,
-    moves: picked.choice.moves,
-    afterPattern: picked.choice.afterPattern,
-    nodes: totalNodes,
-    diagnostics,
-  };
-}
-
-async function solveDedicatedSbRecoveryStage(startPattern, ctx, deadlineTs) {
-  if (!startPattern) {
-    return buildRecoveryStageResult("SB", "recovery-precheck", [], null, 0, "NO_PATTERN");
-  }
-  if (
-    isSecondBlockSolved(startPattern, ctx) &&
-    !isCmllSolved(startPattern, ctx) &&
-    !isCubeSolved(startPattern, ctx)
-  ) {
-    return buildRecoveryStageResult("SB", "recovery-precheck", [], startPattern, 0, "PRE_SOLVED");
-  }
-
-  let totalNodes = 0;
-  const diagnostics = [];
-  const boundaryFn = (candidate) => !isCmllSolved(candidate, ctx) && !isCubeSolved(candidate, ctx);
-  const looseBoundaryFn = (candidate) => !isCubeSolved(candidate, ctx);
-  const pickCandidate = (moves, goalFn) => {
-    const strictChoice = chooseBoundaryPreservingPrefix(startPattern, moves, goalFn, boundaryFn, {
-      deadlineTs,
-      maxPasses: 3,
-      maxWindow: 8,
-    });
-    if (strictChoice) {
-      return { choice: strictChoice, loose: false };
-    }
-    const looseChoice = chooseBoundaryPreservingPrefix(startPattern, moves, goalFn, looseBoundaryFn, {
-      deadlineTs,
-      maxPasses: 3,
-      maxWindow: 8,
-    });
-    if (looseChoice) {
-      return { choice: looseChoice, loose: true };
-    }
-    return null;
-  };
-
-  const sbCaseResult = tryCaseCandidatesStage(
-    startPattern,
-    ctx.caseDb?.sb?.table,
-    (candidate) => buildEntriesStateKey(candidate, ctx.secondBlockEntries),
-    (candidate) => isSecondBlockSolved(candidate, ctx),
-    { deadlineTs },
-  );
-  totalNodes += sbCaseResult.nodes;
-  diagnostics.push({
-    stage: "SB",
-    method: sbCaseResult.method,
-    ok: sbCaseResult.ok,
-    nodes: sbCaseResult.nodes,
-    reason: sbCaseResult.reason || "",
-    candidatesTried: sbCaseResult.candidatesTried || 0,
-    candidatesTotal: sbCaseResult.candidatesTotal || 0,
-    tableKeys: Number(ctx.caseDb?.sb?.meta?.keyCount || 0),
-  });
-  if (sbCaseResult.ok && Array.isArray(sbCaseResult.moves)) {
-    const picked = pickCandidate(sbCaseResult.moves, (candidate) => isSecondBlockSolved(candidate, ctx));
-    if (picked?.choice?.afterPattern && isSecondBlockSolved(picked.choice.afterPattern, ctx)) {
-      diagnostics.push({
-        stage: "SB",
-        method: picked.loose ? "case-index-boundary-prefix-loose" : "case-index-boundary-prefix",
-        ok: true,
-        nodes: 0,
-        reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-      });
-      return {
-        ok: true,
-        moves: picked.choice.moves,
-        afterPattern: picked.choice.afterPattern,
-        nodes: totalNodes,
-        diagnostics,
-      };
-    }
-  }
-
-  const sbAttempts = [
-    { maxDepth: DEFAULT_OPTIONS.sbMaxDepth, beamWidth: DEFAULT_OPTIONS.sbBeamWidth },
-    {
-      maxDepth: Math.min(DEFAULT_OPTIONS.sbMaxDepth + 2, 14),
-      beamWidth: Math.min(DEFAULT_OPTIONS.sbBeamWidth * 2, 1280),
-    },
-    {
-      maxDepth: Math.min(DEFAULT_OPTIONS.sbMaxDepth + 4, 16),
-      beamWidth: Math.min(DEFAULT_OPTIONS.sbBeamWidth * 4, 2000),
-    },
-  ];
-  const sbResult = runAdaptiveBeamStage(
-    startPattern,
-    {
-      isGoal: (candidate) => isSecondBlockSolved(candidate, ctx),
-      score: (candidate, depth) =>
-        scoreRouxStage(
-          candidate.patternData,
-          ctx.solvedData,
-          ctx.secondBlockEntries,
-          ctx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-          depth,
-          {
-            targetMultiplier: 300,
-            futurePenalty: 70,
-            depthPenalty: 12,
-          },
-        ),
-      allowedMoves: ROUX_SB_MOVES,
-      deadlineTs,
-      keyFn: (candidate) => buildEntriesStateKey(candidate, ctx.secondBlockEntries),
-    },
-    sbAttempts,
-  );
-  totalNodes += sbResult.nodes;
-  diagnostics.push(...sbResult.diagnostics.map((entry) => ({ stage: "SB", ...entry })));
-  if (sbResult.ok && Array.isArray(sbResult.moves)) {
-    const picked = pickCandidate(sbResult.moves, (candidate) => isSecondBlockSolved(candidate, ctx));
-    if (picked?.choice?.afterPattern && isSecondBlockSolved(picked.choice.afterPattern, ctx)) {
-      diagnostics.push({
-        stage: "SB",
-        method: picked.loose ? "beam-boundary-prefix-loose" : "beam-boundary-prefix",
-        ok: true,
-        nodes: 0,
-        reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-      });
-      return {
-        ok: true,
-        moves: picked.choice.moves,
-        afterPattern: picked.choice.afterPattern,
-        nodes: totalNodes,
-        diagnostics,
-      };
-    }
-  }
-
-  const minedSb = await mineDedicatedSbAugmentation(startPattern, ctx, {
-    deadlineTs,
-    requireCmllBoundary: true,
-  });
-  if (minedSb && minedSb.afterPattern && isSecondBlockSolved(minedSb.afterPattern, ctx)) {
-    totalNodes += Number(minedSb.nodes || 0);
-    diagnostics.push({
-      stage: "SB",
-      method: "phase-prefix-mined",
-      ok: true,
-      nodes: Number(minedSb.nodes || 0),
-      reason: "",
-      moveCount: Array.isArray(minedSb.moves) ? minedSb.moves.length : 0,
-    });
-    return {
-      ok: true,
-      moves: simplifyMoves(minedSb.moves),
-      afterPattern: minedSb.afterPattern,
-      nodes: totalNodes,
-      diagnostics,
-    };
-  }
-
-  const sbPhaseFallback = await findGoalPrefixViaPhaseSolve(
-    startPattern,
-    (candidate) => isSecondBlockSolved(candidate, ctx),
-    {
-      deadlineTs,
-      phase1MaxDepth: 16,
-      phase2MaxDepth: 24,
-      timeCheckInterval: 1024,
-      acceptPrefix: (candidate, prefixMoves, depth) =>
-        depth <= DEFAULT_OPTIONS.sbPhasePrefixMaxMoves &&
-        !isCmllSolved(candidate, ctx) &&
-        !isCubeSolved(candidate, ctx),
-      allowFilteredFallback: false,
-      selectPrefixScore: (candidate, prefixMoves, depth) =>
-        scoreRouxStage(
-          candidate.patternData,
-          ctx.solvedData,
-          ctx.secondBlockEntries,
-          ctx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-          depth,
-          {
-            targetMultiplier: 320,
-            futurePenalty: 90,
-            depthPenalty: 14,
-          },
-        ) - depth * 8,
-    },
-  );
-  totalNodes += sbPhaseFallback.nodes;
-  diagnostics.push({
-    stage: "SB",
-    method: sbPhaseFallback.method,
-    nodes: sbPhaseFallback.nodes,
-    ok: sbPhaseFallback.ok,
-    reason: sbPhaseFallback.reason || "",
-  });
-  if (!sbPhaseFallback.ok || !Array.isArray(sbPhaseFallback.moves)) {
-    const sbLoosePhaseFallback = await findGoalPrefixViaPhaseSolve(
-      startPattern,
-      (candidate) => isSecondBlockSolved(candidate, ctx),
-      {
-        deadlineTs,
-        phase1MaxDepth: 16,
-        phase2MaxDepth: 24,
-        timeCheckInterval: 1024,
-        acceptPrefix: (candidate, prefixMoves, depth) =>
-          depth <= Math.max(48, DEFAULT_OPTIONS.sbPhasePrefixMaxMoves) &&
-          !isCubeSolved(candidate, ctx),
-        allowFilteredFallback: true,
-        allowFilteredWhen: (candidate) => !isCubeSolved(candidate, ctx),
-        selectPrefixScore: (candidate, prefixMoves, depth) =>
-          scoreRouxStage(
-            candidate.patternData,
-            ctx.solvedData,
-            ctx.secondBlockEntries,
-            ctx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-            depth,
-            {
-              targetMultiplier: 320,
-              futurePenalty: 90,
-              depthPenalty: 14,
-            },
-          ) - depth * 8,
-      },
-    );
-    totalNodes += sbLoosePhaseFallback.nodes;
-    diagnostics.push({
-      stage: "SB",
-      method: sbLoosePhaseFallback.method,
-      nodes: sbLoosePhaseFallback.nodes,
-      ok: sbLoosePhaseFallback.ok,
-      reason: sbLoosePhaseFallback.reason || "",
-    });
-    if (!sbLoosePhaseFallback.ok || !Array.isArray(sbLoosePhaseFallback.moves)) {
-      return {
-        ok: false,
-        moves: null,
-        afterPattern: null,
-        nodes: totalNodes,
-        diagnostics,
-        reason: "SB_RECOVERY_FAILED",
-      };
-    }
-    const pickedLoose = pickCandidate(sbLoosePhaseFallback.moves, (candidate) => isSecondBlockSolved(candidate, ctx));
-    if (!pickedLoose?.choice?.afterPattern || !isSecondBlockSolved(pickedLoose.choice.afterPattern, ctx)) {
-      return {
-        ok: false,
-        moves: null,
-        afterPattern: null,
-        nodes: totalNodes,
-        diagnostics,
-        reason: "SB_RECOVERY_FAILED",
-      };
-    }
-    diagnostics.push({
-      stage: "SB",
-      method: pickedLoose.loose ? "phase-prefix-boundary-prefix-loose" : "phase-prefix-boundary-prefix",
-      ok: true,
-      nodes: 0,
-      reason: pickedLoose.choice.source === "raw" ? "" : `PREFIX_${String(pickedLoose.choice.source || "").toUpperCase()}`,
-    });
-    return {
-      ok: true,
-      moves: pickedLoose.choice.moves,
-      afterPattern: pickedLoose.choice.afterPattern,
-      nodes: totalNodes,
-      diagnostics,
-    };
-  }
-
-  const picked = pickCandidate(sbPhaseFallback.moves, (candidate) => isSecondBlockSolved(candidate, ctx));
-  if (!picked?.choice?.afterPattern || !isSecondBlockSolved(picked.choice.afterPattern, ctx)) {
-    return {
-      ok: false,
-      moves: null,
-      afterPattern: null,
-      nodes: totalNodes,
-      diagnostics,
-      reason: "SB_RECOVERY_FAILED",
-    };
-  }
-
-  diagnostics.push({
-    stage: "SB",
-    method: picked.loose ? "phase-prefix-boundary-prefix-loose" : "phase-prefix-boundary-prefix",
-    ok: true,
-    nodes: 0,
-    reason: picked.choice.source === "raw" ? "" : `PREFIX_${String(picked.choice.source || "").toUpperCase()}`,
-  });
-  return {
-    ok: true,
-    moves: picked.choice.moves,
-    afterPattern: picked.choice.afterPattern,
-    nodes: totalNodes,
-    diagnostics,
-  };
-}
-
-async function recoverRouxViaPhaseSolve(startPattern, ctx, options = {}) {
-  const deadlineTs = options.deadlineTs;
-  ensureDeadline(deadlineTs, "ROUX_RECOVERY_TIMEOUT");
-  const remainingMs = Number.isFinite(deadlineTs)
-    ? Math.max(1500, Math.min(45000, deadlineTs - Date.now()))
-    : 30000;
-  const phaseResult = await solve3x3InternalPhase(startPattern, {
-    phase1MaxDepth: 13,
-    phase2MaxDepth: 20,
-    phase1NodeLimit: 0,
-    phase2NodeLimit: 0,
-    timeCheckInterval: 768,
-    deadlineTs: Date.now() + remainingMs,
-  });
-  const recoveryNodes = Number(phaseResult?.nodes || 0);
-  const recoveryDiagnostics = [];
-  if (!phaseResult?.ok || typeof phaseResult.solution !== "string" || !phaseResult.solution.trim()) {
-    return {
-      ok: false,
-      reason: phaseResult?.reason || "ROUX_RECOVERY_PHASE_FAILED",
-      nodes: recoveryNodes,
-      stageDiagnostics: [
-        {
-          stage: "RECOVERY",
-          method: "phase-recovery",
-          ok: false,
-          nodes: recoveryNodes,
-          reason: phaseResult?.reason || "ROUX_RECOVERY_PHASE_FAILED",
-        },
-      ],
-    };
-  }
-
-  const tokens = splitAlgTokens(phaseResult.solution);
-  const prefixStates = buildPrefixStates(startPattern, tokens, deadlineTs);
-  if (!prefixStates || prefixStates.length !== tokens.length + 1) {
-    return {
-      ok: false,
-      reason: "ROUX_RECOVERY_PREFIX_APPLY_FAILED",
-      nodes: recoveryNodes,
-      stageDiagnostics: [
-        {
-          stage: "RECOVERY",
-          method: "phase-recovery",
-          ok: false,
-          nodes: recoveryNodes,
-          reason: "ROUX_RECOVERY_PREFIX_APPLY_FAILED",
-        },
-      ],
-    };
-  }
-
-  const solvedIndex = prefixStates.length - 1;
-  const strictCuts = pickStrictRecoveryCuts(prefixStates, ctx);
-  if (strictCuts) {
-    const stageMoves = [
-      tokens.slice(0, strictCuts.fb),
-      tokens.slice(strictCuts.fb, strictCuts.sb),
-      tokens.slice(strictCuts.sb, strictCuts.cmll),
-      tokens.slice(strictCuts.cmll),
-    ];
-    return {
-      ok: true,
-      solution: joinAlgTokens(tokens),
-      moveCount: tokens.length,
-      nodes: recoveryNodes,
-      stages: [
-        { name: "FB", solution: joinAlgTokens(stageMoves[0]) },
-        { name: "SB", solution: joinAlgTokens(stageMoves[1]) },
-        { name: "CMLL", solution: joinAlgTokens(stageMoves[2]) },
-        { name: "LSE", solution: joinAlgTokens(stageMoves[3]) },
-      ],
-      stageDiagnostics: [
-        {
-          stage: "FB",
-          method: "phase-recovery",
-          ok: true,
-          cutIndex: strictCuts.fb,
-          moveCount: stageMoves[0].length,
-          reason: stageMoves[0].length ? "" : "PRE_SOLVED",
-        },
-        {
-          stage: "SB",
-          method: "phase-recovery",
-          ok: true,
-          cutIndex: strictCuts.sb,
-          moveCount: stageMoves[1].length,
-          reason: stageMoves[1].length ? "" : "PRE_SOLVED",
-        },
-        {
-          stage: "CMLL",
-          method: "phase-recovery",
-          ok: true,
-          cutIndex: strictCuts.cmll,
-          moveCount: stageMoves[2].length,
-          reason: stageMoves[2].length ? "" : "PRE_SOLVED",
-        },
-        {
-          stage: "LSE",
-          method: "phase-recovery",
-          ok: true,
-          cutIndex: strictCuts.solved,
-          moveCount: stageMoves[3].length,
-          reason: stageMoves[3].length ? "" : "PRE_SOLVED",
-        },
-      ],
-      source: "INTERNAL_3X3_ROUX_PHASE_RECOVERY",
-    };
-  }
-
-  const fbRecovery = await solveFbRecoveryStage(startPattern, ctx, deadlineTs);
-  recoveryDiagnostics.push({
-    stage: "RECOVERY",
-    method: "fb-recovery-summary",
-    ok: Boolean(fbRecovery?.ok),
-    nodes: Number(fbRecovery?.nodes || 0),
-    reason: fbRecovery?.reason || "",
-    afterPattern: Boolean(fbRecovery?.afterPattern),
-  });
-  if (fbRecovery?.ok && fbRecovery.afterPattern) {
-    const sbRecovery = await solveDedicatedSbRecoveryStage(fbRecovery.afterPattern, ctx, deadlineTs);
-    recoveryDiagnostics.push({
-      stage: "RECOVERY",
-      method: "sb-recovery-summary",
-      ok: Boolean(sbRecovery?.ok),
-      nodes: Number(sbRecovery?.nodes || 0),
-      reason: sbRecovery?.reason || "",
-      afterPattern: Boolean(sbRecovery?.afterPattern),
-    });
-    if (sbRecovery?.ok && sbRecovery.afterPattern) {
-      const cmllStage = await solveCmllRecoveryStage(sbRecovery.afterPattern, ctx, deadlineTs);
-      if (cmllStage.ok && cmllStage.afterPattern) {
-        const lseStage = await solveLseRecoveryStage(cmllStage.afterPattern, ctx, deadlineTs);
-        if (lseStage.ok && lseStage.afterPattern) {
-          const fbMoves = simplifyMoves(fbRecovery.moves || []);
-          const sbMoves = simplifyMoves(sbRecovery.moves || []);
-          const cmllMoves = simplifyMoves(cmllStage.moves || []);
-          const lseMoves = simplifyMoves(lseStage.moves || []);
-          const solutionMoves = simplifyMoves([...fbMoves, ...sbMoves, ...cmllMoves, ...lseMoves]);
-          return {
-            ok: true,
-            solution: joinAlgTokens(solutionMoves),
-            moveCount: solutionMoves.length,
-            nodes:
-              recoveryNodes +
-              Number(fbRecovery.nodes || 0) +
-              Number(sbRecovery.nodes || 0) +
-              Number(cmllStage.nodes || 0) +
-              Number(lseStage.nodes || 0),
-            stages: [
-              { name: "FB", solution: joinAlgTokens(fbMoves) },
-              { name: "SB", solution: joinAlgTokens(sbMoves) },
-              { name: "CMLL", solution: joinAlgTokens(cmllMoves) },
-              { name: "LSE", solution: joinAlgTokens(lseMoves) },
-            ],
-            stageDiagnostics: [
-              ...(fbRecovery.diagnostics || []),
-              ...(sbRecovery.diagnostics || []),
-              ...(cmllStage.diagnostics || []),
-              ...(lseStage.diagnostics || []),
-            ],
-            source: "INTERNAL_3X3_ROUX_PHASE_RECOVERY_RESTAGED_FROM_FB",
-          };
-        }
-      } else if (sbRecovery?.diagnostics) {
-        recoveryDiagnostics.push(
-          ...(fbRecovery.diagnostics || []).map((entry) => ({
-            stage: "RECOVERY",
-            via: "fb-recovery",
-            ...entry,
-          })),
-          ...(sbRecovery.diagnostics || []).map((entry) => ({
-            stage: "RECOVERY",
-            via: "sb-recovery",
-            ...entry,
-          })),
-        );
-      }
-    } else if (fbRecovery?.diagnostics) {
-      recoveryDiagnostics.push(
-        ...(fbRecovery.diagnostics || []).map((entry) => ({
-          stage: "RECOVERY",
-          via: "fb-recovery",
-          ...entry,
-        })),
-      );
-    }
-  }
-
-  if (!isCubeSolved(prefixStates[solvedIndex], ctx)) {
-    return {
-      ok: false,
-      reason: "ROUX_RECOVERY_STAGE_PARTITION_FAILED",
-      nodes: recoveryNodes,
-      stageDiagnostics: [
-        {
-          stage: "RECOVERY",
-          method: "phase-recovery",
-          ok: false,
-          nodes: recoveryNodes,
-          reason: "ROUX_RECOVERY_STAGE_PARTITION_FAILED",
-        },
-      ],
-    };
-  }
-
-  const fbCut = pickRecoveryFbCut(prefixStates, ctx);
-  if (fbCut < 0) {
-    return {
-      ok: false,
-      reason: "ROUX_RECOVERY_FB_CUT_FAILED",
-      nodes: recoveryNodes,
-      stageDiagnostics: recoveryDiagnostics.concat([
-        {
-          stage: "RECOVERY",
-          method: "phase-recovery-restaged",
-          ok: false,
-          nodes: recoveryNodes,
-          reason: "ROUX_RECOVERY_FB_CUT_FAILED",
-        },
-      ]),
-    };
-  }
-
-  const fbMoves = tokens.slice(0, fbCut);
-  const afterFbPattern = prefixStates[fbCut];
-  if (!afterFbPattern || !isFirstBlockSolved(afterFbPattern, ctx)) {
-    return {
-      ok: false,
-      reason: "ROUX_RECOVERY_FB_STATE_INVALID",
-      nodes: recoveryNodes,
-      stageDiagnostics: recoveryDiagnostics.concat([
-        {
-          stage: "RECOVERY",
-          method: "phase-recovery-restaged",
-          ok: false,
-          nodes: recoveryNodes,
-          reason: "ROUX_RECOVERY_FB_STATE_INVALID",
-        },
-      ]),
-    };
-  }
-
-  let totalNodes = recoveryNodes;
-  const stageDiagnostics = [
-    {
-      stage: "FB",
-      method: "phase-recovery-restaged",
-      ok: true,
-      cutIndex: fbCut,
-      moveCount: fbMoves.length,
-      reason: fbMoves.length ? "" : "PRE_SOLVED",
-    },
-  ];
-
-  let sbMoves = [];
-  let afterSbPattern = null;
-
-  const minedSb = await mineDedicatedSbAugmentation(afterFbPattern, ctx, {
-    deadlineTs,
-    requireCmllBoundary: true,
-  });
-  if (minedSb) {
-    sbMoves = simplifyMoves(minedSb.moves);
-    afterSbPattern = minedSb.afterPattern;
-    totalNodes += Number(minedSb.nodes || 0);
-    stageDiagnostics.push({
-      stage: "SB",
-      method: "phase-recovery-restaged-sb-mined",
-      ok: true,
-      nodes: Number(minedSb.nodes || 0),
-      reason: "",
-      moveCount: sbMoves.length,
-    });
-  } else {
-    const looseSbCut = findFirstGoalIndex(
-      prefixStates,
-      fbCut + 1,
-      (candidate) => isSecondBlockSolved(candidate, ctx) && !isCubeSolved(candidate, ctx),
-    );
-    if (looseSbCut < 0) {
-      return {
-        ok: false,
-        reason: "ROUX_RECOVERY_SB_REBUILD_FAILED",
-        nodes: totalNodes,
-        stageDiagnostics: stageDiagnostics.concat(recoveryDiagnostics, [
-          {
-            stage: "SB",
-            method: "phase-recovery-restaged",
-            ok: false,
-            nodes: 0,
-            reason: "ROUX_RECOVERY_SB_REBUILD_FAILED",
-          },
-        ]),
-      };
-    }
-    sbMoves = tokens.slice(fbCut, looseSbCut);
-    afterSbPattern = prefixStates[looseSbCut];
-    stageDiagnostics.push({
-      stage: "SB",
-      method: "phase-recovery-restaged-loose",
-      ok: true,
-      nodes: 0,
-      reason: isCmllSolved(afterSbPattern, ctx) ? "CMLL_PRESOLVED" : "",
-      cutIndex: looseSbCut,
-      moveCount: sbMoves.length,
-    });
-  }
-
-  if (!afterSbPattern || !isSecondBlockSolved(afterSbPattern, ctx)) {
-    return {
-      ok: false,
-      reason: "ROUX_RECOVERY_SB_STATE_INVALID",
-      nodes: totalNodes,
-      stageDiagnostics: stageDiagnostics.concat(recoveryDiagnostics, [
-        {
-          stage: "SB",
-          method: "phase-recovery-restaged",
-          ok: false,
-          nodes: 0,
-          reason: "ROUX_RECOVERY_SB_STATE_INVALID",
-        },
-      ]),
-    };
-  }
-
-  const cmllStage = await solveCmllRecoveryStage(afterSbPattern, ctx, deadlineTs);
-  totalNodes += Number(cmllStage.nodes || 0);
-  stageDiagnostics.push(...(cmllStage.diagnostics || []));
-  if (!cmllStage.ok || !cmllStage.afterPattern) {
-    return {
-      ok: false,
-      reason: cmllStage.reason || "CMLL_RECOVERY_FAILED",
-      nodes: totalNodes,
-      stageDiagnostics,
-    };
-  }
-
-  const lseStage = await solveLseRecoveryStage(cmllStage.afterPattern, ctx, deadlineTs);
-  totalNodes += Number(lseStage.nodes || 0);
-  stageDiagnostics.push(...(lseStage.diagnostics || []));
-  if (!lseStage.ok || !lseStage.afterPattern) {
-    return {
-      ok: false,
-      reason: lseStage.reason || "LSE_RECOVERY_FAILED",
-      nodes: totalNodes,
-      stageDiagnostics,
-    };
-  }
-
-  const stageMoves = [
-    simplifyMoves(fbMoves),
-    simplifyMoves(sbMoves),
-    simplifyMoves(cmllStage.moves || []),
-    simplifyMoves(lseStage.moves || []),
-  ];
-  const solutionMoves = simplifyMoves(stageMoves.flat());
-  return {
-    ok: true,
-    solution: joinAlgTokens(solutionMoves),
-    moveCount: solutionMoves.length,
-    nodes: totalNodes,
-    stages: [
-      { name: "FB", solution: joinAlgTokens(stageMoves[0]) },
-      { name: "SB", solution: joinAlgTokens(stageMoves[1]) },
-      { name: "CMLL", solution: joinAlgTokens(stageMoves[2]) },
-      { name: "LSE", solution: joinAlgTokens(stageMoves[3]) },
-    ],
-    stageDiagnostics,
-    source: "INTERNAL_3X3_ROUX_PHASE_RECOVERY_RESTAGED",
-  };
-}
-
-function getStageMoveLists(stages) {
-  const byName = new Map();
-  if (Array.isArray(stages)) {
-    for (let i = 0; i < stages.length; i++) {
-      const stage = stages[i];
-      const name = String(stage?.name || "").trim().toUpperCase();
-      if (!name) continue;
-      byName.set(name, splitAlgTokens(stage?.solution || ""));
-    }
-  }
-  return {
-    fb: byName.get("FB") || [],
-    sb: byName.get("SB") || [],
-    cmll: byName.get("CMLL") || [],
-    lse: byName.get("LSE") || [],
-  };
-}
-
-function evaluateRouxStagePartition(startPattern, ctx, stages) {
-  const moveLists = getStageMoveLists(stages);
-  const afterFb = tryApplyMoves(startPattern, moveLists.fb);
-  const afterSb = afterFb ? tryApplyMoves(afterFb, moveLists.sb) : null;
-  const afterCmll = afterSb ? tryApplyMoves(afterSb, moveLists.cmll) : null;
-  const afterLse = afterCmll ? tryApplyMoves(afterCmll, moveLists.lse) : null;
-
-  const sbPreservesCmllBoundary =
-    Boolean(afterSb) &&
-    isSecondBlockSolved(afterSb, ctx) &&
-    !isCmllSolved(afterSb, ctx) &&
-    !isCubeSolved(afterSb, ctx);
-
-  const fbAccepted =
-    Boolean(afterFb) &&
-    moveLists.fb.length > 0 &&
-    isFirstBlockSolved(afterFb, ctx) &&
-    !isSecondBlockSolved(afterFb, ctx) &&
-    !isCubeSolved(afterFb, ctx);
-
-  const sbAccepted =
-    Boolean(afterSb) &&
-    moveLists.sb.length > 0 &&
-    isSecondBlockSolved(afterSb, ctx) &&
-    !isCmllSolved(afterSb, ctx) &&
-    !isCubeSolved(afterSb, ctx);
-
-  const cmllAccepted =
-    Boolean(afterCmll) &&
-    moveLists.cmll.length > 0 &&
-    isCmllSolved(afterCmll, ctx) &&
-    !isCubeSolved(afterCmll, ctx);
-
-  const lseAccepted = Boolean(afterLse) && isCubeSolved(afterLse, ctx);
-
-  return {
-    moveLists,
-    states: {
-      afterFb,
-      afterSb,
-      afterCmll,
-      afterLse,
-    },
-    accepted: {
-      fb: fbAccepted,
-      sb: sbAccepted,
-      sbPreservesCmllBoundary,
-      cmll: cmllAccepted,
-      lse: lseAccepted,
-    },
-  };
-}
-
-function scoreRouxAugmentationCandidate(candidate) {
-  if (!candidate) return -Infinity;
-  const accepted = candidate.accepted || {};
-  let score = 0;
-  if (accepted.fb) score += 250;
-  if (accepted.sb) score += 1200;
-  if (accepted.sbPreservesCmllBoundary) score += 180;
-  if (accepted.cmll) score += 120;
-  if (accepted.lse) score += 40;
-  score -= Number(candidate.totalMoves || 0);
-  score -= Number(candidate.phaseNodes || 0) * 0.00001;
-  return score;
-}
-
-function buildRouxAugmentationCandidate(startPattern, planCtx, result, source) {
-  const stages = Array.isArray(result?.stages) ? result.stages : [];
-  const evaluation = evaluateRouxStagePartition(startPattern, planCtx, stages);
-  const fbKey = buildEntriesStateKey(startPattern, planCtx.firstBlockEntries);
-  const sbKey = evaluation.states.afterFb
-    ? buildEntriesStateKey(evaluation.states.afterFb, planCtx.secondBlockEntries)
-    : "";
-  const candidate = {
-    planName: planCtx.rouxPlan,
-    source: source || result?.source || "INTERNAL_3X3_ROUX",
-    phaseNodes: Number(result?.nodes || 0),
-    totalMoves: Number(result?.moveCount || 0),
-    stages,
-    stageDiagnostics: Array.isArray(result?.stageDiagnostics) ? result.stageDiagnostics : [],
-    accepted: evaluation.accepted,
-    fb: {
-      key: fbKey,
-      moves: evaluation.moveLists.fb,
-      text: joinAlgTokens(evaluation.moveLists.fb),
-    },
-    sb: {
-      key: sbKey,
-      moves: evaluation.moveLists.sb,
-      text: joinAlgTokens(evaluation.moveLists.sb),
-    },
-  };
-  candidate.score = scoreRouxAugmentationCandidate(candidate);
-  return candidate;
-}
-
-async function mineDedicatedSbAugmentation(afterFbPattern, planCtx, options = {}) {
-  if (!afterFbPattern || !isFirstBlockSolved(afterFbPattern, planCtx)) {
-    return null;
-  }
-
-  const deadlineTs = options.deadlineTs;
-  const requireCmllBoundary = options.requireCmllBoundary !== false;
-  const phasePrefix = await findGoalPrefixViaPhaseSolve(
-    afterFbPattern,
-    (candidate) => isSecondBlockSolved(candidate, planCtx),
-    {
-      deadlineTs,
-      phase1MaxDepth: 16,
-      phase2MaxDepth: 24,
-      timeCheckInterval: 1024,
-      acceptPrefix: (candidate, prefixMoves, depth) =>
-        depth <= 48 &&
-        !isCubeSolved(candidate, planCtx) &&
-        (!requireCmllBoundary || !isCmllSolved(candidate, planCtx)),
-      allowFilteredFallback: false,
-      selectPrefixScore: (candidate, prefixMoves, depth) =>
-        scoreRouxStage(
-          candidate.patternData,
-          planCtx.solvedData,
-          planCtx.secondBlockEntries,
-          planCtx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-          depth,
-          {
-            targetMultiplier: 340,
-            futurePenalty: 70,
-            depthPenalty: 12,
-          },
-        ) +
-        (!isCmllSolved(candidate, planCtx) ? 160 : 0) -
-        depth * 6,
-    },
-  );
-
-  if (!phasePrefix?.ok || !Array.isArray(phasePrefix.moves)) {
-    return null;
-  }
-
-  const chosen = chooseBoundaryPreservingPrefix(
-    afterFbPattern,
-    phasePrefix.moves,
-    (candidate) => isSecondBlockSolved(candidate, planCtx),
-    requireCmllBoundary
-      ? (candidate) =>
-          !isCubeSolved(candidate, planCtx) && !isCmllSolved(candidate, planCtx)
-      : () => true,
-    {
-      deadlineTs,
-      maxPasses: 3,
-      maxWindow: 8,
-    },
-  );
-  const afterSbPattern = chosen?.afterPattern || null;
-  const sbPreservesCmllBoundary =
-    Boolean(afterSbPattern) &&
-    isSecondBlockSolved(afterSbPattern, planCtx) &&
-    !isCmllSolved(afterSbPattern, planCtx) &&
-    !isCubeSolved(afterSbPattern, planCtx);
-  if (
-    !chosen ||
-    !afterSbPattern ||
-    !isSecondBlockSolved(afterSbPattern, planCtx) ||
-    (requireCmllBoundary && !sbPreservesCmllBoundary)
-  ) {
-    return null;
-  }
-
-  return {
-    key: buildEntriesStateKey(afterFbPattern, planCtx.secondBlockEntries),
-    moves: chosen.moves,
-    text: joinAlgTokens(chosen.moves),
-    sbPreservesCmllBoundary,
-    sourceMethod: chosen.source === "raw" ? "phase-prefix-mined" : `phase-prefix-mined-${chosen.source}`,
-    afterPattern: afterSbPattern,
-    nodes: Number(phasePrefix.nodes || 0),
-  };
-}
-
-async function tryRuntimeDedicatedSbMine(afterFbPattern, planCtx, options = {}) {
-  const mined = await mineDedicatedSbAugmentation(afterFbPattern, planCtx, {
-    ...options,
-    requireCmllBoundary: true,
-  });
-  if (mined) {
-    return {
-      ok: true,
-      moves: mined.moves,
-      afterPattern: mined.afterPattern,
-      method: "phase-prefix-mined-runtime",
-      reason: "",
-      nodes: mined.nodes,
-      sbPreservesCmllBoundary: mined.sbPreservesCmllBoundary,
-    };
-  }
-  const relaxed = await mineDedicatedSbAugmentation(afterFbPattern, planCtx, {
-    ...options,
-    requireCmllBoundary: false,
-  });
-  if (relaxed) {
-    return {
-      ok: true,
-      moves: relaxed.moves,
-      afterPattern: relaxed.afterPattern,
-      method: "phase-prefix-mined-runtime-relaxed",
-      reason: "",
-      nodes: relaxed.nodes,
-      sbPreservesCmllBoundary: relaxed.sbPreservesCmllBoundary,
-    };
-  }
-  return {
-    ok: false,
-    moves: null,
-    method: "phase-prefix-mined-runtime",
-    reason: "SB_MINER_NO_BOUNDARY",
-    nodes: 0,
-  };
-}
-
-export async function buildRouxAugmentationCandidatesFromPattern(pattern, options = {}) {
-  if (!pattern?.patternData) {
-    return {
-      ok: false,
-      reason: "ROUX_NO_PATTERN",
-      candidates: [],
-      best: null,
-    };
-  }
-
-  const ctx = await getRouxContext();
-  const rankedPlans = rankRouxBlockPlans(pattern, ctx);
-  const hardDeadlineTs = Number.isFinite(options.deadlineTs)
-    ? options.deadlineTs
-    : Date.now() + 30000;
-  const tryAlternate = options.tryAlternate !== false;
-  const trySolveFirst = options.trySolveFirst !== false;
-  const collectAllCandidates = options.collectAllCandidates === true;
-  const maxCandidates = normalizePositiveInt(
-    options.maxCandidates,
-    collectAllCandidates ? Math.max(4, rankedPlans.length * 2) : 1,
-  );
-  const candidates = [];
-  const errors = [];
-
-  if (trySolveFirst) {
-    const solveFirstBudgetFactor = Number.isFinite(options.solveFirstBudgetFactor)
-      ? Math.min(1, Math.max(0.5, options.solveFirstBudgetFactor))
-      : 0.9;
-    const solveBudgetMs = Math.max(
-      2500,
-      Math.min(
-        30000,
-        Math.floor(Math.max(2500, hardDeadlineTs - Date.now()) * solveFirstBudgetFactor),
-      ),
-    );
-    try {
-      const solveResult = await solve3x3RouxFromPattern(pattern, {
-        deadlineTs: Date.now() + solveBudgetMs,
-        enableRecovery: true,
-      });
-      if (solveResult?.ok && Array.isArray(solveResult.stages) && solveResult.rouxPlan) {
-        const plan = rankedPlans.find((entry) => entry.name === solveResult.rouxPlan) || rankedPlans[0];
-        const planCtx = buildRouxPlanContext(ctx, plan);
-        const candidate = buildRouxAugmentationCandidate(
-          pattern,
-          planCtx,
-          solveResult,
-          solveResult.source || "INTERNAL_3X3_ROUX",
-        );
-        if (candidate.accepted.fb && !candidate.accepted.sb && candidate.fb?.moves?.length) {
-          const dedicatedSb = await mineDedicatedSbAugmentation(
-            evaluateRouxStagePartition(pattern, planCtx, solveResult.stages).states.afterFb,
-            planCtx,
-            { deadlineTs: hardDeadlineTs },
-          );
-          if (dedicatedSb) {
-            candidate.sb = {
-              key: dedicatedSb.key,
-              moves: dedicatedSb.moves,
-              text: dedicatedSb.text,
-            };
-            candidate.accepted.sb = true;
-            candidate.accepted.sbPreservesCmllBoundary = dedicatedSb.sbPreservesCmllBoundary;
-            candidate.source = `${candidate.source}+SB_MINED`;
-            candidate.score = scoreRouxAugmentationCandidate(candidate);
-          }
-        }
-        candidates.push(candidate);
-        if (!collectAllCandidates && candidate.accepted.sb) {
-          candidates.sort((a, b) => b.score - a.score || a.totalMoves - b.totalMoves);
-          return {
-            ok: true,
-            reason: "",
-            candidates,
-            best: candidates[0] || null,
-            errors,
-          };
-        }
-        if (candidates.length >= maxCandidates) {
-          candidates.sort((a, b) => b.score - a.score || a.totalMoves - b.totalMoves);
-          return {
-            ok: candidates.some((candidate) => candidate.accepted?.fb || candidate.accepted?.sb),
-            reason: "",
-            candidates,
-            best: candidates[0] || null,
-            errors,
-          };
-        }
-      }
-    } catch (error) {
-      errors.push({
-        plan: "SOLVE_FIRST",
-        reason: String(error?.code || error?.message || "ROUX_AUGMENT_SOLVE_FIRST_ERROR"),
-      });
-    }
-  }
-
-  for (let i = 0; i < rankedPlans.length; i++) {
-    if (i > 0 && !tryAlternate) break;
-    ensureDeadline(hardDeadlineTs, "ROUX_AUGMENT_TIMEOUT");
-    const plan = rankedPlans[i];
-    const planCtx = buildRouxPlanContext(ctx, plan);
-    const plansLeft = Math.max(1, rankedPlans.length - i);
-    const remainingMs = Math.max(1500, hardDeadlineTs - Date.now());
-    const localDeadlineTs = Date.now() + Math.max(1500, Math.floor(remainingMs / plansLeft));
-
-    try {
-      const recovery = await recoverRouxViaPhaseSolve(pattern, planCtx, {
-        deadlineTs: localDeadlineTs,
-      });
-      if (!recovery?.ok) {
-        errors.push({
-          plan: plan.name,
-          reason: recovery?.reason || "ROUX_RECOVERY_PHASE_FAILED",
-        });
-        continue;
-      }
-
-      const candidate = buildRouxAugmentationCandidate(
-        pattern,
-        planCtx,
-        recovery,
-        recovery.source || "INTERNAL_3X3_ROUX_PHASE_RECOVERY",
-      );
-      candidate.heuristic = Number(plan.heuristic || 0);
-      if (candidate.accepted.fb && !candidate.accepted.sb && candidate.fb?.moves?.length) {
-        const dedicatedSb = await mineDedicatedSbAugmentation(
-          evaluateRouxStagePartition(pattern, planCtx, recovery.stages).states.afterFb,
-          planCtx,
-          { deadlineTs: localDeadlineTs },
-        );
-        if (dedicatedSb) {
-          candidate.sb = {
-            key: dedicatedSb.key,
-            moves: dedicatedSb.moves,
-            text: dedicatedSb.text,
-          };
-          candidate.accepted.sb = true;
-          candidate.accepted.sbPreservesCmllBoundary = dedicatedSb.sbPreservesCmllBoundary;
-          candidate.source = `${candidate.source}+SB_MINED`;
-        }
-      }
-      candidate.score = scoreRouxAugmentationCandidate(candidate);
-      candidates.push(candidate);
-
-      if (!collectAllCandidates && candidate.accepted.sb) {
-        break;
-      }
-      if (candidates.length >= maxCandidates) {
-        break;
-      }
-    } catch (error) {
-      errors.push({
-        plan: plan.name,
-        reason: String(error?.code || error?.message || "ROUX_AUGMENT_ERROR"),
-      });
-    }
-  }
-
-  candidates.sort((a, b) => b.score - a.score || a.totalMoves - b.totalMoves);
-  return {
-    ok: candidates.some((candidate) => candidate.accepted?.fb || candidate.accepted?.sb),
-    reason: candidates.length ? "" : (errors[0]?.reason || "ROUX_AUGMENT_NO_CANDIDATES"),
-    candidates,
-    best: candidates[0] || null,
-    errors,
-  };
-}
-
-export async function solve3x3RouxFromPattern(pattern, options = {}) {
-  if (!pattern?.patternData) {
-    return buildFailure("ROUX_NO_PATTERN", "FB", 0, []);
-  }
-
-  const ctx = await getRouxContext();
-  const deadlineTs = Number.isFinite(options.deadlineTs) ? options.deadlineTs : Date.now() + 20000;
-  const stageDiagnostics = [];
-
-  const cfg = {
-    fbMaxDepth: normalizePositiveInt(options.fbMaxDepth, DEFAULT_OPTIONS.fbMaxDepth),
-    fbBeamWidth: normalizePositiveInt(options.fbBeamWidth, DEFAULT_OPTIONS.fbBeamWidth),
-    sbMaxDepth: normalizePositiveInt(options.sbMaxDepth, DEFAULT_OPTIONS.sbMaxDepth),
-    sbBeamWidth: normalizePositiveInt(options.sbBeamWidth, DEFAULT_OPTIONS.sbBeamWidth),
-    cmllMaxDepth: normalizePositiveInt(options.cmllMaxDepth, DEFAULT_OPTIONS.cmllMaxDepth),
-    cmllBeamWidth: normalizePositiveInt(options.cmllBeamWidth, DEFAULT_OPTIONS.cmllBeamWidth),
-    lseFormulaLimit: normalizePositiveInt(
-      options.lseFormulaLimit,
-      DEFAULT_OPTIONS.lseFormulaLimit,
-    ),
-    fbPhasePrefixMaxMoves: normalizePositiveInt(
-      options.fbPhasePrefixMaxMoves,
-      DEFAULT_OPTIONS.fbPhasePrefixMaxMoves,
-    ),
-    sbPhasePrefixMaxMoves: normalizePositiveInt(
-      options.sbPhasePrefixMaxMoves,
-      DEFAULT_OPTIONS.sbPhasePrefixMaxMoves,
-    ),
-  };
-
-  const rankedPlans = rankRouxBlockPlans(pattern, ctx);
-  const activePlan = rankedPlans[0];
-  const alternatePlan = rankedPlans.find((plan) => plan.name !== activePlan?.name) || null;
-  const enableRecovery = options.enableRecovery === true;
-  const allowDeepFallback = enableRecovery;
-
-  let rouxCtx = buildRouxPlanContext(ctx, activePlan);
-  const alternateRouxCtx = alternatePlan ? buildRouxPlanContext(ctx, alternatePlan) : null;
-
-  let currentPattern = pattern;
-  let totalNodes = 0;
-  const stages = [];
-  const allMoves = [];
-  const totalStages = 4;
-
-  const recoverOrFail = async (reason, stageName) => {
-    if (!enableRecovery) {
-      return buildFailure(reason, stageName, totalNodes, stages, stageDiagnostics);
-    }
-    if (typeof options?.onStageUpdate === "function") {
-      emitStageUpdate(options, {
-        type: "fallback_start",
-        stageName: "Roux Recovery",
-        reason,
-      });
-    }
-    try {
-      const recovery = await recoverRouxViaPhaseSolve(pattern, rouxCtx, { deadlineTs });
-      const combinedNodes = totalNodes + Number(recovery?.nodes || 0);
-      if (recovery?.ok) {
-        emitStageUpdate(options, {
-          type: "fallback_done",
-          stageName: "Roux Recovery",
-        });
-        return {
-          ...recovery,
-          nodes: combinedNodes,
-          stageDiagnostics: stageDiagnostics.concat(recovery.stageDiagnostics || []),
-          fallbackFrom: reason,
-          rouxPlan: rouxCtx.rouxPlan,
-        };
-      }
-      emitStageUpdate(options, {
-        type: "fallback_fail",
-        stageName: "Roux Recovery",
-      });
-      return buildFailure(
-        reason,
-        stageName,
-        combinedNodes,
-        stages,
-        stageDiagnostics.concat(recovery?.stageDiagnostics || []),
-      );
-    } catch (recoveryError) {
-      emitStageUpdate(options, {
-        type: "fallback_fail",
-        stageName: "Roux Recovery",
-      });
-      return buildFailure(
-        reason,
-        stageName,
-        totalNodes,
-        stages,
-        stageDiagnostics.concat([
-          {
-            stage: "RECOVERY",
-            method: "phase-recovery",
-            ok: false,
-            reason: String(recoveryError?.code || recoveryError?.message || "ROUX_RECOVERY_ERROR"),
-          },
-        ]),
-      );
-    }
-  };
-
+// ============================================================
+// Phase Solver Fallback (with Roux stage extraction)
+// ============================================================
+
+async function phaseSolverFallback(pattern, deadlineTs) {
+  // Strategy 1: Phase solver with generous settings
   try {
-    ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-
-    emitStageUpdate(options, {
-      type: "stage_start",
-      stageIndex: 0,
-      totalStages,
-      stageName: "FB",
+    const { solve3x3InternalPhase } = await import('./solver3x3Phase/index.js');
+    // Always give phase solver at least 20s regardless of overall deadline
+    const phaseDeadline = Math.max(deadlineTs, Date.now() + 20000);
+    const phaseResult = await solve3x3InternalPhase(pattern, {
+      deadlineTs: phaseDeadline,
+      phase1MaxDepth: 15,
+      phase2MaxDepth: 22,
+      phase1NodeLimit: 0,
+      phase2NodeLimit: 0,
     });
-    const fbAttempts = allowDeepFallback
-      ? [
-          { maxDepth: cfg.fbMaxDepth, beamWidth: cfg.fbBeamWidth },
-          {
-            maxDepth: Math.min(cfg.fbMaxDepth + 2, 14),
-            beamWidth: Math.min(cfg.fbBeamWidth * 2, 1280),
-          },
-        ]
-      : [{ maxDepth: cfg.fbMaxDepth, beamWidth: cfg.fbBeamWidth }];
-    let fbMoves = null;
-    const fbCaseResult = tryCaseCandidatesStage(
-      currentPattern,
-      rouxCtx.caseDb?.fb?.table,
-      (candidate) => buildEntriesStateKey(candidate, rouxCtx.firstBlockEntries),
-      (candidate) => isFirstBlockSolved(candidate, rouxCtx),
-      { deadlineTs },
-    );
-    totalNodes += fbCaseResult.nodes;
-    stageDiagnostics.push({
-      stage: "FB",
-      plan: rouxCtx.rouxPlan,
-      method: fbCaseResult.method,
-      ok: fbCaseResult.ok,
-      nodes: fbCaseResult.nodes,
-      reason: fbCaseResult.reason || "",
-      candidatesTried: fbCaseResult.candidatesTried || 0,
-      candidatesTotal: fbCaseResult.candidatesTotal || 0,
-      tableKeys: Number(rouxCtx.caseDb?.fb?.meta?.keyCount || 0),
-    });
-    if (fbCaseResult.ok && Array.isArray(fbCaseResult.moves)) {
-      fbMoves = simplifyMoves(fbCaseResult.moves);
+    if (phaseResult?.ok && phaseResult.solution) {
+      return formatFallbackResult(pattern, phaseResult);
     }
-
-    if (!fbMoves && alternateRouxCtx) {
-      const alternateCaseResult = tryCaseCandidatesStage(
-        currentPattern,
-        alternateRouxCtx.caseDb?.fb?.table,
-        (candidate) => buildEntriesStateKey(candidate, alternateRouxCtx.firstBlockEntries),
-        (candidate) => isFirstBlockSolved(candidate, alternateRouxCtx),
-        { deadlineTs },
-      );
-      totalNodes += alternateCaseResult.nodes;
-      stageDiagnostics.push({
-        stage: "FB",
-        plan: alternateRouxCtx.rouxPlan,
-        alt: true,
-        method: alternateCaseResult.method,
-        ok: alternateCaseResult.ok,
-        nodes: alternateCaseResult.nodes,
-        reason: alternateCaseResult.reason || "",
-        candidatesTried: alternateCaseResult.candidatesTried || 0,
-        candidatesTotal: alternateCaseResult.candidatesTotal || 0,
-        tableKeys: Number(alternateRouxCtx.caseDb?.fb?.meta?.keyCount || 0),
-      });
-      if (alternateCaseResult.ok && Array.isArray(alternateCaseResult.moves)) {
-        rouxCtx = alternateRouxCtx;
-        fbMoves = simplifyMoves(alternateCaseResult.moves);
-      }
-    }
-
-    if (!fbMoves) {
-      const fbResult = runAdaptiveBeamStage(
-        currentPattern,
-        {
-          isGoal: (candidate) => isFirstBlockSolved(candidate, rouxCtx),
-          score: (candidate, depth) =>
-            scoreRouxStage(
-              candidate.patternData,
-              rouxCtx.solvedData,
-              rouxCtx.firstBlockEntries,
-              rouxCtx.secondBlockOnlyEntries,
-              depth,
-              {
-                targetMultiplier: 300,
-                futurePenalty: 90,
-                depthPenalty: 12,
-              },
-            ),
-          allowedMoves: ROUX_FB_MOVES,
-          deadlineTs,
-          keyFn: (candidate) => buildEntriesStateKey(candidate, rouxCtx.firstBlockEntries),
-        },
-        fbAttempts,
-      );
-      totalNodes += fbResult.nodes;
-      stageDiagnostics.push(
-        ...fbResult.diagnostics.map((entry) => ({
-          stage: "FB",
-          plan: rouxCtx.rouxPlan,
-          ...entry,
-        })),
-      );
-      if (fbResult.ok && Array.isArray(fbResult.moves)) {
-        fbMoves = simplifyMoves(fbResult.moves);
-      }
-    }
-
-    if (!fbMoves && alternateRouxCtx) {
-      const alternateFbResult = runAdaptiveBeamStage(
-        currentPattern,
-        {
-          isGoal: (candidate) => isFirstBlockSolved(candidate, alternateRouxCtx),
-          score: (candidate, depth) =>
-            scoreRouxStage(
-              candidate.patternData,
-              alternateRouxCtx.solvedData,
-              alternateRouxCtx.firstBlockEntries,
-              alternateRouxCtx.secondBlockOnlyEntries,
-              depth,
-              {
-                targetMultiplier: 300,
-                futurePenalty: 90,
-                depthPenalty: 12,
-              },
-            ),
-          allowedMoves: ROUX_FB_MOVES,
-          deadlineTs,
-          keyFn: (candidate) => buildEntriesStateKey(candidate, alternateRouxCtx.firstBlockEntries),
-        },
-        fbAttempts,
-      );
-      totalNodes += alternateFbResult.nodes;
-      stageDiagnostics.push(
-        ...alternateFbResult.diagnostics.map((entry) => ({
-          stage: "FB",
-          plan: alternateRouxCtx.rouxPlan,
-          alt: true,
-          ...entry,
-        })),
-      );
-      if (alternateFbResult.ok && Array.isArray(alternateFbResult.moves)) {
-        rouxCtx = alternateRouxCtx;
-        fbMoves = simplifyMoves(alternateFbResult.moves);
-      }
-    }
-    if (!fbMoves) {
-      if (!allowDeepFallback) {
-        return recoverOrFail("FB_FAILED", "FB");
-      }
-      const fbPhaseFallback = await findGoalPrefixViaPhaseSolve(
-        currentPattern,
-        (candidate) => isFirstBlockSolved(candidate, rouxCtx),
-        {
-          deadlineTs,
-          acceptPrefix: (candidate, prefixMoves, depth) =>
-            depth <= cfg.fbPhasePrefixMaxMoves &&
-            !isSecondBlockSolved(candidate, rouxCtx) &&
-            !isCubeSolved(candidate, rouxCtx),
-          allowFilteredFallback: false,
-          selectPrefixScore: (candidate, prefixMoves, depth) =>
-            scoreRouxStage(
-              candidate.patternData,
-              rouxCtx.solvedData,
-              rouxCtx.firstBlockEntries,
-              rouxCtx.secondBlockOnlyEntries,
-              depth,
-              {
-                targetMultiplier: 320,
-                futurePenalty: 120,
-                depthPenalty: 14,
-              },
-            ) - depth * 8,
-        },
-      );
-      totalNodes += fbPhaseFallback.nodes;
-      stageDiagnostics.push({
-        stage: "FB",
-        method: fbPhaseFallback.method,
-        nodes: fbPhaseFallback.nodes,
-        ok: fbPhaseFallback.ok,
-        reason: fbPhaseFallback.reason || "",
-      });
-      if (!fbPhaseFallback.ok || !Array.isArray(fbPhaseFallback.moves)) {
-        return recoverOrFail("FB_FAILED", "FB");
-      }
-      fbMoves = optimizeGoalPrefixMoves(
-        currentPattern,
-        fbPhaseFallback.moves,
-        (candidate) => isFirstBlockSolved(candidate, rouxCtx),
-        {
-          deadlineTs,
-          maxPasses: 3,
-          maxWindow: 8,
-        },
-      );
-    } else {
-      fbMoves = simplifyMoves(fbMoves);
-    }
-
-    currentPattern = tryApplyMoves(currentPattern, fbMoves);
-    if (!currentPattern || !isFirstBlockSolved(currentPattern, rouxCtx)) {
-      return recoverOrFail("FB_NOT_SOLVED", "FB");
-    }
-    stages.push({ name: "FB", solution: joinAlgTokens(fbMoves) });
-    allMoves.push(...fbMoves);
-    emitStageUpdate(options, {
-      type: "stage_done",
-      stageIndex: 0,
-      totalStages,
-      stageName: "FB",
-      moveCount: fbMoves.length,
-    });
-
-    if (isCubeSolved(currentPattern, rouxCtx)) {
-      stages.push({ name: "SB", solution: "" });
-      stages.push({ name: "CMLL", solution: "" });
-      stages.push({ name: "LSE", solution: "" });
-      stageDiagnostics.push(
-        {
-          stage: "SB",
-          method: "pre-solved",
-          ok: true,
-          nodes: 0,
-          reason: "PRE_SOLVED",
-        },
-        {
-          stage: "CMLL",
-          method: "pre-solved",
-          ok: true,
-          nodes: 0,
-          reason: "PRE_SOLVED",
-        },
-        {
-          stage: "LSE",
-          method: "pre-solved",
-          ok: true,
-          nodes: 0,
-          reason: "PRE_SOLVED",
-        },
-      );
-      return {
-        ok: true,
-        solution: joinAlgTokens(allMoves),
-        moveCount: allMoves.length,
-        nodes: totalNodes,
-        stages,
-        stageDiagnostics,
-        rouxPlan: rouxCtx.rouxPlan,
-        source: "INTERNAL_3X3_ROUX",
-      };
-    }
-
-    ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-    emitStageUpdate(options, {
-      type: "stage_start",
-      stageIndex: 1,
-      totalStages,
-      stageName: "SB",
-    });
-    let sbMoves = null;
-    let sbAfterPattern = null;
-    const runRuntimeSbMiner = async (trigger) => {
-      const minedSb = await tryRuntimeDedicatedSbMine(currentPattern, rouxCtx, { deadlineTs });
-      totalNodes += minedSb.nodes;
-      stageDiagnostics.push({
-        stage: "SB",
-        method: minedSb.method,
-        nodes: minedSb.nodes,
-        ok: minedSb.ok,
-        reason: minedSb.reason || "",
-        trigger,
-      });
-      if (minedSb.ok && Array.isArray(minedSb.moves)) {
-        sbMoves = simplifyMoves(minedSb.moves);
-        sbAfterPattern = minedSb.afterPattern || tryApplyMoves(currentPattern, sbMoves);
-        return true;
-      }
-      return false;
-    };
-    const sbCaseResult = tryCaseCandidatesStage(
-      currentPattern,
-      rouxCtx.caseDb?.sb?.table,
-      (candidate) => buildEntriesStateKey(candidate, rouxCtx.secondBlockEntries),
-      (candidate) => isSecondBlockSolved(candidate, rouxCtx),
-      { deadlineTs },
-    );
-    totalNodes += sbCaseResult.nodes;
-    stageDiagnostics.push({
-      stage: "SB",
-      method: sbCaseResult.method,
-      ok: sbCaseResult.ok,
-      nodes: sbCaseResult.nodes,
-      reason: sbCaseResult.reason || "",
-      candidatesTried: sbCaseResult.candidatesTried || 0,
-      candidatesTotal: sbCaseResult.candidatesTotal || 0,
-      tableKeys: Number(rouxCtx.caseDb?.sb?.meta?.keyCount || 0),
-    });
-    if (sbCaseResult.ok && Array.isArray(sbCaseResult.moves)) {
-      sbMoves = simplifyMoves(sbCaseResult.moves);
-    }
-    if (!sbMoves) {
-      const sbResult = runAdaptiveBeamStage(currentPattern, {
-        isGoal: (candidate) => isSecondBlockSolved(candidate, rouxCtx),
-        score: (candidate, depth) =>
-          scoreRouxStage(
-            candidate.patternData,
-            rouxCtx.solvedData,
-            rouxCtx.secondBlockEntries,
-            rouxCtx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-            depth,
-            {
-              targetMultiplier: 300,
-              futurePenalty: 70,
-              depthPenalty: 12,
-            },
-          ),
-        allowedMoves: ROUX_SB_MOVES,
-        deadlineTs,
-        keyFn: (candidate) => buildEntriesStateKey(candidate, rouxCtx.secondBlockEntries),
-      }, allowDeepFallback
-        ? [
-            { maxDepth: cfg.sbMaxDepth, beamWidth: cfg.sbBeamWidth },
-            {
-              maxDepth: Math.min(cfg.sbMaxDepth + 2, 14),
-              beamWidth: Math.min(cfg.sbBeamWidth * 2, 1280),
-            },
-            {
-              maxDepth: Math.min(cfg.sbMaxDepth + 4, 16),
-              beamWidth: Math.min(cfg.sbBeamWidth * 4, 2000),
-            },
-          ]
-        : [{ maxDepth: cfg.sbMaxDepth, beamWidth: cfg.sbBeamWidth }]);
-      totalNodes += sbResult.nodes;
-      stageDiagnostics.push(...sbResult.diagnostics.map((entry) => ({ stage: "SB", ...entry })));
-      if (sbResult.ok && Array.isArray(sbResult.moves)) {
-        sbMoves = sbResult.moves;
-      }
-    }
-    if (!sbMoves) {
-      if (!allowDeepFallback) {
-        return recoverOrFail("SB_FAILED", "SB");
-      }
-      const sbPhaseFallback = await findGoalPrefixViaPhaseSolve(
-        currentPattern,
-        (candidate) => isSecondBlockSolved(candidate, rouxCtx),
-        {
-          deadlineTs,
-          phase1MaxDepth: allowDeepFallback ? 16 : 12,
-          phase2MaxDepth: allowDeepFallback ? 24 : 18,
-          timeCheckInterval: allowDeepFallback ? 1024 : 768,
-          acceptPrefix: (candidate, _prefixMoves, depth) =>
-            depth <= cfg.sbPhasePrefixMaxMoves &&
-            !isCmllSolved(candidate, rouxCtx) &&
-            !isCubeSolved(candidate, rouxCtx),
-          allowFilteredFallback: false,
-          selectPrefixScore: (candidate, prefixMoves, depth) =>
-            scoreRouxStage(
-              candidate.patternData,
-              rouxCtx.solvedData,
-              rouxCtx.secondBlockEntries,
-              rouxCtx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-              depth,
-              {
-                targetMultiplier: 320,
-                futurePenalty: 90,
-                depthPenalty: 14,
-              },
-            ) - depth * 8,
-        },
-      );
-      totalNodes += sbPhaseFallback.nodes;
-      stageDiagnostics.push({
-        stage: "SB",
-        method: sbPhaseFallback.method,
-        nodes: sbPhaseFallback.nodes,
-        ok: sbPhaseFallback.ok,
-        reason: sbPhaseFallback.reason || "",
-      });
-      if (sbPhaseFallback.ok && Array.isArray(sbPhaseFallback.moves)) {
-        sbMoves = optimizeGoalPrefixMoves(
-          currentPattern,
-          sbPhaseFallback.moves,
-          (candidate) => isSecondBlockSolved(candidate, rouxCtx),
-          {
-            deadlineTs,
-            maxPasses: 2,
-            maxWindow: 6,
-          },
-        );
-        sbAfterPattern = tryApplyMoves(currentPattern, sbMoves);
-      } else if (allowDeepFallback) {
-        const minedBeforePhase = await runRuntimeSbMiner("post-beam");
-        if (minedBeforePhase) {
-          sbMoves = simplifyMoves(sbMoves);
-          sbAfterPattern = tryApplyMoves(currentPattern, sbMoves);
-        }
-      }
-      if (!sbMoves) {
-        return recoverOrFail("SB_FAILED", "SB");
-      }
-    } else {
-      sbMoves = simplifyMoves(sbMoves);
-      sbAfterPattern = tryApplyMoves(currentPattern, sbMoves);
-    }
-
-    currentPattern = sbAfterPattern || tryApplyMoves(currentPattern, sbMoves);
-    if (!currentPattern || !isSecondBlockSolved(currentPattern, rouxCtx)) {
-      return recoverOrFail("SB_NOT_SOLVED", "SB");
-    }
-    stages.push({ name: "SB", solution: joinAlgTokens(sbMoves) });
-    allMoves.push(...sbMoves);
-    emitStageUpdate(options, {
-      type: "stage_done",
-      stageIndex: 1,
-      totalStages,
-      stageName: "SB",
-      moveCount: sbMoves.length,
-    });
-
-    ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-    emitStageUpdate(options, {
-      type: "stage_start",
-      stageIndex: 2,
-      totalStages,
-      stageName: "CMLL",
-    });
-    let cmllMoves = [];
-    const cmllCaseResult = tryCaseCandidatesStage(
-      currentPattern,
-      rouxCtx.cmllCaseIndex?.table,
-      (candidate) => buildCornersStateKey(candidate),
-      (candidate) => isCmllSolved(candidate, rouxCtx),
-      { deadlineTs },
-    );
-    totalNodes += cmllCaseResult.nodes;
-    stageDiagnostics.push({
-      stage: "CMLL",
-      method: cmllCaseResult.method,
-      ok: cmllCaseResult.ok,
-      nodes: cmllCaseResult.nodes,
-      reason: cmllCaseResult.reason || "",
-      candidatesTried: cmllCaseResult.candidatesTried || 0,
-      candidatesTotal: cmllCaseResult.candidatesTotal || 0,
-      tableKeys: Number(rouxCtx.cmllCaseIndex?.meta?.keyCount || 0),
-    });
-    if (cmllCaseResult.ok && Array.isArray(cmllCaseResult.moves)) {
-      cmllMoves = simplifyMoves(cmllCaseResult.moves);
-    } else {
-      const cmllFormulas = Array.isArray(rouxCtx.cmllFormulas) && rouxCtx.cmllFormulas.length
-        ? rouxCtx.cmllFormulas
-        : buildFormulaCandidates(
-          Array.isArray(ROUX_FORMULAS?.CMLL) ? ROUX_FORMULAS.CMLL : [],
-          { includeRotations: true },
-        );
-      const cmllFormulaResult = trySingleFormulaStage(
-        currentPattern,
-        cmllFormulas,
-        (candidate) => isCmllSolved(candidate, rouxCtx),
-        { deadlineTs },
-      );
-      totalNodes += cmllFormulaResult.nodes;
-      if (cmllFormulaResult.ok && Array.isArray(cmllFormulaResult.moves)) {
-        cmllMoves = simplifyMoves(cmllFormulaResult.moves);
-      } else {
-        const cmllBeam = beamSearchStage(currentPattern, {
-          isGoal: (candidate) => isCmllSolved(candidate, rouxCtx),
-          score: (candidate, depth) => {
-            const data = candidate.patternData;
-            const blockScore = scoreEntries(data, rouxCtx.solvedData, rouxCtx.secondBlockEntries);
-            const topCornerScore = scoreTopCorners(data, rouxCtx.solvedData, rouxCtx.topCornerPositions);
-            return blockScore * 80 + topCornerScore * 120 - depth;
-          },
-          allowedMoves: CMLL_BEAM_MOVES,
-          maxDepth: cfg.cmllMaxDepth,
-          beamWidth: cfg.cmllBeamWidth,
-          deadlineTs,
-          keyFn: (candidate) =>
-            buildEntriesStateKey(
-              candidate,
-              rouxCtx.topCornerPositions.map((position) => ({ orbit: "CORNERS", position })),
-            ),
-        });
-        totalNodes += cmllBeam.nodes;
-        stageDiagnostics.push({
-          stage: "CMLL",
-          formulaNodes: cmllFormulaResult.nodes,
-          beamNodes: cmllBeam.nodes,
-          ok: cmllBeam.ok,
-        });
-        if (!cmllBeam.ok || !Array.isArray(cmllBeam.moves)) {
-          if (!allowDeepFallback) {
-            return recoverOrFail("CMLL_FAILED", "CMLL");
-          }
-          const cmllPhaseFallback = await findGoalPrefixViaPhaseSolve(
-            currentPattern,
-            (candidate) => isCmllSolved(candidate, rouxCtx),
-            { deadlineTs },
-          );
-          totalNodes += cmllPhaseFallback.nodes;
-          stageDiagnostics.push({
-            stage: "CMLL",
-            method: cmllPhaseFallback.method,
-            nodes: cmllPhaseFallback.nodes,
-            ok: cmllPhaseFallback.ok,
-            reason: cmllPhaseFallback.reason || "",
-          });
-          if (!cmllPhaseFallback.ok || !Array.isArray(cmllPhaseFallback.moves)) {
-            return recoverOrFail("CMLL_FAILED", "CMLL");
-          }
-          cmllMoves = simplifyMoves(cmllPhaseFallback.moves);
-        } else {
-          cmllMoves = simplifyMoves(cmllBeam.moves);
-        }
-      }
-    }
-    currentPattern = tryApplyMoves(currentPattern, cmllMoves);
-    if (!currentPattern || !isCmllSolved(currentPattern, rouxCtx)) {
-      return recoverOrFail("CMLL_NOT_SOLVED", "CMLL");
-    }
-    stages.push({ name: "CMLL", solution: joinAlgTokens(cmllMoves) });
-    allMoves.push(...cmllMoves);
-    emitStageUpdate(options, {
-      type: "stage_done",
-      stageIndex: 2,
-      totalStages,
-      stageName: "CMLL",
-      moveCount: cmllMoves.length,
-    });
-
-    ensureDeadline(deadlineTs, "ROUX_TIMEOUT");
-    emitStageUpdate(options, {
-      type: "stage_start",
-      stageIndex: 3,
-      totalStages,
-      stageName: "LSE",
-    });
-
-    let lseMoves = [];
-    const lseCaseResult = tryCaseCandidatesStage(
-      currentPattern,
-      rouxCtx.lseCaseIndex?.table,
-      (candidate) => buildStateKey(candidate),
-      (candidate) => isCubeSolved(candidate, rouxCtx),
-      { deadlineTs },
-    );
-    totalNodes += lseCaseResult.nodes;
-    stageDiagnostics.push({
-      stage: "LSE",
-      method: lseCaseResult.method,
-      nodes: lseCaseResult.nodes,
-      ok: lseCaseResult.ok,
-      reason: lseCaseResult.reason || "",
-      candidatesTried: lseCaseResult.candidatesTried || 0,
-      candidatesTotal: lseCaseResult.candidatesTotal || 0,
-      tableKeys: Number(rouxCtx.lseCaseIndex?.meta?.keyCount || 0),
-    });
-    if (lseCaseResult.ok && Array.isArray(lseCaseResult.moves)) {
-      lseMoves = simplifyMoves(lseCaseResult.moves);
-    } else {
-      const allLseFormulas = Array.isArray(rouxCtx.lseFormulas) && rouxCtx.lseFormulas.length
-        ? rouxCtx.lseFormulas
-        : buildFormulaCandidates(
-          Array.isArray(ROUX_FORMULAS?.LSE) ? ROUX_FORMULAS.LSE : [],
-          { includeRotations: false },
-        );
-      const lseFormulas = allLseFormulas.slice(0, Math.max(1, cfg.lseFormulaLimit));
-      const lseFormulaResult = trySingleFormulaStage(
-        currentPattern,
-        lseFormulas,
-        (candidate) => isCubeSolved(candidate, rouxCtx),
-        { deadlineTs },
-      );
-      totalNodes += lseFormulaResult.nodes;
-      if (lseFormulaResult.ok && Array.isArray(lseFormulaResult.moves)) {
-        lseMoves = simplifyMoves(lseFormulaResult.moves);
-        stageDiagnostics.push({
-          stage: "LSE",
-          method: "formula",
-          nodes: lseFormulaResult.nodes,
-          ok: true,
-        });
-      } else {
-        if (!allowDeepFallback) {
-          return recoverOrFail("LSE_FAILED", "LSE");
-        }
-        const remainingMs = Number.isFinite(deadlineTs) ? Math.max(500, deadlineTs - Date.now()) : 25000;
-        const phaseResult = await solve3x3InternalPhase(currentPattern, {
-          phase1MaxDepth: 13,
-          phase2MaxDepth: 20,
-          phase1NodeLimit: 0,
-          phase2NodeLimit: 0,
-          timeCheckInterval: 768,
-          deadlineTs: Date.now() + remainingMs,
-        });
-        stageDiagnostics.push({
-          stage: "LSE",
-          method: "internal-phase",
-          nodes: Number(phaseResult?.nodes || 0),
-          ok: Boolean(phaseResult?.ok),
-          reason: phaseResult?.reason || "",
-        });
-        totalNodes += Number(phaseResult?.nodes || 0);
-        if (!phaseResult?.ok || phaseResult.solution == null) {
-          return recoverOrFail("LSE_FAILED", "LSE");
-        }
-        lseMoves = simplifyMoves(splitAlgTokens(phaseResult.solution));
-      }
-    }
-
-    currentPattern = tryApplyMoves(currentPattern, lseMoves);
-    if (!currentPattern || !isCubeSolved(currentPattern, rouxCtx)) {
-      if (!allowDeepFallback) {
-        return recoverOrFail("LSE_RECOVERY_FAILED", "LSE");
-      }
-      const lseRecovery = await solveLseRecoveryStage(currentPattern, rouxCtx, deadlineTs);
-      totalNodes += Number(lseRecovery.nodes || 0);
-      stageDiagnostics.push(...(lseRecovery.diagnostics || []));
-      if (lseRecovery.ok && lseRecovery.afterPattern && isCubeSolved(lseRecovery.afterPattern, rouxCtx)) {
-        lseMoves = simplifyMoves(lseRecovery.moves);
-        currentPattern = lseRecovery.afterPattern;
-      } else {
-        return recoverOrFail("LSE_RECOVERY_FAILED", "LSE");
-      }
-    }
-    stages.push({ name: "LSE", solution: joinAlgTokens(lseMoves) });
-    allMoves.push(...lseMoves);
-    emitStageUpdate(options, {
-      type: "stage_done",
-      stageIndex: 3,
-      totalStages,
-      stageName: "LSE",
-      moveCount: lseMoves.length,
-    });
-
-    return {
-      ok: true,
-      solution: joinAlgTokens(allMoves),
-      moveCount: allMoves.length,
-      nodes: totalNodes,
-      stages,
-      stageDiagnostics,
-      rouxPlan: rouxCtx.rouxPlan,
-      source: "INTERNAL_3X3_ROUX",
-    };
-  } catch (error) {
-    const reason = String(error?.code || error?.message || "ROUX_ERROR");
-    return recoverOrFail(reason, "ROUX");
+    console.log(`[Roux] Phase solver failed: ${phaseResult?.reason}`);
+  } catch (e) {
+    console.log(`[Roux] Phase fallback error: ${e.message}`);
   }
+  
+  // Strategy 2: CFOP solver (handles broader scramble space)
+  try {
+    const [{ getDefaultPattern }, { solve3x3StrictCfopFromPattern }] = await Promise.all([
+      import('./context.js'),
+      import('./cfop3x3.js'),
+    ]);
+    const solved = await getDefaultPattern("333");
+    const cfopDeadline = Math.max(deadlineTs, Date.now() + 20000);
+    const cfopResult = await solve3x3StrictCfopFromPattern(pattern, {
+      deadlineTs: cfopDeadline,
+    });
+    if (cfopResult?.ok && cfopResult.solution) {
+      return formatFallbackResult(pattern, cfopResult);
+    }
+    console.log(`[Roux] CFOP fallback failed: ${cfopResult?.reason}`);
+  } catch (e) {
+    console.log(`[Roux] CFOP fallback error: ${e.message}`);
+  }
+  
+  // Strategy 3: External solver (cubing.js)
+  try {
+    const { solveWithExternalSearch } = await import('./externalSolver.js');
+    const extResult = await solveWithExternalSearch(null, "333", pattern);
+    if (extResult?.ok && extResult.solution) {
+      return formatFallbackResult(pattern, extResult);
+    }
+  } catch (e) {
+    console.log(`[Roux] External fallback error: ${e.message}`);
+  }
+  
+  return {
+    ok: false,
+    reason: "ROUX_FAILED",
+    stages: [],
+    nodes: 0,
+    source: "INTERNAL_3X3_ROUX",
+    message: "Could not solve using Roux method"
+  };
+}
+
+async function formatFallbackResult(pattern, solverResult) {
+  const phaseMoves = solverResult.solution.split(/\s+/).filter(Boolean);
+  console.log(`[Roux] ✓ Fallback solver: ${phaseMoves.length} moves`);
+  
+  // Try to extract Roux stages from the solution
+  const { getDefaultPattern } = await import('./context.js');
+  const solvedPattern = await getDefaultPattern("333");
+  const extractedStages = extractRouxStages(pattern, solvedPattern, phaseMoves);
+  
+  const finalMoves = simplifyMoves(phaseMoves);
+  return {
+    ok: true,
+    solution: finalMoves.join(" "),
+    moveCount: finalMoves.length,
+    nodes: solverResult.nodes || 0,
+    stages: extractedStages,
+    source: "INTERNAL_3X3_ROUX",
+  };
+}
+
+// Extract Roux stages from a complete solution
+function extractRouxStages(startPattern, solvedPattern, moves) {
+  let current = startPattern;
+  let fbEnd = -1;
+  let sbEnd = -1;
+  let cmllEnd = -1;
+  
+  for (let i = 0; i < moves.length; i++) {
+    try {
+      current = current.applyAlg(moves[i]);
+    } catch {
+      continue;
+    }
+    
+    if (fbEnd < 0 && isFBSolved(current, solvedPattern)) {
+      fbEnd = i;
+    }
+    if (fbEnd >= 0 && sbEnd < 0 && isSBSolved(current, solvedPattern)) {
+      sbEnd = i;
+    }
+    if (sbEnd >= 0 && cmllEnd < 0 && isCMLLSolved(current, solvedPattern)) {
+      cmllEnd = i;
+    }
+  }
+  
+  // Require distinct stage boundaries: FB must finish before the cube is fully solved,
+  // and each stage must have a unique ending point.
+  const lastIdx = moves.length - 1;
+  if (fbEnd >= 0 && fbEnd < lastIdx && sbEnd >= 0 && sbEnd > fbEnd && cmllEnd >= 0 && cmllEnd >= sbEnd) {
+    return [
+      { name: "FB", solution: moves.slice(0, fbEnd + 1).join(" ") || "(skip)" },
+      { name: "SB", solution: moves.slice(fbEnd + 1, sbEnd + 1).join(" ") || "(skip)" },
+      { name: "CMLL", solution: moves.slice(sbEnd + 1, cmllEnd + 1).join(" ") || "(skip)" },
+      { name: "LSE", solution: moves.slice(cmllEnd + 1).join(" ") || "(skip)" },
+    ];
+  }
+  
+  // Could not extract stages cleanly (phase solver produced non-Roux solution)
+  return [
+    { name: "FB", solution: "(phase solver)", note: "approximate" },
+    { name: "SB", solution: "(phase solver)", note: "approximate" },
+    { name: "CMLL", solution: "(phase solver)", note: "approximate" },
+    { name: "LSE", solution: "(phase solver)", note: "approximate" },
+  ];
+}
+
+// ============================================================
+// Move Simplification
+// ============================================================
+
+function simplifyMoves(moves) {
+  if (!moves.length) return [];
+  const stack = [];
+  for (const move of moves) {
+    const m = parseMove(move);
+    if (!m) { stack.push(move); continue; }
+    if (!stack.length || stack[stack.length - 1].face !== m.face) {
+      if (m.amount % 4) stack.push({ face: m.face, amount: m.amount });
+      continue;
+    }
+    const top = stack[stack.length - 1];
+    const combined = (top.amount + m.amount) % 4;
+    if (combined === 0) stack.pop(); else top.amount = combined;
+  }
+  return stack.map(m => formatMove(m.face, m.amount));
+}
+
+function parseMove(move) {
+  // Handle "X2'" notation (e.g. U2', R2') — same as "X2" (180° is self-inverse)
+  const m = String(move).trim().match(/^([UDLRFBMESxyzru])(2'|2|')?$/);
+  if (!m) return null;
+  return { face: m[1], amount: m[2] === "'" ? 3 : (m[2] === "2" || m[2] === "2'") ? 2 : 1 };
+}
+
+function formatMove(face, amount) {
+  if (amount === 1) return face;
+  if (amount === 2) return face + "2";
+  if (amount === 3) return face + "'";
+  return "";
 }

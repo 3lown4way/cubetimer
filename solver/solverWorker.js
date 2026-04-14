@@ -11,7 +11,7 @@ let solver3x3PhaseModulesPromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
 const STRICT_CFOP_TIMEOUT_MS = 45000;
 const STRICT_CFOP_RETRY_TIMEOUT_MS = 25000;
-const ROUX_333_TIMEOUT_MS = 30000;
+const ROUX_333_TIMEOUT_MS = 45000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const STRICT_F2L_RETRY_OPTIONS = [
@@ -65,6 +65,19 @@ function normalizeF2LMethod(method) {
     return "top10-mixed";
   }
   return "legacy";
+}
+
+function normalizeCrossColorList(crossColor) {
+  const normalized = String(crossColor || "D").toUpperCase();
+  if (
+    normalized === "CN" ||
+    normalized === "COLOR_NEUTRAL" ||
+    normalized === "COLOR-NEUTRAL" ||
+    normalized === "AUTO"
+  ) {
+    return ["D", "U", "F", "B", "R", "L"];
+  }
+  return [normalized];
 }
 
 function shouldFallbackToExternal3x3(result) {
@@ -479,7 +492,7 @@ const api = {
               insertionMaxDepth: isOptimalMode ? 6 : 5,
               insertionTimeMs: isOptimalMode ? 9000 : 2500,
               insertionThreshold: isOptimalMode ? 23 : 24,
-              crossColors: ["D"],
+              crossColors: normalizeCrossColorList(crossColor),
             }),
             FMC_333_TIMEOUT_MS,
           ).catch(() => ({ ok: false, reason: isOptimalMode ? "OPTIMAL_TIMEOUT" : "FMC_TIMEOUT" }));
@@ -542,10 +555,10 @@ const api = {
           const hardDeadlineTs = Date.now() + Math.max(1000, ROUX_333_TIMEOUT_MS - 250);
           const rouxResult = await withTimeout(
             (async () => {
-              const fastDeadlineTs = Math.min(hardDeadlineTs, Date.now() + 8000);
+              const fastDeadlineTs = Math.min(hardDeadlineTs, Date.now() + 5000);
               const fastResult = await solve3x3RouxFromPattern(pattern, {
                 deadlineTs: fastDeadlineTs,
-                enableRecovery: false,
+                enableRecovery: true,
                 onStageUpdate(progress) {
                   if (typeof onProgress === "function") {
                     try {
@@ -574,47 +587,8 @@ const api = {
           if (rouxResult?.ok) {
             return rouxResult;
           }
-          if (typeof onProgress === "function") {
-            try {
-              void onProgress({
-                type: "fallback_start",
-                stageName: "Roux -> CFOP",
-                reason: String(rouxResult?.reason || "ROUX_FAILED"),
-              });
-            } catch (_) {}
-          }
-          const cfopFallback = await solveWithInternal3x3StrictRetries(scramble, onProgress, {
-            crossColor,
-            mode: "cfop",
-            f2lMethod,
-            transitionProfileSolver,
-            styleProfile,
-            f2lTransitionProfile,
-            enableStyleFallback,
-            f2lDownstreamProfile,
-            llFamilyCalibration,
-            enableOllPllPrediction,
-            ollPllPredictionWeight,
-          });
-          if (cfopFallback?.ok) {
-            if (typeof onProgress === "function") {
-              try {
-                void onProgress({
-                  type: "fallback_done",
-                  stageName: "Roux -> CFOP",
-                });
-              } catch (_) {}
-            }
-            return {
-              ...cfopFallback,
-              source: "INTERNAL_3X3_ROUX_FALLBACK_CFOP",
-              fallbackFrom: String(rouxResult?.reason || "ROUX_FAILED"),
-              rouxFailure: {
-                reason: String(rouxResult?.reason || ""),
-                stage: String(rouxResult?.stage || ""),
-              },
-            };
-          }
+          
+          // No CFOP fallback - return Roux failure directly
           return rouxResult;
         }
         if (typeof onProgress === "function") {
@@ -674,10 +648,7 @@ const api = {
           } catch (_) {}
         }
 
-        if (mode !== "strict") {
-          // Do not use external library fallback in non-strict modes (optimal/fmc/zb).
-          return phaseResult?.reason ? phaseResult : strictResult;
-        }
+        // Allow external fallback for all modes (zb included) to guarantee 100% accuracy.
 
         if (typeof onProgress === "function") {
           try {

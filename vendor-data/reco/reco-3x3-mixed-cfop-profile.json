@@ -1,8 +1,8 @@
 {
   "schemaVersion": "reco-mixed-cfop-profile.v2",
-  "generatedAt": "2026-04-12T02:35:29.729Z",
-  "sourceDetailsInput": "vendor-data/reco/reco-all-3x3-gte100-details.json",
-  "sourceStyleDetailsInput": "vendor-data/reco/reco-3x3-style-details.json",
+  "generatedAt": "2026-04-13T09:25:41.417Z",
+  "sourceDetailsInput": "/home/jhkang/cubetimer/vendor-data/reco/reco-all-3x3-gte100-details.json",
+  "sourceStyleDetailsInput": "/home/jhkang/cubetimer/vendor-data/reco/reco-3x3-style-details.json",
   "minSolves": 100,
   "mixedActivationThreshold": 0.45,
   "filter": {

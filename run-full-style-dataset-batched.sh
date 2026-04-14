@@ -23,8 +23,8 @@ ZB_BATCH_DIR="${ZB_BATCH_DIR:-$BATCH_DIR/zb}"
 
 METHODS="${METHODS:-CFOP,ZB}"
 STYLES="${STYLES:-legacy,balanced,rotationless,low-auf}"
-SCRAMBLE_CONCURRENCY="${SCRAMBLE_CONCURRENCY:-1}"
-MAX_BENCH_WORKERS="${MAX_BENCH_WORKERS:-2}"
+SCRAMBLE_CONCURRENCY="${SCRAMBLE_CONCURRENCY:-}"
+MAX_BENCH_WORKERS="${MAX_BENCH_WORKERS:-}"
 SAFE_MODE="${SAFE_MODE:-0}"
 NODE_MAX_OLD_SPACE_MB="${NODE_MAX_OLD_SPACE_MB:-0}"
 STRICT_TIMEOUT_MS="${STRICT_TIMEOUT_MS:-3000}"
@@ -35,12 +35,13 @@ MIN_SAMPLES="${MIN_SAMPLES:-10}"
 LEARN_OBJECTIVE="${LEARN_OBJECTIVE:-aggressive}"
 MIN_SOLVES="${MIN_SOLVES:-100}"
 PROGRESS="${PROGRESS:-0}"
-PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-10}"
-PROGRESS_LINES="${PROGRESS_LINES:-3}"
+PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-1}"
+PROGRESS_LINES="${PROGRESS_LINES:-0}"
 BENCH_RETRIES="${BENCH_RETRIES:-2}"
 BATCH_SIZE="${BATCH_SIZE:-100}"
-BATCH_PARALLEL="${BATCH_PARALLEL:-1}"
-BATCH_RESUME="${BATCH_RESUME:-1}"
+BATCH_PARALLEL="${BATCH_PARALLEL:-0}"
+BATCH_RESUME="${BATCH_RESUME:-0}"
+BATCH_FORCE="${BATCH_FORCE:-${BENCH_FORCE:-0}}"
 BATCH_START_OFFSET="${BATCH_START_OFFSET:-0}"
 AUTO_SCRAMBLE_CONCURRENCY="${AUTO_SCRAMBLE_CONCURRENCY:-0}"
 MAX_SCRAMBLE_CONCURRENCY="${MAX_SCRAMBLE_CONCURRENCY:-4}"
@@ -54,6 +55,28 @@ total_scrambles() {
   node -e "const fs=require('fs'); const p=process.argv[1]; const methodsRaw=process.argv[2]||''; const limit=parseInt(process.argv[3]||'0',10)||0; const data=JSON.parse(fs.readFileSync(p,'utf8')); const records=Array.isArray(data)? data : (data.records||[]); const methods=new Set(methodsRaw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean)); const seen=new Set(); let total=0; for (const row of records){ if (!row||!row.ok) continue; const puzzle=String(row?.meta?.puzzle||row?.puzzle||'').trim(); if (puzzle!=='3x3') continue; const sourceMethod=String(row.method||row?.meta?.method||'').trim().toUpperCase(); if (methods.size && !methods.has(sourceMethod)) continue; const scramble=String(row.scramble||'').trim(); if (!scramble) continue; if (seen.has(scramble)) continue; seen.add(scramble); total++; } if (limit>0 && total>limit) total=limit; console.log(total);" "$INPUT" "$METHODS" "$LIMIT"
 }
 
+detect_cpu_count() {
+  local cpu_count
+  cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)"
+  if [[ -z "$cpu_count" || "$cpu_count" -lt 1 ]]; then
+    cpu_count="$(command -v nproc >/dev/null 2>&1 && nproc || echo 1)"
+  fi
+  if [[ -z "$cpu_count" || "$cpu_count" -lt 1 ]]; then
+    cpu_count=1
+  fi
+  echo "$cpu_count"
+}
+
+count_csv_items() {
+  local raw="$1"
+  local count
+  count="$(awk -F',' '{print NF}' <<<"$raw")"
+  if [[ -z "$count" || "$count" -lt 1 ]]; then
+    count=1
+  fi
+  echo "$count"
+}
+
 latest_sample() {
   local log="$1"
   local sample
@@ -63,6 +86,53 @@ latest_sample() {
   else
     echo "$sample"
   fi
+}
+
+render_progress_block() {
+  local mode="$1"
+  local ts="$2"
+  local current="$3"
+  local total="$4"
+  local pct="$5"
+  local eta="$6"
+  local line_count=0
+
+  if [[ -n "${PROGRESS_BLOCK_LINES:-}" && "${PROGRESS_BLOCK_LINES:-0}" -gt 0 ]]; then
+    printf '\033[%sA' "$PROGRESS_BLOCK_LINES"
+  fi
+
+  printf '\033[2K[%s] %s overall: %s/%s (%s%%) ETA %s\n' "$ts" "$mode" "$current" "$total" "$pct" "$eta"
+  line_count=1
+
+  PROGRESS_BLOCK_LINES="$line_count"
+}
+
+clear_progress_block() {
+  if [[ -n "${PROGRESS_BLOCK_LINES:-}" && "${PROGRESS_BLOCK_LINES:-0}" -gt 0 ]]; then
+    printf '\033[%sA' "$PROGRESS_BLOCK_LINES"
+    local i
+    for ((i = 0; i < PROGRESS_BLOCK_LINES; i++)); do
+      printf '\033[2K\033[1B'
+    done
+    printf '\033[%sA' "$PROGRESS_BLOCK_LINES"
+    PROGRESS_BLOCK_LINES=0
+  fi
+}
+
+get_mode_progress_start_ts() {
+  local mode="$1"
+  if [[ "$mode" == "strict" ]]; then
+    if [[ -z "${STRICT_PROGRESS_START_TS:-}" ]]; then
+      STRICT_PROGRESS_START_TS="$(date +%s)"
+    fi
+    echo "$STRICT_PROGRESS_START_TS"
+    return
+  fi
+
+  if [[ -z "${ZB_PROGRESS_START_TS:-}" ]]; then
+    ZB_PROGRESS_START_TS="$(date +%s)"
+  fi
+  echo "$ZB_PROGRESS_START_TS"
 }
 
 batch_output_complete() {
@@ -106,7 +176,7 @@ run_mode_with_retry() {
   local timeout_ms="$5"
   local offset="$6"
   local limit="$7"
-  local total="$8"
+  local overall_total="$8"
   local attempt=1
   local status=0
 
@@ -117,11 +187,15 @@ run_mode_with_retry() {
 
     if [[ "$PROGRESS" -eq 1 ]]; then
       local start_ts
-      start_ts="$(date +%s)"
+      start_ts="$(get_mode_progress_start_ts "$mode")"
       while kill -0 "$pid" 2>/dev/null; do
-        local ts sample now_ts elapsed pct eta rem rate eta_sec
+        local ts sample current now_ts elapsed pct eta rem rate eta_sec
         ts="$(date '+%H:%M:%S')"
         sample="$(latest_sample "$log")"
+        current=$((offset + sample))
+        if [[ "$current" -gt "$overall_total" ]]; then
+          current="$overall_total"
+        fi
         now_ts="$(date +%s)"
         elapsed="$((now_ts - start_ts))"
         if [[ "$elapsed" -lt 1 ]]; then
@@ -129,11 +203,11 @@ run_mode_with_retry() {
         fi
         pct="0.0"
         eta="--"
-        if [[ -n "$total" && "$total" -gt 0 ]]; then
-          pct="$(awk -v s="$sample" -v t="$total" 'BEGIN{ if(t<=0){print "0.0"} else {printf "%.1f", (s*100)/t} }')"
-          if [[ "$sample" -gt 0 ]]; then
-            rate="$(awk -v s="$sample" -v e="$elapsed" 'BEGIN{ if(e<=0){print 0} else {printf "%.6f", s/e} }')"
-            rem="$((total - sample))"
+        if [[ -n "$overall_total" && "$overall_total" -gt 0 ]]; then
+          pct="$(awk -v s="$current" -v t="$overall_total" 'BEGIN{ if(t<=0){print "0.0"} else {printf "%.1f", (s*100)/t} }')"
+          if [[ "$current" -gt 0 ]]; then
+            rate="$(awk -v s="$current" -v e="$elapsed" 'BEGIN{ if(e<=0){print 0} else {printf "%.6f", s/e} }')"
+            rem="$((overall_total - current))"
             if [[ "$rem" -lt 0 ]]; then
               rem=0
             fi
@@ -141,12 +215,16 @@ run_mode_with_retry() {
             eta="$(date -u -d "@$eta_sec" '+%H:%M:%S' 2>/dev/null || date -u -r "$eta_sec" '+%H:%M:%S')"
           fi
         fi
-        echo ""
-        echo "[$ts] $mode progress: ${sample}/${total} (${pct}%) ETA ${eta}"
-        echo "[$ts] $mode tail:"
-        tail -n "$PROGRESS_LINES" "$log" || true
+        if [[ -t 1 ]]; then
+          render_progress_block "$mode" "$ts" "$current" "$overall_total" "$pct" "$eta"
+        else
+          echo "[$ts] $mode overall: ${current}/${overall_total} (${pct}%) ETA ${eta}"
+        fi
         sleep "$PROGRESS_INTERVAL"
       done
+      if [[ -t 1 ]]; then
+        clear_progress_block
+      fi
     fi
 
     wait "$pid" || status=$?
@@ -178,6 +256,28 @@ join_by_comma() {
 }
 
 mkdir -p "$RECO_DIR" "$STRICT_BATCH_DIR" "$ZB_BATCH_DIR"
+
+if [[ "$BATCH_FORCE" -eq 1 ]]; then
+  BATCH_RESUME=0
+fi
+
+CPU_COUNT="$(detect_cpu_count)"
+STYLE_COUNT="$(count_csv_items "$STYLES")"
+MODE_PARALLEL_FACTOR=1
+if [[ "$BATCH_PARALLEL" -eq 1 ]]; then
+  MODE_PARALLEL_FACTOR=2
+fi
+
+if [[ -z "$MAX_BENCH_WORKERS" ]]; then
+  MAX_BENCH_WORKERS="$CPU_COUNT"
+fi
+
+if [[ -z "$SCRAMBLE_CONCURRENCY" ]]; then
+  SCRAMBLE_CONCURRENCY=$((CPU_COUNT / (STYLE_COUNT * MODE_PARALLEL_FACTOR)))
+  if [[ "$SCRAMBLE_CONCURRENCY" -lt 1 ]]; then
+    SCRAMBLE_CONCURRENCY=1
+  fi
+fi
 
 if [[ "$NODE_MAX_OLD_SPACE_MB" -gt 0 ]]; then
   export NODE_OPTIONS="--max-old-space-size=$NODE_MAX_OLD_SPACE_MB"
@@ -215,6 +315,10 @@ echo "  input: $INPUT"
 echo "  style profile input: $STYLE_PROFILE_INPUT"
 echo "  batch size: $BATCH_SIZE"
 echo "  batch parallel: $BATCH_PARALLEL"
+echo "  batch resume: $BATCH_RESUME"
+echo "  batch force: $BATCH_FORCE"
+echo "  cpu count: $CPU_COUNT"
+echo "  style count: $STYLE_COUNT"
 echo "  strict batch dir: $STRICT_BATCH_DIR"
 echo "  zb batch dir: $ZB_BATCH_DIR"
 echo "  strict final: $STRICT_OUT"
@@ -251,6 +355,13 @@ echo "  start offset: $((start_batch_index * batch_size))"
 echo ""
 echo "진행상황 보기 활성화 (interval=${PROGRESS_INTERVAL}s, lines=${PROGRESS_LINES})"
 
+if [[ "$BATCH_RESUME" -ne 1 ]]; then
+  echo "기존 batch 결과를 비우고 전체를 새로 실행합니다."
+  rm -f "$STRICT_BATCH_DIR"/strict-*.json "$STRICT_BATCH_DIR"/strict-*.log
+  rm -f "$ZB_BATCH_DIR"/zb-*.json "$ZB_BATCH_DIR"/zb-*.log
+  rm -f "$STRICT_LOG" "$ZB_LOG"
+fi
+
 strict_failed=0
 zb_failed=0
 
@@ -277,11 +388,15 @@ for ((batch_index = start_batch_index; batch_index < batch_count; batch_index++)
 
   strict_needed=1
   zb_needed=1
-  if [[ "$BATCH_RESUME" -eq 1 && -f "$strict_output" && "$(batch_output_complete "$strict_output" strict "$offset" "$limit")" == "1" ]]; then
+  if [[ "$BATCH_FORCE" -eq 1 ]]; then
+    echo "  strict force rerun enabled, ignoring existing output: $strict_output"
+  elif [[ "$BATCH_RESUME" -eq 1 && -f "$strict_output" && "$(batch_output_complete "$strict_output" strict "$offset" "$limit")" == "1" ]]; then
     echo "  strict output exists, skipping: $strict_output"
     strict_needed=0
   fi
-  if [[ "$BATCH_RESUME" -eq 1 && -f "$zb_output" && "$(batch_output_complete "$zb_output" zb "$offset" "$limit")" == "1" ]]; then
+  if [[ "$BATCH_FORCE" -eq 1 ]]; then
+    echo "  zb force rerun enabled, ignoring existing output: $zb_output"
+  elif [[ "$BATCH_RESUME" -eq 1 && -f "$zb_output" && "$(batch_output_complete "$zb_output" zb "$offset" "$limit")" == "1" ]]; then
     echo "  zb output exists, skipping: $zb_output"
     zb_needed=0
   fi

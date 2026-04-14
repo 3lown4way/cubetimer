@@ -106,6 +106,9 @@ const CROSS_COLOR_LABELS = {
   R: "Red",
   L: "Orange",
 };
+const CROSS_COLOR_SEQUENCE = ["D", "U", "F", "B", "R", "L"];
+// Per-color budget for CN cross probe; keeps total probe time bounded regardless of IDA* depth.
+const CN_CROSS_PROBE_BUDGET_MS = 260;
 const CROSS_EDGE_TARGETS = {
   D: ["DF", "DR", "DB", "DL"],
   U: ["UF", "UR", "UB", "UL"],
@@ -165,42 +168,28 @@ function stageHeuristicFromMismatch(pieceMismatch, orientationMismatch) {
 
 function compareF2LRanking(a, b) {
   if (a.pairProgress !== b.pairProgress) return b.pairProgress - a.pairProgress;
-  const llPriorityA = Number.isFinite(a.llPriority) ? a.llPriority : 0;
-  const llPriorityB = Number.isFinite(b.llPriority) ? b.llPriority : 0;
-  if (llPriorityA !== llPriorityB) return llPriorityB - llPriorityA;
+  if (a.llPriority !== b.llPriority) return b.llPriority - a.llPriority;
   if (a.solvedSum !== b.solvedSum) return b.solvedSum - a.solvedSum;
-  const styleBiasA = Number.isFinite(a.styleBiasLevel) ? a.styleBiasLevel : 0;
-  const styleBiasB = Number.isFinite(b.styleBiasLevel) ? b.styleBiasLevel : 0;
-  const transitionBiasA = Number.isFinite(a.transitionBiasLevel) ? a.transitionBiasLevel : 0;
-  const transitionBiasB = Number.isFinite(b.transitionBiasLevel) ? b.transitionBiasLevel : 0;
-  const downstreamBiasA = Number.isFinite(a.downstreamBiasLevel) ? a.downstreamBiasLevel : 0;
-  const downstreamBiasB = Number.isFinite(b.downstreamBiasLevel) ? b.downstreamBiasLevel : 0;
-  const activeStyleBias = Math.max(styleBiasA, styleBiasB);
-  const activeTransitionBias = Math.max(transitionBiasA, transitionBiasB);
-  const activeDownstreamBias = Math.max(downstreamBiasA, downstreamBiasB);
+  const activeStyleBias = Math.max(a.styleBiasLevel, b.styleBiasLevel);
+  const activeTransitionBias = Math.max(a.transitionBiasLevel, b.transitionBiasLevel);
+  const activeDownstreamBias = Math.max(a.downstreamBiasLevel, b.downstreamBiasLevel);
   if (activeStyleBias > 0 || activeTransitionBias > 0 || activeDownstreamBias > 0) {
     const compositeA =
-      (Number.isFinite(a.score) ? a.score : 0) +
-      (Number.isFinite(a.transitionPenalty) ? a.transitionPenalty : 0) * activeTransitionBias +
-      (Number.isFinite(a.stylePenalty) ? a.stylePenalty : 0) * activeStyleBias +
-      (Number.isFinite(a.downstreamPenalty) ? a.downstreamPenalty : 0) * activeDownstreamBias;
+      a.score +
+      a.transitionPenalty * activeTransitionBias +
+      a.stylePenalty * activeStyleBias +
+      a.downstreamPenalty * activeDownstreamBias;
     const compositeB =
-      (Number.isFinite(b.score) ? b.score : 0) +
-      (Number.isFinite(b.transitionPenalty) ? b.transitionPenalty : 0) * activeTransitionBias +
-      (Number.isFinite(b.stylePenalty) ? b.stylePenalty : 0) * activeStyleBias +
-      (Number.isFinite(b.downstreamPenalty) ? b.downstreamPenalty : 0) * activeDownstreamBias;
+      b.score +
+      b.transitionPenalty * activeTransitionBias +
+      b.stylePenalty * activeStyleBias +
+      b.downstreamPenalty * activeDownstreamBias;
     if (compositeA !== compositeB) return compositeA - compositeB;
   }
   if (a.score !== b.score) return a.score - b.score;
-  const transitionPenaltyA = Number.isFinite(a.transitionPenalty) ? a.transitionPenalty : 0;
-  const transitionPenaltyB = Number.isFinite(b.transitionPenalty) ? b.transitionPenalty : 0;
-  if (transitionPenaltyA !== transitionPenaltyB) return transitionPenaltyA - transitionPenaltyB;
-  const stylePenaltyA = Number.isFinite(a.stylePenalty) ? a.stylePenalty : 0;
-  const stylePenaltyB = Number.isFinite(b.stylePenalty) ? b.stylePenalty : 0;
-  if (stylePenaltyA !== stylePenaltyB) return stylePenaltyA - stylePenaltyB;
-  const downstreamPenaltyA = Number.isFinite(a.downstreamPenalty) ? a.downstreamPenalty : 0;
-  const downstreamPenaltyB = Number.isFinite(b.downstreamPenalty) ? b.downstreamPenalty : 0;
-  if (downstreamPenaltyA !== downstreamPenaltyB) return downstreamPenaltyA - downstreamPenaltyB;
+  if (a.transitionPenalty !== b.transitionPenalty) return a.transitionPenalty - b.transitionPenalty;
+  if (a.stylePenalty !== b.stylePenalty) return a.stylePenalty - b.stylePenalty;
+  if (a.downstreamPenalty !== b.downstreamPenalty) return a.downstreamPenalty - b.downstreamPenalty;
   if (a.moveLen !== b.moveLen) return a.moveLen - b.moveLen;
   return 0;
 }
@@ -1024,13 +1013,66 @@ function getCrossLikeStageLabel(stageName, crossStageLabel) {
 
 function normalizeCrossColor(color) {
   const normalized = (String(color || "D") || "D").toUpperCase();
+  if (
+    normalized === "CN" ||
+    normalized === "COLOR_NEUTRAL" ||
+    normalized === "COLOR-NEUTRAL" ||
+    normalized === "AUTO"
+  ) {
+    return "CN";
+  }
   return CROSS_COLOR_ROTATION_CANDIDATES[normalized] !== undefined ? normalized : "D";
 }
 
 function getCrossRotationCandidates(color) {
   const normalized = normalizeCrossColor(color);
+  if (normalized === "CN") return CROSS_COLOR_SEQUENCE.slice();
   const candidates = CROSS_COLOR_ROTATION_CANDIDATES[normalized];
   return Array.isArray(candidates) && candidates.length ? candidates : [""];
+}
+
+function getCrossStageRank(stageName) {
+  const normalized = String(stageName || "");
+  if (normalized.startsWith("XXCross")) return 2;
+  if (normalized.startsWith("XCross")) return 1;
+  return 0;
+}
+
+function compareCrossProbeResults(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  if (!!a.ok !== !!b.ok) return a.ok ? -1 : 1;
+  const compositeA = Number(a.compositeScore);
+  const compositeB = Number(b.compositeScore);
+  if (Number.isFinite(compositeA) && Number.isFinite(compositeB) && compositeA !== compositeB) {
+    return compositeA - compositeB;
+  }
+  if (a.stageRank !== b.stageRank) return b.stageRank - a.stageRank;
+  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
+  if (a.bound !== b.bound) return a.bound - b.bound;
+  if (a.nodes !== b.nodes) return a.nodes - b.nodes;
+  return CROSS_COLOR_SEQUENCE.indexOf(a.color) - CROSS_COLOR_SEQUENCE.indexOf(b.color);
+}
+
+function normalizeCrossTargetPairsOverride(value, fallback = null) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const normalized = Math.max(0, Math.min(2, Math.floor(n)));
+  return normalized;
+}
+
+function getColorNeutralProbeTargetPairs(solveMode, styleProfileInput) {
+  const mixedCaseBias = normalizeMixedCaseBias(styleProfileInput);
+  const prefersExtendedCross =
+    isMixedCfopStyleProfile(styleProfileInput) ||
+    mixedCaseBias.xcrossWeight > 1 ||
+    mixedCaseBias.xxcrossWeight > 1 ||
+    mixedCaseBias.xcrossRate > 0.05 ||
+    mixedCaseBias.xxcrossRate > 0.01;
+  if (solveMode === "zb") return [1, 0];
+  if (prefersExtendedCross) return [2, 1, 0];
+  return [0];
 }
 
 function normalizeSolveMode(mode) {
@@ -1077,6 +1119,32 @@ function hashStringToUnitInterval(text) {
   }
   const unsigned = hash >>> 0;
   return unsigned / 4294967295;
+}
+
+function buildSolverDecisionSeed(options = {}) {
+  const scrambleSeed = String(options.scramble || options.scrambleKey || "").trim();
+  const solverName = String(
+    options.transitionProfileSolver ||
+      options.playerName ||
+      options.solverName ||
+      "",
+  ).trim();
+  const styleProfile =
+    options.f2lStyleProfile !== undefined ? options.f2lStyleProfile : options.styleProfile;
+  const styleSignature =
+    styleProfile && typeof styleProfile === "object"
+      ? [
+          String(styleProfile.preset || ""),
+          Number(styleProfile.rotationWeight || 0),
+          Number(styleProfile.aufWeight || 0),
+          Number(styleProfile.wideTurnWeight || 0),
+          Number(styleProfile.xcrossWeight || styleProfile.caseBias?.xcrossWeight || 0),
+          Number(styleProfile.xxcrossWeight || styleProfile.caseBias?.xxcrossWeight || 0),
+          Number(styleProfile.zbllWeight || styleProfile.caseBias?.zbllWeight || 0),
+          Number(styleProfile.zblsWeight || styleProfile.caseBias?.zblsWeight || 0),
+        ].join(":")
+      : String(styleProfile || "");
+  return [scrambleSeed, solverName, styleSignature].filter(Boolean).join("|");
 }
 
 function normalizeMixedCaseBias(styleProfile) {
@@ -1488,6 +1556,30 @@ function normalizeDownstreamStateEntry(entry) {
         .map((v) => ({ family: String(v.family || "").trim(), canonicalFormula: String(v.canonicalFormula || v.canonical || v.canonicalKey || "").trim(), formula: String(v.formula || v.variant || "").trim(), count: Number(v.count || 0) }))
         .filter((v) => v.canonicalFormula && v.formula && Number.isFinite(v.count) && v.count > 0)
     : [];
+  const llCaseStats = Array.isArray(entry?.llCaseStats)
+    ? entry.llCaseStats
+        .map((item) => ({
+          stateKey: Number(item.stateKey ?? entry?.key ?? 0),
+          stageKey: String(item.stageKey || "stage3").trim() || "stage3",
+          family: normalizeLlCaseFamilyLabel(item.family || item.caseFamily || item.label || ""),
+          caseTag: String(item.caseTag || item.label || "").trim(),
+          canonicalFormula: String(item.canonicalFormula || item.canonical || "").trim(),
+          variantFormula: String(item.variantFormula || item.formula || item.variant || "").trim(),
+          count: Number(item.count || 0),
+          sampleCount: Number(item.sampleCount || 0),
+          playerWeight: Number(item.playerWeight),
+          globalWeight: Number(item.globalWeight),
+          familySampleCount: Number(item.familySampleCount || 0),
+          stageFamilySampleCount: Number(item.stageFamilySampleCount || 0),
+        }))
+        .filter(
+          (item) =>
+            item.family &&
+            Number.isFinite(item.count) &&
+            item.count > 0 &&
+            (item.canonicalFormula || item.variantFormula),
+        )
+    : [];
 
   return {
     sampleCount: Number.isFinite(sampleCount) && sampleCount > 0 ? Math.floor(sampleCount) : 0,
@@ -1497,6 +1589,7 @@ function normalizeDownstreamStateEntry(entry) {
     topCases,
     topFormulas,
     topFormulaVariants,
+    llCaseStats,
     zbllRate: rates.zbllRate,
     zblsRate: rates.zblsRate,
     eoLikeRate: rates.eoLikeRate,
@@ -1598,6 +1691,13 @@ function findF2LDownstreamStateEntry(downstreamProfile, nextStateKey) {
   return downstreamProfile.fallbackProfile
     ? findF2LDownstreamStateEntry(downstreamProfile.fallbackProfile, nextStateKey)
     : null;
+}
+
+function findDirectF2LDownstreamStateEntry(downstreamProfile, nextStateKey) {
+  if (!downstreamProfile || typeof downstreamProfile !== "object" || !downstreamProfile.stateMap) {
+    return null;
+  }
+  return downstreamProfile.stateMap.get(String(nextStateKey)) || null;
 }
 
 function getF2LDownstreamPenalty(downstreamProfile, nextStateKey, predictionWeight = 1) {
@@ -1788,10 +1888,209 @@ function buildLlFamilyScoresFromStateEntry(stateEntry, mixedCaseBias = null) {
   };
 }
 
+function addWeightedFormulaPreference(preferenceMap, formula, count) {
+  const normalizedCount = Number(count);
+  if (!formula || !Number.isFinite(normalizedCount) || normalizedCount <= 0) return;
+  const rawFormula = String(formula || "").trim();
+  if (!rawFormula) return;
+  preferenceMap.set(rawFormula, (preferenceMap.get(rawFormula) || 0) + normalizedCount);
+  const normalizedFormula = normalizeFormulaMatchText(rawFormula);
+  if (normalizedFormula && normalizedFormula !== rawFormula) {
+    preferenceMap.set(normalizedFormula, (preferenceMap.get(normalizedFormula) || 0) + normalizedCount);
+  }
+}
+
+function buildFamilyOnlyFormulaPreferenceMap(stateEntry, family, weightMultiplier = 1) {
+  if (!stateEntry || !family) return null;
+  const preferenceMap = new Map();
+  const normalizedFamily = normalizeLlCaseFamilyLabel(family);
+  const topFormulas = Array.isArray(stateEntry.topFormulas) ? stateEntry.topFormulas : [];
+  const topVariants = Array.isArray(stateEntry.topFormulaVariants) ? stateEntry.topFormulaVariants : [];
+  for (let i = 0; i < topFormulas.length; i++) {
+    const entry = normalizeLlFormulaEntry(topFormulas[i]);
+    if (!entry || entry.family !== normalizedFamily) continue;
+    addWeightedFormulaPreference(preferenceMap, entry.formula, entry.count * weightMultiplier);
+  }
+  for (let i = 0; i < topVariants.length; i++) {
+    const entry = topVariants[i];
+    const entryFamily = normalizeLlCaseFamilyLabel(entry?.family || "");
+    const count = Number(entry?.count || 0);
+    if (entryFamily !== normalizedFamily || !Number.isFinite(count) || count <= 0) continue;
+    addWeightedFormulaPreference(preferenceMap, entry.formula, count * weightMultiplier * LL_MERGE_VARIANT_WEIGHT);
+    addWeightedFormulaPreference(
+      preferenceMap,
+      entry.canonicalFormula,
+      count * weightMultiplier * LL_MERGE_CANONICAL_BOOST,
+    );
+  }
+  return preferenceMap.size ? preferenceMap : null;
+}
+
+function buildCaseAwareFormulaPreferenceMap(
+  stateEntry,
+  fallbackStateEntry,
+  stageKey,
+  family,
+  basePreferenceMap = null,
+) {
+  const normalizedStageKey = stageKey === "stage4" ? "stage4" : "stage3";
+  const normalizedFamily = normalizeLlCaseFamilyLabel(family);
+  const combined = new Map();
+  if (basePreferenceMap && typeof basePreferenceMap.get === "function") {
+    for (const [formula, count] of basePreferenceMap.entries()) {
+      addWeightedFormulaPreference(combined, formula, Number(count) || 0);
+    }
+  }
+
+  const playerStats = Array.isArray(stateEntry?.llCaseStats) ? stateEntry.llCaseStats : [];
+  const globalStats = Array.isArray(fallbackStateEntry?.llCaseStats) ? fallbackStateEntry.llCaseStats : [];
+  const playerExact = playerStats.filter(
+    (entry) => entry.stageKey === normalizedStageKey && entry.family === normalizedFamily,
+  );
+  const globalExact = globalStats.filter(
+    (entry) => entry.stageKey === normalizedStageKey && entry.family === normalizedFamily,
+  );
+
+  for (let i = 0; i < playerExact.length; i++) {
+    const entry = playerExact[i];
+    const exactWeight =
+      (Number(entry.playerWeight) > 0 ? Number(entry.playerWeight) * 180 : 0) +
+      (Number(entry.count) || 0) * 18;
+    addWeightedFormulaPreference(
+      combined,
+      entry.variantFormula,
+      entry.variantFormula ? exactWeight * 1.1 : 0,
+    );
+    addWeightedFormulaPreference(combined, entry.canonicalFormula, exactWeight);
+  }
+
+  const playerFamilyMap = buildFamilyOnlyFormulaPreferenceMap(stateEntry, normalizedFamily, 2.75);
+  if (playerFamilyMap) {
+    for (const [formula, count] of playerFamilyMap.entries()) {
+      addWeightedFormulaPreference(combined, formula, count);
+    }
+  }
+
+  for (let i = 0; i < globalExact.length; i++) {
+    const entry = globalExact[i];
+    const globalWeight =
+      (Number(entry.globalWeight) > 0 ? Number(entry.globalWeight) * 70 : 0) +
+      (Number(entry.count) || 0) * 4;
+    addWeightedFormulaPreference(combined, entry.variantFormula, entry.variantFormula ? globalWeight : 0);
+    addWeightedFormulaPreference(combined, entry.canonicalFormula, globalWeight);
+  }
+
+  const globalFamilyMap = buildFamilyOnlyFormulaPreferenceMap(fallbackStateEntry, normalizedFamily, 0.9);
+  if (globalFamilyMap) {
+    for (const [formula, count] of globalFamilyMap.entries()) {
+      addWeightedFormulaPreference(combined, formula, count);
+    }
+  }
+
+  return combined.size ? combined : basePreferenceMap;
+}
+
+function getLlCaseFormulaPreferenceEntries(stateEntry, fallbackStateEntry, stageKey, family) {
+  const normalizedStageKey = stageKey === "stage4" ? "stage4" : "stage3";
+  const normalizedFamily = normalizeLlCaseFamilyLabel(family);
+  const entries = [];
+  const pushEntry = (formula, weight, source) => {
+    const normalizedWeight = Number(weight);
+    const text = String(formula || "").trim();
+    if (!text || !Number.isFinite(normalizedWeight) || normalizedWeight <= 0) return;
+    entries.push({
+      formula: text,
+      weight: normalizedWeight,
+      source,
+    });
+  };
+
+  const playerStats = Array.isArray(stateEntry?.llCaseStats) ? stateEntry.llCaseStats : [];
+  for (let i = 0; i < playerStats.length; i++) {
+    const entry = playerStats[i];
+    if (entry.stageKey !== normalizedStageKey || entry.family !== normalizedFamily) continue;
+    const playerWeight =
+      (Number(entry.playerWeight) > 0 ? Number(entry.playerWeight) * 320 : 0) +
+      (Number(entry.count) || 0) * 28;
+    pushEntry(entry.variantFormula, playerWeight * 1.2, "player-variant");
+    pushEntry(entry.canonicalFormula, playerWeight, "player-canonical");
+  }
+
+  const fallbackStats = Array.isArray(fallbackStateEntry?.llCaseStats) ? fallbackStateEntry.llCaseStats : [];
+  for (let i = 0; i < fallbackStats.length; i++) {
+    const entry = fallbackStats[i];
+    if (entry.stageKey !== normalizedStageKey || entry.family !== normalizedFamily) continue;
+    const globalWeight =
+      (Number(entry.globalWeight) > 0 ? Number(entry.globalWeight) * 120 : 0) +
+      (Number(entry.count) || 0) * 8;
+    pushEntry(entry.variantFormula, globalWeight, "global-variant");
+    pushEntry(entry.canonicalFormula, globalWeight * 0.9, "global-canonical");
+  }
+
+  return entries;
+}
+
+function buildExactCaseFormulaPreferenceMap(
+  startPattern,
+  stage,
+  ctx,
+  stateEntry,
+  fallbackStateEntry,
+  stageKey,
+  family,
+  basePreferenceMap = null,
+) {
+  if (!startPattern || !stage || !ctx || typeof stage.key !== "function") {
+    return basePreferenceMap;
+  }
+  const startCaseKey = stage.key(startPattern.patternData);
+  if (!startCaseKey) return basePreferenceMap;
+
+  const exactEntries = getLlCaseFormulaPreferenceEntries(
+    stateEntry,
+    fallbackStateEntry,
+    stageKey,
+    family,
+  );
+  if (!exactEntries.length) return basePreferenceMap;
+
+  const combined = new Map();
+  if (basePreferenceMap && typeof basePreferenceMap.get === "function") {
+    for (const [formula, count] of basePreferenceMap.entries()) {
+      addWeightedFormulaPreference(combined, formula, Number(count) || 0);
+    }
+  }
+
+  const exactMap = new Map();
+  for (let i = 0; i < exactEntries.length; i++) {
+    const entry = exactEntries[i];
+    const casePattern = tryApplyAlg(ctx.solvedPattern, invertAlg(entry.formula));
+    if (!casePattern) continue;
+    const caseKey = stage.key(casePattern.patternData);
+    if (caseKey !== startCaseKey) continue;
+    addWeightedFormulaPreference(exactMap, entry.formula, entry.weight);
+  }
+
+  if (!exactMap.size) return basePreferenceMap || null;
+
+  for (const [formula, count] of exactMap.entries()) {
+    addWeightedFormulaPreference(combined, formula, count * 3.2);
+  }
+  return combined.size ? combined : basePreferenceMap;
+}
+
 function normalizeLlFamilyTemperature(value, fallback = 1.5) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(0.6, Math.min(3.5, n));
+}
+
+function normalizeOptionalLlRateCap(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  if (n >= 1) return 1;
+  return n;
 }
 
 function normalizeLlFamilyCalibrationRecord(calibration) {
@@ -1813,9 +2112,9 @@ function normalizeLlFamilyCalibrationRecord(calibration) {
   return {
     stage3Temperature: normalizeLlFamilyTemperature(nested.stage3Temperature, 1.4),
     stage4Temperature: normalizeLlFamilyTemperature(nested.stage4Temperature, 1.25),
-    stage3ZbllCap: clampRate01(nested.stage3ZbllCap),
-    stage3ZblsCap: clampRate01(nested.stage3ZblsCap),
-    stage4ZbllCap: clampRate01(nested.stage4ZbllCap),
+    stage3ZbllCap: normalizeOptionalLlRateCap(nested.stage3ZbllCap),
+    stage3ZblsCap: normalizeOptionalLlRateCap(nested.stage3ZblsCap),
+    stage4ZbllCap: normalizeOptionalLlRateCap(nested.stage4ZbllCap),
     zbllScale: Math.max(0.25, Math.min(2.5, Number(nested.zbllScale) || 1)),
     zblsScale: Math.max(0.25, Math.min(2.5, Number(nested.zblsScale) || 1)),
   };
@@ -2555,7 +2854,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   const deadlineTs = normalizeNonNegativeDepth(options.deadlineTs, 0);
   const mixedXCrossRate = clampRate01(mixedCaseBias.xcrossRate) ?? 0;
   const mixedXXCrossRate = clampRate01(mixedCaseBias.xxcrossRate) ?? 0;
-  const scrambleSeed = String(options.scramble || options.scrambleKey || "").trim();
+  const scrambleSeed = buildSolverDecisionSeed(options);
   const scrambleRoll = hashStringToUnitInterval(scrambleSeed);
   let crossTargetPairs = useZbStages ? 1 : 0;
   if (!useZbStages && mixedCfopStages) {
@@ -2568,6 +2867,13 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     } else {
       crossTargetPairs = 0;
     }
+  }
+  const crossTargetPairsOverride = normalizeCrossTargetPairsOverride(
+    options.crossTargetPairsOverride,
+    null,
+  );
+  if (crossTargetPairsOverride !== null) {
+    crossTargetPairs = crossTargetPairsOverride;
   }
   const crossStageName =
     crossTargetPairs >= 2 ? "XXCross" : crossTargetPairs >= 1 ? "XCross" : "Cross";
@@ -2609,6 +2915,39 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       : null;
     llFamilyPreferenceCache.set(cacheKey, preference);
     return preference;
+  }
+
+  function getCaseAwareFormulaPreference(startPattern, stageKey, stage = null) {
+    if (!startPattern || !startPattern.patternData) return null;
+    const stateKey = getF2LStateKey(startPattern.patternData, ctx);
+    const playerStateEntry =
+      f2lDownstreamProfile && stateKey !== undefined && stateKey !== null
+        ? findDirectF2LDownstreamStateEntry(f2lDownstreamProfile, stateKey)
+        : null;
+    const fallbackStateEntry =
+      f2lDownstreamProfile?.fallbackProfile && stateKey !== undefined && stateKey !== null
+        ? findDirectF2LDownstreamStateEntry(f2lDownstreamProfile.fallbackProfile, stateKey)
+        : null;
+    const selection = getLlFamilySelection(startPattern, stageKey);
+    const selectedFamily = selection?.selectedFamily || (stageKey === "stage4" ? "PLL" : "OLL");
+    const basePreferenceMap = getLlFamilyPreference(startPattern)?.formulaPriorityMap || null;
+    const familyPreferenceMap = buildCaseAwareFormulaPreferenceMap(
+      playerStateEntry,
+      fallbackStateEntry,
+      stageKey,
+      selectedFamily,
+      basePreferenceMap,
+    );
+    return buildExactCaseFormulaPreferenceMap(
+      startPattern,
+      stage,
+      ctx,
+      playerStateEntry,
+      fallbackStateEntry,
+      stageKey,
+      selectedFamily,
+      familyPreferenceMap,
+    );
   }
 
   function getLlFamilySelection(startPattern, stageKey) {
@@ -2789,8 +3128,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         return stage3FormulaKeys;
       },
       getFormulaPreferenceMap(startPattern) {
-        const preference = getLlFamilyPreference(startPattern);
-        return preference?.formulaPriorityMap || null;
+        return getCaseAwareFormulaPreference(startPattern, "stage3", this);
       },
       getFallbackFormulaKeys(startPattern) {
         if (useZbStages) {
@@ -2836,16 +3174,16 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       },
       deadlineTs,
       formulaPreAufList: FORMULA_AUF,
-      formulaAttemptLimit: normalizeDepth(options.zblsFormulaAttemptLimit, useZbStages ? 26000 : 0),
+      formulaAttemptLimit: normalizeDepth(options.zblsFormulaAttemptLimit, useZbStages ? 40000 : 0),
       maxDepth: normalizeDepth(
         options.ollMaxDepth,
         mixedCfopStages ? Math.max(profile.ollMaxDepth, profile.pllMaxDepth) : profile.ollMaxDepth,
       ),
       searchMaxDepth: normalizeDepth(
         options.zblsSearchMaxDepth,
-        useZbStages ? 8 : profile.ollMaxDepth,
+        useZbStages ? 11 : profile.ollMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 180000 : 0),
+      nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 280000 : 0),
       moveIndices: ctx.noDMoveIndices,
       isSolved: useZbStages ? isZBLSSolved : isOLLSolved,
       mismatch(data) {
@@ -2935,8 +3273,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         return selection?.selectedFamily === "ZBLL" ? ["ZBLL"] : ["PLL"];
       },
       getFormulaPreferenceMap(startPattern) {
-        const preference = getLlFamilyPreference(startPattern);
-        return preference?.formulaPriorityMap || null;
+        return getCaseAwareFormulaPreference(startPattern, "stage4", this);
       },
       getFallbackFormulaKeys(startPattern) {
         const selection = getLlFamilySelection(startPattern, "stage4");
@@ -3844,6 +4181,7 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
       key: startKey,
       ranking: {
         pairProgress: startMetrics.pairProgress,
+        llPriority: 0,
         solvedSum: startMetrics.solvedSum,
         score: startMetrics.score,
         transitionPenalty: 0,
@@ -4147,10 +4485,10 @@ function solveStage(startPattern, stage, ctx) {
       relaxedNodeLimit = Math.max(baseNodeLimit, 220000);
     } else {
       // Last-stage ZB failures are usually limit-bound; allow wider move set and deeper cap once.
-      relaxedNodeLimit = Math.max(baseNodeLimit, 240000);
+      relaxedNodeLimit = Math.max(baseNodeLimit, 380000);
       relaxedFormulaAttemptLimit = Math.max(
         baseFormulaAttemptLimit,
-        hasZblsFormulas ? 30000 : 35000,
+        hasZblsFormulas ? 45000 : 35000,
       );
     }
 
@@ -4229,6 +4567,148 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
   const mixedCfopStages = options.enableMixedCfopStages === true || isMixedCfopStyleProfile(styleProfileInput);
   const crossFailureStageName = solveMode === "zb" || mixedCfopStages ? "XCross" : "Cross";
   const crossColorRaw = normalizeCrossColor(options.crossColor);
+  if (crossColorRaw === "CN" && !options.__colorNeutralProbeApplied) {
+    const onStageUpdate = typeof options.onStageUpdate === "function" ? options.onStageUpdate : null;
+    const f2lStyleProfile =
+      styleProfileInput !== undefined && styleProfileInput !== null
+        ? normalizeF2LStyleProfile(styleProfileInput)
+        : F2L_STYLE_PROFILE_PRESETS.legacy;
+    const mixedCaseBias = normalizeMixedCaseBias(styleProfileInput);
+    const enableOllPllPrediction = options.enableOllPllPrediction !== false;
+    const downstreamProfileInput =
+      enableOllPllPrediction &&
+      options.f2lDownstreamProfile !== undefined &&
+      options.f2lDownstreamProfile !== null
+        ? options.f2lDownstreamProfile
+        : enableOllPllPrediction &&
+            options.downstreamProfile !== undefined &&
+            options.downstreamProfile !== null
+          ? options.downstreamProfile
+          : null;
+    const f2lDownstreamProfile = downstreamProfileInput || null;
+    const f2lDownstreamWeight = normalizeF2LDownstreamWeight(
+      options.ollPllPredictionWeight,
+      DEFAULT_F2L_DOWNSTREAM_WEIGHT,
+    );
+    const targetPairCandidates = getColorNeutralProbeTargetPairs(solveMode, styleProfileInput);
+    const scrambleSeedBase = buildSolverDecisionSeed(options);
+    if (onStageUpdate) {
+      onStageUpdate({
+        type: "fallback_start",
+        stageName: "Color Neutral Cross Probe",
+        reason: mixedCfopStages ? "BEST_XCROSS_SCAN" : "BEST_CROSS_SCAN",
+      });
+    }
+
+    const probeStages = getStageDefinitions(options, ctx, modeProfile, solveMode);
+    const crossProbeStage = probeStages[0];
+    let bestProbe = null;
+    // Compute per-color deadline; guarantees all 6 probes finish quickly.
+    const overallDeadline = Number.isFinite(options.deadlineTs) && options.deadlineTs > 0 ? options.deadlineTs : 0;
+
+    for (let i = 0; i < CROSS_COLOR_SEQUENCE.length; i++) {
+      const candidateColor = CROSS_COLOR_SEQUENCE[i];
+      const rotationCandidates = getCrossRotationCandidates(candidateColor);
+      let bestColorProbe = null;
+      const colorProbeDeadline = overallDeadline > 0
+        ? Math.min(overallDeadline, Date.now() + CN_CROSS_PROBE_BUDGET_MS)
+        : Date.now() + CN_CROSS_PROBE_BUDGET_MS;
+
+      for (let r = 0; r < rotationCandidates.length; r++) {
+        const rotationAlg = rotationCandidates[r];
+        const transformedPattern = transformPatternForCrossColor(pattern, ctx.solvedPattern, rotationAlg);
+        if (!transformedPattern) continue;
+
+        for (let t = 0; t < targetPairCandidates.length; t++) {
+          const targetPairs = targetPairCandidates[t];
+          const probeStageOptions = {
+            ...options,
+            deadlineTs: colorProbeDeadline,
+            scrambleKey: `${scrambleSeedBase}|CN|${candidateColor}|${targetPairs}`,
+            crossTargetPairsOverride: targetPairs,
+          };
+          const probeStages = getStageDefinitions(probeStageOptions, ctx, modeProfile, solveMode);
+          const probeCrossStage = probeStages[0] || crossProbeStage;
+          const probeResult = solveStage(transformedPattern, probeCrossStage, ctx);
+          const probeMoves = splitMoves(probeResult?.solution || "");
+          const stylePenalty = getF2LStylePenalty(probeMoves, f2lStyleProfile);
+          let downstreamPenalty = 0;
+          let llBiasBonus = 0;
+          if (probeResult?.ok && f2lDownstreamProfile) {
+            const afterCrossPattern = probeMoves.length
+              ? transformedPattern.applyAlg(joinMoves(probeMoves))
+              : transformedPattern;
+            const nextStateKey = getF2LStateKey(afterCrossPattern.patternData, ctx);
+            const rawDownstreamPenalty = getF2LDownstreamPenalty(
+              f2lDownstreamProfile,
+              nextStateKey,
+              f2lDownstreamWeight,
+            );
+            downstreamPenalty = Number.isFinite(rawDownstreamPenalty) ? rawDownstreamPenalty : 0;
+            const downstreamMatch = findF2LDownstreamStateEntry(f2lDownstreamProfile, nextStateKey);
+            const stateEntry = downstreamMatch?.stateEntry || null;
+            if (stateEntry) {
+              const zbllRate = clampRate01(stateEntry.zbllRate) ?? 0;
+              const zblsRate = clampRate01(stateEntry.zblsRate) ?? 0;
+              llBiasBonus =
+                zbllRate * mixedCaseBias.zbllWeight * 2.2 +
+                zblsRate * mixedCaseBias.zblsWeight * 1.2;
+            }
+          }
+          const xcrossBonus =
+            (targetPairs >= 1 ? mixedCaseBias.xcrossWeight * 2.0 : 0) +
+            (targetPairs >= 2 ? mixedCaseBias.xxcrossWeight * 3.2 : 0);
+          const candidateProbe = {
+            color: candidateColor,
+            ok: !!probeResult?.ok,
+            stageRank: targetPairs,
+            moveCount: Number.isFinite(probeResult?.moveCount) ? probeResult.moveCount : Number.MAX_SAFE_INTEGER,
+            bound: Number.isFinite(probeResult?.bound) ? probeResult.bound : Number.MAX_SAFE_INTEGER,
+            nodes: Number.isFinite(probeResult?.nodes) ? probeResult.nodes : Number.MAX_SAFE_INTEGER,
+            compositeScore:
+              (Number.isFinite(probeResult?.moveCount) ? probeResult.moveCount : 999) +
+              stylePenalty * 0.35 +
+              downstreamPenalty -
+              xcrossBonus -
+              llBiasBonus,
+          };
+          if (!bestColorProbe || compareCrossProbeResults(candidateProbe, bestColorProbe) < 0) {
+            bestColorProbe = candidateProbe;
+          }
+        }
+      }
+
+      if (bestColorProbe && (!bestProbe || compareCrossProbeResults(bestColorProbe, bestProbe) < 0)) {
+        bestProbe = bestColorProbe;
+      }
+      // Early exit: an ideal cross (≤5 moves) is good enough — no need to probe remaining colors.
+      if (bestProbe && bestProbe.ok && bestProbe.moveCount <= 5) break;
+    }
+
+    const selectedCrossColor = bestProbe?.color || "D";
+    if (onStageUpdate) {
+      onStageUpdate({
+        type: "fallback_done",
+        stageName: `Color Neutral -> ${getCrossStageLabel(selectedCrossColor)}`,
+      });
+    }
+
+    const colorNeutralResult = await solve3x3StrictCfopFromPattern(pattern, {
+      ...options,
+      crossColor: selectedCrossColor,
+      __colorNeutralProbeApplied: true,
+    });
+    if (colorNeutralResult && typeof colorNeutralResult === "object") {
+      return {
+        ...colorNeutralResult,
+        selectedCrossColor:
+          typeof colorNeutralResult.selectedCrossColor === "string"
+            ? colorNeutralResult.selectedCrossColor
+            : selectedCrossColor,
+      };
+    }
+    return colorNeutralResult;
+  }
   const crossStageLabel = getCrossStageLabel(crossColorRaw);
   const crossRotationCandidates = getCrossRotationCandidates(crossColorRaw).filter(Boolean);
   if (!options.__colorNeutralApplied && crossRotationCandidates.length) {
@@ -4326,6 +4806,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
 
     return {
       ...childResult,
+      selectedCrossColor: crossColorRaw,
       solution: fullSolution,
       moveCount: fullMoves.length,
       stages,
@@ -4409,6 +4890,9 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           __colorNeutralApplied: true,
           __zbRecoveryAttempted: true,
           onStageUpdate: undefined,
+          // Give recovery a fresh budget — the original deadlineTs may be near-expired
+          // from the ZBLS IDA* search, which would cause all recovery stages to fail immediately.
+          deadlineTs: Date.now() + 25000,
         });
         if (recoveryResult?.ok) {
           const recoveryStages = Array.isArray(recoveryResult.stages) ? recoveryResult.stages : [];
@@ -4570,6 +5054,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     moveCount: fullMoves.length,
     nodes: totalNodes,
     bound: totalBound,
+    selectedCrossColor: crossColorRaw === "CN" ? "D" : crossColorRaw,
     source:
       solveMode === "zb" ? "INTERNAL_3X3_CFOP_ZB_HYBRID" : "INTERNAL_3X3_CFOP_STRICT",
     stages: solvedStages,

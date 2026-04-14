@@ -32,7 +32,7 @@
       },
       "avgF2LSegmentLen": {
         "min": 0,
-        "max": 0.000001
+        "max": 1e-06
       },
       "zbUsageRate": {
         "min": 0.017123287671232876,
@@ -97,7 +97,8 @@
         "PLL": 846,
         "ZBLL": 32,
         "ZBLS": 1
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Feliks Zemdegs",
@@ -155,7 +156,8 @@
         "PLL": 600,
         "ZBLS": 12,
         "ZBLL": 120
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Tymon Kolasiński",
@@ -213,7 +215,8 @@
         "ZBLL": 290,
         "OLL": 431,
         "PLL": 425
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Yiheng Wang",
@@ -271,7 +274,8 @@
         "PLL": 559,
         "ZBLL": 6,
         "ZBLS": 5
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Matty Hiroto Inaba",
@@ -329,7 +333,8 @@
         "PLL": 445,
         "ZBLL": 30,
         "ZBLS": 1
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Dylan Miller",
@@ -387,7 +392,8 @@
         "PLL": 393,
         "ZBLL": 16,
         "ZBLS": 2
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Luke Garrett",
@@ -444,7 +450,8 @@
         "ZBLL": 17,
         "OLL": 270,
         "PLL": 247
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Ruihang Xu",
@@ -501,7 +508,8 @@
         "OLL": 281,
         "PLL": 282,
         "ZBLL": 11
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Seung Hyuk Nahm",
@@ -559,7 +567,8 @@
         "OLL": 206,
         "PLL": 208,
         "ZBLS": 15
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Xuanyi Geng",
@@ -617,7 +626,8 @@
         "PLL": 13,
         "ZBLL": 226,
         "OLL": 2
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Leo Borromeo",
@@ -675,7 +685,8 @@
         "ZBLS": 11,
         "ZBLL": 33,
         "PLL": 179
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Kyle Santucci",
@@ -733,7 +744,8 @@
         "OLL": 133,
         "ZBLL": 50,
         "ZBLS": 13
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Bill Wang",
@@ -790,7 +802,8 @@
         "OLL": 152,
         "PLL": 155,
         "ZBLL": 30
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Jayden McNeill",
@@ -847,7 +860,8 @@
         "OLL": 127,
         "PLL": 141,
         "ZBLL": 20
-      }
+      },
+      "preferredCrossColor": "CN"
     },
     {
       "solver": "Sei Sugama",
@@ -904,7 +918,8 @@
         "OLL": 95,
         "PLL": 94,
         "ZBLL": 2
-      }
+      },
+      "preferredCrossColor": "D"
     }
   ]
 }

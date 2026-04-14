@@ -40,7 +40,7 @@ const exportCopyBtn = document.getElementById("exportCopyBtn");
 const exportCloseBtn = document.getElementById("exportCloseBtn");
 const statsGrid = document.getElementById("statsGrid");
 const solveModal = document.getElementById("solveModal");
-const solveModalMeta = document.getElementById("solveModalMeta");
+const solveModalInfo = document.getElementById("solveModalInfo");
 const solveModalStatus = document.getElementById("solveModalStatus");
 const solveOkBtn = document.getElementById("solveOkBtn");
 const solvePlus2Btn = document.getElementById("solvePlus2Btn");
@@ -54,6 +54,8 @@ const chartZoomOutBtn = document.getElementById("chartZoomOutBtn");
 const chartZoomInBtn = document.getElementById("chartZoomInBtn");
 const chartWindowLabel = document.getElementById("chartWindowLabel");
 const chartTooltip = document.getElementById("chartTooltip");
+const solverOpenBtn = document.getElementById("solverOpenBtn"); 
+const solverCloseBtn = document.getElementById("solverCloseBtn"); 
 const findSolutionBtn = document.getElementById("findSolutionBtn");
 const solverStatus = document.getElementById("solverStatus");
 const solverSolution = document.getElementById("solverSolution");
@@ -184,7 +186,10 @@ const DEFAULT_MIXED_CFOP_STYLE_PROFILE = Object.freeze({
 });
 const STYLE_PROFILE_DATA_URL = "vendor-data/reco/reco-3x3-style-details.json";
 const STYLE_PROFILE_LEARNED_DATA_URL = "vendor-data/reco/reco-3x3-learned-style-weights.json";
-const STYLE_PROFILE_MIXED_DATA_URL = "vendor-data/reco/reco-3x3-top10-mixed-cfop-profile.json";
+const STYLE_PROFILE_MIXED_DATA_URLS = [
+  "vendor-data/reco/reco-3x3-mixed-cfop-profile.json",
+  "vendor-data/reco/reco-3x3-top10-mixed-cfop-profile.json",
+];
 
 let styleProfilePlayers = [];
 let styleProfilePlayerMap = new Map();
@@ -617,21 +622,21 @@ function renderHistory() {
 
     const cardTime = document.createElement("div");
     cardTime.className = "solve-card";
-    cardTime.innerHTML = `<div class="card-label">Time</div><div class="card-value">${formatSolveTime(solve)}</div>`;
+    cardTime.innerHTML = `<div class="card-value">${formatSolveTime(solve)}</div>`;
 
     const cardEvent = document.createElement("div");
     cardEvent.className = "solve-card";
-    cardEvent.innerHTML = `<div class="card-label">Event</div><div class="card-value">${eventLabel(solve.eventId)}</div>`;
+    cardEvent.innerHTML = `<div class="card-value">${eventLabel(solve.eventId)}</div>`;
 
     const cardAo5 = document.createElement("div");
     cardAo5.className = "solve-card";
     cardAo5.dataset.share = "ao5";
-    cardAo5.innerHTML = `<div class="card-label">ao5</div><div class="card-value">${formatAverageAtIndex(session.solves, index, 5)}</div>`;
+    cardAo5.innerHTML = `<div class="card-value">${formatAverageAtIndex(session.solves, index, 5)}</div>`;
 
     const cardAo12 = document.createElement("div");
     cardAo12.className = "solve-card";
     cardAo12.dataset.share = "ao12";
-    cardAo12.innerHTML = `<div class="card-label">ao12</div><div class="card-value">${formatAverageAtIndex(session.solves, index, 12)}</div>`;
+    cardAo12.innerHTML = `<div class="card-value">${formatAverageAtIndex(session.solves, index, 12)}</div>`;
 
     rowTop.append(cardTime, cardEvent, cardAo5, cardAo12);
 
@@ -1055,6 +1060,16 @@ function openExportModal(title, text) {
   if (heading) heading.textContent = title;
 }
 
+function openSolverModal() {
+  solverModal.classList.add("open");
+  solverModal.setAttribute("aria-hidden", "false");
+}
+
+function closeSolverModal() {
+  solverModal.classList.remove("open");
+  solverModal.setAttribute("aria-hidden", "true");
+}
+
 function openSettingsModal() {
   settingsModal.classList.add("open");
   settingsModal.setAttribute("aria-hidden", "false");
@@ -1109,17 +1124,20 @@ function applyVisibilitySettings() {
   const showChart = localStorage.getItem(CHART_KEY);
   const previewVisible = showPreview !== "false";
   const chartVisible = showChart !== "false";
-  const previewEl = document.querySelector(".preview-side");
-  const chartEl = document.querySelector(".chart-card");
-  const visualRow = document.querySelector(".visual-row");
+  const previewEl = document.getElementById("scramblePreviewSection");
+  const chartEl = document.getElementById("progressChartSection");
+  const bottomGroup = document.querySelector(".bottom-group");
+  
   if (previewEl) previewEl.style.display = previewVisible ? "" : "none";
   if (chartEl) chartEl.style.display = chartVisible ? "" : "none";
   if (togglePreview) togglePreview.checked = previewVisible;
   if (toggleChart) toggleChart.checked = chartVisible;
+  
   document.body.classList.toggle("hide-preview", !previewVisible);
   document.body.classList.toggle("hide-chart", !chartVisible);
-  if (visualRow) {
-    visualRow.style.display = previewVisible || chartVisible ? "" : "none";
+  
+  if (bottomGroup) {
+    bottomGroup.style.display = previewVisible || chartVisible ? "" : "none";
   }
   requestAnimationFrame(() => {
     renderChart();
@@ -1369,7 +1387,7 @@ function ensureSolverTwistyPlayer() {
   solverTwistyPlayer = new TwistyPlayer({
     puzzle: "3x3x3",
     visualization: "3D",
-    background: "checkered",
+    background: "none",
     controlPanel: "none",
     hintFacelets: "none",
     experimentalSetupAnchor: "start",
@@ -1397,27 +1415,38 @@ function updateSolverPlaybackControls() {
   }
   if (solverPlayBtn) {
     solverPlayBtn.disabled = !hasMoves;
-    solverPlayBtn.textContent = solverPlaybackTimerId || solverPlaybackAutoTimerId ? "정지" : "자동 재생";
+    const isPlaying = solverPlaybackTimerId || solverPlaybackAutoTimerId;
+    solverPlayBtn.innerHTML = isPlaying
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+    solverPlayBtn.title = isPlaying ? "정지" : "자동 재생";
   }
 }
 
 function renderSolverStages(stages, fallbackSolution = "") {
   if (!solverStageList) return;
+  solverStageList.textContent = "";
   const normalizedStages =
     Array.isArray(stages) && stages.length
       ? stages
       : fallbackSolution
         ? [{ name: "Solution", solution: fallbackSolution }]
         : [];
-  solverStageList.textContent = "";
+  let cumulativeMoves = 0;
   for (let i = 0; i < normalizedStages.length; i += 1) {
     const stage = normalizedStages[i];
+    const startIndex = cumulativeMoves;
     const item = document.createElement("li");
     const title = document.createElement("strong");
     const stageName = stage?.name || `Stage ${i + 1}`;
     const stageMoves = splitAlgTokens(stage?.solution || "");
     title.textContent = `${stageName} (${stageMoves.length}수)`;
     item.appendChild(title);
+    item.style.cursor = "pointer";
+    item.addEventListener("click", () => {
+      stopSolverPlayback();
+      setSolverPlaybackIndex(startIndex);
+    });
     const line = document.createElement("div");
     if (stageMoves.length) {
       const code = document.createElement("code");
@@ -1428,6 +1457,7 @@ function renderSolverStages(stages, fallbackSolution = "") {
     }
     item.appendChild(line);
     solverStageList.appendChild(item);
+    cumulativeMoves += stageMoves.length;
   }
 }
 
@@ -1468,13 +1498,13 @@ function playSingleForwardStep() {
   player.timestamp = "start";
   player.tempoScale = 1.15;
   player.play();
-  updateSolverPlaybackControls();
   solverPlaybackTimerId = window.setTimeout(() => {
     player.pause();
     solverPlaybackAnimating = false;
     solverPlaybackTimerId = 0;
     setSolverPlaybackIndex(solverPlaybackIndex + 1);
   }, estimateMoveAnimationMs(move));
+  updateSolverPlaybackControls();
 }
 
 function showSolverVisualResult(scramble, solution, stages) {
@@ -1529,9 +1559,9 @@ function toggleSolverPlayback() {
       solverPlaybackAutoTimerId = 0;
       runStep();
     }, delay);
+    updateSolverPlaybackControls();
   };
   runStep();
-  updateSolverPlaybackControls();
 }
 
 function resetSolverState() {
@@ -1637,6 +1667,48 @@ function formatCaseBiasSummary(caseBias) {
   return `XC ${caseBias.xcrossWeight}, XXC ${caseBias.xxcrossWeight}, ZBLL ${caseBias.zbllWeight}, ZBLS ${caseBias.zblsWeight}`;
 }
 
+function formatPlayerStyleMeta(profile, recommendedMethod) {
+  if (!profile || typeof profile !== "object") return "";
+  const parts = [];
+  const profileForMethod = getPlayerStyleProfile(String(profile.solver || "").trim(), recommendedMethod);
+  if (recommendedMethod) {
+    parts.push(`추천 ${recommendedMethod}`);
+  }
+  if (profileForMethod) {
+    parts.push(`스타일 ${formatStyleWeightSummary(profileForMethod)}`);
+  }
+
+  const caseBiasText = formatCaseBiasSummary(profile.caseBias);
+  if (caseBiasText) {
+    parts.push(`case ${caseBiasText}`);
+  }
+
+  const mixedSummary = normalizeMixedCfopSummaryRecord(profile.mixedCfopSummary || profile.mixedCfopStats || profile.summary);
+  if (mixedSummary) {
+    const mixedSummaryText = formatMixedCfopSummary(mixedSummary);
+    if (mixedSummaryText) {
+      parts.push(mixedSummaryText);
+    }
+  }
+
+  const mixedProfile =
+    normalizeStyleProfileRecord(profile.mixedCfopStyleProfile) ||
+    normalizeStyleProfileRecord(profile.learnedStyleProfile) ||
+    normalizeStyleProfileRecord(profile.recommendedStyleProfile) ||
+    null;
+  const activationScore = estimateMixedActivationScore(
+    profile,
+    mixedProfile,
+    mixedSummary,
+    normalizeCaseBiasRecord(profile.caseBias),
+  );
+  if (Number.isFinite(activationScore)) {
+    parts.push(`mixed score ${activationScore.toFixed(2)}`);
+  }
+
+  return parts.join(" | ");
+}
+
 function deriveCaseBiasFromMixedSummary(summary) {
   const xcrossRate = clampRate01(summary?.firstStageXCrossRate ?? summary?.xcrossRate, null);
   const xxcrossRate = clampRate01(summary?.firstStageXXCrossRate ?? summary?.xxcrossRate, null);
@@ -1722,6 +1794,49 @@ function applyCaseBiasToStyleProfile(baseProfile, caseBias, mixedSummary = null,
   };
 }
 
+function attachMixedCaseBiasMetadata(baseProfile, profile) {
+  const normalizedBase = normalizeStyleProfileRecord(baseProfile);
+  if (!normalizedBase || !profile || typeof profile !== "object") {
+    return normalizedBase;
+  }
+  const bias = normalizeCaseBiasRecord(profile.caseBias || deriveCaseBiasFromMixedSummary(profile.mixedCfopSummary));
+  const mixedSummary = normalizeMixedCfopSummaryRecord(profile.mixedCfopSummary || profile.mixedCfopStats || profile.summary);
+  const xcrossRateOffset = Number(profile.crossSamplingCalibration?.xcrossRateOffset);
+  const xxcrossRateOffset = Number(profile.crossSamplingCalibration?.xxcrossRateOffset);
+  return {
+    ...normalizedBase,
+    caseBias: bias,
+    xcrossWeight: bias?.xcrossWeight,
+    xxcrossWeight: bias?.xxcrossWeight,
+    zbllWeight: bias?.zbllWeight,
+    zblsWeight: bias?.zblsWeight,
+    historicalXCrossRate:
+      mixedSummary && Number.isFinite(Number(mixedSummary.xcrossRate)) ? Number(mixedSummary.xcrossRate) : null,
+    historicalXXCrossRate:
+      mixedSummary && Number.isFinite(Number(mixedSummary.xxcrossRate)) ? Number(mixedSummary.xxcrossRate) : null,
+    historicalZbllRate:
+      mixedSummary && Number.isFinite(Number(mixedSummary.zbllRate)) ? Number(mixedSummary.zbllRate) : null,
+    historicalZblsRate:
+      mixedSummary && Number.isFinite(Number(mixedSummary.zblsRate)) ? Number(mixedSummary.zblsRate) : null,
+    xcrossRateOffset: Number.isFinite(xcrossRateOffset) ? xcrossRateOffset : 0,
+    xxcrossRateOffset: Number.isFinite(xxcrossRateOffset) ? xxcrossRateOffset : 0,
+    mixedCfopSummary: mixedSummary || null,
+  };
+}
+
+function getPlayerMixedRotationFloor(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const learnedRotation = Number(profile.learnedStyleProfile?.rotationWeight);
+  if (Number.isFinite(learnedRotation) && learnedRotation >= 0) {
+    return Math.max(0, Math.min(12, Math.round(learnedRotation)));
+  }
+  const recommendedRotation = Number(profile.recommendedStyleProfile?.rotationWeight);
+  if (Number.isFinite(recommendedRotation) && recommendedRotation >= 0) {
+    return Math.max(0, Math.min(12, Math.round(recommendedRotation)));
+  }
+  return null;
+}
+
 function normalizeStyleProfileRecord(profile) {
   if (!profile || typeof profile !== "object") return null;
   const rotationWeight = Number(profile.rotationWeight);
@@ -1748,6 +1863,21 @@ function computeStyleProfileSimilarity(candidateProfile, referenceProfile) {
   const weightedDistance = (rotationDistance * 3 + aufDistance * 3 + wideTurnDistance * 2) / 8;
   const similarity = Math.max(0, Math.min(1, 1 - weightedDistance));
   return Number(similarity.toFixed(6));
+}
+
+// Computes style similarity from actual behavioral rate measurements (rotationRate, aufRate,
+// wideTurnRate). Uses 2× the max observed population deviation as the normalization range so
+// the most-different player reaches ~0.5 distance; all others stay comfortably above that.
+function computeStyleFingerprintSimilarity(candidateFp, referenceFp, maxDevs) {
+  if (!candidateFp || !referenceFp || !maxDevs) return null;
+  const rNorm = maxDevs.rotationRate || 1e-6;
+  const aNorm = maxDevs.aufRate || 1e-6;
+  const wNorm = maxDevs.wideTurnRate || 1e-6;
+  const rDist = Math.abs(Number(candidateFp.rotationRate) - Number(referenceFp.rotationRate)) / rNorm;
+  const aDist = Math.abs(Number(candidateFp.aufRate) - Number(referenceFp.aufRate)) / aNorm;
+  const wDist = Math.abs(Number(candidateFp.wideTurnRate) - Number(referenceFp.wideTurnRate)) / wNorm;
+  const weightedDist = (rDist * 3 + aDist * 3 + wDist * 2) / 8;
+  return Math.max(0, Math.min(1, 1 - weightedDist));
 }
 
 function getGlobalSpeedStyleProfile() {
@@ -1806,6 +1936,14 @@ function renderStylePlayerOptions() {
   }
 }
 
+function getPlayerPreferredCrossColor(playerName) {
+  const profile = styleProfilePlayerMap.get(playerName);
+  if (!profile || typeof profile !== "object") return null;
+  const raw = typeof profile.preferredCrossColor === "string" ? profile.preferredCrossColor.trim().toUpperCase() : null;
+  if (raw === "CN" || raw === "U" || raw === "D" || raw === "F" || raw === "B" || raw === "L" || raw === "R") return raw;
+  return null;
+}
+
 function getPlayerStyleProfile(playerName, methodHint = "") {
   const profile = styleProfilePlayerMap.get(playerName);
   if (!profile || typeof profile !== "object") return undefined;
@@ -1827,6 +1965,7 @@ function getPlayerStyleProfile(playerName, methodHint = "") {
         profile.crossSamplingCalibration,
       );
       if (adjustedMixedProfile) {
+        const mixedRotationFloor = getPlayerMixedRotationFloor(profile);
         const styleSimilarity = computeStyleProfileSimilarity(
           normalizeStyleProfileRecord(profile.learnedStyleProfile) ||
             normalizeStyleProfileRecord(profile.speedStyleProfile) ||
@@ -1837,6 +1976,10 @@ function getPlayerStyleProfile(playerName, methodHint = "") {
         );
         return {
           ...adjustedMixedProfile,
+          rotationWeight:
+            mixedRotationFloor === null
+              ? adjustedMixedProfile.rotationWeight
+              : Math.max(adjustedMixedProfile.rotationWeight, mixedRotationFloor),
           styleSimilarity,
         };
       }
@@ -1845,36 +1988,36 @@ function getPlayerStyleProfile(playerName, methodHint = "") {
 
   if (normalizedMethod === "speed") {
     const speedProfile = normalizeStyleProfileRecord(profile.speedStyleProfile);
-    if (speedProfile) return speedProfile;
+    if (speedProfile) return attachMixedCaseBiasMetadata(speedProfile, profile);
   }
 
   const learned = profile.learnedStyleProfile;
   if (learned && typeof learned === "object") {
-    return {
+    return attachMixedCaseBiasMetadata({
       preset: typeof learned.preset === "string" ? learned.preset : undefined,
       rotationWeight: Number(learned.rotationWeight),
       aufWeight: Number(learned.aufWeight),
       wideTurnWeight: Number(learned.wideTurnWeight),
-    };
+    }, profile);
   }
 
   const detailed = profile.detailedStyleProfile;
   if (detailed && typeof detailed === "object") {
-    return {
+    return attachMixedCaseBiasMetadata({
       preset: typeof detailed.preset === "string" ? detailed.preset : undefined,
       rotationWeight: Number(detailed.rotationWeight),
       aufWeight: Number(detailed.aufWeight),
       wideTurnWeight: Number(detailed.wideTurnWeight),
-    };
+    }, profile);
   }
 
   const fallback = profile.recommendedStyleProfile;
   if (fallback && typeof fallback === "object") {
-    return {
+    return attachMixedCaseBiasMetadata({
       rotationWeight: Number(fallback.rotationWeight),
       aufWeight: Number(fallback.aufWeight),
       wideTurnWeight: Number(fallback.wideTurnWeight),
-    };
+    }, profile);
   }
 
   return undefined;
@@ -1929,9 +2072,7 @@ function applySelectedPlayerStyle({ saveStateAfter = true, notify = false } = {}
     f2lMethodSelect.value = recommended;
   }
 
-  setStyleProfileMeta(
-    `${playerName}: 추천 ${recommended}, rotation ${formatRatioPercent(profile.rotationRate)}, AUF ${formatRatioPercent(profile.aufRate)}, wide ${formatRatioPercent(profile.wideTurnRate)}, weights ${formatStyleWeightSummary(getPlayerStyleProfile(playerName, recommended))}${Number.isFinite(profile.styleSimilarity) ? `, styleSim ${formatRatioPercent(profile.styleSimilarity)}` : ""}${profile.forcePureCfop ? " (pure CFOP)" : ""}${profile.speedBestStyle ? `, speed ${profile.speedBestStyle}` : ""}${profile.learnedStyleProfile ? " (ML 가중치 적용)" : ""}${profile.mixedCfopSummary ? `, mixed ${formatMixedCfopSummary(profile.mixedCfopSummary)}` : ""}${profile.caseBias ? `, caseBias ${formatCaseBiasSummary(profile.caseBias)}` : ""}`,
-  );
+  setStyleProfileMeta(formatPlayerStyleMeta(profile, recommended));
 
   if (f2lMethodSelect) {
     f2lMethodSelect.disabled = true;
@@ -1961,6 +2102,8 @@ async function loadStyleProfiles({ force = false } = {}) {
     let loadedMixedProfile = null;
     let loadedMixedSummary = null;
     let mixedBySolver = new Map();
+    let loadedTargetCenter = null;
+    let loadedFingerprintMaxDevs = null;
     try {
       const learnedUrl = `${STYLE_PROFILE_LEARNED_DATA_URL}?t=${Date.now()}`;
       const learnedResponse = await fetch(learnedUrl, { cache: "no-store" });
@@ -1976,14 +2119,38 @@ async function loadStyleProfiles({ force = false } = {}) {
             .filter((entry) => entry && typeof entry.solver === "string")
             .map((entry) => [String(entry.solver).trim(), entry]),
         );
+        if (learnedPayload?.targetCenter) {
+          loadedTargetCenter = learnedPayload.targetCenter;
+          const fps = learnedPlayers
+            .map((p) => p.targetFingerprint)
+            .filter((fp) => fp && typeof fp.rotationRate === "number");
+          if (fps.length > 0) {
+            const tc = loadedTargetCenter;
+            let maxR = 0, maxA = 0, maxW = 0;
+            for (const fp of fps) {
+              const dR = Math.abs(fp.rotationRate - tc.rotationRate);
+              const dA = Math.abs(fp.aufRate - tc.aufRate);
+              const dW = Math.abs(fp.wideTurnRate - tc.wideTurnRate);
+              if (dR > maxR) maxR = dR;
+              if (dA > maxA) maxA = dA;
+              if (dW > maxW) maxW = dW;
+            }
+            loadedFingerprintMaxDevs = {
+              rotationRate: maxR * 2 || 1e-6,
+              aufRate: maxA * 2 || 1e-6,
+              wideTurnRate: maxW * 2 || 1e-6,
+            };
+          }
+        }
       }
     } catch (_) {
       // Learned profile file is optional.
     }
-    try {
-      const mixedUrl = `${STYLE_PROFILE_MIXED_DATA_URL}?t=${Date.now()}`;
-      const mixedResponse = await fetch(mixedUrl, { cache: "no-store" });
-      if (mixedResponse.ok) {
+    for (let i = 0; i < STYLE_PROFILE_MIXED_DATA_URLS.length; i++) {
+      try {
+        const mixedUrl = `${STYLE_PROFILE_MIXED_DATA_URLS[i]}?t=${Date.now()}`;
+        const mixedResponse = await fetch(mixedUrl, { cache: "no-store" });
+        if (!mixedResponse.ok) continue;
         const mixedPayload = await mixedResponse.json();
         loadedMixedProfile =
           normalizeStyleProfileRecord(mixedPayload?.globalMixedCfopStyleProfile) ||
@@ -2004,9 +2171,10 @@ async function loadStyleProfiles({ force = false } = {}) {
             .filter((entry) => entry && typeof entry.solver === "string")
             .map((entry) => [String(entry.solver).trim(), entry]),
         );
+        break;
+      } catch (_) {
+        // Mixed CFOP profile file is optional.
       }
-    } catch (_) {
-      // Mixed CFOP profile file is optional.
     }
     styleProfilePlayers = players
       .filter((entry) => entry && typeof entry.solver === "string" && entry.solver.trim())
@@ -2037,10 +2205,22 @@ async function loadStyleProfiles({ force = false } = {}) {
           normalizeStyleProfileRecord(entry.recommendedStyleProfile) ||
           speedStyleProfile ||
           mixedCfopStyleProfile;
-        const styleSimilarity = computeStyleProfileSimilarity(
+        const weightSimilarity = computeStyleProfileSimilarity(
           styleSimilaritySource,
           loadedMixedProfile || DEFAULT_MIXED_CFOP_STYLE_PROFILE,
         );
+        const fingerprintSim =
+          learnedEntry.targetFingerprint && loadedTargetCenter && loadedFingerprintMaxDevs
+            ? computeStyleFingerprintSimilarity(
+                learnedEntry.targetFingerprint,
+                loadedTargetCenter,
+                loadedFingerprintMaxDevs,
+              )
+            : null;
+        const styleSimilarity =
+          weightSimilarity !== null && fingerprintSim !== null
+            ? Number((0.85 * weightSimilarity + 0.15 * fingerprintSim).toFixed(6))
+            : weightSimilarity;
         const mixedCaseBias = mixedEntry.caseBias
           ? normalizeCaseBiasRecord(mixedEntry.caseBias)
           : mixedCfopSummary
@@ -2200,10 +2380,15 @@ async function solveCurrentScramble() {
             }
           })
         : undefined;
-    const crossColor = appState.settings.crossColor || "D";
+    const crossColorSetting = appState.settings.crossColor || "D";
     const solverMode = appState.settings.solverMode || "strict";
     const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
     const selectedPlayerName = String(appState.settings.stylePlayer || "").trim();
+    // If user left the default "D" and a CN player is selected, use their preferred cross color.
+    const playerPreferredCrossColor = selectedPlayerName ? getPlayerPreferredCrossColor(selectedPlayerName) : null;
+    const crossColor = (crossColorSetting === "D" && playerPreferredCrossColor && playerPreferredCrossColor !== "D")
+      ? playerPreferredCrossColor
+      : crossColorSetting;
     const selectedPlayerStyleProfile =
       f2lMethod === "speed" && !selectedPlayerName
         ? getGlobalSpeedStyleProfile()
@@ -2312,7 +2497,10 @@ async function solveCurrentScramble() {
           isThreeByThreeFamilyEvent(eventId) && enableOllPllPrediction
             ? ", LL 예측"
             : "";
-        solverStatus.textContent = `완료 (${duration}ms${nodesText}${styleAppliedText}${styleFallbackText}${llPredictionText}${fallbackText})`;
+        const selectedCrossColor = String(result.selectedCrossColor || "").toUpperCase();
+        const selectedCrossText =
+          isThreeByThreeFamilyEvent(eventId) && selectedCrossColor ? `, cross ${selectedCrossColor}` : "";
+        solverStatus.textContent = `완료 (${duration}ms${nodesText}${styleAppliedText}${styleFallbackText}${llPredictionText}${fallbackText}${selectedCrossText})`;
       }
       if (solverCopyBtn) {
         solverCopyBtn.disabled = !rawSolutionText;
@@ -2322,7 +2510,10 @@ async function solveCurrentScramble() {
       lastSolution = "";
       lastSolutionDisplay = "";
       clearSolverVisualResult();
-      const reason = result?.reason || "해를 찾지 못했습니다.";
+      const rawReason = result?.reason || "";
+      const reason = rawReason.startsWith("ROUX_") || rawReason.includes("SB_FAILED") || rawReason.includes("CMLL_FAILED") || rawReason.includes("LSE_FAILED") || rawReason.includes("FB_FAILED") || rawReason.includes("FINAL_NOT_SOLVED")
+        ? "Roux 해법으로 풀 수 없는 스크램블입니다. 다른 스크램블을 시도해주세요."
+        : rawReason || "해를 찾지 못했습니다.";
       if (solverStatus) solverStatus.textContent = reason;
       if (solverSolution) solverSolution.textContent = "-";
       if (solverMoveCount) solverMoveCount.textContent = "0 수";
@@ -2578,6 +2769,12 @@ function closeExportModal() {
   exportModal.setAttribute("aria-hidden", "true");
 }
 
+solverOpenBtn.addEventListener("click", openSolverModal); // New
+solverCloseBtn.addEventListener("click", closeSolverModal); // New
+solverModal.addEventListener("click", (event) => {
+  if (event.target === solverModal) closeSolverModal();
+}); // New
+
 settingsBtn.addEventListener("click", openSettingsModal);
 settingsCloseBtn.addEventListener("click", closeSettingsModal);
 settingsModal.addEventListener("click", (event) => {
@@ -2618,6 +2815,32 @@ toggleOllPllPrediction?.addEventListener("change", () => {
   appState.settings.enableOllPllPrediction = toggleOllPllPrediction.checked;
   saveState();
 });
+
+// Interactive Quick Stats - Open record details when clicking summary cards
+statsGrid?.addEventListener("click", (e) => {
+  const statCard = e.target.closest(".q-stat");
+  if (!statCard) return;
+  
+  const type = statCard.getAttribute("data-export");
+  const session = activeSession();
+  if (!session || !session.solves || !session.solves.length) return;
+
+  if (type === "best") {
+    // Find the actual best solve object
+    const validSolves = session.solves.filter(s => s.penalty !== "DNF");
+    if (!validSolves.length) return;
+    const bestSolve = validSolves.reduce((prev, curr) => 
+      (adjustedTimeMs(curr) < adjustedTimeMs(prev)) ? curr : prev, validSolves[0]);
+    if (bestSolve) openSolveModal(bestSolve);
+  } else {
+    // Scroll history to top for context
+    const historyWrapper = historyList?.parentElement;
+    if (historyWrapper) {
+      historyWrapper.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+});
+
 function updateAccentSwatches() {
   const mode = document.body.classList.contains("theme-dark") ? "dark" : "light";
   accentButtons.forEach((button) => {
@@ -2649,9 +2872,22 @@ function closeSolveModal() {
 }
 
 function openSolveModal(solve) {
+  if (!solve) return;
   activeSolveId = solve.id;
-  solveModalMeta.textContent = `${formatSolveTime(solve)} | ${eventLabel(solve.eventId)} | ${solve.scramble}`;
-  solveModalStatus.textContent = "";
+  if (solveModalInfo) {
+    const timeStr = formatSolveTime(solve);
+    const eventStr = eventLabel(solve.eventId);
+    const dateStr = solve.t ? formatShareTimestamp(new Date(solve.t)) : "";
+    
+    solveModalInfo.innerHTML = `
+      <div class="solve-modal-time-primary">${timeStr}</div>
+      <div class="solve-modal-meta-secondary">${eventStr} ${dateStr ? " · " + dateStr : ""}</div>
+      <div class="solve-modal-scramble-tertiary">${solve.scramble || ""}</div>
+    `;
+  }
+  if (solveModalStatus) {
+    solveModalStatus.textContent = "";
+  }
   solveModal.classList.add("open");
   solveModal.setAttribute("aria-hidden", "false");
 }
@@ -2805,10 +3041,21 @@ window.addEventListener("keyup", (event) => {
 
 function attachTimerPointerControls() {
   let pointerActive = false;
-  const target = timerSection || timerDisplay;
+  // timerSection이나 timerDisplay가 없어도 document.body를 기본 대상으로 하여
+  // 화면 어디를 눌러도 작동하게 함.
+  const target = document.body;
   if (!target) return;
 
   const onDown = (event) => {
+    // 1. 클릭된 지점에 인터랙티브 요소나 카드형 콘텐츠가 있는지 확인
+    const contentOrInteractive = event.target.closest("button, select, input, a, textarea, label, .sidebar, .scramble-card, .quick-stats, .bottom-group, .modal-card, .chart-card, #statsGrid, .solve-item, .chart-section, .history-standalone, .dashboard-header, .left-dashboard");
+
+    // 2. 만약 콘텐츠 내부를 클릭했다면 (단, 타이머 숫자 자체는 예외로 허용) 타이머 작동 차단
+    if (contentOrInteractive && !event.target.closest(".timer-section")) {
+      return;
+    }
+
+    // 3. 그 외의 모든 배경 영역은 타이머 작동 허용
     event.preventDefault();
     if (pointerActive) return;
     // 이전 입력이 해제될 때까지 홀드 시작을 막음.
@@ -2847,6 +3094,64 @@ function attachTimerPointerControls() {
   window.addEventListener("touchend", onUp, { passive: false });
   target.addEventListener("mousedown", onDown);
   window.addEventListener("mouseup", onUp);
+}
+
+// 클릭한 스크램블 텍스트를 클립보드에 복사하는 기능: 메인 스크램블과 솔브 모달 내부 스크램블을 지원합니다.
+if (scrambleText) {
+  scrambleText.style.cursor = "pointer";
+  scrambleText.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const text = currentScramble || scrambleText.textContent || "";
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+    } catch (err) {
+      console.error("스크램블 복사 실패", err);
+    }
+  });
+}
+
+if (solveModalInfo) {
+  solveModalInfo.addEventListener("click", async (event) => {
+    const el = event.target.closest(".solve-modal-scramble-tertiary");
+    if (!el) return;
+    event.stopPropagation();
+    const text = (el.textContent || "").trim();
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      if (solveModalStatus) {
+        solveModalStatus.textContent = "스크램블이 복사되었습니다.";
+        setTimeout(() => {
+          if (solveModalStatus) solveModalStatus.textContent = "";
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("스크램블 복사 실패", err);
+    }
+  });
 }
 
 window.addEventListener("resize", () => {
@@ -2983,7 +3288,19 @@ if (progressChart) {
         updateDrag(event.clientX, event.pointerType || "mouse");
         return;
       }
-      handlePointerMove(event.clientX, event.clientY);
+      
+      const rect = progressChart.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (progressChart.width / rect.width);
+      const y = (event.clientY - rect.top) * (progressChart.height / rect.height);
+      const point = findNearestChartPoint(x, y);
+
+      if (point) {
+        activeChartPoint = point;
+        showChartTooltip(point);
+      } else {
+        activeChartPoint = null;
+        hideChartTooltip();
+      }
     });
 
     dragSurface.addEventListener("pointerup", (event) => {
@@ -3086,6 +3403,13 @@ chartTooltip?.addEventListener("pointerdown", (event) => {
   event.stopPropagation();
   const solve = chartTooltipSolve || activeChartPoint?.solve;
   if (solve) openSolveModal(solve);
+});
+
+statsGrid?.addEventListener("click", (e) => {
+  const statCard = e.target.closest(".q-stat");
+  if (!statCard) return;
+  const type = statCard.dataset.export;
+  if (type) exportStat(type);
 });
 
 async function initApp() {
