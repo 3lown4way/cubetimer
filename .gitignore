@@ -1,0 +1,9 @@
+node_modules/
+.qwen/
+isolate-*.log
+*.v8.log
+
+# Timestamp-named experiment artifacts
+tools/roux-experiment-*.json
+tools/roux-key-check-*.json
+tools/roux-regress-*.json

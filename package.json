@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@google/gemini-cli": "^0.37.1"
+  }
+}
