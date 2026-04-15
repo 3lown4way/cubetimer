@@ -2226,17 +2226,27 @@ function chooseLlFamilyForStage({
     normalizedCalibration.stage4Temperature,
     1.25,
   );
+  // When a player's historical rate is available and significantly higher than
+  // the calibration cap (which is trained on global averages), use the higher
+  // value so high-ZBLL players like Xuanyi Geng actually get ZBLL.
   const stage3Cap = useZbStages
     ? clampRate01(
-        (normalizedCalibration.stage3ZblsCap ?? mixedCaseBias?.zblsRate) *
-          normalizedCalibration.zblsScale,
+        Math.max(
+          (normalizedCalibration.stage3ZblsCap ?? 0) * normalizedCalibration.zblsScale,
+          (mixedCaseBias?.zblsRate ?? 0) * normalizedCalibration.zblsScale,
+        ),
       )
     : clampRate01(
-        (normalizedCalibration.stage3ZbllCap ?? mixedCaseBias?.zbllRate) *
-          normalizedCalibration.zbllScale,
+        Math.max(
+          (normalizedCalibration.stage3ZbllCap ?? 0) * normalizedCalibration.zbllScale,
+          (mixedCaseBias?.zbllRate ?? 0) * normalizedCalibration.zbllScale,
+        ),
       );
   const stage4Cap = clampRate01(
-    (normalizedCalibration.stage4ZbllCap ?? mixedCaseBias?.zbllRate) * normalizedCalibration.zbllScale,
+    Math.max(
+      (normalizedCalibration.stage4ZbllCap ?? 0) * normalizedCalibration.zbllScale,
+      (mixedCaseBias?.zbllRate ?? 0) * normalizedCalibration.zbllScale,
+    ),
   );
 
   let familyA = "OLL";
@@ -2265,7 +2275,7 @@ function chooseLlFamilyForStage({
   );
   probabilityB = computeLlFamilySelectionProbability(baseA, baseB + primaryFamilyBoost, effectiveTemperature);
   if (Number.isFinite(capB) && capB !== null) {
-    const capBlend = capB < 0.1 ? 0.55 : capB < 0.2 ? 0.45 : 0.35;
+    const capBlend = capB < 0.1 ? 0.55 : capB < 0.2 ? 0.45 : capB < 0.5 ? 0.35 : capB < 0.8 ? 0.55 : 0.7;
     probabilityB = probabilityB * (1 - capBlend) + capB * capBlend;
   }
   probabilityB = Math.max(0, Math.min(1, probabilityB));
@@ -3202,6 +3212,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
 
   function shouldPreferMixedZBLL(startPattern) {
     if (!mixedCfopStages || useZbStages) return false;
+    if (!startPattern || !isTopEdgeOrientationSolvedForLL(startPattern.patternData, ctx)) return false;
     return getLlFamilySelection(startPattern, "stage3")?.selectedFamily === "ZBLL";
   }
 
@@ -3356,7 +3367,11 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
           return selection?.selectedFamily === "ZBLS" ? ["ZBLS"] : ["OLL"];
         }
         if (mixedCfopStages && selection?.selectedFamily === "ZBLL") {
-          return ["ZBLL"];
+          // ZBLL requires all LL edges to be oriented (ZB method prerequisite)
+          if (startPattern && isTopEdgeOrientationSolvedForLL(startPattern.patternData, ctx)) {
+            return ["ZBLL"];
+          }
+          // Edges not oriented — fall back to OLL
         }
         return stage3FormulaKeys;
       },
@@ -3475,6 +3490,12 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         }
         const ollC = buildKeyForOrbit(data.CORNERS, ctx.topCornerPositions, false, true);
         return `FC:${f2lC}|FE:${f2lE}|OC:${ollC}|OE:${ollE}`;
+      },
+      // Full LL key including positions + orientations for ZBLL case library
+      zbllKey(data) {
+        const topC = buildKeyForOrbit(data.CORNERS, ctx.topCornerPositions, true, true);
+        const topE = buildKeyForOrbit(data.EDGES, ctx.topEdgePositions, true, true);
+        return `ZC:${topC}|ZE:${topE}`;
       },
     },
     {
@@ -3864,6 +3885,10 @@ function getSingleStageFormulaCaseLibrary(
   const solved = ctx?.solvedPattern;
   if (!solved) return null;
 
+  const useZbllKey = typeof stage.zbllKey === "function" &&
+    Array.isArray(formulaKeys) && formulaKeys.length === 1 && formulaKeys[0] === "ZBLL";
+  const getKeyFn = useZbllKey ? (data) => stage.zbllKey(data) : (data) => stage.key(data);
+
   for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
     const rot = FORMULA_ROTATIONS[r];
     for (let a = 0; a < preAufList.length; a++) {
@@ -3886,7 +3911,7 @@ function getSingleStageFormulaCaseLibrary(
             formulaCanonicalLookup,
           );
           const formulaKey = formulaKeyLookup?.get(normalizedCandidate) || null;
-          const caseKey = stage.key(casePattern.patternData);
+          const caseKey = getKeyFn(casePattern.patternData);
           const existing = caseMap.get(caseKey);
           if (
             !existing ||
@@ -3911,7 +3936,7 @@ function getSingleStageFormulaCaseLibrary(
     }
   }
 
-  const library = { caseMap, preferenceSignature: formulaPreferenceSignature };
+  const library = { caseMap, preferenceSignature: formulaPreferenceSignature, useZbllKey };
   singleStageFormulaCaseLibraryCache.set(cacheKey, library);
   if (singleStageFormulaCaseLibraryCache.size > SINGLE_STAGE_LIBRARY_CACHE_LIMIT) {
     const oldest = singleStageFormulaCaseLibraryCache.keys().next().value;
@@ -3966,7 +3991,9 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
     formulaCanonicalLookup,
   );
   if (library?.caseMap?.size) {
-    const startKey = stage.key(startPattern.patternData);
+    const startKey = library.useZbllKey && typeof stage.zbllKey === "function"
+      ? stage.zbllKey(startPattern.patternData)
+      : stage.key(startPattern.patternData);
     const direct = library.caseMap.get(startKey);
     if (direct && Array.isArray(direct.moves) && direct.moves.length <= stage.maxDepth) {
       const nextPattern = tryApplyMoves(startPattern, direct.moves);

@@ -1777,9 +1777,9 @@ function applyCaseBiasToStyleProfile(baseProfile, caseBias, mixedSummary = null,
   const historicalXCrossRate = clampRate01(mixedSummary?.xcrossRate ?? bias?.historicalXCrossRate, null);
   const historicalXXCrossRate = clampRate01(mixedSummary?.xxcrossRate ?? bias?.historicalXXCrossRate, null);
   const zbllRateCap =
-    historicalZbllRate === null ? null : Math.max(0.03, Math.min(0.5, Number((historicalZbllRate * 1.35).toFixed(6))));
+    historicalZbllRate === null ? null : Math.max(0.03, Math.min(0.98, Number((historicalZbllRate * 1.1).toFixed(6))));
   const zblsRateCap =
-    historicalZblsRate === null ? null : Math.max(0.02, Math.min(0.45, Number((historicalZblsRate * 1.4).toFixed(6))));
+    historicalZblsRate === null ? null : Math.max(0.02, Math.min(0.95, Number((historicalZblsRate * 1.15).toFixed(6))));
   const xcrossRateOffset = Number(crossSamplingCalibration?.xcrossRateOffset);
   const xxcrossRateOffset = Number(crossSamplingCalibration?.xxcrossRateOffset);
   const adjustRotation = Math.round((bias.xcrossWeight - 1) * 0.25 + (bias.xxcrossWeight - 1) * 0.35);

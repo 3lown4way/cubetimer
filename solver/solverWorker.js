@@ -160,6 +160,9 @@ async function solveWithInternal3x3StrictCfop(scramble, onProgress, options = {}
     ...options,
     scramble,
     styleProfile,
+    enableMixedCfopStages:
+      options.enableMixedCfopStages === true ||
+      (typeof options.f2lMethod === "string" && options.f2lMethod.toLowerCase() === "mixed"),
     onStageUpdate(progress) {
       if (typeof onProgress === "function") {
         try {
