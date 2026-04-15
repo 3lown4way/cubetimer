@@ -1672,6 +1672,8 @@ function normalizeDownstreamStateEntry(entry) {
 
 function normalizeF2LDownstreamProfile(downstreamProfile, seen = new WeakSet()) {
   if (!downstreamProfile || typeof downstreamProfile !== "object") return null;
+  // Already normalized — return as-is (idempotent)
+  if (downstreamProfile.stateMap instanceof Map) return downstreamProfile;
   const sourceProfile =
     downstreamProfile.profile && typeof downstreamProfile.profile === "object"
       ? downstreamProfile.profile
@@ -3070,7 +3072,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   const enableOllPllPrediction = options.enableOllPllPrediction !== false;
   const f2lDownstreamProfile =
     enableOllPllPrediction && downstreamProfileInput !== undefined && downstreamProfileInput !== null
-      ? downstreamProfileInput
+      ? normalizeF2LDownstreamProfile(downstreamProfileInput)
       : null;
   const f2lDownstreamWeight = normalizeF2LDownstreamWeight(
     options.ollPllPredictionWeight,
@@ -5198,7 +5200,9 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
             options.downstreamProfile !== null
           ? options.downstreamProfile
           : null;
-    const f2lDownstreamProfile = downstreamProfileInput || null;
+    const f2lDownstreamProfile = downstreamProfileInput
+      ? normalizeF2LDownstreamProfile(downstreamProfileInput)
+      : null;
     const f2lDownstreamWeight = normalizeF2LDownstreamWeight(
       options.ollPllPredictionWeight,
       DEFAULT_F2L_DOWNSTREAM_WEIGHT,
