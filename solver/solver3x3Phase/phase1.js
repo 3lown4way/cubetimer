@@ -1,4 +1,5 @@
 import { get3x3MoveTables } from "./tables3x3.js";
+import { MOVE_NAMES } from "../moves.js";
 
 const CO_SIZE = 3 ** 7; // 2187
 const EO_SIZE = 2 ** 11; // 2048
@@ -228,6 +229,8 @@ export async function solvePhase1(input) {
     ? Math.max(128, Math.floor(timeCheckInterval))
     : 1024;
   let checkCounter = 0;
+  // Fail cache persists across IDA* iterations: "from (state, lastFace) with N remaining moves, no solution exists"
+  // This is valid across bound increases because the state space doesn't change.
   let failCache = new Map();
 
   function shouldStopSearch() {
@@ -294,11 +297,9 @@ export async function solvePhase1(input) {
       break;
     }
     path.length = 0;
-    failCache = new Map();
     const res = dfs(coIdx, eoIdx, sliceIdx, 0, bound, 6);
     if (res === true) {
       path.reverse();
-      const { MOVE_NAMES } = await get3x3MoveTables();
       return { ok: true, moves: path.map((m) => MOVE_NAMES[m]), depth: path.length, nodes };
     }
     if (!Number.isFinite(res)) break;
@@ -311,4 +312,51 @@ export async function solvePhase1(input) {
     return { ok: false, reason: "PHASE1_TIMEOUT", nodes };
   }
   return { ok: false, reason: "PHASE1_NOT_FOUND", nodes };
+}
+
+/**
+ * Find short move sequences that solve edge orientation (EO) from a given state.
+ * Uses the EO distance table and IDA* DFS to enumerate all solutions up to maxDepth.
+ * Returns an array of move-name arrays (string[][]).
+ * For FMC: use results as targeted EO premoves before the main phase solve.
+ */
+export async function findShortEOSequences(coords, maxDepth = 5, maxCount = 8) {
+  await ensurePhase1Tables();
+  const edgeOri = coords.edges?.orientation;
+  if (!Array.isArray(edgeOri) || edgeOri.length < 11) return [];
+
+  let eoIdx = 0;
+  for (let i = 0; i < 11; i++) eoIdx = (eoIdx << 1) | (edgeOri[i] & 1);
+  if (eoIdx === 0) return [[]]; // Already EO solved
+
+  const minDist = eoDist[eoIdx];
+  if (minDist > maxDepth) return [];
+
+  const solutions = [];
+  const path = [];
+
+  function dfs(eoIdx, lastFace, depth) {
+    if (solutions.length >= maxCount) return;
+    if (eoIdx === 0) {
+      solutions.push(path.map((m) => MOVE_NAMES[m]));
+      return;
+    }
+    if (depth === 0) return;
+    if (eoDist[eoIdx] > depth) return;
+
+    const moves = allowedMovesByLastFace[lastFace];
+    for (let i = 0; i < moves.length; i++) {
+      if (solutions.length >= maxCount) return;
+      const m = moves[i];
+      const nextEo = eoMove[eoIdx * MOVE_COUNT + m];
+      path.push(m);
+      dfs(nextEo, Math.floor(m / 3), depth - 1);
+      path.pop();
+    }
+  }
+
+  for (let d = minDist; d <= maxDepth && solutions.length < maxCount; d++) {
+    dfs(eoIdx, 6, d);
+  }
+  return solutions;
 }

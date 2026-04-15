@@ -1,7 +1,9 @@
 import { getDefaultPattern } from "./context.js";
 import { solve3x3StrictCfopFromPattern } from "./cfop3x3.js";
 import { solve3x3InternalPhase } from "./solver3x3Phase/index.js";
+import { findShortEOSequences } from "./solver3x3Phase/phase1.js";
 import { MOVE_NAMES } from "./moves.js";
+import { parsePatternToCoords3x3 } from "./solver3x3Phase/state3x3.js";
 
 const FMC_PREMOVE_TURNS = ["", "'", "2"];
 const FMC_PREMOVE_SINGLE_FACES = ["U", "R", "F", "D", "L", "B"];
@@ -356,12 +358,89 @@ function optimizeSolutionWithInsertions(scramblePattern, moves, options = {}) {
   return current;
 }
 
+/**
+ * Count how many corners and edges are not in their solved position/orientation.
+ */
+function countUnsolvedPieces(pattern) {
+  const corners = pattern?.patternData?.CORNERS;
+  const edges = pattern?.patternData?.EDGES;
+  let bad = 0;
+  if (corners) {
+    const n = corners.pieces.length;
+    for (let i = 0; i < n; i++) {
+      if (corners.pieces[i] !== i || corners.orientation[i] !== 0) bad++;
+    }
+  }
+  if (edges) {
+    const n = edges.pieces.length;
+    for (let i = 0; i < n; i++) {
+      if (edges.pieces[i] !== i || edges.orientation[i] !== 0) bad++;
+    }
+  }
+  return bad;
+}
+
+/**
+ * Try to improve a solution by treating each prefix as a "skeleton" and solving the remainder.
+ * For AB3C (3 bad corners, 0 bad edges) or AB3E (0 bad corners, 3 bad edges) cases the
+ * Kociemba phase solver can finish very quickly, yielding prefix+suffix < original.
+ */
+async function tryImproveViaSkeleton(scramblePattern, moves, options = {}) {
+  if (!moves || moves.length < 6) return null;
+  const maxSuffixLen = Number.isFinite(options.maxSuffixLen) ? options.maxSuffixLen : moves.length - 1;
+  const nodeLimit = Number.isFinite(options.nodeLimit) ? options.nodeLimit : 500000;
+  const deadlineTs = Number.isFinite(options.deadlineTs) ? options.deadlineTs : Date.now() + 3000;
+  const states = buildPatternStates(scramblePattern, moves);
+  let best = null;
+
+  for (let i = 4; i <= moves.length - 3; i++) {
+    if (Date.now() >= deadlineTs) break;
+    const state = states[i];
+    const coords = parsePatternToCoords3x3(state);
+    const c = coords.corners, e = coords.edges;
+    let badCorners = 0, badEdges = 0;
+    if (c?.pieces) {
+      for (let j = 0; j < c.pieces.length; j++)
+        if (c.pieces[j] !== j || c.orientation[j] !== 0) badCorners++;
+    }
+    if (e?.pieces) {
+      for (let j = 0; j < e.pieces.length; j++)
+        if (e.pieces[j] !== j || e.orientation[j] !== 0) badEdges++;
+    }
+    const totalBad = badCorners + badEdges;
+    if (totalBad > 6) continue;
+
+    const maxLen = moves.length - i - 1;
+    if (maxLen < 1) continue;
+
+    const phase2Max = Math.min(maxSuffixLen, maxLen);
+    const remainMs = deadlineTs - Date.now();
+    if (remainMs < 80) break;
+
+    const result = await solve3x3InternalPhase(state, {
+      phase1MaxDepth: 8,
+      phase2MaxDepth: phase2Max,
+      nodeLimit,
+      deadlineTs: Math.min(deadlineTs, Date.now() + Math.min(600, remainMs - 40)),
+    });
+    if (!result?.ok) continue;
+
+    const suffix = splitMoves(result.solution || "");
+    const combined = simplifyMoves(moves.slice(0, i).concat(suffix));
+    if (combined.length < moves.length) {
+      if (!best || combined.length < best.length) {
+        best = combined;
+      }
+    }
+  }
+  return best;
+}
+
 async function getSolvedPattern() {
   if (!solvedPatternPromise) {
     solvedPatternPromise = getDefaultPattern("333");
   }
-  return solvedPatternPromise;
-}
+  return solvedPatternPromise;}
 
 function normalizeCandidateMoves(moves) {
   return simplifyMoves(Array.isArray(moves) ? moves : []);
@@ -535,7 +614,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     : 30000;
   const targetMoveCount = Number.isFinite(options.targetMoveCount)
     ? Math.max(1, Math.floor(options.targetMoveCount))
-    : 24;
+    : 20;
   const sweepBudgetMs = Number.isFinite(options.sweepBudgetMs)
     ? Math.max(500, Math.floor(options.sweepBudgetMs))
     : Math.max(1500, Math.min(8000, Math.floor(timeBudgetMs * 0.35)));
@@ -898,6 +977,61 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       stageName: "FMC Premove Sweep",
       moveCount: Number.isFinite(bestMoveCount) ? bestMoveCount : 0,
     });
+  }
+
+  // EO Premove Stage: find short EO-solving sequences and use as targeted premoves
+  const enableEOStage = options.enableEOStage !== false && remainingMs(deadlineTs) > 2000 && bestMoveCount > targetMoveCount;
+  if (enableEOStage) {
+    const eoBudgetMs = Math.max(1000, Math.min(4000, Math.floor(remainingMs(deadlineTs) * 0.25)));
+    const eoDeadlineTs = Math.min(deadlineTs, Date.now() + eoBudgetMs);
+    try {
+      const scrambleCoords = parsePatternToCoords3x3(scramblePattern);
+      const eoSeqs = await findShortEOSequences(scrambleCoords, 5, 6);
+      for (let ei = 0; ei < eoSeqs.length && Date.now() < eoDeadlineTs && bestMoveCount > targetMoveCount; ei++) {
+        const eoPremove = eoSeqs[ei];
+        if (!eoPremove.length) continue;
+        const eoPatternDirect = applyMovesToPattern(scramblePattern, eoPremove);
+        const eoAttemptMs = Math.max(500, Math.floor(remainingMs(eoDeadlineTs) / Math.max(1, eoSeqs.length - ei)));
+        const eoDirect = await solveInternal333(scramble, {
+          startPattern: eoPatternDirect,
+          profileLevel: "micro",
+          phaseAttemptTimeoutMs: eoAttemptMs,
+          cfopPerColorTimeoutMs: eoAttemptMs,
+          allowCfopFallback: false,
+          crossColors: options.crossColors || ["D"],
+          deadlineTs: Math.min(eoDeadlineTs, Date.now() + eoAttemptMs),
+          phaseTimeCheckInterval,
+          targetMoveCount: currentTargetMoveCount(),
+        });
+        if (eoDirect?.solution) {
+          const moves = eoPremove.concat(splitMoves(eoDirect.solution));
+          trackCandidate(createCandidate("FMC_EO_PREMOVE", { tag: `eo:${joinMoves(eoPremove)}`, usesCfop: false }, moves));
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Skeleton Optimization Stage: look for AB cases in top candidates and try to shorten via phase solver
+  const enableSkeletonStage = options.enableSkeletonStage !== false && remainingMs(deadlineTs) > 1500 && bestMoveCount > targetMoveCount;
+  if (enableSkeletonStage && candidates.length > 0) {
+    const skelBudgetMs = Math.max(1000, Math.min(6000, Math.floor(remainingMs(deadlineTs) * 0.30)));
+    const skelDeadlineTs = Math.min(deadlineTs, Date.now() + skelBudgetMs);
+    const skelTargets = candidates.slice(0, Math.min(5, candidates.length));
+    for (let si = 0; si < skelTargets.length && Date.now() < skelDeadlineTs && bestMoveCount > targetMoveCount; si++) {
+      const cand = skelTargets[si];
+      const candMoves = splitMoves(cand.solution);
+      const perCandMs = Math.max(500, Math.floor(remainingMs(skelDeadlineTs) / Math.max(1, skelTargets.length - si)));
+      try {
+        const improved = await tryImproveViaSkeleton(scramblePattern, candMoves, {
+          maxSuffixLen: cand.moveCount - 1,
+          nodeLimit: 400000,
+          deadlineTs: Math.min(skelDeadlineTs, Date.now() + perCandMs),
+        });
+        if (improved && improved.length < cand.moveCount) {
+          trackCandidate(createCandidate("FMC_SKELETON", { tag: `skel:${cand.source}`, usesCfop: false }, improved));
+        }
+      } catch (_) {}
+    }
   }
 
   candidates.sort((a, b) => {

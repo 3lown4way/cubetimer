@@ -252,6 +252,7 @@ export async function solvePhase2(input) {
     ? Math.max(128, Math.floor(timeCheckInterval))
     : 1024;
   let checkCounter = 0;
+  // Fail cache persists across IDA* iterations: valid since remaining-budget bits are bound-independent.
   let failCache = new Map();
 
   function shouldStopSearch() {
@@ -318,7 +319,6 @@ export async function solvePhase2(input) {
       break;
     }
     path.length = 0;
-    failCache = new Map();
     const res = dfs(cpIdx, epIdx, sepIdx, 0, bound, 6);
     if (res === true) {
       path.reverse();
