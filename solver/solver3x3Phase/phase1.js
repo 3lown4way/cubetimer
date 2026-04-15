@@ -360,3 +360,91 @@ export async function findShortEOSequences(coords, maxDepth = 5, maxCount = 8) {
   }
   return solutions;
 }
+
+/**
+ * Like solvePhase1 but collects up to maxCount solutions at the minimum IDA* depth.
+ * Uses solvePhase1 to find the minimum depth, then enumerates more solutions at that
+ * depth (and minDepth+1) via a targeted fixed-depth DFS.
+ * Returns { solutions: [{moves}], minDepth, nodes }
+ */
+export async function solvePhase1Multi(input, maxCount = 4) {
+  // Step 1: find first solution + minimum depth with standard IDA*
+  const first = await solvePhase1(input);
+  if (!first.ok) {
+    return { solutions: [], minDepth: -1, nodes: first.nodes || 0 };
+  }
+  const minDepth = first.depth;
+  const solutions = [{ moves: first.moves }];
+  if (maxCount <= 1 || first.nodes === 0 /* trivial */ ) {
+    return { solutions, minDepth, nodes: first.nodes };
+  }
+
+  // Step 2: enumerate more solutions at minDepth and minDepth+1 via fixed-depth DFS
+  await ensurePhase1Tables();
+  const { coIdx, eoIdx, sliceIdx, maxDepth, nodeLimit, deadlineTs, timeCheckInterval } = input;
+  const solvedSliceIdx = encodeSliceFromOccupancy(SOLVED_SLICE_OCC);
+  // seenKeys uses move-name keys for consistent deduplication with first.moves (strings)
+  const seenKeys = new Set([first.moves.join(",")]);
+  let nodes = first.nodes;
+  let timeLimitHit = false;
+  const hasDeadline = Number.isFinite(deadlineTs);
+  const checkInterval = Number.isFinite(timeCheckInterval)
+    ? Math.max(128, Math.floor(timeCheckInterval))
+    : 1024;
+  let checkCounter = 0;
+  const enumPath = []; // stores integer move indices during DFS
+
+  function shouldStop() {
+    if (timeLimitHit) return true;
+    if (hasDeadline) {
+      checkCounter += 1;
+      if (checkCounter >= checkInterval) {
+        checkCounter = 0;
+        if (Date.now() >= deadlineTs) { timeLimitHit = true; return true; }
+      }
+    }
+    return false;
+  }
+
+  function enumerate(co, eo, sl, depth, targetDepth, lastFace) {
+    if (solutions.length >= maxCount || shouldStop()) return;
+    const h = Math.max(coDist[co], eoDist[eo], sliceDist[sl]);
+    if (depth + h > targetDepth) return;
+    if (co === 0 && eo === 0 && sl === solvedSliceIdx) {
+      if (depth === targetDepth) {
+        // Convert indices to move names before dedup/storing
+        const names = enumPath.map((m) => MOVE_NAMES[m]);
+        const key = names.join(",");
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          solutions.push({ moves: names });
+        }
+      }
+      return;
+    }
+    if (depth >= targetDepth) return;
+    const moves = allowedMovesByLastFace[lastFace];
+    for (let i = 0; i < moves.length; i++) {
+      if (solutions.length >= maxCount || shouldStop()) return;
+      const m = moves[i];
+      nodes += 1;
+      const nextCo = coMove[co * MOVE_COUNT + m];
+      const nextEo = eoMove[eo * MOVE_COUNT + m];
+      const nextSl = sliceMove[sl * MOVE_COUNT + m];
+      if (depth + 1 + Math.max(coDist[nextCo], eoDist[nextEo], sliceDist[nextSl]) > targetDepth) continue;
+      enumPath.push(m);
+      enumerate(nextCo, nextEo, nextSl, depth + 1, targetDepth, Math.floor(m / 3));
+      enumPath.pop();
+    }
+  }
+
+  // Enumerate at minDepth (avoid duplicate of first solution via seenKeys)
+  enumerate(coIdx, eoIdx, sliceIdx, 0, minDepth, 6);
+
+  // If still need more and time allows, try minDepth+1
+  if (solutions.length < maxCount && !timeLimitHit && minDepth + 1 <= (maxDepth || 12)) {
+    enumerate(coIdx, eoIdx, sliceIdx, 0, minDepth + 1, 6);
+  }
+
+  return { solutions, minDepth, nodes };
+}

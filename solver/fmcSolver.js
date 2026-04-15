@@ -538,10 +538,13 @@ async function solveInternal333(scrambleText, options = {}) {
         Math.floor(phaseAttemptTimeoutMs * getPhaseAttemptScale(profile.id)),
       );
       const phaseDeadlineTs = clampAttemptDeadline(options.deadlineTs, scaledAttemptTimeoutMs, 100);
+      const bestSoFar = bestPhase?.moveCount;
       const phaseResult = await solve3x3InternalPhase(pattern, {
         ...profile,
         deadlineTs: phaseDeadlineTs,
         timeCheckInterval: phaseTimeCheckInterval,
+        targetTotalDepth: targetMoveCount || (Number.isFinite(bestSoFar) ? bestSoFar - 1 : undefined),
+        maxPhase1Solutions: options.maxPhase1Solutions ?? 4,
       }).catch(() => null);
       if (phaseResult?.ok) {
         const phaseCandidate = {
