@@ -1654,12 +1654,25 @@ function normalizeCaseBiasRecord(caseBias) {
   ) {
     return null;
   }
-  return {
+  const clampRate = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+  };
+  const result = {
     xcrossWeight: Math.max(1, Math.min(12, Math.round(xcrossWeight))),
     xxcrossWeight: Math.max(1, Math.min(12, Math.round(xxcrossWeight))),
     zbllWeight: Math.max(1, Math.min(12, Math.round(zbllWeight))),
     zblsWeight: Math.max(1, Math.min(12, Math.round(zblsWeight))),
   };
+  const hXC = clampRate(caseBias.historicalXCrossRate);
+  const hXXC = clampRate(caseBias.historicalXXCrossRate);
+  const hZBLL = clampRate(caseBias.historicalZbllRate);
+  const hZBLS = clampRate(caseBias.historicalZblsRate);
+  if (hXC !== null) result.historicalXCrossRate = hXC;
+  if (hXXC !== null) result.historicalXXCrossRate = hXXC;
+  if (hZBLL !== null) result.historicalZbllRate = hZBLL;
+  if (hZBLS !== null) result.historicalZblsRate = hZBLS;
+  return result;
 }
 
 function formatCaseBiasSummary(caseBias) {
@@ -1759,10 +1772,10 @@ function applyCaseBiasToStyleProfile(baseProfile, caseBias, mixedSummary = null,
   const bias = normalizeCaseBiasRecord(caseBias);
   if (!base) return null;
   if (!bias) return base;
-  const historicalZbllRate = clampRate01(mixedSummary?.zbllRate, null);
-  const historicalZblsRate = clampRate01(mixedSummary?.zblsRate, null);
-  const historicalXCrossRate = clampRate01(mixedSummary?.xcrossRate, null);
-  const historicalXXCrossRate = clampRate01(mixedSummary?.xxcrossRate, null);
+  const historicalZbllRate = clampRate01(mixedSummary?.zbllRate ?? bias?.historicalZbllRate, null);
+  const historicalZblsRate = clampRate01(mixedSummary?.zblsRate ?? bias?.historicalZblsRate, null);
+  const historicalXCrossRate = clampRate01(mixedSummary?.xcrossRate ?? bias?.historicalXCrossRate, null);
+  const historicalXXCrossRate = clampRate01(mixedSummary?.xxcrossRate ?? bias?.historicalXXCrossRate, null);
   const zbllRateCap =
     historicalZbllRate === null ? null : Math.max(0.03, Math.min(0.5, Number((historicalZbllRate * 1.35).toFixed(6))));
   const zblsRateCap =
@@ -1811,13 +1824,21 @@ function attachMixedCaseBiasMetadata(baseProfile, profile) {
     zbllWeight: bias?.zbllWeight,
     zblsWeight: bias?.zblsWeight,
     historicalXCrossRate:
-      mixedSummary && Number.isFinite(Number(mixedSummary.xcrossRate)) ? Number(mixedSummary.xcrossRate) : null,
+      mixedSummary && Number.isFinite(Number(mixedSummary.xcrossRate))
+        ? Number(mixedSummary.xcrossRate)
+        : (bias?.historicalXCrossRate ?? null),
     historicalXXCrossRate:
-      mixedSummary && Number.isFinite(Number(mixedSummary.xxcrossRate)) ? Number(mixedSummary.xxcrossRate) : null,
+      mixedSummary && Number.isFinite(Number(mixedSummary.xxcrossRate))
+        ? Number(mixedSummary.xxcrossRate)
+        : (bias?.historicalXXCrossRate ?? null),
     historicalZbllRate:
-      mixedSummary && Number.isFinite(Number(mixedSummary.zbllRate)) ? Number(mixedSummary.zbllRate) : null,
+      mixedSummary && Number.isFinite(Number(mixedSummary.zbllRate))
+        ? Number(mixedSummary.zbllRate)
+        : (bias?.historicalZbllRate ?? null),
     historicalZblsRate:
-      mixedSummary && Number.isFinite(Number(mixedSummary.zblsRate)) ? Number(mixedSummary.zblsRate) : null,
+      mixedSummary && Number.isFinite(Number(mixedSummary.zblsRate))
+        ? Number(mixedSummary.zblsRate)
+        : (bias?.historicalZblsRate ?? null),
     xcrossRateOffset: Number.isFinite(xcrossRateOffset) ? xcrossRateOffset : 0,
     xxcrossRateOffset: Number.isFinite(xxcrossRateOffset) ? xxcrossRateOffset : 0,
     mixedCfopSummary: mixedSummary || null,

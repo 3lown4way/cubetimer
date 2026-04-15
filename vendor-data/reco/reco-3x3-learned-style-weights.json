@@ -55,7 +55,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 1,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.4442,
+        "historicalXXCrossRate": 0.0511,
+        "historicalZbllRate": 0.0344,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -175,7 +179,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 3,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.3126,
+        "historicalXXCrossRate": 0.0259,
+        "historicalZbllRate": 0.1569,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -295,7 +303,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 5,
-        "zblsWeight": 3
+        "zblsWeight": 3,
+        "historicalXCrossRate": 0.5728,
+        "historicalXXCrossRate": 0.1693,
+        "historicalZbllRate": 0.3849,
+        "historicalZblsRate": 0.0079
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -415,7 +427,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 1,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.524,
+        "historicalXXCrossRate": 0.0839,
+        "historicalZbllRate": 0.0103,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -535,7 +551,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 2,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.4466,
+        "historicalXXCrossRate": 0.0524,
+        "historicalZbllRate": 0.0621,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -655,7 +675,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 1,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.2426,
+        "historicalXXCrossRate": 0.0204,
+        "historicalZbllRate": 0.0431,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -775,7 +799,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 2,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.3516,
+        "historicalXXCrossRate": 0.0387,
+        "historicalZbllRate": 0.0581,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -895,7 +923,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 1,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.25,
+        "historicalXXCrossRate": 0.0195,
+        "historicalZbllRate": 0.0422,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1015,7 +1047,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 3,
-        "zblsWeight": 2
+        "zblsWeight": 2,
+        "historicalXCrossRate": 0.3235,
+        "historicalXXCrossRate": 0.011,
+        "historicalZbllRate": 0.1985,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1135,7 +1171,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 11,
-        "zblsWeight": 11
+        "zblsWeight": 11,
+        "historicalXCrossRate": 0.5208,
+        "historicalXXCrossRate": 0.0958,
+        "historicalZbllRate": 0.9417,
+        "historicalZblsRate": 0.1417
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1255,7 +1295,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 3,
-        "zblsWeight": 2
+        "zblsWeight": 2,
+        "historicalXCrossRate": 0.458,
+        "historicalXXCrossRate": 0.105,
+        "historicalZbllRate": 0.1387,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1375,7 +1419,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 4,
-        "zblsWeight": 2
+        "zblsWeight": 2,
+        "historicalXCrossRate": 0.3198,
+        "historicalXXCrossRate": 0.0305,
+        "historicalZbllRate": 0.264,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1495,7 +1543,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 3,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.3214,
+        "historicalXXCrossRate": 0.0153,
+        "historicalZbllRate": 0.1531,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1615,7 +1667,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 2,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.2983,
+        "historicalXXCrossRate": 0.0387,
+        "historicalZbllRate": 0.105,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
@@ -1735,7 +1791,11 @@
         "xcrossWeight": 1,
         "xxcrossWeight": 1,
         "zbllWeight": 1,
-        "zblsWeight": 1
+        "zblsWeight": 1,
+        "historicalXCrossRate": 0.0594,
+        "historicalXXCrossRate": 0.0,
+        "historicalZbllRate": 0.0297,
+        "historicalZblsRate": 0.0
       },
       "learnedStyleProfile": {
         "preset": "ml-aggressive",
