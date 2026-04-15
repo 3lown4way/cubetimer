@@ -89,14 +89,14 @@ const FMC_PHASE_PROFILES = [
     phase1MaxDepth: 13,
     phase2MaxDepth: 20,
     phase1NodeLimit: 6000000,
-    phase2NodeLimit: 10000000,
+    phase2NodeLimit: 25000000,
   },
   {
     id: "phase-xdeep",
     phase1MaxDepth: 14,
     phase2MaxDepth: 21,
     phase1NodeLimit: 12000000,
-    phase2NodeLimit: 20000000,
+    phase2NodeLimit: 40000000,
   },
 ];
 
@@ -622,19 +622,19 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const startedAt = Date.now();
   const deadlineTs = startedAt + timeBudgetMs;
   const sweepDeadlineTs = startedAt + sweepBudgetMs;
-  const directProfileLevel = options.directProfileLevel || "medium";
+  const directProfileLevel = options.directProfileLevel || "deep";
   const directPhaseAttemptTimeoutMs = Number.isFinite(options.directPhaseAttemptTimeoutMs)
     ? Math.max(600, Math.floor(options.directPhaseAttemptTimeoutMs))
-    : 2500;
+    : 8000;
   const directCfopPerColorTimeoutMs = Number.isFinite(options.directCfopPerColorTimeoutMs)
     ? Math.max(700, Math.floor(options.directCfopPerColorTimeoutMs))
     : 2500;
   const directStageBudgetMs = Number.isFinite(options.directStageBudgetMs)
     ? Math.max(800, Math.floor(options.directStageBudgetMs))
-    : Math.max(1200, Math.min(5000, Math.floor(timeBudgetMs * 0.42)));
+    : Math.max(1200, Math.min(8000, Math.floor(timeBudgetMs * 0.42)));
   const nissStageBudgetMs = Number.isFinite(options.nissStageBudgetMs)
     ? Math.max(800, Math.floor(options.nissStageBudgetMs))
-    : Math.max(1200, Math.min(5000, Math.floor(timeBudgetMs * 0.42)));
+    : Math.max(1200, Math.min(8000, Math.floor(timeBudgetMs * 0.42)));
   const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
     ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
     : 1024;
