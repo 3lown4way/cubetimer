@@ -4108,8 +4108,14 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
   const curPairStates = new Uint16Array(NPAIRS);
   for (let j = 0; j < NPAIRS; j++) curPairStates[j] = initPairStates[j];
 
-  // Solve each pair sequentially.
-  for (let k = 0; k < NPAIRS; k++) {
+  // Sort pair indices: hardest pair first (largest prune distance) for tighter early bounds.
+  const pairOrder = Array.from({length: NPAIRS}, (_, j) => j).sort(
+    (a, b) => pruneTables[b][initPairStates[b]] - pruneTables[a][initPairStates[a]]
+  );
+
+  // Solve each pair sequentially in difficulty order.
+  for (let ki = 0; ki < NPAIRS; ki++) {
+    const k = pairOrder[ki];
     const pruneTableK = pruneTables[k];
     const pairMoveTableK = pairMoveTables[k];
     const solvedPairStateK = f2lSolvedPairStates[k];
@@ -4118,10 +4124,11 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
     crossStack[0] = curCrossState;
     for (let j = 0; j < NPAIRS; j++) pairStacks[j][0] = curPairStates[j];
 
-    // Check if already satisfied (cross + pairs 0..k all solved).
+    // Check if already satisfied (cross + pairs pairOrder[0..ki] all solved).
     let alreadySolved = crossStack[0] === solvedCrossIdx && pairStacks[k][0] === solvedPairStateK;
     if (alreadySolved) {
-      for (let j = 0; j < k; j++) {
+      for (let ji = 0; ji < ki; ji++) {
+        const j = pairOrder[ji];
         if (pairStacks[j][0] !== f2lSolvedPairStates[j]) { alreadySolved = false; break; }
       }
     }
@@ -4134,16 +4141,17 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
         if (totalNodes >= NODE_LIMIT) { nodeLimitHit = true; return Infinity; }
         if (deadlineTs > 0 && Date.now() >= deadlineTs) { deadlineHit = true; return Infinity; }
       }
-      // Heuristic: max(cross distance, pair distance for all pairs 0..k).
-      // This prevents disturbing previously solved pairs (j < k) from going unpunished.
+      // Heuristic: max(cross distance, distance for current pair + all previously solved pairs).
+      // This prevents disturbing previously solved pairs from going unpunished.
       let h = crossPruneTable[crossStack[level]];
-      for (let j = 0; j <= k; j++) {
+      for (let ji = 0; ji <= ki; ji++) {
+        const j = pairOrder[ji];
         const hj = pruneTables[j][pairStacks[j][level]];
         if (hj > h) h = hj;
       }
       const f = level + h;
       if (f > bound) return f;
-      // Goal: cross solved AND pairs 0..k all solved.
+      // Goal: cross solved AND all tracked pairs (pairOrder[0..ki]) solved.
       if (h === 0) {
         solutionDepth = level;
         return true;
@@ -4172,9 +4180,10 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
       return minNext;
     }
 
-    // Initial bound: max heuristic over cross + pairs 0..k.
+    // Initial bound: max heuristic over cross + all tracked pairs.
     let bound = crossPruneTable[curCrossState];
-    for (let j = 0; j <= k; j++) {
+    for (let ji = 0; ji <= ki; ji++) {
+      const j = pairOrder[ji];
       const hj = pruneTables[j][curPairStates[j]];
       if (hj > bound) bound = hj;
     }
