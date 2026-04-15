@@ -126,7 +126,9 @@ let f2lCaseLibraryPromise = null;
 const formulaValidityCache = new Map();
 const formulaListCache = new Map();
 const singleStageFormulaCaseLibraryCache = new Map();
-const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 12;
+const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 64;
+const normalizeFormulaCache = new Map();
+const NORMALIZE_FORMULA_CACHE_LIMIT = 4096;
 
 let contextPromise = null;
 
@@ -692,10 +694,18 @@ function stripOuterFrameRotations(tokens) {
 }
 
 function normalizeFormulaMatchText(text) {
+  const cached = normalizeFormulaCache.get(text);
+  if (cached !== undefined) return cached;
   const tokens = splitMoves(text)
     .map((token) => normalizeMoveToken(token))
     .filter(Boolean);
-  return stripOuterFrameRotations(tokens).join(" ");
+  const result = stripOuterFrameRotations(tokens).join(" ");
+  if (normalizeFormulaCache.size >= NORMALIZE_FORMULA_CACHE_LIMIT) {
+    const oldest = normalizeFormulaCache.keys().next().value;
+    if (oldest !== undefined) normalizeFormulaCache.delete(oldest);
+  }
+  normalizeFormulaCache.set(text, result);
+  return result;
 }
 
 function tryApplyAlg(pattern, algText) {
@@ -3711,10 +3721,13 @@ function shouldUseSingleStageCaseLibrary(stage, formulas) {
   );
 }
 
+const preferenceSignatureCache = new WeakMap();
 function buildFormulaPreferenceSignature(formulaPreferenceMap, limit = 24) {
   if (!formulaPreferenceMap || typeof formulaPreferenceMap.size !== "number" || formulaPreferenceMap.size <= 0) {
     return "";
   }
+  const cached = preferenceSignatureCache.get(formulaPreferenceMap);
+  if (cached !== undefined) return cached;
   const entries = Array.from(formulaPreferenceMap.entries())
     .map(([formula, count]) => ({
       formula: String(formula || "").trim(),
@@ -3726,9 +3739,11 @@ function buildFormulaPreferenceSignature(formulaPreferenceMap, limit = 24) {
       return a.formula.localeCompare(b.formula);
     })
     .slice(0, Math.max(1, Math.floor(limit)));
-  return `${formulaPreferenceMap.size}:${entries
+  const result = `${formulaPreferenceMap.size}:${entries
     .map((entry) => `${entry.formula}:${entry.count}`)
     .join("|")}`;
+  preferenceSignatureCache.set(formulaPreferenceMap, result);
+  return result;
 }
 
 function getFormulaPreferenceScore(formulaPreferenceMap, formula, formulaCanonicalLookup = null) {
