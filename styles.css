@@ -107,21 +107,21 @@ body.theme-dark {
   --accent-border: rgba(67, 97, 238, 0.38);
   --accent-hover: #5a78f1;
   --accent-shadow: rgba(67, 97, 238, 0.28);
-  --glass-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
-  --glass-sheen: radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 44%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 40%);
-  --glass-sheen-opacity: 0.5;
-  --glass-line: rgba(255, 255, 255, 0.09);
-  --glass-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 22px rgba(0, 0, 0, 0.08);
-  --panel-shadow: 0 12px 24px rgba(0, 0, 0, 0.2), 0 3px 8px rgba(0, 0, 0, 0.12);
-  --panel-shadow-strong: 0 18px 34px rgba(0, 0, 0, 0.26), 0 6px 14px rgba(0, 0, 0, 0.16);
+  --glass-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.024), rgba(255, 255, 255, 0.008));
+  --glass-sheen: radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.016), rgba(255, 255, 255, 0) 36%);
+  --glass-sheen-opacity: 0.22;
+  --glass-line: rgba(255, 255, 255, 0.07);
+  --glass-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028), inset 0 -10px 18px rgba(0, 0, 0, 0.045);
+  --panel-shadow: 0 10px 20px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  --panel-shadow-strong: 0 14px 26px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.1);
   --button-surface: linear-gradient(180deg, rgba(39, 43, 49, 0.9), rgba(29, 33, 38, 0.86));
-  --button-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -10px 18px rgba(0, 0, 0, 0.1);
-  --button-shadow: 0 6px 14px rgba(0, 0, 0, 0.14), 0 2px 4px rgba(0, 0, 0, 0.08);
-  --button-hover-shadow: 0 8px 18px rgba(0, 0, 0, 0.18), 0 3px 8px rgba(0, 0, 0, 0.1), var(--button-highlight);
-  --ghost-bg: linear-gradient(180deg, rgba(47, 52, 58, 0.76), rgba(31, 35, 40, 0.68));
-  --ghost-bg-hover: linear-gradient(180deg, rgba(54, 60, 67, 0.82), rgba(35, 39, 45, 0.74));
-  --ghost-shadow: 0 6px 14px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --button-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.025), inset 0 -8px 14px rgba(0, 0, 0, 0.07);
+  --button-shadow: 0 4px 10px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --button-hover-shadow: 0 6px 14px rgba(0, 0, 0, 0.14), 0 2px 5px rgba(0, 0, 0, 0.08), var(--button-highlight);
+  --ghost-bg: linear-gradient(180deg, rgba(44, 49, 55, 0.72), rgba(31, 35, 40, 0.66));
+  --ghost-bg-hover: linear-gradient(180deg, rgba(49, 55, 62, 0.78), rgba(34, 38, 43, 0.7));
+  --ghost-shadow: 0 4px 10px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.025);
   --card-item-bg: linear-gradient(180deg, rgba(41, 46, 52, 0.94), rgba(30, 34, 39, 0.9));
   --card-item-shadow: 0 8px 18px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.035);
   --card-item-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.045);
@@ -301,6 +301,12 @@ body {
 
 .glass:hover {
   box-shadow: var(--panel-shadow-strong), var(--glass-inner-shadow);
+}
+
+body.theme-dark .glass:hover,
+body.theme-dark .quick-stats:hover {
+  box-shadow: var(--panel-shadow), var(--glass-inner-shadow);
+  transform: none;
 }
 
 .panel {
@@ -793,20 +799,25 @@ body.timer-only .timer-display {
   .layout {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.1rem;
   }
 
   .dashboard-header {
     order: 1;
     width: 100%;
     position: static;
+    min-height: 56px;
+    padding: 0 1rem;
+    margin-bottom: 0;
   }
 
   .main-content {
     order: 2;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.1rem;
+    padding: 0.5rem 0 1.25rem;
+    overflow: visible;
   }
 
   .left-dashboard {
@@ -815,23 +826,36 @@ body.timer-only .timer-display {
     display: flex;
     flex-direction: column;
     width: 100%;
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
   .focus-group { order: 1; }
   .bottom-group { order: 3; }
 
+  .brand {
+    font-size: clamp(1.25rem, 7vw, 1.9rem);
+  }
+
+  .dashboard-actions {
+    gap: 0.4rem;
+  }
+
+  .focus-group {
+    gap: 1.5rem;
+    max-width: none;
+  }
+
   .scramble-content {
     flex-direction: column;
-    gap: 1rem;
-    padding: 0.5rem 0;
+    gap: 0.85rem;
+    padding: 0.2rem 0;
   }
 
   .scramble-side-controls {
     border-left: none !important;
     border-top: 1px solid var(--border);
     padding-left: 0 !important;
-    padding-top: 1rem;
+    padding-top: 0.85rem;
     width: 100%;
     justify-content: center;
   }
@@ -839,6 +863,96 @@ body.timer-only .timer-display {
   .scramble-row-dock {
     width: 100%;
     justify-content: center;
+    gap: 0.6rem;
+  }
+
+  .scramble-card {
+    padding: 0 1rem;
+    min-height: auto;
+  }
+
+  .scramble-text {
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .timer-display {
+    font-size: clamp(4.4rem, 22vw, 6.6rem);
+    margin: 0.75rem 0 0.25rem;
+  }
+
+  .quick-stats {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.9rem 0.75rem;
+    gap: 0.25rem;
+    justify-content: space-between;
+  }
+
+  .q-stat {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.35rem 0.25rem;
+  }
+
+  .q-label {
+    font-size: 0.68rem;
+  }
+
+  .q-value {
+    font-size: 1rem;
+  }
+
+  .bottom-group {
+    margin-top: 1rem;
+    padding: 0;
+    gap: 0.85rem;
+  }
+
+  .chart-section,
+  #scramblePreviewSection {
+    max-width: none;
+    min-height: 180px;
+    padding: 1rem;
+  }
+
+  .chart-section {
+    min-height: 220px;
+  }
+
+  .chart-container {
+    min-height: 140px;
+  }
+
+  .visualizer {
+    min-height: 180px;
+    padding: 0.75rem;
+  }
+
+  #scramblePreview {
+    width: min(100%, 170px);
+    height: min(100%, 170px);
+  }
+
+  .session.panel,
+  .history-standalone {
+    padding: 1rem;
+  }
+
+  .session-actions-grid {
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+    padding-bottom: 0.1rem;
+  }
+
+  .history-header {
+    padding-inline: 0.4rem;
+    gap: 0.35rem;
+  }
+
+  #historyList {
+    gap: 0.6rem;
   }
 }
 
@@ -1437,7 +1551,7 @@ body.theme-dark .timer-display.inspect-danger {
   .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
   .sidebar.collapsed { margin-left: 0; transform: translateY(-100%); display: none; }
   .bottom-group { grid-template-columns: 1fr; }
-  .main-content { padding: 1.5rem; }
+  .main-content { padding: 0.5rem 0 1.25rem; }
 }
 
 .modal-close:hover {
@@ -1900,7 +2014,7 @@ body.theme-dark .swatch-btn {
   }
 
   .app {
-    padding: 28px 16px 40px;
+    padding: 20px 16px 32px;
     width: 100%;
   }
 
@@ -1922,7 +2036,7 @@ body.theme-dark .swatch-btn {
   }
 
   .scramble-text {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
 
   .row {
@@ -2131,14 +2245,14 @@ body.hide-preview.hide-chart .bottom-group {
   .bottom-group {
     flex-direction: column;
     align-items: center;
-    padding: 1rem;
-    margin-top: 2rem;
+    padding: 0;
+    margin-top: 1rem;
   }
   .chart-section, #scramblePreviewSection {
     width: 100%;
-    max-width: 500px;
+    max-width: none;
     height: auto;
-    min-height: 200px;
+    min-height: 180px;
   }
 }
 
