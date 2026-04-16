@@ -1,7 +1,6 @@
 import { getDefaultPattern } from "./context.js";
-import { solve3x3StrictCfopFromPattern } from "./cfop3x3.js";
-import { solve3x3InternalPhase } from "./solver3x3Phase/index.js";
-import { findShortEOSequences } from "./solver3x3Phase/phase1.js";
+import { buildPhase1Input, solvePhase1 } from "./solver3x3Phase/phase1.js";
+import { buildPhase2Input, solvePhase2 } from "./solver3x3Phase/phase2.js";
 import { MOVE_NAMES } from "./moves.js";
 import { parsePatternToCoords3x3 } from "./solver3x3Phase/state3x3.js";
 
@@ -62,43 +61,6 @@ function buildFmcPremoveSets() {
 }
 
 const FMC_PREMOVE_SETS = buildFmcPremoveSets();
-const FMC_PHASE_PROFILES = [
-  {
-    id: "phase-micro",
-    phase1MaxDepth: 11,
-    phase2MaxDepth: 16,
-    phase1NodeLimit: 220000,
-    phase2NodeLimit: 320000,
-  },
-  {
-    id: "phase-light",
-    phase1MaxDepth: 12,
-    phase2MaxDepth: 18,
-    phase1NodeLimit: 700000,
-    phase2NodeLimit: 1200000,
-  },
-  {
-    id: "phase-mid",
-    phase1MaxDepth: 13,
-    phase2MaxDepth: 19,
-    phase1NodeLimit: 2500000,
-    phase2NodeLimit: 4500000,
-  },
-  {
-    id: "phase-deep",
-    phase1MaxDepth: 13,
-    phase2MaxDepth: 20,
-    phase1NodeLimit: 6000000,
-    phase2NodeLimit: 25000000,
-  },
-  {
-    id: "phase-xdeep",
-    phase1MaxDepth: 14,
-    phase2MaxDepth: 21,
-    phase1NodeLimit: 12000000,
-    phase2NodeLimit: 40000000,
-  },
-];
 
 let solvedPatternPromise = null;
 const FMC_INSERTION_MOVE_NAMES = MOVE_NAMES.slice();
@@ -359,83 +321,8 @@ function optimizeSolutionWithInsertions(scramblePattern, moves, options = {}) {
 }
 
 /**
- * Count how many corners and edges are not in their solved position/orientation.
+ * Tries to improve a solution by replacing small windows of moves with shorter equivalents.
  */
-function countUnsolvedPieces(pattern) {
-  const corners = pattern?.patternData?.CORNERS;
-  const edges = pattern?.patternData?.EDGES;
-  let bad = 0;
-  if (corners) {
-    const n = corners.pieces.length;
-    for (let i = 0; i < n; i++) {
-      if (corners.pieces[i] !== i || corners.orientation[i] !== 0) bad++;
-    }
-  }
-  if (edges) {
-    const n = edges.pieces.length;
-    for (let i = 0; i < n; i++) {
-      if (edges.pieces[i] !== i || edges.orientation[i] !== 0) bad++;
-    }
-  }
-  return bad;
-}
-
-/**
- * Try to improve a solution by treating each prefix as a "skeleton" and solving the remainder.
- * For AB3C (3 bad corners, 0 bad edges) or AB3E (0 bad corners, 3 bad edges) cases the
- * Kociemba phase solver can finish very quickly, yielding prefix+suffix < original.
- */
-async function tryImproveViaSkeleton(scramblePattern, moves, options = {}) {
-  if (!moves || moves.length < 6) return null;
-  const maxSuffixLen = Number.isFinite(options.maxSuffixLen) ? options.maxSuffixLen : moves.length - 1;
-  const nodeLimit = Number.isFinite(options.nodeLimit) ? options.nodeLimit : 500000;
-  const deadlineTs = Number.isFinite(options.deadlineTs) ? options.deadlineTs : Date.now() + 3000;
-  const states = buildPatternStates(scramblePattern, moves);
-  let best = null;
-
-  for (let i = 4; i <= moves.length - 3; i++) {
-    if (Date.now() >= deadlineTs) break;
-    const state = states[i];
-    const coords = parsePatternToCoords3x3(state);
-    const c = coords.corners, e = coords.edges;
-    let badCorners = 0, badEdges = 0;
-    if (c?.pieces) {
-      for (let j = 0; j < c.pieces.length; j++)
-        if (c.pieces[j] !== j || c.orientation[j] !== 0) badCorners++;
-    }
-    if (e?.pieces) {
-      for (let j = 0; j < e.pieces.length; j++)
-        if (e.pieces[j] !== j || e.orientation[j] !== 0) badEdges++;
-    }
-    const totalBad = badCorners + badEdges;
-    if (totalBad > 6) continue;
-
-    const maxLen = moves.length - i - 1;
-    if (maxLen < 1) continue;
-
-    const phase2Max = Math.min(maxSuffixLen, maxLen);
-    const remainMs = deadlineTs - Date.now();
-    if (remainMs < 80) break;
-
-    const result = await solve3x3InternalPhase(state, {
-      phase1MaxDepth: 8,
-      phase2MaxDepth: phase2Max,
-      nodeLimit,
-      deadlineTs: Math.min(deadlineTs, Date.now() + Math.min(600, remainMs - 40)),
-    });
-    if (!result?.ok) continue;
-
-    const suffix = splitMoves(result.solution || "");
-    const combined = simplifyMoves(moves.slice(0, i).concat(suffix));
-    if (combined.length < moves.length) {
-      if (!best || combined.length < best.length) {
-        best = combined;
-      }
-    }
-  }
-  return best;
-}
-
 async function getSolvedPattern() {
   if (!solvedPatternPromise) {
     solvedPatternPromise = getDefaultPattern("333");
@@ -483,126 +370,56 @@ function pushUniqueCandidate(list, candidate) {
   }
 }
 
-function selectPhaseProfiles(profileLevel) {
-  const profileIdsByLevel = {
-    micro: ["phase-micro"],
-    light: ["phase-light"],
-    medium: ["phase-light", "phase-mid"],
-    deep: ["phase-light", "phase-mid", "phase-deep"],
-    xdeep: ["phase-light", "phase-mid", "phase-deep", "phase-xdeep"],
-  };
-  const ids = profileIdsByLevel[profileLevel] || profileIdsByLevel.medium;
-  const selected = [];
-  for (let i = 0; i < ids.length; i += 1) {
-    const profile = FMC_PHASE_PROFILES.find((entry) => entry.id === ids[i]);
-    if (profile) selected.push(profile);
-  }
-  return selected;
-}
-
-function getPhaseAttemptScale(profileId) {
-  if (profileId === "phase-mid") return 1.15;
-  if (profileId === "phase-deep") return 1.35;
-  if (profileId === "phase-xdeep") return 1.6;
-  return 1;
-}
-
-async function solveInternal333(scrambleText, options = {}) {
+/**
+ * Solve via human FMC technique: EO → DR (domino reduction) → Phase 2 (finish).
+ * Replaces the old Kociemba-based solveInternal333.
+ * @param {string|null} scrambleText
+ * @param {{startPattern?, deadlineTs?, maxDrDepth?, maxP2Depth?, drNodeLimit?}} options
+ * @returns {Promise<{ok:true, solution:string, moveCount:number, source:string}|null>}
+ */
+async function solveFmcEO(scrambleText, options = {}) {
   try {
-    if (remainingMs(options.deadlineTs) <= 300) return null;
+    if (remainingMs(options.deadlineTs) <= 250) return null;
     let pattern = options.startPattern || null;
     if (!pattern) {
       const solvedPattern = await getSolvedPattern();
       if (!scrambleText || typeof scrambleText !== "string") return null;
       pattern = solvedPattern.applyAlg(scrambleText);
     }
-    if (remainingMs(options.deadlineTs) <= 300) return null;
-    const phaseProfiles = selectPhaseProfiles(options.profileLevel || "medium");
-    const phaseAttemptTimeoutMs = Number.isFinite(options.phaseAttemptTimeoutMs)
-      ? Math.max(600, Math.floor(options.phaseAttemptTimeoutMs))
-      : 4000;
-    const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
-      ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
-      : 1024;
-    const targetMoveCount = Number.isFinite(options.targetMoveCount)
-      ? Math.max(1, Math.floor(options.targetMoveCount))
-      : null;
-    let bestPhase = null;
+    if (remainingMs(options.deadlineTs) <= 250) return null;
 
-    for (let i = 0; i < phaseProfiles.length; i++) {
-      const phaseRemaining = remainingMs(options.deadlineTs);
-      const profile = phaseProfiles[i];
-      if (phaseRemaining <= 350) break;
-      const scaledAttemptTimeoutMs = Math.max(
-        600,
-        Math.floor(phaseAttemptTimeoutMs * getPhaseAttemptScale(profile.id)),
-      );
-      const phaseDeadlineTs = clampAttemptDeadline(options.deadlineTs, scaledAttemptTimeoutMs, 100);
-      const bestSoFar = bestPhase?.moveCount;
-      const phaseResult = await solve3x3InternalPhase(pattern, {
-        ...profile,
-        deadlineTs: phaseDeadlineTs,
-        timeCheckInterval: phaseTimeCheckInterval,
-        targetTotalDepth: targetMoveCount || (Number.isFinite(bestSoFar) ? bestSoFar - 1 : undefined),
-        maxPhase1Solutions: options.maxPhase1Solutions ?? 4,
-      }).catch(() => null);
-      if (phaseResult?.ok) {
-        const phaseCandidate = {
-          ...phaseResult,
-          source: `INTERNAL_FMC_${profile.id.toUpperCase()}`,
-        };
-        const candidateMoveCount = Number.isFinite(phaseCandidate.moveCount)
-          ? phaseCandidate.moveCount
-          : splitMoves(phaseCandidate.solution).length;
-        if (!bestPhase || candidateMoveCount < bestPhase.moveCount) {
-          bestPhase = {
-            ...phaseCandidate,
-            moveCount: candidateMoveCount,
-          };
-        }
-        if (targetMoveCount && bestPhase.moveCount <= targetMoveCount) {
-          break;
-        }
-      }
-    }
+    const coords = parsePatternToCoords3x3(pattern);
+    if (!coords) return null;
 
-    if (bestPhase?.solution) return bestPhase;
+    const maxP1Depth = options.maxDrDepth ?? 14;
+    const p1NodeLimit = options.drNodeLimit ?? 5000000;
+    const maxP2Depth = options.maxP2Depth ?? 18;
+    const deadlineTs = options.deadlineTs;
 
-    if (options.allowCfopFallback === false) {
-      return null;
-    }
+    // Phase 1: find moves that solve EO + corner orientation + E-slice edge placement
+    const p1Input = buildPhase1Input(coords, {
+      phase1MaxDepth: maxP1Depth,
+      phase1NodeLimit: p1NodeLimit,
+      deadlineTs: clampAttemptDeadline(deadlineTs, 6000, 200),
+    });
+    const p1Result = await solvePhase1(p1Input).catch(() => null);
+    if (!p1Result?.ok) return null;
 
-    const crossColors =
-      Array.isArray(options.crossColors) && options.crossColors.length
-        ? options.crossColors
-        : ["D"];
-    const cfopPerColorTimeoutMs = Number.isFinite(options.cfopPerColorTimeoutMs)
-      ? Math.max(700, Math.floor(options.cfopPerColorTimeoutMs))
-      : 3000;
-    let bestCfop = null;
-    for (let i = 0; i < crossColors.length; i++) {
-      const cfopRemaining = remainingMs(options.deadlineTs);
-      if (cfopRemaining <= 900) break;
-      const boundedCfopTimeoutMs = Math.max(700, Math.min(cfopPerColorTimeoutMs, cfopRemaining - 200));
-      const crossColor = crossColors[i];
-      const cfopResult = await withTimeout(
-        solve3x3StrictCfopFromPattern(pattern, {
-          crossColor,
-          mode: "strict",
-          f2lMethod: "legacy",
-        }),
-        boundedCfopTimeoutMs,
-      ).catch(() => null);
-      if (!cfopResult?.ok) continue;
-      if (!bestCfop || cfopResult.moveCount < bestCfop.moveCount) {
-        bestCfop = {
-          ...cfopResult,
-          source: "INTERNAL_FMC_CFOP_FALLBACK",
-        };
-      }
-    }
-    if (bestCfop?.ok) return bestCfop;
-    return null;
+    const patternAfterP1 = p1Result.moves.length ? applyMovesToPattern(pattern, p1Result.moves) : pattern;
+
+    // Phase 2: finish from the domino-reduced state
+    const p2Input = buildPhase2Input(patternAfterP1, {
+      phase2MaxDepth: maxP2Depth,
+      phase2NodeLimit: options.p2NodeLimit ?? 2000000,
+      deadlineTs: clampAttemptDeadline(deadlineTs, 4000, 100),
+    });
+    const p2Result = await solvePhase2(p2Input).catch(() => null);
+    if (!p2Result?.ok) return null;
+
+    const allMoves = [...p1Result.moves, ...p2Result.moves];
+    const simplified = simplifyMoves(allMoves);
+    if (simplified.length === 0) return null;
+    return { ok: true, solution: joinMoves(simplified), moveCount: simplified.length, source: "FMC_PHASE1_PHASE2" };
   } catch (_) {
     return null;
   }
@@ -625,43 +442,19 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const startedAt = Date.now();
   const deadlineTs = startedAt + timeBudgetMs;
   const sweepDeadlineTs = startedAt + sweepBudgetMs;
-  const directProfileLevel = options.directProfileLevel || "deep";
-  const directPhaseAttemptTimeoutMs = Number.isFinite(options.directPhaseAttemptTimeoutMs)
-    ? Math.max(600, Math.floor(options.directPhaseAttemptTimeoutMs))
-    : 8000;
-  const directCfopPerColorTimeoutMs = Number.isFinite(options.directCfopPerColorTimeoutMs)
-    ? Math.max(700, Math.floor(options.directCfopPerColorTimeoutMs))
-    : 2500;
   const directStageBudgetMs = Number.isFinite(options.directStageBudgetMs)
     ? Math.max(800, Math.floor(options.directStageBudgetMs))
     : Math.max(1200, Math.min(8000, Math.floor(timeBudgetMs * 0.42)));
   const nissStageBudgetMs = Number.isFinite(options.nissStageBudgetMs)
     ? Math.max(800, Math.floor(options.nissStageBudgetMs))
     : Math.max(1200, Math.min(8000, Math.floor(timeBudgetMs * 0.42)));
-  const phaseTimeCheckInterval = Number.isFinite(options.phaseTimeCheckInterval)
-    ? Math.max(128, Math.floor(options.phaseTimeCheckInterval))
-    : 1024;
-  const sweepProfileLevel = options.sweepProfileLevel || "micro";
-  const sweepPhaseAttemptTimeoutMs = Number.isFinite(options.sweepPhaseAttemptTimeoutMs)
-    ? Math.max(400, Math.floor(options.sweepPhaseAttemptTimeoutMs))
-    : 900;
-  const sweepCfopPerColorTimeoutMs = Number.isFinite(options.sweepCfopPerColorTimeoutMs)
-    ? Math.max(700, Math.floor(options.sweepCfopPerColorTimeoutMs))
-    : 900;
   const sweepAttemptBudgetMs = Number.isFinite(options.sweepAttemptBudgetMs)
     ? Math.max(500, Math.floor(options.sweepAttemptBudgetMs))
     : Math.max(700, Math.min(1800, Math.floor(sweepBudgetMs * 0.35)));
   const sweepUseScout = options.sweepUseScout !== false;
-  const sweepScoutProfileLevel = options.sweepScoutProfileLevel || "micro";
-  const sweepScoutPhaseAttemptTimeoutMs = Number.isFinite(options.sweepScoutPhaseAttemptTimeoutMs)
-    ? Math.max(300, Math.floor(options.sweepScoutPhaseAttemptTimeoutMs))
-    : Math.max(320, Math.min(900, Math.floor(sweepPhaseAttemptTimeoutMs * 0.45)));
   const sweepScoutAttemptBudgetMs = Number.isFinite(options.sweepScoutAttemptBudgetMs)
     ? Math.max(300, Math.floor(options.sweepScoutAttemptBudgetMs))
     : Math.max(350, Math.min(900, Math.floor(sweepAttemptBudgetMs * 0.55)));
-  const sweepScoutCfopPerColorTimeoutMs = Number.isFinite(options.sweepScoutCfopPerColorTimeoutMs)
-    ? Math.max(500, Math.floor(options.sweepScoutCfopPerColorTimeoutMs))
-    : Math.max(550, Math.min(900, Math.floor(sweepCfopPerColorTimeoutMs * 0.8)));
   const sweepScoutIncludeInverse = options.sweepScoutIncludeInverse !== false;
   const sweepLimit = Math.min(maxPremoveSets, FMC_PREMOVE_SETS.length);
   const sweepRefineSets = Number.isFinite(options.sweepRefineSets)
@@ -721,27 +514,16 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
 
   notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
   const directDeadlineTs = Math.min(deadlineTs, Date.now() + directStageBudgetMs);
-  const direct = await solveInternal333(scramble, {
+  const direct = await solveFmcEO(scramble, {
     startPattern: scramblePattern,
-    profileLevel: directProfileLevel,
-    phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
-    cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
-    allowCfopFallback: options.allowCfopFallback === true,
-    crossColors: options.crossColors || ["D"],
     deadlineTs: directDeadlineTs,
-    phaseTimeCheckInterval,
-    targetMoveCount: currentTargetMoveCount(),
   });
   attempts += 1;
   if (direct?.solution) {
     trackCandidate(
       createCandidate(
         "FMC_DIRECT",
-        {
-          tag: "direct",
-          usesCfop: direct.source === "INTERNAL_FMC_CFOP_FALLBACK",
-          innerSource: direct.source,
-        },
+        { tag: "direct", usesCfop: false, innerSource: direct.source },
         splitMoves(direct.solution),
       ),
     );
@@ -758,16 +540,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const nissDeadlineTs = Math.min(deadlineTs, Date.now() + nissStageBudgetMs);
   const inverse =
     remainingMs(nissDeadlineTs) > 400
-      ? await solveInternal333(inverseScramble, {
+      ? await solveFmcEO(inverseScramble, {
           startPattern: inversePattern,
-          profileLevel: directProfileLevel,
-          phaseAttemptTimeoutMs: directPhaseAttemptTimeoutMs,
-          cfopPerColorTimeoutMs: directCfopPerColorTimeoutMs,
-          allowCfopFallback: options.allowCfopFallback === true,
-          crossColors: options.crossColors || ["D"],
           deadlineTs: nissDeadlineTs,
-          phaseTimeCheckInterval,
-          targetMoveCount: currentTargetMoveCount(),
         })
       : null;
   attempts += 1;
@@ -808,27 +583,16 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         let solvedScout = false;
 
         const directPatternWithPremove = applyMovesToPattern(scramblePattern, premove);
-        const directScout = await solveInternal333(scramble, {
+        const directScout = await solveFmcEO(scramble, {
           startPattern: directPatternWithPremove,
-          profileLevel: sweepScoutProfileLevel,
-          phaseAttemptTimeoutMs: sweepScoutPhaseAttemptTimeoutMs,
-          cfopPerColorTimeoutMs: sweepScoutCfopPerColorTimeoutMs,
-          allowCfopFallback: options.premoveAllowCfopFallback === true,
-          crossColors: options.crossColors || ["D"],
           deadlineTs: scoutDeadlineTs,
-          phaseTimeCheckInterval,
-          targetMoveCount: currentTargetMoveCount(),
         });
         attempts += 1;
         if (directScout?.solution) {
           const moves = premove.concat(splitMoves(directScout.solution));
           const directCandidate = createCandidate(
             "FMC_PREMOVE_SCOUT_DIRECT",
-            {
-              tag: `scout:${joinMoves(premove)}`,
-              usesCfop: directScout.source === "INTERNAL_FMC_CFOP_FALLBACK",
-              innerSource: directScout.source,
-            },
+            { tag: `scout:${joinMoves(premove)}`, usesCfop: false, innerSource: directScout.source },
             moves,
           );
           trackCandidate(directCandidate);
@@ -840,27 +604,16 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
 
         if (sweepIncludeInverse && sweepScoutIncludeInverse && remainingMs(scoutDeadlineTs) > 120) {
           const inversePatternWithPremove = applyMovesToPattern(inversePattern, premove);
-          const inverseScout = await solveInternal333(inverseScramble, {
+          const inverseScout = await solveFmcEO(inverseScramble, {
             startPattern: inversePatternWithPremove,
-            profileLevel: sweepScoutProfileLevel,
-            phaseAttemptTimeoutMs: sweepScoutPhaseAttemptTimeoutMs,
-            cfopPerColorTimeoutMs: sweepScoutCfopPerColorTimeoutMs,
-            allowCfopFallback: options.premoveAllowCfopFallback === true,
-            crossColors: options.crossColors || ["D"],
             deadlineTs: scoutDeadlineTs,
-            phaseTimeCheckInterval,
-            targetMoveCount: currentTargetMoveCount(),
           });
           attempts += 1;
           if (inverseScout?.solution) {
             const moves = invertMoves(splitMoves(inverseScout.solution)).concat(invertMoves(premove));
             const inverseCandidate = createCandidate(
               "FMC_PREMOVE_SCOUT_NISS",
-              {
-                tag: `scout-niss:${joinMoves(premove)}`,
-                usesCfop: inverseScout.source === "INTERNAL_FMC_CFOP_FALLBACK",
-                innerSource: inverseScout.source,
-              },
+              { tag: `scout-niss:${joinMoves(premove)}`, usesCfop: false, innerSource: inverseScout.source },
               moves,
             );
             trackCandidate(inverseCandidate);
@@ -910,16 +663,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       }
 
       const directPatternWithPremove = applyMovesToPattern(scramblePattern, premove);
-      const directWithPremove = await solveInternal333(scramble, {
+      const directWithPremove = await solveFmcEO(scramble, {
         startPattern: directPatternWithPremove,
-        profileLevel: sweepProfileLevel,
-        phaseAttemptTimeoutMs: sweepPhaseAttemptTimeoutMs,
-        cfopPerColorTimeoutMs: sweepCfopPerColorTimeoutMs,
-        allowCfopFallback: options.premoveAllowCfopFallback === true,
-        crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
-        phaseTimeCheckInterval,
-        targetMoveCount: currentTargetMoveCount(),
       });
       attempts += 1;
       if (directWithPremove?.solution) {
@@ -927,11 +673,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         trackCandidate(
           createCandidate(
             "FMC_PREMOVE_DIRECT",
-            {
-              tag: `premove:${joinMoves(premove)}`,
-              usesCfop: directWithPremove.source === "INTERNAL_FMC_CFOP_FALLBACK",
-              innerSource: directWithPremove.source,
-            },
+            { tag: `premove:${joinMoves(premove)}`, usesCfop: false, innerSource: directWithPremove.source },
             moves,
           ),
         );
@@ -946,16 +688,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       if (bestMoveCount <= targetMoveCount) break;
 
       const inversePatternWithPremove = applyMovesToPattern(inversePattern, premove);
-      const inverseWithPremove = await solveInternal333(inverseScramble, {
+      const inverseWithPremove = await solveFmcEO(inverseScramble, {
         startPattern: inversePatternWithPremove,
-        profileLevel: sweepProfileLevel,
-        phaseAttemptTimeoutMs: sweepPhaseAttemptTimeoutMs,
-        cfopPerColorTimeoutMs: sweepCfopPerColorTimeoutMs,
-        allowCfopFallback: options.premoveAllowCfopFallback === true,
-        crossColors: options.crossColors || ["D"],
         deadlineTs: iterationDeadlineTs,
-        phaseTimeCheckInterval,
-        targetMoveCount: currentTargetMoveCount(),
       });
       attempts += 1;
       if (inverseWithPremove?.solution) {
@@ -963,11 +698,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         trackCandidate(
           createCandidate(
             "FMC_PREMOVE_NISS",
-            {
-              tag: `niss:${joinMoves(premove)}`,
-              usesCfop: inverseWithPremove.source === "INTERNAL_FMC_CFOP_FALLBACK",
-              innerSource: inverseWithPremove.source,
-            },
+            { tag: `niss:${joinMoves(premove)}`, usesCfop: false, innerSource: inverseWithPremove.source },
             moves,
           ),
         );
@@ -980,61 +711,6 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       stageName: "FMC Premove Sweep",
       moveCount: Number.isFinite(bestMoveCount) ? bestMoveCount : 0,
     });
-  }
-
-  // EO Premove Stage: find short EO-solving sequences and use as targeted premoves
-  const enableEOStage = options.enableEOStage !== false && remainingMs(deadlineTs) > 2000 && bestMoveCount > targetMoveCount;
-  if (enableEOStage) {
-    const eoBudgetMs = Math.max(1000, Math.min(4000, Math.floor(remainingMs(deadlineTs) * 0.25)));
-    const eoDeadlineTs = Math.min(deadlineTs, Date.now() + eoBudgetMs);
-    try {
-      const scrambleCoords = parsePatternToCoords3x3(scramblePattern);
-      const eoSeqs = await findShortEOSequences(scrambleCoords, 5, 6);
-      for (let ei = 0; ei < eoSeqs.length && Date.now() < eoDeadlineTs && bestMoveCount > targetMoveCount; ei++) {
-        const eoPremove = eoSeqs[ei];
-        if (!eoPremove.length) continue;
-        const eoPatternDirect = applyMovesToPattern(scramblePattern, eoPremove);
-        const eoAttemptMs = Math.max(500, Math.floor(remainingMs(eoDeadlineTs) / Math.max(1, eoSeqs.length - ei)));
-        const eoDirect = await solveInternal333(scramble, {
-          startPattern: eoPatternDirect,
-          profileLevel: "micro",
-          phaseAttemptTimeoutMs: eoAttemptMs,
-          cfopPerColorTimeoutMs: eoAttemptMs,
-          allowCfopFallback: false,
-          crossColors: options.crossColors || ["D"],
-          deadlineTs: Math.min(eoDeadlineTs, Date.now() + eoAttemptMs),
-          phaseTimeCheckInterval,
-          targetMoveCount: currentTargetMoveCount(),
-        });
-        if (eoDirect?.solution) {
-          const moves = eoPremove.concat(splitMoves(eoDirect.solution));
-          trackCandidate(createCandidate("FMC_EO_PREMOVE", { tag: `eo:${joinMoves(eoPremove)}`, usesCfop: false }, moves));
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Skeleton Optimization Stage: look for AB cases in top candidates and try to shorten via phase solver
-  const enableSkeletonStage = options.enableSkeletonStage !== false && remainingMs(deadlineTs) > 1500 && bestMoveCount > targetMoveCount;
-  if (enableSkeletonStage && candidates.length > 0) {
-    const skelBudgetMs = Math.max(1000, Math.min(6000, Math.floor(remainingMs(deadlineTs) * 0.30)));
-    const skelDeadlineTs = Math.min(deadlineTs, Date.now() + skelBudgetMs);
-    const skelTargets = candidates.slice(0, Math.min(5, candidates.length));
-    for (let si = 0; si < skelTargets.length && Date.now() < skelDeadlineTs && bestMoveCount > targetMoveCount; si++) {
-      const cand = skelTargets[si];
-      const candMoves = splitMoves(cand.solution);
-      const perCandMs = Math.max(500, Math.floor(remainingMs(skelDeadlineTs) / Math.max(1, skelTargets.length - si)));
-      try {
-        const improved = await tryImproveViaSkeleton(scramblePattern, candMoves, {
-          maxSuffixLen: cand.moveCount - 1,
-          nodeLimit: 400000,
-          deadlineTs: Math.min(skelDeadlineTs, Date.now() + perCandMs),
-        });
-        if (improved && improved.length < cand.moveCount) {
-          trackCandidate(createCandidate("FMC_SKELETON", { tag: `skel:${cand.source}`, usesCfop: false }, improved));
-        }
-      } catch (_) {}
-    }
   }
 
   candidates.sort((a, b) => {

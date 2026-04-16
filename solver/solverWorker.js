@@ -156,13 +156,37 @@ async function solveWithInternal3x3StrictCfop(scramble, onProgress, options = {}
     options.styleProfile !== undefined && options.styleProfile !== null
       ? options.styleProfile
       : f2lStyleProfile;
+  // Use player-specified solve mode (e.g. "zb" for ZB-method players like Xuanyi Geng)
+  // Falls back to deriving mode from primaryMethod when solveMode is not explicitly set.
+  const profileSolveMode =
+    styleProfile && typeof styleProfile === "object" && typeof styleProfile.solveMode === "string"
+      ? styleProfile.solveMode.toLowerCase()
+      : styleProfile &&
+          typeof styleProfile === "object" &&
+          typeof styleProfile.primaryMethod === "string" &&
+          styleProfile.primaryMethod.toUpperCase() === "ZB"
+        ? "zb"
+        : null;
+  const effectiveMode = profileSolveMode && profileSolveMode !== options.mode ? profileSolveMode : options.mode;
+  // Enable mixed CFOP stages when a player profile has explicit case bias
+  const hasCaseBias =
+    styleProfile &&
+    typeof styleProfile === "object" &&
+    styleProfile.caseBias &&
+    typeof styleProfile.caseBias === "object" &&
+    (Number(styleProfile.caseBias.zbllWeight) > 1 || Number(styleProfile.caseBias.xcrossWeight) > 1);
   return solve3x3StrictCfopFromPattern(pattern, {
     ...options,
+    mode: effectiveMode,
     scramble,
     styleProfile,
     enableMixedCfopStages:
       options.enableMixedCfopStages === true ||
-      (typeof options.f2lMethod === "string" && options.f2lMethod.toLowerCase() === "mixed"),
+      (typeof options.f2lMethod === "string" && options.f2lMethod.toLowerCase() === "mixed") ||
+      Boolean(hasCaseBias),
+    svWvMode:
+      options.svWvMode === true ||
+      (typeof options.svWvUsage === "number" && options.svWvUsage > 0.1),
     onStageUpdate(progress) {
       if (typeof onProgress === "function") {
         try {

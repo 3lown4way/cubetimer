@@ -627,7 +627,8 @@
         "ZBLL": 226,
         "OLL": 2
       },
-      "preferredCrossColor": "CN"
+      "preferredCrossColor": "CN",
+      "solveMode": "zb"
     },
     {
       "solver": "Leo Borromeo",

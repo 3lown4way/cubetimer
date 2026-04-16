@@ -18,6 +18,11 @@ const SOLVED_SLICE_OCC = (() => {
   return occ;
 })();
 
+// Domino Reduction move set: U, U', U2, D, D', D2, R2, L2, F2, B2
+// These preserve edge orientation — used after EO is solved.
+// Indices into MOVE_NAMES = ['U','U\'','U2','R','R\'','R2','F','F\'','F2','D','D\'','D2','L','L\'','L2','B','B\'','B2']
+const DR_MOVE_INDICES = [0, 1, 2, 5, 8, 9, 10, 11, 14, 17];
+
 let initPromise = null;
 let coMove = null;
 let eoMove = null;
@@ -26,6 +31,9 @@ let coDist = null;
 let eoDist = null;
 let sliceDist = null;
 let allowedMovesByLastFace = null;
+let drAllowedMovesByLastFace = null;
+let moveFace = null;
+let coSliceDist = null;
 
 const combMemo = new Map();
 function comb(n, k) {
@@ -122,7 +130,8 @@ function buildDistTable(moveTable, size, startState = 0) {
 async function ensurePhase1Tables() {
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    const { cornerPermMap, cornerOriDelta, edgePermMap, edgeOriDelta, moveFace } = await get3x3MoveTables();
+    const { cornerPermMap, cornerOriDelta, edgePermMap, edgeOriDelta, moveFace: mf } = await get3x3MoveTables();
+    moveFace = mf;
 
     coMove = new Uint16Array(CO_SIZE * MOVE_COUNT);
     eoMove = new Uint16Array(EO_SIZE * MOVE_COUNT);
@@ -177,6 +186,35 @@ async function ensurePhase1Tables() {
     eoDist = buildDistTable(eoMove, EO_SIZE, 0);
     sliceDist = buildDistTable(sliceMove, SLICE_SIZE, solvedSliceIdx);
 
+    // Build joint CO+slice pruning table for domino reduction.
+    // coSliceDist[co * SLICE_SIZE + sl] = min moves (using DR moves only) to reach co=0, sl=solvedSliceIdx
+    // BFS backwards from the solved state over DR moves.
+    const CO_SLICE_SIZE = CO_SIZE * SLICE_SIZE;
+    coSliceDist = new Uint8Array(CO_SLICE_SIZE).fill(255);
+    const drMoves = DR_MOVE_INDICES;
+    const startKey = 0 * SLICE_SIZE + solvedSliceIdx;
+    coSliceDist[startKey] = 0;
+    let frontier = [startKey];
+    for (let depth = 1; frontier.length > 0 && depth <= 20; depth++) {
+      const next = [];
+      for (let fi = 0; fi < frontier.length; fi++) {
+        const key = frontier[fi];
+        const co = (key / SLICE_SIZE) | 0;
+        const sl = key % SLICE_SIZE;
+        for (let di = 0; di < drMoves.length; di++) {
+          const m = drMoves[di];
+          const nco = coMove[co * MOVE_COUNT + m];
+          const nsl = sliceMove[sl * MOVE_COUNT + m];
+          const nkey = nco * SLICE_SIZE + nsl;
+          if (coSliceDist[nkey] === 255) {
+            coSliceDist[nkey] = depth;
+            next.push(nkey);
+          }
+        }
+      }
+      frontier = next;
+    }
+
     allowedMovesByLastFace = Array.from({ length: 7 }, () => []);
     for (let last = 0; last <= 6; last++) {
       for (let m = 0; m < MOVE_COUNT; m++) {
@@ -188,6 +226,21 @@ async function ensurePhase1Tables() {
         if (current === last) continue;
         if (current === OPPOSITE_FACE[last] && current < last) continue;
         allowedMovesByLastFace[last].push(m);
+      }
+    }
+
+    drAllowedMovesByLastFace = Array.from({ length: 7 }, () => []);
+    for (let last = 0; last <= 6; last++) {
+      for (let di = 0; di < DR_MOVE_INDICES.length; di++) {
+        const m = DR_MOVE_INDICES[di];
+        if (last === 6) {
+          drAllowedMovesByLastFace[last].push(m);
+          continue;
+        }
+        const current = moveFace[m];
+        if (current === last) continue;
+        if (current === OPPOSITE_FACE[last] && current < last) continue;
+        drAllowedMovesByLastFace[last].push(m);
       }
     }
   })();
@@ -447,4 +500,93 @@ export async function solvePhase1Multi(input, maxCount = 4) {
   }
 
   return { solutions, minDepth, nodes };
+}
+
+/**
+ * Domino Reduction (DR) solver: given a state where EO is already solved,
+ * find a sequence of domino moves (U,U',U2, D,D',D2, R2,L2,F2,B2) that achieves
+ * CO=0 AND all E-slice edges in E-slice positions.
+ * Called after findShortEOSequences to complete the EO→DR step of FMC technique.
+ */
+export async function solveDomino(coords, options = {}) {
+  await ensurePhase1Tables();
+  const cornerOri = coords.corners?.orientation;
+  const edgePieces = coords.edges?.pieces;
+  if (!Array.isArray(cornerOri) || cornerOri.length < 7) return { ok: false, nodes: 0, reason: 'DR_BAD_INPUT' };
+  if (!Array.isArray(edgePieces) || edgePieces.length < 12) return { ok: false, nodes: 0, reason: 'DR_BAD_INPUT' };
+
+  const occ = new Uint8Array(12);
+  for (let i = 0; i < 12; i++) occ[i] = SLICE_EDGE_IDS.has(edgePieces[i]) ? 1 : 0;
+  const coIdx = encodeCO(cornerOri);
+  const sliceIdx = encodeSliceFromOccupancy(occ);
+  const solvedSliceIdx = encodeSliceFromOccupancy(SOLVED_SLICE_OCC);
+
+  if (coIdx === 0 && sliceIdx === solvedSliceIdx) {
+    return { ok: true, moves: [], depth: 0, nodes: 0 };
+  }
+
+  const maxDepth = options.maxDepth ?? 14;
+  const nodeLimit = Number.isFinite(options.nodeLimit) ? options.nodeLimit : 2000000;
+  const deadlineTs = options.deadlineTs;
+  const hasDeadline = Number.isFinite(deadlineTs);
+
+  let bound = coSliceDist[coIdx * SLICE_SIZE + sliceIdx];
+  if (bound === 255) bound = Math.max(coDist[coIdx], sliceDist[sliceIdx], 1);
+  const path = [];
+  let nodes = 0;
+  let nodeLimitHit = false;
+  let timeLimitHit = false;
+
+  function dfs(co, sl, depth, currentBound, lastFace) {
+    if (timeLimitHit || nodeLimitHit) return Infinity;
+    const h = coSliceDist[co * SLICE_SIZE + sl];
+    const hBound = h === 255 ? Math.max(coDist[co], sliceDist[sl]) : h;
+    const f = depth + hBound;
+    if (f > currentBound) return f;
+    if (co === 0 && sl === solvedSliceIdx) return true;
+
+    let minNext = Infinity;
+    const moves = drAllowedMovesByLastFace[lastFace];
+    for (let i = 0; i < moves.length; i++) {
+      const m = moves[i];
+      nodes++;
+      if (nodeLimit > 0 && nodes >= nodeLimit) { nodeLimitHit = true; return Infinity; }
+      if (hasDeadline && (nodes & 1023) === 0 && Date.now() >= deadlineTs) { timeLimitHit = true; return Infinity; }
+
+      const nextCo = coMove[co * MOVE_COUNT + m];
+      const nextSl = sliceMove[sl * MOVE_COUNT + m];
+      const nextH = coSliceDist[nextCo * SLICE_SIZE + nextSl];
+      const nextHBound = nextH === 255 ? Math.max(coDist[nextCo], sliceDist[nextSl]) : nextH;
+      const nextF = depth + 1 + nextHBound;
+      if (nextF > currentBound) {
+        if (nextF < minNext) minNext = nextF;
+        continue;
+      }
+      const res = dfs(nextCo, nextSl, depth + 1, currentBound, moveFace[m]);
+      if (res === true) {
+        path.push(m);
+        return true;
+      }
+      if (res < minNext) minNext = res;
+    }
+    return minNext;
+  }
+
+  while (bound <= maxDepth) {
+    if (nodeLimitHit || timeLimitHit) break;
+    if (hasDeadline && Date.now() >= deadlineTs) { timeLimitHit = true; break; }
+    path.length = 0;
+    const res = dfs(coIdx, sliceIdx, 0, bound, 6);
+    if (res === true) {
+      path.reverse();
+      return { ok: true, moves: path.map((m) => MOVE_NAMES[m]), depth: path.length, nodes };
+    }
+    if (!Number.isFinite(res)) break;
+    bound = res;
+  }
+
+  return {
+    ok: false, nodes,
+    reason: nodeLimitHit ? 'DR_NODE_LIMIT' : timeLimitHit ? 'DR_TIMEOUT' : 'DR_NOT_FOUND',
+  };
 }

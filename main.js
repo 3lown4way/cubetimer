@@ -2002,6 +2002,8 @@ function getPlayerStyleProfile(playerName, methodHint = "") {
               ? adjustedMixedProfile.rotationWeight
               : Math.max(adjustedMixedProfile.rotationWeight, mixedRotationFloor),
           styleSimilarity,
+          solveMode: typeof profile.solveMode === "string" ? profile.solveMode : undefined,
+          primaryMethod: typeof profile.primaryMethod === "string" ? profile.primaryMethod : undefined,
         };
       }
     }
@@ -2009,36 +2011,58 @@ function getPlayerStyleProfile(playerName, methodHint = "") {
 
   if (normalizedMethod === "speed") {
     const speedProfile = normalizeStyleProfileRecord(profile.speedStyleProfile);
-    if (speedProfile) return attachMixedCaseBiasMetadata(speedProfile, profile);
+    if (speedProfile) {
+      const result = attachMixedCaseBiasMetadata(speedProfile, profile);
+      if (result) {
+        if (typeof profile.solveMode === "string") result.solveMode = profile.solveMode;
+        if (typeof profile.primaryMethod === "string") result.primaryMethod = profile.primaryMethod;
+      }
+      return result;
+    }
   }
 
   const learned = profile.learnedStyleProfile;
   if (learned && typeof learned === "object") {
-    return attachMixedCaseBiasMetadata({
+    const result = attachMixedCaseBiasMetadata({
       preset: typeof learned.preset === "string" ? learned.preset : undefined,
       rotationWeight: Number(learned.rotationWeight),
       aufWeight: Number(learned.aufWeight),
       wideTurnWeight: Number(learned.wideTurnWeight),
     }, profile);
+    if (result) {
+      if (typeof profile.solveMode === "string") result.solveMode = profile.solveMode;
+      if (typeof profile.primaryMethod === "string") result.primaryMethod = profile.primaryMethod;
+    }
+    return result;
   }
 
   const detailed = profile.detailedStyleProfile;
   if (detailed && typeof detailed === "object") {
-    return attachMixedCaseBiasMetadata({
+    const result = attachMixedCaseBiasMetadata({
       preset: typeof detailed.preset === "string" ? detailed.preset : undefined,
       rotationWeight: Number(detailed.rotationWeight),
       aufWeight: Number(detailed.aufWeight),
       wideTurnWeight: Number(detailed.wideTurnWeight),
     }, profile);
+    if (result) {
+      if (typeof profile.solveMode === "string") result.solveMode = profile.solveMode;
+      if (typeof profile.primaryMethod === "string") result.primaryMethod = profile.primaryMethod;
+    }
+    return result;
   }
 
   const fallback = profile.recommendedStyleProfile;
   if (fallback && typeof fallback === "object") {
-    return attachMixedCaseBiasMetadata({
+    const result = attachMixedCaseBiasMetadata({
       rotationWeight: Number(fallback.rotationWeight),
       aufWeight: Number(fallback.aufWeight),
       wideTurnWeight: Number(fallback.wideTurnWeight),
     }, profile);
+    if (result) {
+      if (typeof profile.solveMode === "string") result.solveMode = profile.solveMode;
+      if (typeof profile.primaryMethod === "string") result.primaryMethod = profile.primaryMethod;
+    }
+    return result;
   }
 
   return undefined;
