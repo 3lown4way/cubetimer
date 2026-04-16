@@ -206,8 +206,4 @@ npx serve .
 
 ## 문서와 참고 파일
 
-- [ROUX_IMPLEMENTATION_REPORT.md](ROUX_IMPLEMENTATION_REPORT.md)
-- [ROUX_PROGRESS.md](ROUX_PROGRESS.md)
-- [ROUX_FINAL_REPORT.md](ROUX_FINAL_REPORT.md)
-
-ROUX 관련 구현 경과나 성능/설계 메모는 위 문서들에 정리되어 있습니다.
+(이전 ROUX_* 문서는 더 이상 필요하지 않아 삭제되었습니다)
