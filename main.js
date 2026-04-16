@@ -238,6 +238,50 @@ const ACCENT_THEMES = {
   },
 };
 
+function hexToRgb(hex) {
+  const normalized = String(hex || "").trim().replace(/^#/, "");
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : normalized;
+  if (!/^[\da-fA-F]{6}$/.test(expanded)) return null;
+  const value = Number.parseInt(expanded, 16);
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  };
+}
+
+function rgbaFromHex(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function mixHexColors(baseHex, targetHex, weight) {
+  const base = hexToRgb(baseHex);
+  const target = hexToRgb(targetHex);
+  if (!base || !target) return baseHex;
+  const ratio = Math.max(0, Math.min(1, weight));
+  const mix = (from, to) => Math.round(from + (to - from) * ratio);
+  const toHex = (value) => value.toString(16).padStart(2, "0");
+  return `#${toHex(mix(base.r, target.r))}${toHex(mix(base.g, target.g))}${toHex(mix(base.b, target.b))}`;
+}
+
+function setCssVar(name, value) {
+  document.documentElement.style.setProperty(name, value);
+  document.body.style.setProperty(name, value);
+}
+
+function normalizeDisplayText(value) {
+  if (value == null) return "";
+  return String(value).replace(/\r\n?/g, "\n").replace(/\\n/g, "\n");
+}
+
 function generateId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -1053,7 +1097,7 @@ function hideChartTooltip() {
 }
 
 function openExportModal(title, text) {
-  exportText.value = text;
+  exportText.value = normalizeDisplayText(text);
   exportModal.classList.add("open");
   exportModal.setAttribute("aria-hidden", "false");
   const heading = exportModal.querySelector("h2");
@@ -1107,10 +1151,16 @@ function setAccentTheme(name) {
   const mode = document.body.classList.contains("theme-dark") ? "dark" : "light";
   const theme = themeGroup[mode];
   document.body.setAttribute("data-accent", name);
-  document.documentElement.style.setProperty("--accent", theme.accent);
-  document.documentElement.style.setProperty("--accent-2", theme.accent2);
-  document.body.style.setProperty("--accent", theme.accent);
-  document.body.style.setProperty("--accent-2", theme.accent2);
+  setCssVar("--accent", theme.accent);
+  setCssVar("--accent-2", theme.accent2);
+  setCssVar("--accent-soft", rgbaFromHex(theme.accent, mode === "dark" ? 0.18 : 0.12));
+  setCssVar("--accent-strong", rgbaFromHex(theme.accent, mode === "dark" ? 0.28 : 0.18));
+  setCssVar("--accent-border", rgbaFromHex(theme.accent, mode === "dark" ? 0.42 : 0.3));
+  setCssVar(
+    "--accent-hover",
+    mixHexColors(theme.accent, mode === "dark" ? "#ffffff" : "#000000", mode === "dark" ? 0.14 : 0.18),
+  );
+  setCssVar("--accent-shadow", rgbaFromHex(theme.accent, mode === "dark" ? 0.3 : 0.18));
   accentButtons.forEach((btn) => {
     const key = btn.getAttribute("data-accent");
     btn.classList.toggle("active", key === name);
@@ -2461,18 +2511,19 @@ async function solveCurrentScramble() {
     const duration = Math.max(1, Math.round(performance.now() - startTime));
     if (result?.ok) {
       const rawSolutionText =
-        result.solution?.trim() ||
+        normalizeDisplayText(result.solution?.trim()) ||
         (Array.isArray(result.stages)
           ? result.stages
-              .map((stage) => (typeof stage?.solution === "string" ? stage.solution.trim() : ""))
+              .map((stage) => (typeof stage?.solution === "string" ? normalizeDisplayText(stage.solution.trim()) : ""))
               .filter(Boolean)
               .join(" ")
               .trim()
           : "");
       const stageLines =
         Array.isArray(result.stages) && result.stages.length
-          ? result.stages.map((stage) => `${stage.name}: ${stage.solution || "-"}`)
+          ? result.stages.map((stage) => `${stage.name}: ${normalizeDisplayText(stage.solution || "-")}`)
           : null;
+      const solutionDisplayText = normalizeDisplayText(result.solutionDisplay?.trim() || "");
       const timingLines =
         stageElapsedTimes.size > 0
           ? Array.from(stageElapsedTimes.entries())
@@ -2484,7 +2535,7 @@ async function solveCurrentScramble() {
           : null;
       const sections = [];
       if (stageLines?.length) sections.push(stageLines.join("\n"));
-      else if (result.solutionDisplay?.trim()) sections.push(result.solutionDisplay.trim());
+      else if (solutionDisplayText) sections.push(solutionDisplayText);
       else if (rawSolutionText) sections.push(rawSolutionText);
       if (timingLines?.length) {
         sections.push(["시간", ...timingLines].join("\n"));
@@ -2919,12 +2970,23 @@ function openSolveModal(solve) {
     const timeStr = formatSolveTime(solve);
     const eventStr = eventLabel(solve.eventId);
     const dateStr = solve.t ? formatShareTimestamp(new Date(solve.t)) : "";
-    
-    solveModalInfo.innerHTML = `
-      <div class="solve-modal-time-primary">${timeStr}</div>
-      <div class="solve-modal-meta-secondary">${eventStr} ${dateStr ? " · " + dateStr : ""}</div>
-      <div class="solve-modal-scramble-tertiary">${solve.scramble || ""}</div>
-    `;
+    const scrambleStr = normalizeDisplayText(solve.scramble || "");
+
+    solveModalInfo.textContent = "";
+
+    const timeEl = document.createElement("div");
+    timeEl.className = "solve-modal-time-primary";
+    timeEl.textContent = timeStr;
+
+    const metaEl = document.createElement("div");
+    metaEl.className = "solve-modal-meta-secondary";
+    metaEl.textContent = `${eventStr}${dateStr ? ` · ${dateStr}` : ""}`;
+
+    const scrambleEl = document.createElement("div");
+    scrambleEl.className = "solve-modal-scramble-tertiary";
+    scrambleEl.textContent = scrambleStr;
+
+    solveModalInfo.append(timeEl, metaEl, scrambleEl);
   }
   if (solveModalStatus) {
     solveModalStatus.textContent = "";

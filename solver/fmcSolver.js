@@ -851,7 +851,7 @@ async function solveFmcEOFirst(pattern, options = {}) {
     const patternKey = sessionCache ? patternStateKey(pattern) : null;
     let eoSeqs = patternKey ? sessionCache.getEoSeqs(patternKey, effectiveEoSequenceLimit) : null;
     if (!eoSeqs) {
-      const fetchedSeqs = await findShortEOSequences(coords, 6, eoFetchLimit).catch(() => []);
+      const fetchedSeqs = await findShortEOSequences(coords, 8, eoFetchLimit).catch(() => []);
       if (patternKey && fetchedSeqs.length) {
         sessionCache.setEoSeqs(patternKey, fetchedSeqs, eoFetchLimit);
       }

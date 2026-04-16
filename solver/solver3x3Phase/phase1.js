@@ -19,9 +19,15 @@ const SOLVED_SLICE_OCC = (() => {
 })();
 
 // Domino Reduction move set: U, U', U2, D, D', D2, R2, L2, F2, B2
-// These preserve edge orientation — used after EO is solved.
+// These preserve edge orientation AND corners oriented and E-slice — the full Phase2 invariants.
 // Indices into MOVE_NAMES = ['U','U\'','U2','R','R\'','R2','F','F\'','F2','D','D\'','D2','L','L\'','L2','B','B\'','B2']
 const DR_MOVE_INDICES = [0, 1, 2, 5, 8, 9, 10, 11, 14, 17];
+
+// EO-preserving moves: U, U', U2, D, D', D2, R, R', R2, L, L', L2, F2, B2
+// These preserve edge orientation but may change CO and E-slice occupancy.
+// Used for the EO→DR phase: from an EO-complete state, find moves that achieve DR
+// (CO=0 + E-slice in E-slice) using the full EO-preserving subgroup.
+const DR_EO_MOVE_INDICES = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 17];
 
 let initPromise = null;
 let coMove = null;
@@ -32,6 +38,7 @@ let eoDist = null;
 let sliceDist = null;
 let allowedMovesByLastFace = null;
 let drAllowedMovesByLastFace = null;
+let drEoAllowedMovesByLastFace = null;
 let moveFace = null;
 let coSliceDist = null;
 
@@ -186,12 +193,13 @@ async function ensurePhase1Tables() {
     eoDist = buildDistTable(eoMove, EO_SIZE, 0);
     sliceDist = buildDistTable(sliceMove, SLICE_SIZE, solvedSliceIdx);
 
-    // Build joint CO+slice pruning table for domino reduction.
-    // coSliceDist[co * SLICE_SIZE + sl] = min moves (using DR moves only) to reach co=0, sl=solvedSliceIdx
-    // BFS backwards from the solved state over DR moves.
+    // Build joint CO+slice pruning table for the EO→DR phase.
+    // coSliceDist[co * SLICE_SIZE + sl] = min moves (using EO-preserving moves) to reach co=0, sl=solvedSliceIdx.
+    // EO-preserving moves = U,U',U2,D,D',D2,R,R',R2,L,L',L2,F2,B2.
+    // BFS backwards from the solved DR state.
     const CO_SLICE_SIZE = CO_SIZE * SLICE_SIZE;
     coSliceDist = new Uint8Array(CO_SLICE_SIZE).fill(255);
-    const drMoves = DR_MOVE_INDICES;
+    const drEoMoves = DR_EO_MOVE_INDICES;
     const startKey = 0 * SLICE_SIZE + solvedSliceIdx;
     coSliceDist[startKey] = 0;
     let frontier = [startKey];
@@ -201,8 +209,8 @@ async function ensurePhase1Tables() {
         const key = frontier[fi];
         const co = (key / SLICE_SIZE) | 0;
         const sl = key % SLICE_SIZE;
-        for (let di = 0; di < drMoves.length; di++) {
-          const m = drMoves[di];
+        for (let di = 0; di < drEoMoves.length; di++) {
+          const m = drEoMoves[di];
           const nco = coMove[co * MOVE_COUNT + m];
           const nsl = sliceMove[sl * MOVE_COUNT + m];
           const nkey = nco * SLICE_SIZE + nsl;
@@ -241,6 +249,21 @@ async function ensurePhase1Tables() {
         if (current === last) continue;
         if (current === OPPOSITE_FACE[last] && current < last) continue;
         drAllowedMovesByLastFace[last].push(m);
+      }
+    }
+
+    drEoAllowedMovesByLastFace = Array.from({ length: 7 }, () => []);
+    for (let last = 0; last <= 6; last++) {
+      for (let di = 0; di < DR_EO_MOVE_INDICES.length; di++) {
+        const m = DR_EO_MOVE_INDICES[di];
+        if (last === 6) {
+          drEoAllowedMovesByLastFace[last].push(m);
+          continue;
+        }
+        const current = moveFace[m];
+        if (current === last) continue;
+        if (current === OPPOSITE_FACE[last] && current < last) continue;
+        drEoAllowedMovesByLastFace[last].push(m);
       }
     }
   })();
@@ -546,7 +569,7 @@ export async function solveDomino(coords, options = {}) {
     if (co === 0 && sl === solvedSliceIdx) return true;
 
     let minNext = Infinity;
-    const moves = drAllowedMovesByLastFace[lastFace];
+    const moves = drEoAllowedMovesByLastFace[lastFace];
     for (let i = 0; i < moves.length; i++) {
       const m = moves[i];
       nodes++;
