@@ -1,71 +1,81 @@
-# 🧊 CubeTimer 2026 — The Algorithmic Revolution
+# 🧊 CubeTimer 2026 — 알고리즘 혁신의 결정판
 
-> **“Speed is not just about searching less. It’s about making every candidate count.”**
+> **“속도란, 덜 탐색하는 것이 아니라, 한 후보당 비용을 극한까지 줄이는 것이다.”**
 
-CubeTimer 2026 is not a UI facelift. It’s a ground-up, algorithm-first rewrite that redefines what’s possible in browser-based cube solving. Every line is engineered for raw speed, search-volume parity, and method purity. Welcome to the new era of cubing software.
-
----
-
-## 🚀 What Makes v2 a Revolution?
-
-### 1. **Numeric-Only Hot Path**
-- All F2L state and transition keys are now bit-packed numbers, not strings. No more `${stateKey}::${nextStateKey}`. This slashes GC, boosts Map locality, and makes the beam search *fly*.
-
-### 2. **Precomputed Style Intelligence**
-- Every F2L formula is pre-analyzed for move count, AUF, wide turns, and style penalty. The beam never wastes time recalculating what the library already knows.
-
-### 3. **Zero-Allocation Beam Expansion**
-- No more per-candidate object churn. TypedArray slabs and flat ranking arrays mean only the survivors get materialized. The rest? Lightning-fast, buffer-reused, and cache-friendly.
-
-### 4. **Compact Transform Guarantee**
-- The library ensures nearly every entry has a compactTransform. Fallbacks like tryApplyTransformation or KPattern are now true last resorts, never hot-path bottlenecks.
-
-### 5. **Cache-Optimized Data Layout**
-- F2L entries are packed for scan efficiency. Corner/edge match data is stored in fixed-layout TypedArrays, minimizing branch and index overhead in the scan loop.
-
-### 6. **Aggressive Early Library Warmup & Parallel Prep**
-- All heavy libraries (F2L/OLL/PLL/ZB) are built at worker init, with independent prep tasks running in parallel. Cold start? Practically gone.
-
-### 7. **FMC: Pure, Kociemba-Free, Move-Count-First**
-- No more generic fallback. The FMC solver is now a native, Kociemba-inspired engine that prioritizes move count and quality, not just “any solution.”
-
-### 8. **Metrics-Driven, Search-Volume Parity**
-- Every optimization is validated: wall time, F2L attempts, beam depth, cache hit rates, and more. If search volume drops, it’s a bug—not a feature.
+CubeTimer 2026은 단순한 UI 리뉴얼이 아닙니다. 브라우저 기반 큐브 솔버의 한계를 완전히 다시 쓴, 알고리즘 중심의 대개편입니다. 모든 코드는 '탐색량은 그대로, 후보 1개당 비용만 극적으로 감소'라는 목표로 설계되었습니다.
 
 ---
 
-## 💡 Why Does This Matter?
-- **No more “fake” speedups.** We don’t shrink the search—just the cost per candidate. p50/p95 latency drops, but the solver’s depth and quality remain.
-- **FMC is now truly native.** No more borrowing from other methods. Every solution is earned, not borrowed.
+## 🚀 v2.0과 v1.x의 본질적 차이점
+
+### 🔥 1. F2L/핫패스: 문자열 → 숫자화
+- v1.x: `${stateKey}::${nextStateKey}` 등 문자열 합성 키 사용, Map/GC/할당 부담
+- v2.0: 모든 상태/전이 키를 비트-패킹 숫자로 변환, Map locality/속도/메모리 효율 극대화
+
+### 🧠 2. 스타일/랭킹 비용의 선계산
+- v1.x: 후보마다 move/AUF/wide-turn/스타일 페널티를 반복 계산
+- v2.0: 라이브러리 빌드시 미리 계산, 빔 스캔 중 중복 연산 제거
+
+### ⚡ 3. 빔 확장: 할당 없는 버퍼 재사용
+- v1.x: 후보마다 객체/배열 새로 생성, GC/메모리 압박
+- v2.0: TypedArray 슬랩/평탄화 배열로 재사용, 최종 생존자만 복제(materialize)
+
+### 🧩 4. 콤팩트 변환 보장
+- v1.x: 느린 fallback(tryApplyTransformation/KPattern)이 핫루프에 등장 가능
+- v2.0: 라이브러리에서 compactTransform을 기본 보장, fallback은 진짜 예외만
+
+### 🗂️ 5. 데이터 레이아웃/캐시 최적화
+- v1.x: 엔트리/매치 데이터가 JS 배열/동적 구조
+- v2.0: TypedArray 고정 레이아웃, 캐시 친화적 순서로 재배치
+
+### 🚀 6. 라이브러리 조기 워밍업/병렬 초기화
+- v1.x: solve 시점에 라이브러리 빌드, 콜드스타트 길어짐
+- v2.0: worker 초기화 시점에 미리 빌드, 독립 작업 병렬화
+
+### 🧮 7. FMC: Kociemba 완전 제거, 순수 자체 엔진
+- v1.x: fallback(FMC_PHASE1_PHASE2)로 타 알고리즘에 의존
+- v2.0: Kociemba 아이디어만 참고, 완전 자체 구현/포트폴리오, move-count-first 전략
+
+### 📊 8. 메트릭 기반 자동 검증
+- v1.x: 탐색량/성능 변화 추적 어려움
+- v2.0: wall-time, F2L attempts, beam depth, 캐시 히트율 등 자동 측정/검증
 
 ---
 
-## 🛠️ Quick Start
+## 💡 왜 이 변화가 중요한가?
+- **가짜 최적화가 아님**: 탐색량(beam width/depth)은 그대로, 후보 1개당 비용만 줄여 p50/p95 실성능을 개선
+- **FMC 완전 자립**: 더 이상 타 알고리즘에 의존하지 않고, 모든 해답을 자체 포트폴리오로 산출
+- **UI/그래프/모바일**: 다크/라이트 테마, 터치 최적화, 통계/그래프 시각화도 v2.0에서 대폭 업그레이드
+
+---
+
+## 🛠️ 빠른 시작
 
 ```bash
 python3 -m http.server 5173
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+브라우저에서 [http://localhost:5173](http://localhost:5173) 접속
 
 ---
 
-## 📝 Full Feature List, Data Tools, and Benchmarks
-(See below for all legacy and advanced features, data scripts, and benchmarking tools.)
+## 📝 주요 기능, 데이터 툴, 벤치마크
+(아래에 v1.x~v2.0의 모든 기능/스크립트/벤치마크 도구가 정리되어 있습니다)
 
 ---
 
 ## 📅 업데이트
 - v2.0 (2026): **대규모 알고리즘/디자인 리라이트**
-    - 완전한 F2L/CFOP/FMC 내부 구조 재설계: 모든 핫패스 키를 숫자화, GC/할당 최소화, 콤팩트 변환 보장
-    - FMC: Kociemba-style fallback 완전 제거, 자체 엔진으로 move-count-first 포트폴리오 구현
-    - 라이브러리 조기 워밍업, 병렬 초기화, 캐시 최적화, 데이터 레이아웃 개선
-    - UI: 다크/라이트 테마 개선, 모바일 터치 최적화, 그래프/통계 시각화 업그레이드
-    - 벤치마크/메트릭: 단계별 wall-time, 탐색량, 캐시 히트율 등 자동 검증 도구 내장
-    - README/문서: v2.0 혁신점과 구조적 차별성 강조, 백업 README.old 제공
+    - 🔥 F2L/CFOP/FMC 내부 구조 완전 재설계: 모든 핫패스 키 숫자화, GC/할당 최소화, 콤팩트 변환 보장
+    - 🧮 FMC: Kociemba-style fallback 완전 제거, 자체 엔진으로 move-count-first 포트폴리오 구현
+    - 🚀 라이브러리 조기 워밍업, 병렬 초기화, 캐시 최적화, 데이터 레이아웃 개선
+    - 🎨 UI/그래프: 다크/라이트 테마, 모바일 터치, 통계/그래프 시각화 대폭 업그레이드
+    - 📊 벤치마크/메트릭: 단계별 wall-time, 탐색량, 캐시 히트율 등 자동 검증 도구 내장
+    - 📚 문서: v2.0 혁신점/구조적 차별성 강조, README.old 백업 제공
+    - 🆚 **v1.x와의 차이**: v1.x는 문자열 기반/GC 부담/외부 fallback 의존, v2.0은 숫자화/버퍼 재사용/완전 자립/성능 검증 자동화
 - v1.1~v1.11: 모바일/그래프/타이머/세션/solver 등 기능 및 버그 수정(아래 참고)
 
-**Built with OpenAI GPT-5.2 Codex.**
+**이 프로젝트는 OpenAI GPT-5.2 Codex로 개발되었습니다.**
 
 ---
 
