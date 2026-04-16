@@ -168,13 +168,6 @@ async function solveWithInternal3x3StrictCfop(scramble, onProgress, options = {}
         ? "zb"
         : null;
   const effectiveMode = profileSolveMode && profileSolveMode !== options.mode ? profileSolveMode : options.mode;
-  // Enable mixed CFOP stages when a player profile has explicit case bias
-  const hasCaseBias =
-    styleProfile &&
-    typeof styleProfile === "object" &&
-    styleProfile.caseBias &&
-    typeof styleProfile.caseBias === "object" &&
-    (Number(styleProfile.caseBias.zbllWeight) > 1 || Number(styleProfile.caseBias.xcrossWeight) > 1);
   return solve3x3StrictCfopFromPattern(pattern, {
     ...options,
     mode: effectiveMode,
@@ -182,8 +175,7 @@ async function solveWithInternal3x3StrictCfop(scramble, onProgress, options = {}
     styleProfile,
     enableMixedCfopStages:
       options.enableMixedCfopStages === true ||
-      (typeof options.f2lMethod === "string" && options.f2lMethod.toLowerCase() === "mixed") ||
-      Boolean(hasCaseBias),
+      (typeof options.f2lMethod === "string" && options.f2lMethod.toLowerCase() === "mixed"),
     svWvMode:
       options.svWvMode === true ||
       (typeof options.svWvUsage === "number" && options.svWvUsage > 0.1),
