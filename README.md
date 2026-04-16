@@ -1,19 +1,53 @@
-# CubeTimer (2024)
+# CubeTimer — Version 2 (Algorithmic Rewrite)
 
-**최신 CFOP/FMC/Roux 솔버, 고성능 큐브 타이머 및 분석 툴**
+이 릴리스(Version 2)는 UI나 파라미터 튜닝보다 '알고리즘적 구조의 재설계'에 초점을 둔 메이저 업데이트입니다. 목표는 "같은 탐색량을 유지하면서도 후보 당 비용을 획기적으로 줄여 전체 대기시간을 낮추는 것"입니다.
 
 ---
 
-## 주요 변경점 및 개선사항
+## Version 2 — Algorithmic Highlights (핵심 변경점)
 
-- **ZBLS 키 설계 완전 수정**: F2L 슬롯 피스 포함 오류 제거, BL+LL EO만으로 키 생성 → 라이브러리/런타임 일치, 모든 테스트 통과
-- **FMC/CFOP/Roux 성능 대폭 개선**: 각 단계별 캐시/키/데이터 구조 최적화, 불필요한 문자열/객체 할당 제거, 진입점/워커 레벨 사전 워밍업
-- **FMC Kociemba Fallback 완전 제거**: FMC는 더 이상 2-phase/phase-solver에 의존하지 않음, 순수 자체 구현만 사용
-- **FMC 상태 재사용/캐시**: EO/DR/axis-pattern 캐시 도입, 중복 탐색 최소화, p50/평균 시간 단축
-- **Roux 순수 빔서치/스테이지 추출**: 외부 라이브러리 미사용, FB/SB/CMLL/LSE 정확 분리, 87.5~100% 성공률
-- **진단/벤치마크/디버그 개선**: 단계별 탐색량, 캐시 히트율, 콜드/웜 스타트, 실패 사유 등 상세 리포트
-- **코드 구조/테스트/도구 정비**: 주요 알고리즘/데이터 구조 모듈화, 벤치마크/테스트 스크립트 제공
+1) F2L 핫패스의 '문자열 -> 숫자' 전환
+- 기존: `${stateKey}::${nextStateKey}` 같은 문자열 합성 키를 Map에 사용. 많은 문자열 할당과 GC 발생.
+- 변경: 상태/전이 키를 비트-패킹한 숫자(composite numeric key) 또는 2단계 숫자 맵으로 대체하여 문자열 할당을 제거하고 Map locality를 개선했습니다.
+- 관련: solver/cfop3x3.js (F2L 키 빌더, transition cache)
 
+2) 랭킹 비용의 선계산 (precompute)
+- 각 F2L 포뮬러에 대해 이동수, 회전/AUF 카운트, wide-turn 수, 그리고 스타일 페널티를 라이브러리 빌드 시 미리 계산하여, 빔 스캔 중 중복 연산을 제거했습니다.
+- 결과: 후보 정렬 비용이 크게 감소합니다.
+- 관련: solver/cfop3x3.js (getF2LCaseLibrary)
+
+3) 빔 확장 시 할당 제거 및 버퍼 재사용
+- 후보 노드당 객체/배열을 새로 만들지 않고, 재사용 가능한 TypedArray 버퍼(슬랩)와 평탄화된 랭킹 배열을 사용합니다.
+- 실제로 살아남은 최종 후보만 복제(materialize)하여 나머지 단계에서는 얕은 뷰를 유지합니다.
+- 관련: solver/cfop3x3.js (considerCore / beam expansion)
+
+4) 콤팩트 변환(compactTransform) 우선 보장
+- 라이브러리 항목 대부분에 compactTransform을 보장하고, tryApplyTransformation / KPattern 재구성은 최후의 수단으로 축소했습니다. startPattern.applyAlg()가 핫 루프에서 호출되는 경우를 제거합니다.
+
+5) 데이터 레이아웃 최적화
+- 케이스 라이브러리 엔트리를 캐시 친화적 순서로 재배치하고, 코너/엣지 매치 데이터를 고정 레이아웃 TypedArray로 저장하여 스캔 루프의 브랜치와 인덱싱 비용을 낮췄습니다.
+
+6) 라이브러리 조기 워밍업 및 병렬 초기화
+- Worker 초기화 시 F2L/OLL/PLL/ZB 라이브러리를 미리 빌드하고, 독립적인 준비 작업을 병렬로 겹치게 하여 콜드 스타트 비용을 줄였습니다.
+- 관련: solver/solverWorker.js
+
+7) FMC: Kociemba 종속성 제거 + "move-count-first" 포트폴리오
+- 기존 fallback(FMC_PHASE1_PHASE2) 경로를 제거하고, Kociemba에서 영감을 받은 핵심 아이디어(EO-axis, DR/domino, phase-2 skeleton 등)를 자체 구현으로 재구성했습니다.
+- 예산(시간) 배분을 "최종 이동수 개선 우선"으로 재조정하여 FMC 후보 탐색의 효율성을 높였습니다.
+- 관련: solver/fmcSolver.js, solver/solverWorker.js
+
+8) 검증용 메트릭과 검색-볼륨 패리티
+- 단계별 wall-time, F2L attemptsRef.count, beam-depth progression, 캐시 히트율, 핫패스 이스케이프 횟수 등을 측정해 "탐색량은 동일하게, 후보 비용만 감소"하는지를 자동 검증할 수 있습니다.
+
+---
+
+## 왜 이것이 중요한가?
+- 단순히 beam width나 depth를 줄여 빠르게 보이는 최적화가 아니라, 후보 1개당 비용을 줄여 벤치마크 상의 p50/p95를 실제로 개선합니다.
+- FMC는 더 이상 다른 알고리즘의 빠른 답을 빌려오지 않으며, 자체 포트폴리오만으로 품질(이동수)과 속도를 동시에 개선합니다.
+
+---
+
+(아래 섹션은 기존 README의 실행/테스트/벤치마크/라이선스 정보를 유지합니다.)
 ---
 
 이 프로그램은 OpenAI의 GPT-5.2 Codex로 만들어졌습니다.
