@@ -7,10 +7,12 @@ import { getF2LTransitionProfileForSolver } from "../solver/f2lTransitionProfile
 // Benchmark uses deadline-based approach so hard cases give up promptly.
 // Node limits match the default CFOP profile (compact IDA* is now fast enough).
 const STRICT_BENCHMARK_SOLVE_OPTIONS = Object.freeze({
-  f2lFormulaBeamWidth: 7,
-  f2lFormulaMaxAttempts: 240000,
-  f2lSearchMaxDepth: 11,
-  f2lNodeLimit: 220000,
+  f2lFormulaBeamWidth: 5,
+  f2lFormulaExpansionLimit: 8,
+  f2lFormulaBeamBudgetMs: 24,
+  f2lFormulaMaxAttempts: 100000,
+  f2lSearchMaxDepth: 10,
+  f2lNodeLimit: 180000,
 });
 
 function toNullableNumber(value) {

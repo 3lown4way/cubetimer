@@ -9,27 +9,29 @@ import { ensureWasmSolverReady, solveWithWasmIfAvailable } from "./wasmSolver.js
 let solver2x2ModulesPromise = null;
 let solver3x3PhaseModulesPromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
-const STRICT_CFOP_TIMEOUT_MS = 45000;
-const STRICT_CFOP_RETRY_TIMEOUT_MS = 25000;
+const STRICT_CFOP_TIMEOUT_MS = 25000;
+const STRICT_CFOP_RETRY_TIMEOUT_MS = 12000;
 const ROUX_333_TIMEOUT_MS = 45000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const STRICT_F2L_RETRY_OPTIONS = [
   {
-    f2lFormulaMaxSteps: 16,
-    f2lFormulaBeamWidth: 12,
-    f2lFormulaExpansionLimit: 20,
-    f2lFormulaMaxAttempts: 600000,
-    f2lSearchMaxDepth: 14,
-    f2lNodeLimit: 600000,
+    f2lFormulaMaxSteps: 14,
+    f2lFormulaBeamWidth: 8,
+    f2lFormulaExpansionLimit: 12,
+    f2lFormulaMaxAttempts: 240000,
+    f2lFormulaBeamBudgetMs: 30,
+    f2lSearchMaxDepth: 12,
+    f2lNodeLimit: 320000,
   },
   {
-    f2lFormulaMaxSteps: 18,
-    f2lFormulaBeamWidth: 16,
-    f2lFormulaExpansionLimit: 28,
-    f2lFormulaMaxAttempts: 1200000,
-    f2lSearchMaxDepth: 16,
-    f2lNodeLimit: 1500000,
+    f2lFormulaMaxSteps: 16,
+    f2lFormulaBeamWidth: 10,
+    f2lFormulaExpansionLimit: 16,
+    f2lFormulaMaxAttempts: 420000,
+    f2lFormulaBeamBudgetMs: 40,
+    f2lSearchMaxDepth: 14,
+    f2lNodeLimit: 800000,
   },
 ];
 const INTERNAL_PHASE_FALLBACK_OPTIONS = {
@@ -219,11 +221,17 @@ function normalizeNonNegativeInt(value, fallback) {
 }
 
 async function solveWithInternal3x3StrictRetries(scramble, onProgress, options = {}) {
-  const attempts = [
-    { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
-    { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
-    { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[1] },
-  ];
+  const normalizedMode = String(options.mode || "strict").toLowerCase();
+  const attempts = normalizedMode === "zb"
+    ? [
+        { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+        { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+      ]
+    : [
+        { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+        { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+        { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[1] },
+      ];
 
   let firstFailureReason = "";
   let lastFailure = null;
@@ -316,17 +324,8 @@ async function prewarmInternal2x2() {
 
 async function prewarmInternal3x3StrictCfop() {
   try {
-    const [{ getDefaultPattern }, { solve3x3StrictCfopFromPattern }] = await Promise.all([
-      import("./context.js"),
-      import("./cfop3x3.js"),
-    ]);
-    const solved = await getDefaultPattern("333");
-    await solve3x3StrictCfopFromPattern(solved, {
-      crossMaxDepth: 1,
-      f2lMaxDepth: 1,
-      ollMaxDepth: 1,
-      pllMaxDepth: 1,
-    });
+    const { prewarm3x3StrictCfopLibraries } = await import("./cfop3x3.js");
+    await prewarm3x3StrictCfopLibraries();
   } catch (_) {
     // Warmup failure should not block solving.
   }
@@ -368,14 +367,21 @@ async function prewarmWasmSolver() {
   }
 }
 
+let backgroundWarmupsStarted = false;
+function startBackgroundWarmups() {
+  if (backgroundWarmupsStarted) return;
+  backgroundWarmupsStarted = true;
+  void prewarmInternal2x2();
+  void prewarmInternal3x3StrictCfop();
+  void prewarmInternal3x3Roux();
+  void prewarmInternal3x3Phase();
+  void prewarmWasmSolver();
+}
+
 const api = {
   async ping() {
     // Start async warmups early; don't block ping response.
-    void prewarmInternal2x2();
-    void prewarmInternal3x3StrictCfop();
-    void prewarmInternal3x3Roux();
-    void prewarmInternal3x3Phase();
-    void prewarmWasmSolver();
+    startBackgroundWarmups();
     return { ok: true };
   },
   async solve(arg1, arg2, arg3, arg4, arg5, arg6) {
@@ -434,6 +440,11 @@ const api = {
     }
     mode = normalizeMode(mode);
     f2lMethod = normalizeF2LMethod(f2lMethod);
+    const normalizedEventId = eventId === "333fm" ? "333" : eventId;
+    if (!scramble) {
+      return { ok: false, reason: "NO_SCRAMBLE" };
+    }
+    startBackgroundWarmups();
     let f2lTransitionProfile = null;
     try {
       f2lTransitionProfile = await getF2LTransitionProfileForSolver(transitionProfileSolver);
@@ -460,10 +471,6 @@ const api = {
     const hasDownstreamOptIn = enableOllPllPrediction !== false && Boolean(f2lDownstreamProfile);
     const allowWasm3x3FastPath =
       mode === "strict" && !hasStyleOptIn && !hasTransitionOptIn && !hasDownstreamOptIn;
-    const normalizedEventId = eventId === "333fm" ? "333" : eventId;
-    if (!scramble) {
-      return { ok: false, reason: "NO_SCRAMBLE" };
-    }
 
     // 222 uses in-repo solver implementation.
     try {
@@ -526,49 +533,7 @@ const api = {
           if (fmcResult?.ok) {
             return fmcResult;
           }
-          {
-            const safetyStageName = "FMC Safety Phase";
-            if (typeof onProgress === "function") {
-              try {
-                void onProgress({
-                  type: "fallback_start",
-                  stageName: safetyStageName,
-                  reason: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
-                });
-              } catch (_) {}
-            }
-            const phaseSafety = await withTimeout(
-              solveWithInternal3x3Phase(scramble, {
-                ...INTERNAL_PHASE_FALLBACK_OPTIONS,
-                deadlineTs: Date.now() + Math.min(9000, INTERNAL_333_PHASE_TIMEOUT_MS - 800),
-              }),
-              INTERNAL_333_PHASE_TIMEOUT_MS,
-            ).catch(() => null);
-            if (phaseSafety?.ok) {
-              if (typeof onProgress === "function") {
-                try {
-                  void onProgress({
-                    type: "fallback_done",
-                    stageName: safetyStageName,
-                  });
-                } catch (_) {}
-              }
-              return {
-                ...phaseSafety,
-                source: "INTERNAL_3X3_PHASE_FMC_SAFETY",
-                fallbackFrom: fmcResult?.reason || "FMC_NO_VALID_SOLUTION",
-              };
-            }
-            if (typeof onProgress === "function") {
-              try {
-                void onProgress({
-                  type: "fallback_fail",
-                  stageName: safetyStageName,
-                });
-              } catch (_) {}
-            }
-            return fmcResult || { ok: false, reason: "FMC_FAILED" };
-          }
+          return fmcResult || { ok: false, reason: "FMC_FAILED" };
         }
         if (mode === "roux") {
           const [{ getDefaultPattern }, { solve3x3RouxFromPattern }] = await Promise.all([
@@ -637,6 +602,10 @@ const api = {
           ollPllPredictionWeight,
         });
 
+        if (mode === "zb") {
+          return strictResult;
+        }
+
         if (strictResult?.ok || !shouldFallbackToExternal3x3(strictResult)) {
           return strictResult;
         }
@@ -674,8 +643,6 @@ const api = {
             void onProgress({ type: "fallback_fail", stageName: "3x3 Internal Phase" });
           } catch (_) {}
         }
-
-        // Allow external fallback for all modes (zb included) to guarantee 100% accuracy.
 
         if (typeof onProgress === "function") {
           try {
