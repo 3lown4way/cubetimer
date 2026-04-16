@@ -1,33 +1,15 @@
-# CubeTimer (2024)
-
-**최신 CFOP/FMC/Roux 솔버, 고성능 큐브 타이머 및 분석 툴**
-
----
-
-## 주요 변경점 및 개선사항
-
-- **ZBLS 키 설계 완전 수정**: F2L 슬롯 피스 포함 오류 제거, BL+LL EO만으로 키 생성 → 라이브러리/런타임 일치, 모든 테스트 통과
-- **FMC/CFOP/Roux 성능 대폭 개선**: 각 단계별 캐시/키/데이터 구조 최적화, 불필요한 문자열/객체 할당 제거, 진입점/워커 레벨 사전 워밍업
-- **FMC Kociemba Fallback 완전 제거**: FMC는 더 이상 2-phase/phase-solver에 의존하지 않음, 순수 자체 구현만 사용
-- **FMC 상태 재사용/캐시**: EO/DR/axis-pattern 캐시 도입, 중복 탐색 최소화, p50/평균 시간 단축
-- **Roux 순수 빔서치/스테이지 추출**: 외부 라이브러리 미사용, FB/SB/CMLL/LSE 정확 분리, 87.5~100% 성공률
-- **진단/벤치마크/디버그 개선**: 단계별 탐색량, 캐시 히트율, 콜드/웜 스타트, 실패 사유 등 상세 리포트
-- **코드 구조/테스트/도구 정비**: 주요 알고리즘/데이터 구조 모듈화, 벤치마크/테스트 스크립트 제공
-
----
+# CubeTimer
 
 이 프로그램은 OpenAI의 GPT-5.2 Codex로 만들어졌습니다.
 
-## 실행 방법
+## 실행
 정적 파일만 사용합니다. 로컬 서버로 열어주세요.
 
 ```bash
 python3 -m http.server 5173
 ```
 
-브라우저에서 [http://localhost:5173](http://localhost:5173) 접속
-
----
+브라우저에서 `http://localhost:5173` 접속.
 
 ## 업데이트
 - v1.1: 모바일/그래프 레이아웃 관련 버그 수정
@@ -117,7 +99,7 @@ node tools/generate-roux-case-db.mjs --help
 node tools/report-roux-recovery-cases.mjs --help
 ```
 
-## 주요 기능
+## 기능
 - WCA 종목 스크램블 생성 + 2D 전개도 미리보기
 - 실시간 타이머 (스페이스바 홀드로 시작)
 - 세션 관리 (추가/이름 변경/삭제/초기화)
@@ -130,23 +112,29 @@ node tools/report-roux-recovery-cases.mjs --help
 - 모바일 레이아웃 대응
 - solver 기능 (beta)
 
-## 개발/벤치마크/테스트
+## 조작
 - `Space`: 0.3초 홀드 후 시작 / 정지
 - 타이머 영역 클릭/터치로도 동일 동작
 
-## 구조/알고리즘 개요
+## 스크램블/미리보기 구현
 - 스크램블: `cubing.js`의 `randomScrambleForEvent("eventId")`
 - 미리보기: `scramble-display` 웹 컴포넌트 (2D 전개도)
   - `vendor/`에 로컬 포함되어 CDN 없이 동작합니다.
 
+## 인스펙션 (옵션)
+- 설정에서 15초 인스펙션을 켤 수 있습니다.
+- 8초/12초에 TTS 안내 (`"8 seconds"`, `"12 seconds"`)
+- 15초 초과 시 `+2`, 17초 초과 시 `DNF` 자동 적용
+
+## 내보내기 포맷
+- 기록 공유/내보내기:
+  - `Genrated by  CubeTimer in YY-MM-DD HH:MM:SS`
+  - `1. NN.NN scramble`
+- 세션 내보내기:
+  - `Genrated by  CubeTimer in YY-MM-DD-HH-MM-SS`
+  - `Current Ao5/Best Ao5/Current Ao12/Best Ao12` 포함
+
+> 참고: 공식 TNoodle(=WCA 공식 스크램블 프로그램)은 Java 기반입니다. 현재 프로젝트는 브라우저에서 바로 동작하도록 `cubing.js` 기반 스크램블을 사용합니다. 필요하면 TNoodle 서버 연동/빌드로 교체 가능합니다.
+
 ## 라이선스
-
-- `scramble-display` (GPL-3.0) 포함, 전체 프로젝트 GPL-3.0
-
----
-
-## 이전 README 백업: `README.old`
-
----
-
-**문의/기여/이슈**: [github.com/3lown4way/cubetimer](https://github.com/3lown4way/cubetimer)
+`scramble-display`가 GPL-3.0 라이선스이므로, 본 프로젝트도 GPL-3.0으로 배포합니다.
