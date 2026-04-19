@@ -1,9 +1,44 @@
 node_modules/
 .qwen/
+
+# ----- Logs / dumps -----
+*.log
+*_dump.txt
+*_logs.txt
+chrome_http.log
+http_dump.txt
+http_logs.txt
+file_dump.txt
+file_logs.txt
 isolate-*.log
 *.v8.log
 
-# Timestamp-named experiment artifacts
+# ----- Backup files -----
+*.backup
+*.bak
+
+# ----- Temp / scratch / test output -----
+tmp/
+test-results/
+run_test.sh
+
+# ----- Rust build artifacts (keep src/, ignore compiled output) -----
+solver-wasm/assets/
+solver-wasm/src/bin/
+
+# ----- Planning / scratch docs (not part of the app) -----
+enhance_quality.md
+fmc_part_breakdown_plan.md
+minmove_plan.md
+player-profile-latency-plan.md
+implementation_plan.md
+performance-analysis.md
+plan.md
+PURE_ROUX_PLAN.md
+ROUX_REWRITE_SUMMARY.md
+PERFORMANCE_FINDINGS.md
+
+# ----- Timestamp-named experiment artifacts -----
 tools/roux-experiment-*.json
 tools/roux-key-check-*.json
 tools/roux-regress-*.json
