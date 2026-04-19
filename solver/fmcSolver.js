@@ -3,6 +3,16 @@ import { findShortEOSequences, solveDomino } from "./solver3x3Phase/phase1.js";
 import { buildPhase2Input, solvePhase2 } from "./solver3x3Phase/phase2.js";
 import { MOVE_NAMES } from "./moves.js";
 import { parsePatternToCoords3x3 } from "./solver3x3Phase/state3x3.js";
+import {
+  ensureTwophase333Ready,
+  prepareTwophase333,
+  searchTwophase333,
+  dropTwophase333Search,
+  buildFmcTablesWasm,
+  solveFmcWasm,
+  optimizeInsertionWasm,
+  verifyFmcSolutionWasm,
+} from "./wasmSolver.js";
 
 const FMC_PREMOVE_TURNS = ["", "'", "2"];
 const FMC_PREMOVE_SINGLE_FACES = ["U", "R", "F", "D", "L", "B"];
@@ -749,6 +759,12 @@ function createCandidate(source, strategy, moves) {
     eoLength: Number.isFinite(metadata.eoLength) ? metadata.eoLength : null,
     drLength: Number.isFinite(metadata.drLength) ? metadata.drLength : null,
     p2Length: Number.isFinite(metadata.p2Length) ? metadata.p2Length : null,
+    eoMoves: Array.isArray(metadata.eoMoves) ? metadata.eoMoves : null,
+    drMoves: Array.isArray(metadata.drMoves) ? metadata.drMoves : null,
+    finishMoves: Array.isArray(metadata.finishMoves) ? metadata.finishMoves : null,
+    premoveMoves: Array.isArray(metadata.premoveMoves) ? metadata.premoveMoves : null,
+    skeletonMoves: Array.isArray(metadata.skeletonMoves) ? metadata.skeletonMoves : null,
+    insertionBaseMoves: Array.isArray(metadata.insertionBaseMoves) ? metadata.insertionBaseMoves : null,
     moves: normalized,
     solution: joinMoves(normalized),
     moveCount: normalized.length,
@@ -762,22 +778,29 @@ async function verifyCandidate(scramblePattern, candidate, options = {}) {
   if (cache && cache.has(candidate.solution)) {
     return cache.get(candidate.solution);
   }
+  let verified = false;
   try {
+    // Fast WASM path (no cubing.js overhead)
+    const scramble = options.scrambleString || null;
+    if (scramble) {
+      const wasmResult = await verifyFmcSolutionWasm(scramble, candidate.solution);
+      if (wasmResult && wasmResult.ok) {
+        verified = !!wasmResult.solved;
+        if (cache) cache.set(candidate.solution, verified);
+        return verified;
+      }
+    }
+    // Fallback: cubing.js
     const solvedPattern = options.solvedPattern || await getSolvedPattern();
     const afterSolution = scramblePattern.applyAlg(candidate.solution);
-    const verified = typeof afterSolution.experimentalIsSolved === "function"
+    verified = typeof afterSolution.experimentalIsSolved === "function"
       ? !!afterSolution.experimentalIsSolved({ ignorePuzzleOrientation: false })
       : JSON.stringify(afterSolution.patternData) === JSON.stringify(solvedPattern.patternData);
-    if (cache) {
-      cache.set(candidate.solution, verified);
-    }
-    return verified;
   } catch (_) {
-    if (cache) {
-      cache.set(candidate.solution, false);
-    }
-    return false;
+    verified = false;
   }
+  if (cache) cache.set(candidate.solution, verified);
+  return verified;
 }
 
 function pushUniqueCandidate(list, candidate) {
@@ -884,8 +907,8 @@ async function solveFmcEOFirst(pattern, options = {}) {
       } else {
         drResult = await solveDomino(coordsAfterEO, {
           maxDepth: drDepthCap,
-          nodeLimit: Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount + 2 ? 700000 : 1000000,
-          deadlineTs: clampAttemptDeadline(deadlineTs, 2500, 150),
+          nodeLimit: Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount + 2 ? 2000000 : 4000000,
+          deadlineTs: clampAttemptDeadline(deadlineTs, 5000, 150),
         }).catch(() => null);
         if (drPatternKey !== null) {
           sessionCache.setDrResult(drPatternKey, drResult?.ok ? drResult : null, drDepthCap);
@@ -904,8 +927,8 @@ async function solveFmcEOFirst(pattern, options = {}) {
         : maxP2Depth;
       const p2Input = buildPhase2Input(patternAfterDR, {
         phase2MaxDepth: p2DepthCap,
-        phase2NodeLimit: Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount + 2 ? 350000 : 500000,
-        deadlineTs: clampAttemptDeadline(deadlineTs, 2000, 100),
+        phase2NodeLimit: Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount + 2 ? 1000000 : 2000000,
+        deadlineTs: clampAttemptDeadline(deadlineTs, 3000, 100),
       });
       const p2Result = await solvePhase2(p2Input).catch(() => null);
       if (!p2Result?.ok) continue;
@@ -921,6 +944,9 @@ async function solveFmcEOFirst(pattern, options = {}) {
         eoLength: eoMoves.length,
         drLength: drResult.moves.length,
         p2Length: p2Result.moves.length,
+        eoMoves: eoMoves.slice(),
+        drMoves: drResult.moves.slice(),
+        finishMoves: p2Result.moves.slice(),
         moves: simplified,
         solution: joinMoves(simplified),
         moveCount: simplified.length,
@@ -1059,6 +1085,16 @@ async function solveFmcEO(scrambleText, options = {}) {
           : conjugateMoves(solutionMoves, axisConfig.solution_map);
         const simplified = simplifyMoves(originalMoves);
         if (!simplified.length) continue;
+        // Convert segment moves through axis frame
+        const convertedEoMoves = Array.isArray(axisItem.eoMoves)
+          ? (axisConfig.identity ? axisItem.eoMoves : conjugateMoves(axisItem.eoMoves, axisConfig.solution_map))
+          : null;
+        const convertedDrMoves = Array.isArray(axisItem.drMoves)
+          ? (axisConfig.identity ? axisItem.drMoves : conjugateMoves(axisItem.drMoves, axisConfig.solution_map))
+          : null;
+        const convertedFinishMoves = Array.isArray(axisItem.finishMoves)
+          ? (axisConfig.identity ? axisItem.finishMoves : conjugateMoves(axisItem.finishMoves, axisConfig.solution_map))
+          : null;
         const converted = {
           ok: true,
           source: `FMC_EO_${axisConfig.name}`,
@@ -1067,6 +1103,9 @@ async function solveFmcEO(scrambleText, options = {}) {
           eoLength: axisItem.eoLength,
           drLength: axisItem.drLength,
           p2Length: axisItem.p2Length,
+          eoMoves: convertedEoMoves,
+          drMoves: convertedDrMoves,
+          finishMoves: convertedFinishMoves,
           moves: simplified,
           solution: joinMoves(simplified),
           moveCount: simplified.length,
@@ -1089,6 +1128,204 @@ async function solveFmcEO(scrambleText, options = {}) {
   } catch (_) {
     return null;
   }
+}
+
+function buildFmcParts(candidate) {
+  if (!candidate) return [];
+  const parts = [];
+  const hasPremove = Array.isArray(candidate.premoveMoves) && candidate.premoveMoves.length > 0;
+  const hasEo = Array.isArray(candidate.eoMoves) && candidate.eoMoves.length > 0;
+  const hasDr = Array.isArray(candidate.drMoves) && candidate.drMoves.length > 0;
+  const hasFinish = Array.isArray(candidate.finishMoves) && candidate.finishMoves.length > 0;
+  const hasSegments = hasEo || hasDr || hasFinish;
+  const isInsertion = candidate.source === "FMC_INSERTION";
+  const hasInsertionBase = Array.isArray(candidate.insertionBaseMoves) && candidate.insertionBaseMoves.length > 0;
+  // NISS candidates store segments as inv(EO_inv), inv(DR_inv), inv(Finish_inv).
+  // Their execution order on the original scramble is: finishMoves → drMoves → eoMoves [→ postmove if any].
+  // FMC_PREMOVE_NISS: NISS solve from premove sweep; premoveMoves is a post-move applied at the end.
+  // FMC_INSERTION derived from a NISS base: strategy tag encodes the base source.
+  const isNiss =
+    candidate.source === "FMC_NISS" ||
+    candidate.source === "FMC_PREMOVE_SCOUT_NISS" ||
+    candidate.source === "FMC_PREMOVE_NISS" ||
+    /^FMC_(PREMOVE_)?NISS(_|$)/.test(candidate.source || "") ||
+    (candidate.source === "FMC_INSERTION" && /FMC_(PREMOVE_)?NISS/.test(candidate.strategy || ""));
+
+  const sourceNote = candidate.source
+    ? candidate.source.replace(/^FMC_/, "").replace(/_/g, " ")
+    : "";
+  const axisNote = candidate.axisName ? `axis ${candidate.axisName}` : "";
+  const nissNote = isNiss ? "NISS" : "";
+
+  // For non-NISS: premove comes BEFORE EO/DR/Finish in execution order.
+  // For NISS: premoveMoves is a post-move; it is appended AFTER EO/DR/Finish (see below).
+  if (hasPremove && !isNiss) {
+    const sol = joinMoves(candidate.premoveMoves);
+    parts.push({
+      name: "Premove",
+      solution: sol,
+      moveCount: candidate.premoveMoves.length,
+      notes: "",
+    });
+  }
+
+  if (isNiss) {
+    // For NISS, execution order on original scramble is: Finish → DR → EO
+    // (stored moves are already the inverted segments from the inverse solve)
+    if (hasFinish) {
+      parts.push({
+        name: "Finish",
+        solution: joinMoves(candidate.finishMoves),
+        moveCount: candidate.finishMoves.length,
+        notes: [nissNote, axisNote].filter(Boolean).join(", "),
+      });
+    } else if (hasSegments && Number.isFinite(candidate.p2Length) && candidate.p2Length > 0) {
+      parts.push({
+        name: "Finish",
+        solution: "",
+        moveCount: candidate.p2Length,
+        notes: [`${candidate.p2Length}수`, nissNote, axisNote].filter(Boolean).join(", "),
+      });
+    }
+    if (hasDr) {
+      parts.push({
+        name: "DR",
+        solution: joinMoves(candidate.drMoves),
+        moveCount: candidate.drMoves.length,
+        notes: nissNote,
+      });
+    } else if (hasSegments && Number.isFinite(candidate.drLength) && candidate.drLength > 0) {
+      parts.push({
+        name: "DR",
+        solution: "",
+        moveCount: candidate.drLength,
+        notes: [`${candidate.drLength}수`, nissNote].filter(Boolean).join(", "),
+      });
+    }
+    if (hasEo) {
+      parts.push({
+        name: "EO",
+        solution: joinMoves(candidate.eoMoves),
+        moveCount: candidate.eoMoves.length,
+        notes: nissNote,
+      });
+    } else if (hasSegments && Number.isFinite(candidate.eoLength) && candidate.eoLength > 0) {
+      parts.push({
+        name: "EO",
+        solution: "",
+        moveCount: candidate.eoLength,
+        notes: [`${candidate.eoLength}수`, nissNote].filter(Boolean).join(", "),
+      });
+    }
+    // For NISS with premove: the premove is a post-move applied AFTER Finish → DR → EO.
+    if (hasPremove) {
+      parts.push({
+        name: "Postmove",
+        solution: joinMoves(candidate.premoveMoves),
+        moveCount: candidate.premoveMoves.length,
+        notes: nissNote,
+      });
+    }
+  } else {
+    if (hasEo) {
+      parts.push({
+        name: "EO",
+        solution: joinMoves(candidate.eoMoves),
+        moveCount: candidate.eoMoves.length,
+        notes: axisNote,
+      });
+    } else if (hasSegments && Number.isFinite(candidate.eoLength) && candidate.eoLength > 0) {
+      parts.push({
+        name: "EO",
+        solution: "",
+        moveCount: candidate.eoLength,
+        notes: `${candidate.eoLength}수` + (axisNote ? `, ${axisNote}` : ""),
+      });
+    }
+    if (hasDr) {
+      parts.push({
+        name: "DR",
+        solution: joinMoves(candidate.drMoves),
+        moveCount: candidate.drMoves.length,
+        notes: "",
+      });
+    } else if (hasSegments && Number.isFinite(candidate.drLength) && candidate.drLength > 0) {
+      parts.push({
+        name: "DR",
+        solution: "",
+        moveCount: candidate.drLength,
+        notes: `${candidate.drLength}수`,
+      });
+    }
+    if (hasFinish) {
+      parts.push({
+        name: "Finish",
+        solution: joinMoves(candidate.finishMoves),
+        moveCount: candidate.finishMoves.length,
+        notes: "",
+      });
+    } else if (hasSegments && Number.isFinite(candidate.p2Length) && candidate.p2Length > 0) {
+      parts.push({
+        name: "Finish",
+        solution: "",
+        moveCount: candidate.p2Length,
+        notes: `${candidate.p2Length}수`,
+      });
+    }
+  }
+
+  // Skeleton: segment concatenation in execution order
+  if (hasSegments) {
+    const skeletonParts = [];
+    if (isNiss) {
+      // NISS execution order: Finish → DR → EO → Postmove(if any)
+      if (hasFinish) skeletonParts.push(...candidate.finishMoves);
+      if (hasDr) skeletonParts.push(...candidate.drMoves);
+      if (hasEo) skeletonParts.push(...candidate.eoMoves);
+      if (hasPremove) skeletonParts.push(...candidate.premoveMoves); // post-move at end for NISS
+    } else {
+      // non-NISS execution order: Premove → EO → DR → Finish
+      if (hasPremove) skeletonParts.push(...candidate.premoveMoves);
+      if (hasEo) skeletonParts.push(...candidate.eoMoves);
+      if (hasDr) skeletonParts.push(...candidate.drMoves);
+      if (hasFinish) skeletonParts.push(...candidate.finishMoves);
+    }
+    const skeletonSimplified = simplifyMoves(skeletonParts);
+    if (skeletonSimplified.length) {
+      parts.push({
+        name: "Skeleton",
+        solution: joinMoves(skeletonSimplified),
+        moveCount: skeletonSimplified.length,
+        notes: sourceNote,
+        isSummary: true,
+      });
+    }
+  }
+
+  // Insertion info (only show when insertion actually happened)
+  if (isInsertion && hasInsertionBase) {
+    const baseMoveCount = candidate.insertionBaseMoves.length;
+    const finalMoveCount = candidate.moveCount;
+    parts.push({
+      name: "Insertion",
+      solution: "",
+      moveCount: 0,
+      notes: baseMoveCount !== finalMoveCount
+        ? `${baseMoveCount} → ${finalMoveCount}`
+        : "no improvement",
+      isSummary: true,
+    });
+  }
+
+  // Final
+  parts.push({
+    name: "Final",
+    solution: candidate.solution,
+    moveCount: candidate.moveCount,
+    notes: [sourceNote, axisNote].filter(Boolean).join(", "),
+  });
+
+  return parts;
 }
 
 export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
@@ -1163,9 +1400,6 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   );
   const inverseScramble = invertAlg(scramble);
   const reverseScrambleCanonical = canonicalizeAlg(inverseScramble);
-  const solvedPattern = await getSolvedPattern();
-  const scramblePattern = solvedPattern.applyAlg(scramble);
-  const inversePattern = solvedPattern.applyAlg(inverseScramble);
   const candidates = [];
   const verificationCache = new Map();
   const directPremovePatternCache = new Map();
@@ -1297,374 +1531,61 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     return created;
   };
 
-  let direct = null;
-  let inverse = null;
-
-  notify({ type: "stage_start", stageIndex: 0, totalStages, stageName: "FMC Direct" });
-  notify({ type: "stage_start", stageIndex: 1, totalStages, stageName: "FMC NISS" });
-  const directDeadlineTs = Math.min(deadlineTs, Date.now() + directStageBudgetMs);
-  const nissDeadlineTs = Math.min(deadlineTs, Date.now() + nissStageBudgetMs);
-  const runNiss = remainingMs(nissDeadlineTs) > 400;
-  const directAttemptProfile = buildFmcAttemptProfile(directProfileLevel, bestMoveCount, targetMoveCount);
-  const [directRun, inverseRun] = await Promise.all([
-    (async () => {
-      const startedAt = Date.now();
-      const result = await solveFmcEO(scramble, {
-        startPattern: scramblePattern,
-        deadlineTs: directDeadlineTs,
-        attemptTimeBudgetMs: directPhaseAttemptTimeoutMs || directStageBudgetMs,
-        targetMoveCount: currentTargetMoveCount(),
-        currentBestMoveCount: bestMoveCount,
-        candidateLimit: directAttemptProfile.candidateLimit,
-        axisCandidateLimit: directAttemptProfile.axisCandidateLimit,
-        eoSequenceLimit: directAttemptProfile.eoSequenceLimit,
-        sessionCache: fmcSessionCache,
+  // === WASM FMC fast path: run entire EO→DR→P2 pipeline (3 axes, NISS, premove sweep) in WASM ===
+  // Run this FIRST — if it succeeds, skip twophase seed and JS fallback entirely.
+  let wasmFmcDone = false;
+  try {
+    const wasmFmcStartedAt = Date.now();
+    const fmcTablesOk = await buildFmcTablesWasm();
+    console.warn(`[FMC WASM] buildFmcTablesWasm: ok=${fmcTablesOk}, elapsed=${Date.now() - wasmFmcStartedAt}ms`);
+    if (fmcTablesOk) {
+      const solveStartedAt = Date.now();
+      const wasmResult = await solveFmcWasm(scramble, {
+        maxPremoveSets: maxPremoveSets > 0 ? Math.min(maxPremoveSets * 20, 180) : 0,
       });
-      return { result, elapsedMs: Date.now() - startedAt };
-    })(),
-    runNiss
-      ? (async () => {
-          const startedAt = Date.now();
-          const result = await solveFmcEO(inverseScramble, {
-            startPattern: inversePattern,
-            deadlineTs: nissDeadlineTs,
-            attemptTimeBudgetMs: nissPhaseAttemptTimeoutMs || nissStageBudgetMs,
-            targetMoveCount: currentTargetMoveCount(),
-            currentBestMoveCount: bestMoveCount,
-            candidateLimit: directAttemptProfile.candidateLimit,
-            axisCandidateLimit: directAttemptProfile.axisCandidateLimit,
-            eoSequenceLimit: directAttemptProfile.eoSequenceLimit,
-            sessionCache: fmcSessionCache,
-          });
-          return { result, elapsedMs: Date.now() - startedAt };
-        })()
-      : Promise.resolve({ result: null, elapsedMs: 0 }),
-  ]);
-  direct = directRun.result;
-  inverse = inverseRun.result;
-  recordPhaseCall("direct", direct, directRun.elapsedMs);
-  attempts += 1;
-  trackResultCandidates(
-    "FMC_DIRECT",
-    direct,
-    (item) => ({
-      tag: item.axisName ? `direct:${item.axisName}` : "direct",
-      usesCfop: false,
-      innerSource: item.innerSource || item.source,
-      axisName: item.axisName,
-      eoLength: item.eoLength,
-      drLength: item.drLength,
-      p2Length: item.p2Length,
-    }),
-  );
-  notify({
-    type: "stage_done",
-    stageIndex: 0,
-    totalStages,
-    stageName: "FMC Direct",
-    moveCount: Number.isFinite(bestMoveCount) ? bestMoveCount : 0,
-  });
-
-  if (runNiss) {
-    recordPhaseCall("niss", inverse, inverseRun.elapsedMs);
-    attempts += 1;
-    trackResultCandidates(
-      "FMC_NISS",
-      inverse,
-      (item) => ({
-        tag: item.axisName ? `inverse:${item.axisName}` : "inverse",
-        usesCfop: false,
-        innerSource: item.innerSource || item.source,
-        axisName: item.axisName,
-        eoLength: item.eoLength,
-        drLength: item.drLength,
-        p2Length: item.p2Length,
-      }),
-      (moves) => invertMoves(moves),
-    );
+      console.warn(`[FMC WASM] solveFmcWasm: ok=${wasmResult?.ok}, moveCount=${wasmResult?.moveCount}, elapsed=${Date.now() - solveStartedAt}ms`);
+      if (wasmResult && wasmResult.ok && Array.isArray(wasmResult.candidates)) {
+        for (const wc of wasmResult.candidates) {
+          if (!wc.ok || !wc.solution) continue;
+          const wcMoves = typeof wc.solution === "string" ? wc.solution.split(/\s+/).filter(Boolean) : wc.moves;
+          // NISS candidates store raw segments from the inverse solve; invert them to match JS convention
+          const wcIsNiss = /^FMC_(PREMOVE_)?NISS(_|$)/.test(wc.source || "");
+          const maybeInvert = (arr) => (wcIsNiss && Array.isArray(arr) && arr.length ? invertMoves(arr) : (Array.isArray(arr) && arr.length ? arr : null));
+          const candidate = createCandidate(wc.source || "FMC_WASM", {
+            tag: wc.source || "wasm",
+            axisName: wc.axisName || "",
+            eoLength: wc.eoLength,
+            drLength: wc.drLength,
+            p2Length: wc.p2Length,
+            eoMoves: maybeInvert(wc.eoMoves),
+            drMoves: maybeInvert(wc.drMoves),
+            finishMoves: maybeInvert(wc.finishMoves),
+            premoveMoves: wc.premoves ? wc.premoves.split(/\s+/).filter(Boolean) : null,
+          }, wcMoves);
+          if (candidate) trackCandidate(candidate);
+        }
+        wasmFmcDone = true;
+        const wasmElapsedMs = Date.now() - wasmFmcStartedAt;
+        diagnostics.phaseTimingsMs.direct += wasmElapsedMs;
+        diagnostics.phaseRuns.direct.calls += 1;
+        if (wasmResult.moveCount) {
+          diagnostics.phaseRuns.direct.successes += 1;
+          diagnostics.phaseRuns.direct.bestMoveCount = wasmResult.moveCount;
+          diagnostics.phaseRuns.direct.bestSource = "WASM_FMC";
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[FMC WASM] Exception:", err);
   }
-  notify({
-    type: "stage_done",
-    stageIndex: 1,
-    totalStages,
-    stageName: "FMC NISS",
-    moveCount: Number.isFinite(bestMoveCount) ? bestMoveCount : 0,
-  });
 
-  if (hasSweep) {
-    notify({ type: "stage_start", stageIndex: 2, totalStages, stageName: "FMC Premove Sweep" });
-    let sweepOrder = Array.from({ length: sweepLimit }, (_, index) => index);
-    if (sweepUseScout && sweepLimit > sweepRefineSets && remainingMs(sweepDeadlineTs) > 1200) {
-      const scoredPremoves = [];
-
-      // Encapsulates the scout logic for a single premove index; runs direct + optional
-      // inverse concurrently and returns the scored entry for sweep-order ranking.
-      const scoutOnePremove = async (i) => {
-        const premove = FMC_PREMOVE_SETS[i];
-        const scoutDeadlineTs = Math.min(deadlineTs, sweepDeadlineTs, Date.now() + sweepScoutAttemptBudgetMs);
-        const scoutAttemptProfile = buildFmcAttemptProfile(
-          sweepScoutProfileLevel,
-          bestMoveCount,
-          targetMoveCount,
-        );
-        let bestScoutMoveCount = Infinity;
-        let bestScoutInsertionPotential = -Infinity;
-        let solvedScout = false;
-
-        const scoutRuns = [
-          (async () => {
-            const patternWithPremove = getPremovePattern(scramblePattern, premove, directPremovePatternCache);
-            const startedAt = Date.now();
-            const result = await solveFmcEO(scramble, {
-              startPattern: patternWithPremove,
-              premoveMoves: premove,
-              deadlineTs: scoutDeadlineTs,
-              attemptTimeBudgetMs: sweepScoutPhaseAttemptTimeoutMs || sweepScoutAttemptBudgetMs,
-              targetMoveCount: currentTargetMoveCount(),
-              currentBestMoveCount: bestMoveCount,
-              candidateLimit: scoutAttemptProfile.candidateLimit,
-              axisCandidateLimit: scoutAttemptProfile.axisCandidateLimit,
-              eoSequenceLimit: scoutAttemptProfile.eoSequenceLimit,
-              sessionCache: fmcSessionCache,
-            });
-            return { kind: "direct", result, elapsedMs: Date.now() - startedAt };
-          })(),
-        ];
-
-        if (sweepIncludeInverse && sweepScoutIncludeInverse && remainingMs(scoutDeadlineTs) > 120) {
-          scoutRuns.push(
-            (async () => {
-              const patternWithPremove = getPremovePattern(inversePattern, premove, inversePremovePatternCache);
-              const startedAt = Date.now();
-              const result = await solveFmcEO(inverseScramble, {
-                startPattern: patternWithPremove,
-                premoveMoves: premove,
-                deadlineTs: scoutDeadlineTs,
-                attemptTimeBudgetMs: sweepScoutPhaseAttemptTimeoutMs || sweepScoutAttemptBudgetMs,
-                targetMoveCount: currentTargetMoveCount(),
-                currentBestMoveCount: bestMoveCount,
-                candidateLimit: scoutAttemptProfile.candidateLimit,
-                axisCandidateLimit: scoutAttemptProfile.axisCandidateLimit,
-                eoSequenceLimit: scoutAttemptProfile.eoSequenceLimit,
-                sessionCache: fmcSessionCache,
-              });
-              return { kind: "inverse", result, elapsedMs: Date.now() - startedAt };
-            })(),
-          );
-        }
-
-        const scoutResults = await Promise.all(scoutRuns);
-        for (let scoutIndex = 0; scoutIndex < scoutResults.length; scoutIndex += 1) {
-          const scoutRun = scoutResults[scoutIndex];
-          recordPhaseCall("scout", scoutRun.result, scoutRun.elapsedMs);
-          attempts += 1;
-          const created = scoutRun.kind === "direct"
-            ? trackResultCandidates(
-                "FMC_PREMOVE_SCOUT_DIRECT",
-                scoutRun.result,
-                (item) => ({
-                  tag: item.axisName ? `scout:${joinMoves(premove)}:${item.axisName}` : `scout:${joinMoves(premove)}`,
-                  usesCfop: false,
-                  innerSource: item.innerSource || item.source,
-                  axisName: item.axisName,
-                  eoLength: item.eoLength,
-                  drLength: item.drLength,
-                  p2Length: item.p2Length,
-                }),
-                (moves) => premove.concat(moves),
-              )
-            : trackResultCandidates(
-                "FMC_PREMOVE_SCOUT_NISS",
-                scoutRun.result,
-                (item) => ({
-                  tag: item.axisName ? `scout-niss:${joinMoves(premove)}:${item.axisName}` : `scout-niss:${joinMoves(premove)}`,
-                  usesCfop: false,
-                  innerSource: item.innerSource || item.source,
-                  axisName: item.axisName,
-                  eoLength: item.eoLength,
-                  drLength: item.drLength,
-                  p2Length: item.p2Length,
-                }),
-                (moves) => invertMoves(moves).concat(invertMoves(premove)),
-              );
-
-          for (let createdIndex = 0; createdIndex < created.length; createdIndex += 1) {
-            const candidate = created[createdIndex];
-            bestScoutMoveCount = Math.min(bestScoutMoveCount, candidate.moveCount);
-            bestScoutInsertionPotential = Math.max(bestScoutInsertionPotential, candidate.insertionPotential || 0);
-            solvedScout = true;
-          }
-        }
-
-        return {
-          index: i,
-          solved: solvedScout,
-          bestMoveCount: bestScoutMoveCount,
-          insertionPotential: bestScoutInsertionPotential,
-          premoveLength: premove.length,
-        };
-      };
-
-      // Run scout passes in batches of FMC_SCOUT_BATCH_SIZE so multiple premoves interleave
-      // at their async IDA* yield points instead of fully serializing.
-      const FMC_SCOUT_BATCH_SIZE = 3;
-      for (let batchStart = 0; batchStart < sweepLimit; batchStart += FMC_SCOUT_BATCH_SIZE) {
-        if (Date.now() - startedAt >= timeBudgetMs) break;
-        if (remainingMs(deadlineTs) <= 900) break;
-        if (remainingMs(sweepDeadlineTs) <= 450) break;
-        if (bestMoveCount <= targetMoveCount) break;
-
-        const batchEnd = Math.min(batchStart + FMC_SCOUT_BATCH_SIZE, sweepLimit);
-        const batchPromises = [];
-        for (let i = batchStart; i < batchEnd; i += 1) {
-          batchPromises.push(scoutOnePremove(i));
-        }
-        const batchResults = await Promise.all(batchPromises);
-        for (let b = 0; b < batchResults.length; b += 1) {
-          scoredPremoves.push(batchResults[b]);
-        }
-      }
-
-      if (scoredPremoves.length) {
-        scoredPremoves.sort((a, b) => {
-          if (a.solved !== b.solved) return a.solved ? -1 : 1;
-          if (a.bestMoveCount !== b.bestMoveCount) return a.bestMoveCount - b.bestMoveCount;
-          if ((b.insertionPotential || -Infinity) !== (a.insertionPotential || -Infinity)) {
-            return (b.insertionPotential || -Infinity) - (a.insertionPotential || -Infinity);
-          }
-          if (a.premoveLength !== b.premoveLength) return a.premoveLength - b.premoveLength;
-          return a.index - b.index;
-        });
-        const refineCount = getFmcSweepRefineCount(
-          sweepRefineSets,
-          scoredPremoves.length,
-          bestMoveCount,
-          targetMoveCount,
-          sweepProfileLevel,
-        );
-        sweepOrder = scoredPremoves.slice(0, refineCount).map((entry) => entry.index);
-      }
-    }
-
-    // Run sweep passes in batches of FMC_SWEEP_BATCH_SIZE for better time interleaving
-    const FMC_SWEEP_BATCH_SIZE = 2;
-    for (let sweepPos = 0; sweepPos < sweepOrder.length; sweepPos += FMC_SWEEP_BATCH_SIZE) {
-      if (Date.now() - startedAt >= timeBudgetMs) break;
-      if (remainingMs(deadlineTs) <= 1200) break;
-      if (remainingMs(sweepDeadlineTs) <= 500) break;
-      if (bestMoveCount <= targetMoveCount) break;
-
-      const sweepBatchEnd = Math.min(sweepPos + FMC_SWEEP_BATCH_SIZE, sweepOrder.length);
-      const sweepBatchRuns = [];
-
-      for (let sp = sweepPos; sp < sweepBatchEnd; sp += 1) {
-        const i = sweepOrder[sp];
-        const premove = FMC_PREMOVE_SETS[i];
-        const iterationDeadlineTs = Math.min(deadlineTs, sweepDeadlineTs, Date.now() + sweepAttemptBudgetMs);
-        const sweepAttemptProfile = buildFmcAttemptProfile(
-          sweepProfileLevel,
-          bestMoveCount,
-          targetMoveCount,
-        );
-        if (typeof onProgress === "function") {
-          try {
-            void onProgress({
-              type: "fallback_start",
-              stageName: `FMC Sweep ${sp + 1}/${sweepOrder.length}`,
-              reason: "PREMOVE",
-            });
-          } catch (_) {}
-        }
-
-        sweepBatchRuns.push(
-          (async () => {
-            const patternWithPremove = getPremovePattern(scramblePattern, premove, directPremovePatternCache);
-            const startedAt = Date.now();
-            const result = await solveFmcEO(scramble, {
-              startPattern: patternWithPremove,
-              premoveMoves: premove,
-              deadlineTs: iterationDeadlineTs,
-              attemptTimeBudgetMs: sweepPhaseAttemptTimeoutMs || sweepAttemptBudgetMs,
-              targetMoveCount: currentTargetMoveCount(),
-              currentBestMoveCount: bestMoveCount,
-              candidateLimit: sweepAttemptProfile.candidateLimit,
-              axisCandidateLimit: sweepAttemptProfile.axisCandidateLimit,
-              eoSequenceLimit: sweepAttemptProfile.eoSequenceLimit,
-              sessionCache: fmcSessionCache,
-            });
-            return { kind: "direct", premove, result, elapsedMs: Date.now() - startedAt };
-          })(),
-        );
-
-        if (sweepIncludeInverse) {
-          sweepBatchRuns.push(
-            (async () => {
-              const patternWithPremove = getPremovePattern(inversePattern, premove, inversePremovePatternCache);
-              const startedAt = Date.now();
-              const result = await solveFmcEO(inverseScramble, {
-                startPattern: patternWithPremove,
-                premoveMoves: premove,
-                deadlineTs: iterationDeadlineTs,
-                attemptTimeBudgetMs: sweepPhaseAttemptTimeoutMs || sweepAttemptBudgetMs,
-                targetMoveCount: currentTargetMoveCount(),
-                currentBestMoveCount: bestMoveCount,
-                candidateLimit: sweepAttemptProfile.candidateLimit,
-                axisCandidateLimit: sweepAttemptProfile.axisCandidateLimit,
-                eoSequenceLimit: sweepAttemptProfile.eoSequenceLimit,
-                sessionCache: fmcSessionCache,
-              });
-              return { kind: "inverse", premove, result, elapsedMs: Date.now() - startedAt };
-            })(),
-          );
-        }
-      }
-
-      const sweepResults = await Promise.all(sweepBatchRuns);
-      for (let resultIndex = 0; resultIndex < sweepResults.length; resultIndex += 1) {
-        const sweepRun = sweepResults[resultIndex];
-        const premove = sweepRun.premove;
-        recordPhaseCall("premoveSweep", sweepRun.result, sweepRun.elapsedMs);
-        attempts += 1;
-        if (sweepRun.kind === "direct") {
-          trackResultCandidates(
-            "FMC_PREMOVE_DIRECT",
-            sweepRun.result,
-            (item) => ({
-              tag: item.axisName ? `premove:${joinMoves(premove)}:${item.axisName}` : `premove:${joinMoves(premove)}`,
-              usesCfop: false,
-              innerSource: item.innerSource || item.source,
-              axisName: item.axisName,
-              eoLength: item.eoLength,
-              drLength: item.drLength,
-              p2Length: item.p2Length,
-            }),
-            (moves) => premove.concat(moves),
-          );
-          continue;
-        }
-        trackResultCandidates(
-          "FMC_PREMOVE_NISS",
-          sweepRun.result,
-          (item) => ({
-            tag: item.axisName ? `niss:${joinMoves(premove)}:${item.axisName}` : `niss:${joinMoves(premove)}`,
-            usesCfop: false,
-            innerSource: item.innerSource || item.source,
-            axisName: item.axisName,
-            eoLength: item.eoLength,
-            drLength: item.drLength,
-            p2Length: item.p2Length,
-          }),
-          (moves) => invertMoves(moves).concat(invertMoves(premove)),
-        );
-      }
-    }
-    notify({
-      type: "stage_done",
-      stageIndex: 2,
-      totalStages,
-      stageName: "FMC Premove Sweep",
-      moveCount: Number.isFinite(bestMoveCount) ? bestMoveCount : 0,
-    });
+  if (!wasmFmcDone) {
+    return {
+      ok: false,
+      reason: "FMC_WASM_NOT_READY",
+      attempts,
+      performanceDiagnostics: finalizeDiagnostics(),
+    };
   }
 
   candidates.sort(compareFmcCandidatePriority);
@@ -1683,14 +1604,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const verificationStartedAt = Date.now();
   for (let i = 0; i < verifyLimit; i += 1) {
     const candidate = candidates[i];
-    if (await verifyCandidate(scramblePattern, candidate, { cache: verificationCache, solvedPattern })) {
+    if (await verifyCandidate(null, candidate, { cache: verificationCache, scrambleString: scramble })) {
       validCandidates.push(candidate);
     }
   }
   if (!validCandidates.length && verifyLimit < candidates.length) {
     for (let i = verifyLimit; i < candidates.length; i += 1) {
       const candidate = candidates[i];
-      if (await verifyCandidate(scramblePattern, candidate, { cache: verificationCache, solvedPattern })) {
+      if (await verifyCandidate(null, candidate, { cache: verificationCache, scrambleString: scramble })) {
         validCandidates.push(candidate);
         if (validCandidates.length >= 3) break;
       }
@@ -1733,12 +1654,26 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           } catch (_) {}
         }
 
-        const optimizedMoves = optimizeSolutionWithInsertions(scramblePattern, target.moves, {
-          maxPasses: insertionMaxPasses,
-          minWindow: insertionMinWindow,
-          maxWindow: insertionMaxWindow,
-          maxDepth: insertionMaxDepth,
-        });
+        const optimizedMoves = await (async () => {
+          // WASM fast path: integer BFS, ~50x faster than cubing.js pattern BFS
+          try {
+            const wasmResult = await optimizeInsertionWasm(scramble, target.solution, {
+              maxPasses: insertionMaxPasses,
+              minWindow: insertionMinWindow,
+              maxWindow: insertionMaxWindow,
+              maxDepth: insertionMaxDepth,
+            });
+            if (wasmResult && wasmResult.ok && typeof wasmResult.solution === "string") {
+              const wasmMoves = wasmResult.solution.split(/\s+/).filter(Boolean);
+              if (wasmMoves.length < target.moveCount) {
+                return wasmMoves;
+              }
+              return target.moves; // WASM found no improvement — skip JS fallback
+            }
+          } catch (_) {}
+          // WASM insertion failed or found no improvement — return original moves
+          return target.moves;
+        })();
 
         if (optimizedMoves.length < target.moveCount) {
           const insertionCandidate = createCandidate(
@@ -1747,12 +1682,19 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
               tag: `insertion:${target.source}`,
               usesCfop: target.usesCfop,
               innerSource: target.innerSource || target.source,
+              axisName: target.axisName,
+              eoMoves: target.eoMoves,
+              drMoves: target.drMoves,
+              finishMoves: target.finishMoves,
+              premoveMoves: target.premoveMoves,
+              skeletonMoves: target.moves.slice(),
+              insertionBaseMoves: target.moves.slice(),
             },
             optimizedMoves,
           );
           if (
             insertionCandidate &&
-            (await verifyCandidate(scramblePattern, insertionCandidate, { cache: verificationCache, solvedPattern }))
+            (await verifyCandidate(null, insertionCandidate, { cache: verificationCache, scrambleString: scramble }))
           ) {
             if (!validCandidates.some((existing) => existing.solution === insertionCandidate.solution)) {
               validCandidates.push(insertionCandidate);
@@ -1834,6 +1776,21 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     .slice(0, 3)
     .map((candidate, index) => `${index + 1}. ${candidate.moveCount}수 [${candidate.source}] ${candidate.solution}`);
 
+  // Build FMC part breakdown for the best candidate
+  const parts = buildFmcParts(best);
+
+  // Use parts directly as stages — preserves isSummary, moveCount, notes for all rows
+  // (Skeleton, Insertion summary rows are included; renderSolverStages handles isSummary correctly)
+  const fmcStages = parts.length > 0 ? parts : [
+    { name: "FMC Direct", solution: direct?.solution || "-" },
+    { name: "FMC NISS", solution: inverse?.solution ? invertAlg(inverse.solution) : "-" },
+    { name: "FMC Best", solution: best.solution },
+  ];
+
+  // solutionDisplay holds top candidates supplementary info.
+  // Parts breakdown is carried via stages (= parts) and rendered as stageLines in the UI.
+  const solutionDisplaySections = ["Top Candidates", ...candidateLines];
+
   return {
     ok: true,
     solution: best.solution,
@@ -1842,12 +1799,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     bound: best.moveCount,
     source: best.source,
     attempts,
-    stages: [
-      { name: "FMC Direct", solution: direct?.solution || "-" },
-      { name: "FMC NISS", solution: inverse?.solution ? invertAlg(inverse.solution) : "-" },
-      { name: "FMC Best", solution: best.solution },
-    ],
-    solutionDisplay: [best.solution, "", "Top Candidates", ...candidateLines].join("\n"),
+    stages: fmcStages,
+    parts,
+    solutionDisplay: solutionDisplaySections.join("\n"),
     performanceDiagnostics: finalizeDiagnostics(),
   };
 }

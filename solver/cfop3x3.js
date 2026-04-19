@@ -127,7 +127,10 @@ const CROSS_COLOR_LABELS = {
 };
 const CROSS_COLOR_SEQUENCE = ["D", "U", "F", "B", "R", "L"];
 // Per-color budget for CN cross probe; keeps total probe time bounded regardless of IDA* depth.
-const CN_CROSS_PROBE_BUDGET_MS = 150;
+// 40ms is sufficient for ≤7-move crosses (compact IDA* typically <5ms).
+const CN_CROSS_PROBE_BUDGET_MS = 40;
+// Hard cap on total CN probe time across all 6 colors.
+const CN_PROBE_TOTAL_BUDGET_MS = 300;
 const CROSS_EDGE_TARGETS = {
   D: ["DF", "DR", "DB", "DL"],
   U: ["UF", "UR", "UB", "UL"],
@@ -141,9 +144,23 @@ let f2lCaseLibraryReady = false;
 const formulaValidityCache = new Map();
 const formulaListCache = new Map();
 const singleStageFormulaCaseLibraryCache = new Map();
-const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 64;
+const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 2048;
+const FORMULA_LOOKUP_CACHE_LIMIT = 64;
 const normalizeFormulaCache = new Map();
 const NORMALIZE_FORMULA_CACHE_LIMIT = 4096;
+const EMPTY_MOVES = Object.freeze([]);
+const formulaKeyLookupCache = new Map();
+const formulaCanonicalLookupCache = new Map();
+const CASE_AWARE_FORMULA_PREFERENCE_CACHE_LIMIT = 4096;
+const EXACT_CASE_FORMULA_KEY_CACHE_LIMIT = 32768;
+const EXACT_CASE_FORMULA_PREFERENCE_CACHE_LIMIT = 4096;
+const LL_FAMILY_SCORE_CACHE_PER_ENTRY_LIMIT = 8;
+const llFamilyScoresCache = new WeakMap();
+const caseAwareFormulaPreferenceCache = new Map();
+const exactCaseFormulaKeyCache = new Map();
+const exactCaseFormulaPreferenceCache = new Map();
+const objectCacheIdMap = new WeakMap();
+let nextObjectCacheId = 1;
 
 let contextPromise = null;
 let contextReady = false;
@@ -209,9 +226,21 @@ function summarizeF2LDiagnostics(f2lDiagnostics) {
     finalMethod: f2lDiagnostics.finalMethod || null,
     beamSucceeded: f2lDiagnostics.beamSucceeded === true,
     beamTermination: f2lDiagnostics.beamTermination || null,
+    stageWallTime: Number.isFinite(f2lDiagnostics.stageWallTime) ? f2lDiagnostics.stageWallTime : 0,
+    perPairTime: Array.isArray(f2lDiagnostics.perPairTime)
+      ? f2lDiagnostics.perPairTime.map(t => Number.isFinite(t) ? t : 0)
+      : [],
+    attemptsCount: Number.isFinite(f2lDiagnostics.attemptsCount)
+      ? f2lDiagnostics.attemptsCount
+      : Number.isFinite(f2lDiagnostics.beamAttempts)
+        ? f2lDiagnostics.beamAttempts
+        : 0,
     beamAttempts: Number.isFinite(f2lDiagnostics.beamAttempts) ? f2lDiagnostics.beamAttempts : 0,
     candidateScanCount: Number.isFinite(f2lDiagnostics.candidateScanCount)
       ? f2lDiagnostics.candidateScanCount
+      : 0,
+    fallbackFrequency: Number.isFinite(f2lDiagnostics.fallbackFrequency)
+      ? f2lDiagnostics.fallbackFrequency
       : 0,
     nonCompactPathCount: Number.isFinite(f2lDiagnostics.nonCompactPathCount)
       ? f2lDiagnostics.nonCompactPathCount
@@ -229,12 +258,33 @@ function summarizeF2LDiagnostics(f2lDiagnostics) {
     beamDepthProgression: Array.isArray(f2lDiagnostics.beamDepthProgression)
       ? f2lDiagnostics.beamDepthProgression.map((entry) => ({ ...entry }))
       : [],
+    compactPathUsed: f2lDiagnostics.compactPathUsed === true,
     cacheRates: {
       metrics: buildCacheRate(f2lDiagnostics.cacheStats?.metrics),
       stylePenalty: buildCacheRate(f2lDiagnostics.cacheStats?.stylePenalty),
       transitionPenalty: buildCacheRate(f2lDiagnostics.cacheStats?.transitionPenalty),
       downstreamPenalty: buildCacheRate(f2lDiagnostics.cacheStats?.downstreamPenalty),
     },
+  };
+}
+
+function summarizeSingleStageStageDiagnostics(stage, libraryTelemetry) {
+  if (!isSingleStageFormulaStage(stage) || !libraryTelemetry) return null;
+  const collector = stage?.performanceCollector && stage.performanceCollector.singleStage === true
+    ? stage.performanceCollector
+    : null;
+  return {
+    lookupElapsedMs: Number.isFinite(collector?.lookupElapsedMs) ? collector.lookupElapsedMs : 0,
+    attempts: Number.isFinite(collector?.attempts) ? collector.attempts : 0,
+    candidateCount: Number.isFinite(collector?.candidateCount) ? collector.candidateCount : 0,
+    libraryCacheHit: collector?.libraryCacheHit === true,
+    cacheSize: Number.isFinite(collector?.cacheSize) ? collector.cacheSize : singleStageFormulaCaseLibraryCache.size,
+    singleStageLibraryCacheHits: libraryTelemetry.singleStageLibraryCacheHits,
+    singleStageLibraryCacheMisses: libraryTelemetry.singleStageLibraryCacheMisses,
+    singleStageLibraryBuilds: libraryTelemetry.singleStageLibraryBuilds,
+    singleStageLibraryBuildMs: libraryTelemetry.singleStageLibraryBuildMs,
+    singleStageLibraryLastBuildMs: libraryTelemetry.singleStageLibraryLastBuildMs,
+    libraryRebuiltDuringStage: libraryTelemetry.singleStageLibraryBuilds > 0,
   };
 }
 
@@ -988,30 +1038,45 @@ function isWideTurnFace(face) {
 }
 
 function getF2LStyleMetrics(moves) {
-  let rotationCount = 0;
-  let aufCount = 0;
-  let wideTurnCount = 0;
-  for (let i = 0; i < moves.length; i++) {
-    const parsed = parseMove(moves[i]);
-    if (!parsed) continue;
-    const face = parsed.face;
-    if (isCubeRotationFace(face)) {
-      rotationCount += 1;
-      continue;
+    let rotationCount = 0;
+    let aufCount = 0;
+    let wideTurnCount = 0;
+    for (let i = 0; i < moves.length; i++) {
+      const parsed = parseMove(moves[i]);
+      if (!parsed) continue;
+      const face = parsed.face;
+      if (isCubeRotationFace(face)) {
+        rotationCount += 1;
+        continue;
+      }
+      if (face === "U") {
+        aufCount += 1;
+      }
+      if (isWideTurnFace(face)) {
+        wideTurnCount += 1;
+      }
     }
-    if (face === "U") {
-      aufCount += 1;
-    }
-    if (isWideTurnFace(face)) {
-      wideTurnCount += 1;
-    }
+    return {
+      rotationCount,
+      aufCount,
+      wideTurnCount,
+    };
   }
-  return {
-    rotationCount,
-    aufCount,
-    wideTurnCount,
-  };
-}
+
+  // Precompute F2L case library metadata for ranking
+  function precomputeF2LMetadata(entry) {
+    const moves = entry.moves;
+    const metrics = getF2LStyleMetrics(moves);
+    // Cache derived metadata to avoid recomputation
+    entry._precomputed = {
+      rotationCount: metrics.rotationCount,
+      aufCount: metrics.aufCount,
+      wideTurnCount: metrics.wideTurnCount,
+      // Static style penalty cached per preset
+      stylePenaltyCache: new Map(),
+    };
+    return entry;
+  }
 
 function encodeF2LStyleMetricKey(metrics) {
   if (!metrics || typeof metrics !== "object") return 0;
@@ -1032,7 +1097,15 @@ function getF2LStylePenaltyFromMetrics(metrics, profile) {
 
 function getF2LStylePenalty(moves, profile) {
   if (!profile) return 0;
-  return getF2LStylePenaltyFromMetrics(getF2LStyleMetrics(moves), profile);
+  // Cache style penalty results per profile/move combination
+  const cacheKey = profile._id + '|' + moves.join('|');
+  if (getF2LStylePenalty.cache && getF2LStylePenalty.cache.has(cacheKey)) {
+    return getF2LStylePenalty.cache.get(cacheKey);
+  }
+  const result = getF2LStylePenaltyFromMetrics(getF2LStyleMetrics(moves), profile);
+  if (!getF2LStylePenalty.cache) getF2LStylePenalty.cache = new Map();
+  getF2LStylePenalty.cache.set(cacheKey, result);
+  return result;
 }
 
 function simplifyMoves(moves) {
@@ -2057,6 +2130,38 @@ function getF2LDownstreamPenalty(downstreamProfile, nextStateKey, predictionWeig
   return Math.max(-MAX_F2L_DOWNSTREAM_PENALTY, Math.min(MAX_F2L_DOWNSTREAM_PENALTY, rawPenalty));
 }
 
+function getObjectCacheId(value) {
+  if (!value || (typeof value !== "object" && typeof value !== "function")) return "null";
+  const cached = objectCacheIdMap.get(value);
+  if (cached !== undefined) return String(cached);
+  const nextId = nextObjectCacheId;
+  nextObjectCacheId += 1;
+  objectCacheIdMap.set(value, nextId);
+  return String(nextId);
+}
+
+function buildMixedCaseBiasSignature(mixedCaseBias = null) {
+  if (!mixedCaseBias || typeof mixedCaseBias !== "object") return "none";
+  return [
+    Number(mixedCaseBias.xcrossWeight) || 0,
+    Number(mixedCaseBias.xxcrossWeight) || 0,
+    Number(mixedCaseBias.zbllWeight) || 0,
+    Number(mixedCaseBias.zblsWeight) || 0,
+    Number(mixedCaseBias.xcrossRate) || 0,
+    Number(mixedCaseBias.xxcrossRate) || 0,
+    Number(mixedCaseBias.zbllRate) || 0,
+    Number(mixedCaseBias.zblsRate) || 0,
+    Number(mixedCaseBias.historicalXCrossRate) || 0,
+    Number(mixedCaseBias.historicalXXCrossRate) || 0,
+    Number(mixedCaseBias.historicalZbllRate) || 0,
+    Number(mixedCaseBias.historicalZblsRate) || 0,
+    Number(mixedCaseBias.zbllRateCap) || 0,
+    Number(mixedCaseBias.zblsRateCap) || 0,
+    Number(mixedCaseBias.xcrossRateOffset) || 0,
+    Number(mixedCaseBias.xxcrossRateOffset) || 0,
+  ].join(":");
+}
+
 function normalizeLlCaseFamilyLabel(label) {
   const text = String(label || "").trim().toUpperCase();
   if (!text) return "OTHER";
@@ -2083,6 +2188,14 @@ function normalizeLlFormulaEntry(entry) {
 }
 
 function buildLlFamilyScoresFromStateEntry(stateEntry, mixedCaseBias = null) {
+  const cacheableStateEntry = stateEntry && typeof stateEntry === "object" ? stateEntry : null;
+  const biasSignature = buildMixedCaseBiasSignature(mixedCaseBias);
+  if (cacheableStateEntry) {
+    const perEntryCache = llFamilyScoresCache.get(cacheableStateEntry);
+    if (perEntryCache && perEntryCache.has(biasSignature)) {
+      return perEntryCache.get(biasSignature);
+    }
+  }
   const familyScores = {
     OLL: 0,
     PLL: 0,
@@ -2203,7 +2316,7 @@ function buildLlFamilyScoresFromStateEntry(stateEntry, mixedCaseBias = null) {
     });
   const preferredFormula = preferredFormulaEntries[0]?.formula || null;
 
-  return {
+  const result = {
     familyScores,
     formulaFamilyScores,
     orderedFamilies,
@@ -2222,6 +2335,14 @@ function buildLlFamilyScoresFromStateEntry(stateEntry, mixedCaseBias = null) {
     topFormulaTotal: topFormulas.length,
     deltaExpectedLlMoves: Number.isFinite(deltaExpectedLlMoves) ? deltaExpectedLlMoves : null,
   };
+
+  if (cacheableStateEntry) {
+    const perEntryCache = llFamilyScoresCache.get(cacheableStateEntry) || new Map();
+    setBoundedMapEntry(perEntryCache, biasSignature, result, LL_FAMILY_SCORE_CACHE_PER_ENTRY_LIMIT);
+    llFamilyScoresCache.set(cacheableStateEntry, perEntryCache);
+  }
+
+  return result;
 }
 
 function addWeightedFormulaPreference(preferenceMap, formula, count) {
@@ -2271,6 +2392,18 @@ function buildCaseAwareFormulaPreferenceMap(
 ) {
   const normalizedStageKey = stageKey === "stage4" ? "stage4" : "stage3";
   const normalizedFamily = normalizeLlCaseFamilyLabel(family);
+  const cacheKey = [
+    getObjectCacheId(stateEntry),
+    getObjectCacheId(fallbackStateEntry),
+    getObjectCacheId(basePreferenceMap),
+    normalizedStageKey,
+    normalizedFamily,
+  ].join("::");
+  if (caseAwareFormulaPreferenceCache.has(cacheKey)) {
+    const cached = caseAwareFormulaPreferenceCache.get(cacheKey);
+    touchMapEntry(caseAwareFormulaPreferenceCache, cacheKey, cached);
+    return cached;
+  }
   const combined = new Map();
   if (basePreferenceMap && typeof basePreferenceMap.get === "function") {
     for (const [formula, count] of basePreferenceMap.entries()) {
@@ -2323,7 +2456,14 @@ function buildCaseAwareFormulaPreferenceMap(
     }
   }
 
-  return combined.size ? combined : basePreferenceMap;
+  const result = combined.size ? combined : basePreferenceMap;
+  setBoundedMapEntry(
+    caseAwareFormulaPreferenceCache,
+    cacheKey,
+    result,
+    CASE_AWARE_FORMULA_PREFERENCE_CACHE_LIMIT,
+  );
+  return result;
 }
 
 function getLlCaseFormulaPreferenceEntries(stateEntry, fallbackStateEntry, stageKey, family) {
@@ -2382,15 +2522,54 @@ function buildExactCaseFormulaPreferenceMap(
   }
   const startCaseKey = stage.key(startPattern.patternData);
   if (!startCaseKey) return basePreferenceMap;
+  const normalizedStageKey = stageKey === "stage4" ? "stage4" : "stage3";
+  const normalizedFamily = normalizeLlCaseFamilyLabel(family);
+  const stageNamespace = getSingleStagePreferenceNamespace(stage, normalizedStageKey, normalizedFamily);
+  const profileCacheNamespace = [
+    getObjectCacheId(stateEntry),
+    getObjectCacheId(fallbackStateEntry),
+    getObjectCacheId(aggregatedStateEntry),
+    getObjectCacheId(basePreferenceMap),
+  ].join(":");
+  const preferenceCacheKey = [
+    profileCacheNamespace,
+    stageNamespace,
+    normalizedStageKey,
+    normalizedFamily,
+    startCaseKey,
+  ].join("::");
+  if (exactCaseFormulaPreferenceCache.has(preferenceCacheKey)) {
+    const cached = exactCaseFormulaPreferenceCache.get(preferenceCacheKey);
+    touchMapEntry(exactCaseFormulaPreferenceCache, preferenceCacheKey, cached);
+    return cached;
+  }
+
+  const getFormulaCaseKey = (formula) => {
+    const normalizedFormula = normalizeAlgorithmText(formula);
+    if (!normalizedFormula) return null;
+    const formulaCacheKey = `${stageNamespace}::${normalizedFormula}`;
+    if (exactCaseFormulaKeyCache.has(formulaCacheKey)) {
+      const cached = exactCaseFormulaKeyCache.get(formulaCacheKey);
+      touchMapEntry(exactCaseFormulaKeyCache, formulaCacheKey, cached);
+      return cached || null;
+    }
+    const casePattern = tryApplyAlg(ctx.solvedPattern, invertAlg(normalizedFormula));
+    const resolvedCaseKey = casePattern ? stage.key(casePattern.patternData) || "" : "";
+    setBoundedMapEntry(
+      exactCaseFormulaKeyCache,
+      formulaCacheKey,
+      resolvedCaseKey,
+      EXACT_CASE_FORMULA_KEY_CACHE_LIMIT,
+    );
+    return resolvedCaseKey || null;
+  };
 
   // Helper: build case-matched map from a set of preference entries
   function matchCaseEntries(entries) {
     const map = new Map();
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      const casePattern = tryApplyAlg(ctx.solvedPattern, invertAlg(entry.formula));
-      if (!casePattern) continue;
-      const caseKey = stage.key(casePattern.patternData);
+      const caseKey = getFormulaCaseKey(entry.formula);
       if (caseKey !== startCaseKey) continue;
       addWeightedFormulaPreference(map, entry.formula, entry.weight);
     }
@@ -2418,7 +2597,16 @@ function buildExactCaseFormulaPreferenceMap(
     resolvedMap = matchCaseEntries(aggEntries);
   }
 
-  if (!resolvedMap.size) return basePreferenceMap || null;
+  if (!resolvedMap.size) {
+    const result = basePreferenceMap || null;
+    setBoundedMapEntry(
+      exactCaseFormulaPreferenceCache,
+      preferenceCacheKey,
+      result,
+      EXACT_CASE_FORMULA_PREFERENCE_CACHE_LIMIT,
+    );
+    return result;
+  }
 
   const combined = new Map();
   if (basePreferenceMap && typeof basePreferenceMap.get === "function") {
@@ -2429,7 +2617,14 @@ function buildExactCaseFormulaPreferenceMap(
   for (const [formula, count] of resolvedMap.entries()) {
     addWeightedFormulaPreference(combined, formula, count * 3.2);
   }
-  return combined.size ? combined : basePreferenceMap;
+  const result = combined.size ? combined : basePreferenceMap;
+  setBoundedMapEntry(
+    exactCaseFormulaPreferenceCache,
+    preferenceCacheKey,
+    result,
+    EXACT_CASE_FORMULA_PREFERENCE_CACHE_LIMIT,
+  );
+  return result;
 }
 
 function normalizeLlFamilyTemperature(value, fallback = 1.5) {
@@ -3390,6 +3585,13 @@ async function getF2LCaseLibrary(ctx) {
             anchorEdgePos: edgePosData.length ? edgePosData[0] : -1,
             anchorEdgePiece: edgePiecesData.length ? edgePiecesData[0] : -1,
             anchorEdgeOri: edgeOriData.length ? edgeOriData[0] : -1,
+            // Precomputed ranking metadata for fast lookup
+            _rankingMeta: {
+              rotationCount: styleMetrics.rotationCount,
+              aufCount: styleMetrics.aufCount,
+              wideTurnCount: styleMetrics.wideTurnCount,
+              moveCount: moves.length,
+            },
           };
           const entryIndex = entries.length;
           entries.push(entry);
@@ -3455,6 +3657,9 @@ export async function prewarm3x3StrictCfopLibraries(options = {}) {
   const ctx = await getCfopContext();
   if (options.includeF2L !== false) {
     await getF2LCaseLibrary(ctx);
+  }
+  if (options.includeSingleStage !== false) {
+    _warmOllPllLibraries(ctx);
   }
   return {
     ok: true,
@@ -4197,6 +4402,50 @@ function resolveStageFormulaKeys(stageOrName, startPattern = null, ctx = null) {
   return stageName ? [stageName] : [];
 }
 
+function getSingleStageLibraryNamespace(stageOrName, formulaKeys = null) {
+  const resolvedKeys =
+    Array.isArray(formulaKeys) && formulaKeys.length
+      ? formulaKeys
+      : resolveStageFormulaKeys(stageOrName);
+  const normalizedKeys = Array.from(new Set(
+    resolvedKeys
+      .map((key) => String(key || "").trim().toUpperCase())
+      .filter(Boolean),
+  ));
+  const stageName = typeof stageOrName === "string" ? stageOrName : stageOrName?.name || "";
+  if (!normalizedKeys.length) return stageName;
+  const llOnly = normalizedKeys.every((key) => key === "OLL" || key === "PLL" || key === "ZBLS" || key === "ZBLL");
+  if (llOnly) {
+    if (normalizedKeys.length === 1 && normalizedKeys[0] === "OLL") return "LL:OLL";
+    if (normalizedKeys.length === 1 && normalizedKeys[0] === "PLL") return "LL:PLL";
+    if (normalizedKeys.length === 1 && normalizedKeys[0] === "ZBLS") return "LL:ZBLS";
+    const hasSharedZbllKeySpace =
+      typeof stageOrName?.zbllKey === "function" &&
+      normalizedKeys.includes("ZBLL") &&
+      normalizedKeys.every((key) => key === "ZBLL" || key === "PLL");
+    if (hasSharedZbllKeySpace) return "LL:ZBLL_PLL";
+  }
+  return [stageName, normalizedKeys.join(",")].filter(Boolean).join("::");
+}
+
+function getCanonicalSingleStageFormulaKeys(stageOrName, formulaKeys = null) {
+  const namespace = getSingleStageLibraryNamespace(stageOrName, formulaKeys);
+  if (namespace === "LL:OLL") return ["OLL"];
+  if (namespace === "LL:PLL") return ["PLL"];
+  if (namespace === "LL:ZBLS") return ["ZBLS"];
+  if (namespace === "LL:ZBLL_PLL") return ["ZBLL", "PLL"];
+  return Array.isArray(formulaKeys) && formulaKeys.length
+    ? formulaKeys.slice()
+    : resolveStageFormulaKeys(stageOrName);
+}
+
+function getSingleStagePreferenceNamespace(stage, stageKey, family) {
+  const familyKeys = family ? [normalizeLlCaseFamilyLabel(family)] : null;
+  return [String(stageKey || stage?.name || ""), getSingleStageLibraryNamespace(stage, familyKeys)]
+    .filter(Boolean)
+    .join("::");
+}
+
 function resolveStageDisplayName(stage, startPattern = null, ctx = null) {
   if (!stage || typeof stage !== "object") return "";
   if (typeof stage.getDisplayName === "function") {
@@ -4228,6 +4477,30 @@ function getFormulaListForStage(stageOrName, startPattern = null, ctx = null) {
     typeof stageOrName === "string" ? stageOrName : stageOrName?.name || "";
   const keys = resolveStageFormulaKeys(stageOrName, startPattern, ctx);
   const cacheKey = `${stageName}::${keys.join("|")}`;
+  const cached = formulaListCache.get(cacheKey);
+  if (cached) return cached;
+  const seen = new Set();
+  const merged = [];
+  for (let i = 0; i < keys.length; i++) {
+    const formulas = getFormulaListByKey(keys[i]);
+    for (let j = 0; j < formulas.length; j++) {
+      const alg = sanitizeFormulaAlg(formulas[j]);
+      if (!alg || seen.has(alg)) continue;
+      seen.add(alg);
+      merged.push(alg);
+    }
+  }
+  formulaListCache.set(cacheKey, merged);
+  if (formulaListCache.size > 24) {
+    const oldest = formulaListCache.keys().next().value;
+    if (oldest !== undefined) formulaListCache.delete(oldest);
+  }
+  return merged;
+}
+
+function getFormulaListForFormulaKeys(formulaKeys) {
+  const keys = Array.isArray(formulaKeys) ? formulaKeys.filter((key) => typeof key === "string" && key.trim()) : [];
+  const cacheKey = `FORMULA_KEYS::${keys.join("|")}`;
   const cached = formulaListCache.get(cacheKey);
   if (cached) return cached;
   const seen = new Set();
@@ -4382,6 +4655,12 @@ function sortFormulasByPreference(formulas, formulaPreferenceMap) {
 function buildFormulaKeyLookup(formulaKeys) {
   const lookup = new Map();
   if (!Array.isArray(formulaKeys) || !formulaKeys.length) return lookup;
+  const cacheKey = formulaKeys.join(",");
+  const cached = formulaKeyLookupCache.get(cacheKey);
+  if (cached) {
+    touchMapEntry(formulaKeyLookupCache, cacheKey, cached);
+    return cached;
+  }
   for (let k = 0; k < formulaKeys.length; k++) {
     const formulaKey = formulaKeys[k];
     const sourceFormulas = getFormulaListByKey(formulaKey);
@@ -4391,12 +4670,23 @@ function buildFormulaKeyLookup(formulaKeys) {
       lookup.set(normalized, formulaKey);
     }
   }
+  formulaKeyLookupCache.set(cacheKey, lookup);
+  if (formulaKeyLookupCache.size > FORMULA_LOOKUP_CACHE_LIMIT) {
+    const oldest = formulaKeyLookupCache.keys().next().value;
+    if (oldest !== undefined) formulaKeyLookupCache.delete(oldest);
+  }
   return lookup;
 }
 
 function buildFormulaCanonicalLookup(formulaKeys) {
   const lookup = new Map();
   if (!Array.isArray(formulaKeys) || !formulaKeys.length) return lookup;
+  const cacheKey = formulaKeys.join(",");
+  const cached = formulaCanonicalLookupCache.get(cacheKey);
+  if (cached) {
+    touchMapEntry(formulaCanonicalLookupCache, cacheKey, cached);
+    return cached;
+  }
   for (let k = 0; k < formulaKeys.length; k++) {
     const formulaKey = formulaKeys[k];
     const sourceFormulas = getFormulaListByKey(formulaKey);
@@ -4419,6 +4709,11 @@ function buildFormulaCanonicalLookup(formulaKeys) {
       }
     }
   }
+  formulaCanonicalLookupCache.set(cacheKey, lookup);
+  if (formulaCanonicalLookupCache.size > FORMULA_LOOKUP_CACHE_LIMIT) {
+    const oldest = formulaCanonicalLookupCache.keys().next().value;
+    if (oldest !== undefined) formulaCanonicalLookupCache.delete(oldest);
+  }
   return lookup;
 }
 
@@ -4429,14 +4724,8 @@ function getSingleStageCaseLibraryKey(
   postAufList,
   formulaKeys = null,
 ) {
-  const keySig =
-    Array.isArray(formulaKeys) && formulaKeys.length
-      ? formulaKeys.join(",")
-      : Array.isArray(stage?.formulaKeys) && stage.formulaKeys.length
-        ? stage.formulaKeys.join(",")
-        : stage?.name || "";
+  const keySig = getSingleStageLibraryNamespace(stage, formulaKeys);
   return [
-    stage?.name || "",
     keySig,
     formulas.length,
     preAufList.join("|"),
@@ -4500,19 +4789,41 @@ function getSingleStageFormulaCaseLibrary(
   formulaKeyLookup = null,
 ) {
   if (!shouldUseSingleStageCaseLibrary(stage, formulas)) return null;
+  const performanceCollector = stage?.performanceCollector || null;
+  const canonicalFormulaKeys = getCanonicalSingleStageFormulaKeys(stage, formulaKeys);
+  const useCanonicalFormulaSet =
+    Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length > 0 && (
+      !Array.isArray(formulaKeys) ||
+      canonicalFormulaKeys.length !== formulaKeys.length ||
+      canonicalFormulaKeys.some((key, index) => key !== formulaKeys[index])
+    );
+  const libraryFormulas = useCanonicalFormulaSet
+    ? filterValidFormulas(getFormulaListForFormulaKeys(canonicalFormulaKeys), ctx)
+    : formulas;
+  const libraryFormulaKeyLookup = useCanonicalFormulaSet
+    ? buildFormulaKeyLookup(canonicalFormulaKeys)
+    : formulaKeyLookup;
   const cacheKey = getSingleStageCaseLibraryKey(
     stage,
-    formulas,
+    libraryFormulas,
     preAufList,
     postAufList,
-    formulaKeys,
+    canonicalFormulaKeys,
   );
   const cached = singleStageFormulaCaseLibraryCache.get(cacheKey);
   if (cached) {
+    touchMapEntry(singleStageFormulaCaseLibraryCache, cacheKey, cached);
     cfopLibraryTelemetry.singleStageLibraryCacheHits += 1;
+    if (performanceCollector) {
+      performanceCollector.libraryCacheHit = true;
+      performanceCollector.cacheSize = singleStageFormulaCaseLibraryCache.size;
+    }
     return cached;
   }
   cfopLibraryTelemetry.singleStageLibraryCacheMisses += 1;
+  if (performanceCollector) {
+    performanceCollector.libraryCacheHit = false;
+  }
 
   const caseMap = new Map();
   const solved = ctx?.solvedPattern;
@@ -4520,16 +4831,17 @@ function getSingleStageFormulaCaseLibrary(
   const builtAt = Date.now();
 
   const useZbllKey = typeof stage.zbllKey === "function" &&
-    Array.isArray(formulaKeys) && formulaKeys.length > 0 &&
-    formulaKeys.every(k => k === "ZBLL" || k === "PLL");
+    Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length > 0 &&
+    canonicalFormulaKeys.includes("ZBLL") &&
+    canonicalFormulaKeys.every(k => k === "ZBLL" || k === "PLL");
   const getKeyFn = useZbllKey ? (data) => stage.zbllKey(data) : (data) => stage.key(data);
 
   for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
     const rot = FORMULA_ROTATIONS[r];
     for (let a = 0; a < preAufList.length; a++) {
       const preAuf = preAufList[a];
-      for (let i = 0; i < formulas.length; i++) {
-        const alg = formulas[i];
+      for (let i = 0; i < libraryFormulas.length; i++) {
+        const alg = libraryFormulas[i];
         for (let p = 0; p < postAufList.length; p++) {
           const postAuf = postAufList[p];
           const candidate = buildFormulaCandidate(rot, preAuf, alg, postAuf);
@@ -4552,8 +4864,8 @@ function getSingleStageFormulaCaseLibrary(
           // Look up by full candidate first; fall back to base formula (without AUF/rotation)
           // so that AUF-prefixed candidates still get the correct formulaKey
           const normalizedAlg = normalizeFormulaMatchText(alg);
-          const formulaKey = formulaKeyLookup?.get(normalizedCandidate)
-            ?? formulaKeyLookup?.get(normalizedAlg)
+          const formulaKey = libraryFormulaKeyLookup?.get(normalizedCandidate)
+            ?? libraryFormulaKeyLookup?.get(normalizedAlg)
             ?? null;
           const caseKey = getKeyFn(normalizedCasePattern.patternData);
           const caseCandidates = caseMap.get(caseKey) || [];
@@ -4589,16 +4901,25 @@ function getSingleStageFormulaCaseLibrary(
   cfopLibraryTelemetry.singleStageLibraryBuilds += 1;
   cfopLibraryTelemetry.singleStageLibraryTotalBuildMs += buildMs;
   cfopLibraryTelemetry.singleStageLibraryLastBuildMs = buildMs;
+  if (typeof process !== 'undefined' && process.env.DEBUG_CFOP_BUILD) {
+    console.log(`[CFOP_LIB_BUILD] stage=${stage?.name || 'unknown'} key=${cacheKey?.slice(0,32)} buildMs=${buildMs} entries=${caseMap?.size || 0}`);
+  }
   singleStageFormulaCaseLibraryCache.set(cacheKey, library);
   if (singleStageFormulaCaseLibraryCache.size > SINGLE_STAGE_LIBRARY_CACHE_LIMIT) {
     const oldest = singleStageFormulaCaseLibraryCache.keys().next().value;
     if (oldest !== undefined) singleStageFormulaCaseLibraryCache.delete(oldest);
   }
+  if (performanceCollector) {
+    performanceCollector.cacheSize = singleStageFormulaCaseLibraryCache.size;
+  }
   return library;
 }
 
 function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
+  const performanceCollector = stage?.performanceCollector || null;
+  const lookupStartedAt = performanceCollector ? Date.now() : 0;
   const formulaKeys = resolveStageFormulaKeys(stage, startPattern, ctx);
+  const formulaNamespace = getSingleStageLibraryNamespace(stage, formulaKeys);
   const formulaPreferenceMap =
     typeof stage.getFormulaPreferenceMap === "function"
       ? stage.getFormulaPreferenceMap(startPattern, ctx)
@@ -4624,7 +4945,7 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
   const postAufList =
     Array.isArray(stage.formulaPostAufList) && stage.formulaPostAufList.length
       ? stage.formulaPostAufList
-      : isPllLikeFormulaStage(stage)
+      : formulaNamespace === "LL:PLL" || formulaNamespace === "LL:ZBLL_PLL" || isPllLikeFormulaStage(stage)
         ? FORMULA_AUF
         : [""];
   const formulaAttemptLimit = Number.isFinite(stage.formulaAttemptLimit)
@@ -4640,27 +4961,59 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
     formulaKeys,
     formulaKeyLookup,
   );
+  if (performanceCollector) {
+    performanceCollector.lookupElapsedMs = Math.max(1, Date.now() - lookupStartedAt);
+    performanceCollector.cacheSize = singleStageFormulaCaseLibraryCache.size;
+  }
   if (library?.caseMap?.size) {
+    const allowedFormulaKeySet = formulaKeys.length ? new Set(formulaKeys) : null;
     const startKey = library.useZbllKey && typeof stage.zbllKey === "function"
       ? stage.zbllKey(startPattern.patternData)
       : stage.key(startPattern.patternData);
-    const candidates = library.caseMap.get(startKey);
+    const rawCandidates = library.caseMap.get(startKey);
+    const candidates = Array.isArray(rawCandidates) && allowedFormulaKeySet
+      ? rawCandidates.filter((cand) => {
+          if (!cand || !cand.formulaKey) return true;
+          return allowedFormulaKeySet.has(cand.formulaKey);
+        })
+      : rawCandidates;
+    if (performanceCollector) {
+      performanceCollector.candidateCount = Array.isArray(candidates) ? candidates.length : 0;
+    }
     if (candidates?.length) {
-      // Try all candidates for this key (multiple formulas may map to same BL+LL-EO key).
-      for (const cand of candidates) {
+      const orderedCandidates = Array.isArray(candidates) && candidates.length > 1 && hasFormulaPreference
+        ? (() => {
+            const preferred = selectPreferredSingleStageCaseCandidate(
+              candidates,
+              formulaPreferenceMap,
+              formulaCanonicalLookup,
+            );
+            if (!preferred) return candidates;
+            return [preferred, ...candidates.filter((cand) => cand !== preferred)];
+          })()
+        : candidates;
+      // Try all allowed candidates for this key; preference-ranked candidate goes first.
+      for (const cand of orderedCandidates) {
+        attempts += 1;
         if (!Array.isArray(cand.moves) || cand.moves.length > stage.maxDepth) continue;
         const nextPattern = tryApplyMoves(startPattern, cand.moves);
         if (nextPattern && acceptsFormulaResult(nextPattern, cand.formulaKey || null)) {
+          if (performanceCollector) {
+            performanceCollector.attempts = attempts;
+          }
           return {
             ok: true,
             moves: cand.moves.slice(),
             depth: cand.moves.length,
-            nodes: candidates.length,
+            nodes: orderedCandidates.length,
             bound: cand.moves.length,
             formulaKey: cand.formulaKey || null,
           };
         }
       }
+    }
+    if (performanceCollector) {
+      performanceCollector.attempts = attempts;
     }
     // Library is comprehensive — state not in map means no formula applies
     return null;
@@ -4701,6 +5054,9 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
             if (acceptsFormulaResult(nextPattern, formulaKey)) {
               const moves = splitMoves(candidate);
               if (moves.length > stage.maxDepth) continue;
+              if (performanceCollector) {
+                performanceCollector.attempts = attempts;
+              }
               return {
                 ok: true,
                 moves,
@@ -4714,6 +5070,10 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
         }
       }
     }
+  }
+  if (performanceCollector) {
+    performanceCollector.attempts = attempts;
+    performanceCollector.lookupElapsedMs = Math.max(1, Date.now() - lookupStartedAt);
   }
   return null;
 }
@@ -4799,13 +5159,15 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
   // Solve each pair sequentially in difficulty order.
   for (let ki = 0; ki < NPAIRS; ki++) {
     const k = pairOrder[ki];
-    const pruneTableK = pruneTables[k];
-    const pairMoveTableK = pairMoveTables[k];
     const solvedPairStateK = f2lSolvedPairStates[k];
+    const trackedPairCount = ki + 1;
 
     // Seed stacks from accumulated running state.
     crossStack[0] = curCrossState;
-    for (let j = 0; j < NPAIRS; j++) pairStacks[j][0] = curPairStates[j];
+    for (let ji = 0; ji < trackedPairCount; ji++) {
+      const j = pairOrder[ji];
+      pairStacks[j][0] = curPairStates[j];
+    }
 
     // Check if already satisfied (cross + pairs pairOrder[0..ki] all solved).
     let alreadySolved = crossStack[0] === solvedCrossIdx && pairStacks[k][0] === solvedPairStateK;
@@ -4827,7 +5189,7 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
       // Heuristic: max(cross distance, distance for current pair + all previously solved pairs).
       // This prevents disturbing previously solved pairs from going unpunished.
       let h = crossPruneTable[crossStack[level]];
-      for (let ji = 0; ji <= ki; ji++) {
+      for (let ji = 0; ji < trackedPairCount; ji++) {
         const j = pairOrder[ji];
         const hj = pruneTables[j][pairStacks[j][level]];
         if (hj > h) h = hj;
@@ -4851,7 +5213,8 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
         totalNodes++;
         // Update all states via precomputed move tables — O(1) per state.
         crossStack[nextLevel] = crossMoveTable[crossStack[level] * allNumMoves + moveIndex];
-        for (let j = 0; j < NPAIRS; j++) {
+        for (let ji = 0; ji < trackedPairCount; ji++) {
+          const j = pairOrder[ji];
           pairStacks[j][nextLevel] = pairMoveTables[j][pairStacks[j][level] * allNumMoves + moveIndex];
         }
         movePath[level] = moveIndex;
@@ -4865,7 +5228,7 @@ function solveF2LCompactIDA(startPattern, stage, ctx) {
 
     // Initial bound: max heuristic over cross + all tracked pairs.
     let bound = crossPruneTable[curCrossState];
-    for (let ji = 0; ji <= ki; ji++) {
+    for (let ji = 0; ji < trackedPairCount; ji++) {
       const j = pairOrder[ji];
       const hj = pruneTables[j][curPairStates[j]];
       if (hj > bound) bound = hj;
@@ -4963,6 +5326,14 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
   let candidateScanCount = 0;
   let nonCompactPathCount = 0;
   let lazyPatternMaterializations = 0;
+  const beamStartedAt = diagnosticsEnabled ? Date.now() : 0;
+  let bestPairProgressSeen = getF2LPairProgress(startPattern.patternData, ctx);
+  const pairReachTimes = diagnosticsEnabled ? [] : null;
+  if (pairReachTimes) {
+    for (let pair = 1; pair <= bestPairProgressSeen; pair++) {
+      pairReachTimes[pair - 1] = 0;
+    }
+  }
   const mixedCfopStages = stage.mixedCfopStages === true;
   const mixedCaseBias = normalizeMixedCaseBias(stage.mixedCaseBias || stage.f2lStyleProfile);
   const isDeadlineExceeded = () => Date.now() >= beamDeadlineTs;
@@ -5014,17 +5385,26 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
         middleEdgeSolved += 1;
       }
     }
-    const score = pieceMismatch * 10 + orientationMismatch;
+    let score = pieceMismatch * 10 + orientationMismatch;
+    if (stage.usePairTable) {
+      score += getF2LPairTablePenalty(data, ctx) * 2;
+    }
+    // Precompute and cache ranking metadata for F2L entries
+    const precomputed = {
+      moveCount: 0, // Will be filled per entry
+      rotationCount: 0, // Precomputed per F2L case lib entry
+      aufCount: 0,
+      wideTurnCount: 0,
+      styleRelatedStaticPenalty: 0,
+    };
     const result = {
       score,
       cornerSolved,
       middleEdgeSolved,
       pairProgress: Math.min(cornerSolved, middleEdgeSolved),
       solvedSum: cornerSolved + middleEdgeSolved,
+      _precomputed: precomputed,
     };
-    if (stage.usePairTable) {
-      result.score += getF2LPairTablePenalty(data, ctx) * 2;
-    }
     metricsCache.set(key, result);
     return result;
   }
@@ -5106,10 +5486,15 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
 
   function finalizeBeamDiagnostics(extra = null) {
     if (!performanceCollector) return;
+    const normalizedPairReachTimes = pairReachTimes
+      ? pairReachTimes.map((time) => Number.isFinite(time) ? time : null).filter((time) => time !== null)
+      : [];
     performanceCollector.beamAttempts = attemptsRef.count;
+    performanceCollector.attemptsCount = attemptsRef.count;
     performanceCollector.candidateScanCount = candidateScanCount;
     performanceCollector.nonCompactPathCount = nonCompactPathCount;
     performanceCollector.lazyPatternMaterializations = lazyPatternMaterializations;
+    performanceCollector.perPairTime = normalizedPairReachTimes;
     performanceCollector.cacheStats = cacheStats
       ? {
           metrics: { ...cacheStats.metrics },
@@ -5124,6 +5509,15 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
     }
   }
 
+  function recordPairProgress(nextPairProgress) {
+    if (!pairReachTimes || !Number.isFinite(nextPairProgress) || nextPairProgress <= bestPairProgressSeen) return;
+    const elapsed = Math.max(1, Date.now() - beamStartedAt);
+    for (let pair = bestPairProgressSeen + 1; pair <= nextPairProgress; pair++) {
+      pairReachTimes[pair - 1] = elapsed;
+    }
+    bestPairProgressSeen = nextPairProgress;
+  }
+
   // Reusable output buffers for compact transform — avoids per-entry allocations in hot path
   const _outCPiece = new Uint8Array(8);
   const _outCOri = new Uint8Array(8);
@@ -5132,6 +5526,16 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
   // Shared mock data wrappers — fields reassigned per use; no new objects in hot path
   const _outMockData = { CORNERS: { pieces: _outCPiece, orientation: _outCOri }, EDGES: { pieces: _outEPiece, orientation: _outEOri } };
   const _nodeMockData = { CORNERS: { pieces: null, orientation: null }, EDGES: { pieces: null, orientation: null } };
+
+  function getBeamNodeMoves(entry) {
+    if (!entry) return EMPTY_MOVES;
+    if (Array.isArray(entry.moves)) return entry.moves;
+    const parentMoves = entry.parentNode ? getBeamNodeMoves(entry.parentNode) : EMPTY_MOVES;
+    const segmentMoves = Array.isArray(entry.segmentMoves) ? entry.segmentMoves : EMPTY_MOVES;
+    const moves = parentMoves.length ? parentMoves.concat(segmentMoves) : segmentMoves.slice();
+    entry.moves = moves;
+    return moves;
+  }
 
   function materializeCompactCandidateState(sourceNode, compactTransform) {
     const cPiece = new Uint8Array(8);
@@ -5166,8 +5570,6 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
     ) {
       return entry;
     }
-    const parentMoves = Array.isArray(entry?.parentNode?.moves) ? entry.parentNode.moves : [];
-    const segmentMoves = Array.isArray(entry?.segmentMoves) ? entry.segmentMoves : [];
     let cPiece = entry?.cPiece || null;
     let cOri = entry?.cOri || null;
     let ePiece = entry?.ePiece || null;
@@ -5185,8 +5587,10 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
       ePiece,
       eOri,
       _pattern: entry?._pattern !== undefined ? entry._pattern : undefined,
-      moves: parentMoves.length ? parentMoves.concat(segmentMoves) : segmentMoves.slice(),
-      moveCount: Number.isFinite(entry?.moveCount) ? entry.moveCount : parentMoves.length + segmentMoves.length,
+      moves: Array.isArray(entry?.moves) ? entry.moves : undefined,
+      parentNode: entry?.parentNode || null,
+      segmentMoves: Array.isArray(entry?.segmentMoves) ? entry.segmentMoves : EMPTY_MOVES,
+      moveCount: Number.isFinite(entry?.moveCount) ? entry.moveCount : 0,
       key: entry?.key,
       ranking: entry?.ranking,
     };
@@ -5206,7 +5610,7 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
     function getCurrentPattern() {
       if (!_lazyPattern) {
         lazyPatternMaterializations += 1;
-        _lazyPattern = startPattern.applyAlg(node.moves.join(' '));
+        _lazyPattern = startPattern.applyAlg(getBeamNodeMoves(node).join(" "));
       }
       return _lazyPattern;
     }
@@ -5228,7 +5632,7 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
         _outEPiece[i] = curEPiece[src];
         _outEOri[i] = (curEOri[src] + eFlip[i]) & 1;
       }
-      if (node.moves.length + candidateMoves.length > stage.maxDepth) return null;
+      if (node.moveCount + candidateMoves.length > stage.maxDepth) return null;
       if (!isCrossSolved(_outMockData, ctx)) return null;
       const nextStateKey = stage.key(_outMockData);
       const seenDepth = bestDepthByState.get(nextStateKey);
@@ -5239,6 +5643,7 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
     // Core ranking/storage logic. nextData may be a mock object (compact path) or real KPattern data.
     function considerCore(nextData, nextStateKey, candidateMoves, candidateMeta = null, nextPattern = null) {
       const nextMetrics = metricsFor(nextData, nextStateKey);
+      recordPairProgress(nextMetrics.pairProgress);
       const isImprove = improvesOver(nextMetrics, currentMetrics);
       const stylePenalty = stylePenaltyForMoves(candidateMoves, candidateMeta);
       const transitionPenaltyRaw = transitionPenaltyForState(node.key, nextStateKey);
@@ -5286,43 +5691,52 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
         return;
       }
       const downstreamPenalty = downstreamBasePenalty + zbllOpportunityBonus;
-      const ranking = {
-        pairProgress: nextMetrics.pairProgress,
-        llPriority,
-        solvedSum: nextMetrics.solvedSum,
-        score: nextMetrics.score,
-        transitionPenalty,
-        transitionBiasLevel,
-        stylePenalty,
-        styleBiasLevel,
-        downstreamPenalty,
-        downstreamBiasLevel: effectiveDownstreamBiasLevel,
-        moveLen: Number.isFinite(candidateMeta?.moveCount) ? candidateMeta.moveCount : candidateMoves.length,
-      };
+      // Use numeric key for better Map performance in hot path
+        const ranking = {
+          pairProgress: nextMetrics.pairProgress,
+          llPriority,
+          solvedSum: nextMetrics.solvedSum,
+          score: nextMetrics.score,
+          transitionPenalty,
+          transitionBiasLevel,
+          stylePenalty,
+          styleBiasLevel,
+          downstreamPenalty,
+          downstreamBiasLevel: effectiveDownstreamBiasLevel,
+          moveLen: Number.isFinite(candidateMeta?.moveCount) ? candidateMeta.moveCount : candidateMoves.length,
+          // Use precomputed metadata when available for speed
+          _meta: candidateMeta?._rankingMeta || null,
+        };
       const moveCount =
-        node.moves.length +
+        node.moveCount +
         (Number.isFinite(candidateMeta?.moveCount) ? candidateMeta.moveCount : candidateMoves.length);
-      const candidate = candidateMeta?.compactTransform
-        ? {
-            parentNode: node,
-            segmentMoves: candidateMoves,
-            compactTransform: candidateMeta.compactTransform,
-            moveCount,
-            key: nextStateKey,
-            ranking,
-          }
-        : {
-            cPiece: new Uint8Array(nextData.CORNERS.pieces),
-            cOri: new Uint8Array(nextData.CORNERS.orientation),
-            ePiece: new Uint8Array(nextData.EDGES.pieces),
-            eOri: new Uint8Array(nextData.EDGES.orientation),
-            parentNode: node,
-            segmentMoves: candidateMoves,
-            moveCount,
-            key: nextStateKey,
-            ranking,
-            _pattern: nextPattern,
-          };
+      
+      // Reduce allocation: use compact transform when possible
+      let candidate;
+      if (candidateMeta?.compactTransform) {
+        candidate = {
+          parentNode: node,
+          segmentMoves: candidateMoves,
+          compactTransform: candidateMeta.compactTransform,
+          moveCount,
+          key: nextStateKey,
+          ranking,
+        };
+      } else {
+        // Only allocate full state data when necessary (fallback path)
+        candidate = {
+          cPiece: new Uint8Array(nextData.CORNERS.pieces),
+          cOri: new Uint8Array(nextData.CORNERS.orientation),
+          ePiece: new Uint8Array(nextData.EDGES.pieces),
+          eOri: new Uint8Array(nextData.EDGES.orientation),
+          parentNode: node,
+          segmentMoves: candidateMoves,
+          moveCount,
+          key: nextStateKey,
+          ranking,
+          _pattern: nextPattern,
+        };
+      }
       const targetMap = isImprove ? improveMap : fallbackMap;
       const prev = targetMap.get(nextStateKey);
       if (!prev || isBetterF2LRanking(ranking, prev.ranking)) {
@@ -5330,20 +5744,35 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
       }
     }
 
+    // Ensure all F2L library entries have precomputed ranking metadata
+    // This is done lazily when entries are first encountered
+    function ensureEntryMetadata(entry) {
+      if (entry && !entry._precomputed) {
+        precomputeF2LMetadata(entry);
+      }
+    }
+
     // Fast compact path: _outMockData already populated by compactPreFilter, cross/seenDepth already checked
     function considerCompact(candidateMoves, nextStateKey, candidateMeta = null) {
-      considerCore(_outMockData, nextStateKey, candidateMoves, candidateMeta);
+      considerCore(_outMockData, nextStateKey, candidateMoves, candidateMeta, null);
     }
 
     // Fallback path for entries without compactTransform (rare): extract data from real KPattern
     function consider(nextPattern, candidateMoves, candidateMeta = null) {
       if (!nextPattern || !candidateMoves.length) return;
-      if (node.moves.length + candidateMoves.length > stage.maxDepth) return;
+      if (node.moveCount + candidateMoves.length > stage.maxDepth) return;
       const nextData = nextPattern.patternData;
       if (!isCrossSolved(nextData, ctx)) return;
       const nextStateKey = stage.key(nextData);
       const seenDepth = bestDepthByState.get(nextStateKey);
       if (typeof seenDepth === "number" && nextFormulaDepth > seenDepth) return;
+      // Precompute metadata for this pattern if not already done
+      const patternMetrics = metricsFor(nextData, nextStateKey);
+      if (!nextPattern._precomputed) {
+        nextPattern._precomputed = {
+          stylePenalty: stylePenaltyForMoves(candidateMoves, candidateMeta),
+        };
+      }
       considerCore(nextData, nextStateKey, candidateMoves, candidateMeta, nextPattern);
     }
 
@@ -5371,30 +5800,56 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
         candidateIndices.push(idx);
       };
       candidateIndices = [];
-      const fallback = libData.fallbackIndices || [];
-      for (let i = 0; i < fallback.length; i++) {
-        addCandidateIndex(fallback[i]);
-      }
       const cornerPieces = currentData.CORNERS.pieces;
       const cornerOrientation = currentData.CORNERS.orientation;
       const edgePieces = currentData.EDGES.pieces;
       const edgeOrientation = currentData.EDGES.orientation;
       const anchorIndex = libData.anchorIndex;
-      for (let cPos = 0; cPos < 8; cPos++) {
-        const cPiece = cornerPieces[cPos];
-        const cOri = cornerOrientation[cPos];
-        for (let ePos = 0; ePos < 12; ePos++) {
-          const key = encodeF2LAnchorKey(
-            cPos,
-            cPiece,
-            cOri,
-            ePos,
-            edgePieces[ePos],
-            edgeOrientation[ePos],
-          );
-          const bucket = anchorIndex[key];
-          if (!bucket) continue;
-          for (let b = 0; b < bucket.length; b++) addCandidateIndex(bucket[b]);
+      const pairDefs = Array.isArray(ctx.f2lPairDefs) ? ctx.f2lPairDefs : EMPTY_MOVES;
+      const collectAnchorBuckets = (cornerPosList, edgePosList) => {
+        for (let ci = 0; ci < cornerPosList.length; ci++) {
+          const cPos = cornerPosList[ci];
+          const cPiece = cornerPieces[cPos];
+          const cOri = cornerOrientation[cPos];
+          for (let ei = 0; ei < edgePosList.length; ei++) {
+            const ePos = edgePosList[ei];
+            const key = encodeF2LAnchorKey(
+              cPos,
+              cPiece,
+              cOri,
+              ePos,
+              edgePieces[ePos],
+              edgeOrientation[ePos],
+            );
+            const bucket = anchorIndex[key];
+            if (!bucket) continue;
+            for (let b = 0; b < bucket.length; b++) addCandidateIndex(bucket[b]);
+          }
+        }
+      };
+      if (pairDefs.length) {
+        const cornerPosByPiece = new Uint8Array(8);
+        const edgePosByPiece = new Uint8Array(12);
+        for (let pos = 0; pos < 8; pos++) {
+          cornerPosByPiece[cornerPieces[pos]] = pos;
+        }
+        for (let pos = 0; pos < 12; pos++) {
+          edgePosByPiece[edgePieces[pos]] = pos;
+        }
+        for (let i = 0; i < pairDefs.length; i++) {
+          const def = pairDefs[i];
+          const cornerPos = cornerPosByPiece[def.cornerPieceId];
+          const edgePos = edgePosByPiece[def.edgePieceId];
+          collectAnchorBuckets([cornerPos], [edgePos]);
+        }
+      }
+      if (candidateIndices.length === 0) {
+        collectAnchorBuckets([0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+      }
+      if (candidateIndices.length === 0) {
+        const fallback = libData.fallbackIndices || [];
+        for (let i = 0; i < fallback.length; i++) {
+          addCandidateIndex(fallback[i]);
         }
       }
     }
@@ -5542,12 +5997,12 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
       moves: [],
       moveCount: 0,
       key: startKey,
-      ranking: {
-        pairProgress: startMetrics.pairProgress,
-        llPriority: 0,
-        solvedSum: startMetrics.solvedSum,
-        score: startMetrics.score,
-        transitionPenalty: 0,
+        ranking: {
+          pairProgress: startMetrics.pairProgress,
+          llPriority: 0,
+          solvedSum: startMetrics.solvedSum,
+          score: startMetrics.score,
+          transitionPenalty: 0,
         transitionBiasLevel,
         stylePenalty: 0,
         styleBiasLevel,
@@ -5582,15 +6037,16 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
           beamTermination: "SOLVED_IN_BEAM",
           finalMethod: "formula_beam",
           finalNodes: attemptsRef.count,
-          finalBound: node.moves.length,
-          finalMoveCount: node.moves.length,
+          finalBound: node.moveCount,
+          finalMoveCount: node.moveCount,
         });
+        const solvedMoves = getBeamNodeMoves(node);
         return {
           ok: true,
-          moves: node.moves.slice(),
-          depth: node.moves.length,
+          moves: solvedMoves.slice(),
+          depth: node.moveCount,
           nodes: attemptsRef.count,
-          bound: node.moves.length,
+          bound: node.moveCount,
         };
       }
       const candidates = collectCandidates(node, nextFormulaDepth, bestDepthByState);
@@ -5649,15 +6105,16 @@ function solveWithFormulaDbF2L(startPattern, stage, ctx) {
           beamTermination: "SOLVED_IN_BEAM",
           finalMethod: "formula_beam",
           finalNodes: attemptsRef.count,
-          finalBound: beam[i].moves.length,
-          finalMoveCount: beam[i].moves.length,
+          finalBound: beam[i].moveCount,
+          finalMoveCount: beam[i].moveCount,
         });
+        const solvedMoves = getBeamNodeMoves(beam[i]);
         return {
           ok: true,
-          moves: beam[i].moves.slice(),
-          depth: beam[i].moves.length,
+          moves: solvedMoves.slice(),
+          depth: beam[i].moveCount,
           nodes: attemptsRef.count,
-          bound: beam[i].moves.length,
+          bound: beam[i].moveCount,
         };
       }
     }
@@ -5686,6 +6143,7 @@ function solveStageByFormulaDb(startPattern, stage, ctx) {
     if (beamResult?.ok) {
       if (stage.performanceCollector) {
         stage.performanceCollector.finalMethod = "formula_beam";
+        stage.performanceCollector.compactPathUsed = false;
       }
       return {
         ...beamResult,
@@ -5694,9 +6152,13 @@ function solveStageByFormulaDb(startPattern, stage, ctx) {
       };
     }
     // Beam failed — fall back to compact integer-state IDA* (100x faster than KPattern IDA*)
+    if (stage.performanceCollector) {
+      stage.performanceCollector.fallbackFrequency += 1;
+    }
     const compactResult = solveF2LCompactIDA(startPattern, stage, ctx);
     if (stage.performanceCollector) {
       stage.performanceCollector.compactFallbackUsed = true;
+      stage.performanceCollector.compactPathUsed = true;
       stage.performanceCollector.compactFallback = compactResult
         ? {
             ok: compactResult.ok === true,
@@ -6151,14 +6613,21 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     let bestProbe = null;
     // Compute per-color deadline; guarantees all 6 probes finish quickly.
     const overallDeadline = Number.isFinite(options.deadlineTs) && options.deadlineTs > 0 ? options.deadlineTs : 0;
+    // Hard cap: total probe time across all 6 colors must not exceed CN_PROBE_TOTAL_BUDGET_MS.
+    const probeHardDeadline = Date.now() + CN_PROBE_TOTAL_BUDGET_MS;
 
     for (let i = 0; i < CROSS_COLOR_SEQUENCE.length; i++) {
       const candidateColor = CROSS_COLOR_SEQUENCE[i];
       const rotationCandidates = getCrossRotationCandidates(candidateColor);
       let bestColorProbe = null;
-      const colorProbeDeadline = overallDeadline > 0
-        ? Math.min(overallDeadline, Date.now() + CN_CROSS_PROBE_BUDGET_MS)
-        : Date.now() + CN_CROSS_PROBE_BUDGET_MS;
+      // Probe deadline: per-color budget AND total probe cap AND overall deadline.
+      const colorProbeDeadline = Math.min(
+        probeHardDeadline,
+        Date.now() + CN_CROSS_PROBE_BUDGET_MS,
+        ...(overallDeadline > 0 ? [overallDeadline] : []),
+      );
+      // If total probe budget already exhausted, stop probing.
+      if (Date.now() >= probeHardDeadline) break;
 
       for (let r = 0; r < rotationCandidates.length; r++) {
         const rotationAlg = rotationCandidates[r];
@@ -6170,6 +6639,9 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           const probeStageOptions = {
             ...options,
             deadlineTs: colorProbeDeadline,
+            // Probe only needs to rank colors; limit depth to 7 to keep probes fast.
+            // Inflated crossMaxDepth (mixed stages) would waste time on 8+ move searches.
+            crossMaxDepth: Math.min(normalizeDepth(options.crossMaxDepth, 8), 7),
             scrambleKey: `${scrambleSeedBase}|CN|${candidateColor}|${targetPairs}`,
             crossTargetPairsOverride: targetPairs,
           };
@@ -6367,10 +6839,28 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     if (Array.isArray(stages[i].formulaKeys) && stages[i].formulaKeys.includes("F2L")) {
       stages[i].performanceCollector = {
         stageName: stages[i].name,
+        stageWallTime: 0,
+        perPairTime: [],
+        attemptsCount: 0,
+        beamDepthProgression: [],
+        candidateScanCount: 0,
+        fallbackFrequency: 0,
+        compactPathUsed: false,
+        nonCompactPathCount: 0,
       };
       const f2lLibraryAwaitStartedAt = Date.now();
       stages[i].f2lCaseLibrary = await getF2LCaseLibrary(ctx);
       performanceSession.f2lLibraryAwaitMs += Math.max(0, Date.now() - f2lLibraryAwaitStartedAt);
+    } else if (isSingleStageFormulaStage(stages[i])) {
+      stages[i].performanceCollector = {
+        singleStage: true,
+        stageName: stages[i].name,
+        lookupElapsedMs: 0,
+        attempts: 0,
+        candidateCount: 0,
+        libraryCacheHit: false,
+        cacheSize: singleStageFormulaCaseLibraryCache.size,
+      };
     }
   }
   const onStageUpdate = typeof options.onStageUpdate === "function" ? options.onStageUpdate : null;
@@ -6392,6 +6882,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     const stage = stages[i];
     const stageStartPattern = currentPattern;
     const stageStartedAt = Date.now();
+    const stageLibraryTelemetryStart = snapshotCfopLibraryTelemetry();
     const stageDisplayName = resolveStageDisplayName(stage, stageStartPattern, ctx);
     const stageLabel = stage.isCrossLike
       ? getCrossLikeStageLabel(stage.name, crossStageLabel)
@@ -6405,12 +6896,24 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       });
     }
     const result = solveStage(stageStartPattern, stage, ctx);
+    const stageWallTime = Math.max(1, Date.now() - stageStartedAt);
+    const stageLibraryTelemetry = diffCfopLibraryTelemetry(
+      stageLibraryTelemetryStart,
+      snapshotCfopLibraryTelemetry(),
+    );
+    if (stage.performanceCollector && result.f2lDiagnostics) {
+      stage.performanceCollector.stageWallTime = stageWallTime;
+      if (result.f2lDiagnostics.beamDepthProgression) {
+        stage.performanceCollector.beamDepthProgression = result.f2lDiagnostics.beamDepthProgression.map(e => ({...e}));
+      }
+    }
     totalNodes += result.nodes || 0;
     if (typeof result.bound === "number" && result.bound !== STAGE_NOT_SET) {
       totalBound += result.bound;
     }
     if (!result.ok) {
       const failedF2LDiagnostics = stage.name === "F2L" ? summarizeF2LDiagnostics(result.f2lDiagnostics) : null;
+      const singleStageDiagnostics = summarizeSingleStageStageDiagnostics(stage, stageLibraryTelemetry);
       stageDiagnostics.push({
         stageIndex: i,
         stageName: stage.name,
@@ -6418,9 +6921,9 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         reason: result.reason || `${stage.name.toUpperCase()}_FAILED`,
         nodes: result.nodes || 0,
         bound: result.bound,
-        elapsedMs: Math.max(1, Date.now() - stageStartedAt),
+        elapsedMs: stageWallTime,
         method: result.method || null,
-        metrics: failedF2LDiagnostics,
+        metrics: failedF2LDiagnostics || singleStageDiagnostics,
       });
       if (stage.name === "F2L") {
         performanceSession.f2lDiagnostics = failedF2LDiagnostics;
@@ -6432,6 +6935,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           totalStages: stages.length,
           stageName: stageLabel,
           reason: result.reason || `${stage.name.toUpperCase()}_FAILED`,
+          elapsedMs: stageWallTime,
         });
       }
       return withPerformance({
@@ -6487,6 +6991,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       });
     }
     solvedStages.push(...stageEntries);
+    const singleStageDiagnostics = summarizeSingleStageStageDiagnostics(stage, stageLibraryTelemetry);
     stageDiagnostics.push({
       stageIndex: i,
       stageName: stage.name,
@@ -6497,7 +7002,10 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       elapsedMs: Math.max(1, Date.now() - stageStartedAt),
       moveCount: outputMoves.length,
       method: result.method || null,
-      metrics: stage.name === "F2L" ? summarizeF2LDiagnostics(result.f2lDiagnostics) : null,
+      metrics:
+        stage.name === "F2L"
+          ? summarizeF2LDiagnostics(result.f2lDiagnostics)
+          : singleStageDiagnostics,
     });
     if (stage.name === "F2L") {
       performanceSession.f2lDiagnostics = summarizeF2LDiagnostics(result.f2lDiagnostics);
@@ -6509,6 +7017,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         totalStages: stages.length,
         stageName: solvedStageLabel,
         moveCount: outputMoves.length,
+        elapsedMs: stageWallTime,
       });
     }
     allMoves.push(...outputMoves);
