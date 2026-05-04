@@ -365,6 +365,133 @@ fn last_face_of_moves(moves: &[u8], tables: &TwophaseTables) -> u8 {
         .unwrap_or(LAST_FACE_FREE)
 }
 
+fn solve_dr_routes_via_rzp(
+    state_after_eo: &CubeState,
+    fmc_tables: &FmcTables,
+    tables: &TwophaseTables,
+    max_depth: u8,
+    last_face_before_dr: u8,
+) -> Vec<DrRoute> {
+    let mut routes: Vec<DrRoute> = Vec::new();
+    let mut seen = std::collections::HashSet::<Vec<u8>>::new();
+
+    let co0 = encode_co(&state_after_eo.co);
+    let sl0 = encode_slice_from_ep(&state_after_eo.ep);
+
+    let direct = solve_dr(co0, sl0, fmc_tables, tables, max_depth);
+    let direct_len = direct.as_ref().map(|m| m.len()).unwrap_or(usize::MAX);
+
+    if let Some(moves) = direct {
+        if seen.insert(moves.clone()) {
+            routes.push(DrRoute {
+                moves,
+                rzp_setup_len: 0,
+                rzp_defect: Some(rzp_defect_from_state(state_after_eo)),
+            });
+        }
+    }
+
+    if !FMC_RZP_ENABLED || max_depth == 0 {
+        return routes;
+    }
+
+    fn dfs(
+        state: CubeState,
+        setup: &mut Vec<u8>,
+        routes: &mut Vec<DrRoute>,
+        seen: &mut std::collections::HashSet<Vec<u8>>,
+        fmc_tables: &FmcTables,
+        tables: &TwophaseTables,
+        max_depth: u8,
+        direct_len: usize,
+        depth_left: u8,
+        last_face: u8,
+    ) {
+        if routes.len() >= FMC_DR_ROUTE_LIMIT {
+            return;
+        }
+
+        let defect = rzp_defect_from_state(&state);
+
+        if rzp_priority(defect).is_some() && setup.len() <= max_depth as usize {
+            let remaining = max_depth.saturating_sub(setup.len() as u8);
+            let co = encode_co(&state.co);
+            let sl = encode_slice_from_ep(&state.ep);
+
+            if let Some(tail) = solve_dr(co, sl, fmc_tables, tables, remaining) {
+                let mut full = setup.clone();
+                full.extend_from_slice(&tail);
+
+                let within_cap = full.len() <= max_depth as usize;
+                let within_slack = direct_len == usize::MAX
+                    || full.len() <= direct_len.saturating_add(FMC_DR_SLACK);
+
+                if within_cap && within_slack && seen.insert(full.clone()) {
+                    routes.push(DrRoute {
+                        moves: full,
+                        rzp_setup_len: setup.len() as u8,
+                        rzp_defect: Some(defect),
+                    });
+                }
+            }
+        }
+
+        if depth_left == 0 {
+            return;
+        }
+
+        for &m in &fmc_tables.dr_eo_allowed_by_last_face[last_face as usize] {
+            let face = tables.move_data.move_face[m as usize];
+            let next_state = state.apply_move(m as usize, &tables.move_data);
+
+            setup.push(m);
+            dfs(
+                next_state,
+                setup,
+                routes,
+                seen,
+                fmc_tables,
+                tables,
+                max_depth,
+                direct_len,
+                depth_left - 1,
+                face,
+            );
+            setup.pop();
+
+            if routes.len() >= FMC_DR_ROUTE_LIMIT {
+                return;
+            }
+        }
+    }
+
+    let mut setup = Vec::new();
+    dfs(
+        *state_after_eo,
+        &mut setup,
+        &mut routes,
+        &mut seen,
+        fmc_tables,
+        tables,
+        max_depth,
+        direct_len,
+        FMC_RZP_SETUP_DEPTH,
+        last_face_before_dr,
+    );
+
+    routes.sort_by_key(|route| {
+        let priority = route
+            .rzp_defect
+            .and_then(rzp_priority)
+            .unwrap_or(99);
+
+        (route.moves.len(), priority, route.rzp_setup_len)
+    });
+
+    routes.truncate(FMC_DR_ROUTE_LIMIT);
+    routes
+}
+
 // --- P2 Input Building ---
 
 fn encode_perm4(perm: &[u8; 4]) -> usize {
