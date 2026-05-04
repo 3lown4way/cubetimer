@@ -847,27 +847,28 @@ body.timer-only .timer-display {
 
   .scramble-content {
     flex-direction: column;
-    gap: 0.65rem;
-    padding: 0.1rem 0;
+    gap: 0;
+    padding: 0;
   }
 
   .scramble-side-controls {
     border-left: none !important;
     border-top: 1px solid var(--border);
-    padding-left: 0 !important;
-    padding-top: 0.7rem;
+    padding: 0.8rem 0 0.75rem !important;
     width: 100%;
     justify-content: center;
+    min-height: 68px;
   }
 
   .scramble-row-dock {
     width: 100%;
     justify-content: center;
     gap: 0.5rem;
+    min-height: 44px;
   }
 
   .scramble-card {
-    padding: 0 1rem;
+    padding: 0 0.9rem;
     min-height: auto;
   }
 
@@ -878,7 +879,8 @@ body.timer-only .timer-display {
   }
 
   .scramble-text-wrapper {
-    padding-inline: 0.1rem;
+    min-height: 68px;
+    padding: 0.8rem 0.2rem 0.75rem;
   }
 
   #eventSelect {
@@ -886,6 +888,7 @@ body.timer-only .timer-display {
     width: 12rem;
     max-width: calc(100vw - 12rem);
     padding: 0.72rem 0.95rem;
+    min-height: 44px;
   }
 
   .scramble-arrows {

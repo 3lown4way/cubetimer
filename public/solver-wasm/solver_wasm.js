@@ -1,6 +1,6 @@
 /* @ts-self-types="./solver_wasm.d.ts" */
 
-class HTRSubset {
+export class HTRSubset {
     static __wrap(ptr) {
         ptr = ptr >>> 0;
         const obj = Object.create(HTRSubset.prototype);
@@ -59,12 +59,11 @@ class HTRSubset {
     }
 }
 if (Symbol.dispose) HTRSubset.prototype[Symbol.dispose] = HTRSubset.prototype.free;
-exports.HTRSubset = HTRSubset;
 
 /**
  * @returns {string}
  */
-function build_fmc_tables_wasm() {
+export function build_fmc_tables_wasm() {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -76,7 +75,6 @@ function build_fmc_tables_wasm() {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.build_fmc_tables_wasm = build_fmc_tables_wasm;
 
 /**
  * @param {number} cp_idx
@@ -84,11 +82,10 @@ exports.build_fmc_tables_wasm = build_fmc_tables_wasm;
  * @param {number} sep_idx
  * @returns {HTRSubset}
  */
-function classify_htr_subset(cp_idx, ep_idx, sep_idx) {
+export function classify_htr_subset(cp_idx, ep_idx, sep_idx) {
     const ret = wasm.classify_htr_subset(cp_idx, ep_idx, sep_idx);
     return HTRSubset.__wrap(ret);
 }
-exports.classify_htr_subset = classify_htr_subset;
 
 /**
  * @param {number} cp_idx
@@ -96,7 +93,7 @@ exports.classify_htr_subset = classify_htr_subset;
  * @param {number} sep_idx
  * @returns {string}
  */
-function create_htr_subset_json(cp_idx, ep_idx, sep_idx) {
+export function create_htr_subset_json(cp_idx, ep_idx, sep_idx) {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -108,29 +105,26 @@ function create_htr_subset_json(cp_idx, ep_idx, sep_idx) {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.create_htr_subset_json = create_htr_subset_json;
 
 /**
  * @param {number} search_id
  */
-function drop_minmove_search(search_id) {
+export function drop_minmove_search(search_id) {
     wasm.drop_minmove_search(search_id);
 }
-exports.drop_minmove_search = drop_minmove_search;
 
 /**
  * @param {number} search_id
  */
-function drop_twophase_search(search_id) {
+export function drop_twophase_search(search_id) {
     wasm.drop_twophase_search(search_id);
 }
-exports.drop_twophase_search = drop_twophase_search;
 
 /**
  * @param {number} quality
  * @returns {string}
  */
-function get_htr_quality_name(quality) {
+export function get_htr_quality_name(quality) {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -142,13 +136,12 @@ function get_htr_quality_name(quality) {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.get_htr_quality_name = get_htr_quality_name;
 
 /**
  * @param {number} cxe_type
  * @returns {string}
  */
-function get_htr_subset_name(cxe_type) {
+export function get_htr_subset_name(cxe_type) {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -160,12 +153,11 @@ function get_htr_subset_name(cxe_type) {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.get_htr_subset_name = get_htr_subset_name;
 
 /**
  * @param {Uint8Array} bytes
  */
-function load_minmove_333_bundle(bytes) {
+export function load_minmove_333_bundle(bytes) {
     const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.load_minmove_333_bundle(ptr0, len0);
@@ -173,12 +165,11 @@ function load_minmove_333_bundle(bytes) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
-exports.load_minmove_333_bundle = load_minmove_333_bundle;
 
 /**
  * @param {Uint8Array} bytes
  */
-function load_twophase_333_bundle(bytes) {
+export function load_twophase_333_bundle(bytes) {
     const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.load_twophase_333_bundle(ptr0, len0);
@@ -186,7 +177,6 @@ function load_twophase_333_bundle(bytes) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
-exports.load_twophase_333_bundle = load_twophase_333_bundle;
 
 /**
  * @param {string} scramble
@@ -194,7 +184,7 @@ exports.load_twophase_333_bundle = load_twophase_333_bundle;
  * @param {string} options_json
  * @returns {string}
  */
-function optimize_insertion_wasm(scramble, moves_str, options_json) {
+export function optimize_insertion_wasm(scramble, moves_str, options_json) {
     let deferred4_0;
     let deferred4_1;
     try {
@@ -212,13 +202,12 @@ function optimize_insertion_wasm(scramble, moves_str, options_json) {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
 }
-exports.optimize_insertion_wasm = optimize_insertion_wasm;
 
 /**
  * @param {string} scramble
  * @returns {string}
  */
-function prepare_minmove_333(scramble) {
+export function prepare_minmove_333(scramble) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -232,14 +221,13 @@ function prepare_minmove_333(scramble) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.prepare_minmove_333 = prepare_minmove_333;
 
 /**
  * @param {string} scramble
  * @param {string} options_json
  * @returns {string}
  */
-function prepare_twophase_333(scramble, options_json) {
+export function prepare_twophase_333(scramble, options_json) {
     let deferred3_0;
     let deferred3_1;
     try {
@@ -255,7 +243,6 @@ function prepare_twophase_333(scramble, options_json) {
         wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
-exports.prepare_twophase_333 = prepare_twophase_333;
 
 /**
  * @param {number} search_id
@@ -263,7 +250,7 @@ exports.prepare_twophase_333 = prepare_twophase_333;
  * @param {number} max_nodes
  * @returns {string}
  */
-function search_minmove_bound(search_id, bound, max_nodes) {
+export function search_minmove_bound(search_id, bound, max_nodes) {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -275,14 +262,13 @@ function search_minmove_bound(search_id, bound, max_nodes) {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.search_minmove_bound = search_minmove_bound;
 
 /**
  * @param {number} search_id
  * @param {string} options_json
  * @returns {string}
  */
-function search_twophase_333(search_id, options_json) {
+export function search_twophase_333(search_id, options_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -296,14 +282,13 @@ function search_twophase_333(search_id, options_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.search_twophase_333 = search_twophase_333;
 
 /**
  * @param {string} scramble
  * @param {string} options_json
  * @returns {string}
  */
-function search_twophase_exact_333(scramble, options_json) {
+export function search_twophase_exact_333(scramble, options_json) {
     let deferred3_0;
     let deferred3_1;
     try {
@@ -319,14 +304,13 @@ function search_twophase_exact_333(scramble, options_json) {
         wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
-exports.search_twophase_exact_333 = search_twophase_exact_333;
 
 /**
  * @param {string} scramble
  * @param {string} options_json
  * @returns {string}
  */
-function solve_fmc_wasm(scramble, options_json) {
+export function solve_fmc_wasm(scramble, options_json) {
     let deferred3_0;
     let deferred3_1;
     try {
@@ -342,13 +326,12 @@ function solve_fmc_wasm(scramble, options_json) {
         wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
-exports.solve_fmc_wasm = solve_fmc_wasm;
 
 /**
  * @param {string} req_json
  * @returns {string}
  */
-function solve_json(req_json) {
+export function solve_json(req_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -362,7 +345,6 @@ function solve_json(req_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.solve_json = solve_json;
 
 /**
  * @param {number} cp_idx
@@ -372,7 +354,7 @@ exports.solve_json = solve_json;
  * @param {number} node_limit
  * @returns {string}
  */
-function solve_phase2_direct(cp_idx, ep_idx, sep_idx, max_depth, node_limit) {
+export function solve_phase2_direct(cp_idx, ep_idx, sep_idx, max_depth, node_limit) {
     let deferred1_0;
     let deferred1_1;
     try {
@@ -384,7 +366,6 @@ function solve_phase2_direct(cp_idx, ep_idx, sep_idx, max_depth, node_limit) {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
-exports.solve_phase2_direct = solve_phase2_direct;
 
 /**
  * Verify that `scramble` followed by `solution` returns to the solved state.
@@ -393,7 +374,7 @@ exports.solve_phase2_direct = solve_phase2_direct;
  * @param {string} solution
  * @returns {string}
  */
-function verify_fmc_solution_wasm(scramble, solution) {
+export function verify_fmc_solution_wasm(scramble, solution) {
     let deferred3_0;
     let deferred3_1;
     try {
@@ -409,23 +390,20 @@ function verify_fmc_solution_wasm(scramble, solution) {
         wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
-exports.verify_fmc_solution_wasm = verify_fmc_solution_wasm;
 
-function warm_minmove_333() {
+export function warm_minmove_333() {
     const ret = wasm.warm_minmove_333();
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
-exports.warm_minmove_333 = warm_minmove_333;
 
-function warm_twophase_333() {
+export function warm_twophase_333() {
     const ret = wasm.warm_twophase_333();
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
-exports.warm_twophase_333 = warm_twophase_333;
 
 function __wbg_get_imports() {
     const import0 = {
@@ -553,7 +531,15 @@ function takeFromExternrefTable0(idx) {
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
 cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
 function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
@@ -572,8 +558,95 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-const wasmPath = `${__dirname}/solver_wasm_bg.wasm`;
-const wasmBytes = require('fs').readFileSync(wasmPath);
-const wasmModule = new WebAssembly.Module(wasmBytes);
-let wasm = new WebAssembly.Instance(wasmModule, __wbg_get_imports()).exports;
-wasm.__wbindgen_start();
+let wasmModule, wasm;
+function __wbg_finalize_init(instance, module) {
+    wasm = instance.exports;
+    wasmModule = module;
+    cachedDataViewMemory0 = null;
+    cachedUint8ArrayMemory0 = null;
+    wasm.__wbindgen_start();
+    return wasm;
+}
+
+async function __wbg_load(module, imports) {
+    if (typeof Response === 'function' && module instanceof Response) {
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                return await WebAssembly.instantiateStreaming(module, imports);
+            } catch (e) {
+                const validResponse = module.ok && expectedResponseType(module.type);
+
+                if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+
+                } else { throw e; }
+            }
+        }
+
+        const bytes = await module.arrayBuffer();
+        return await WebAssembly.instantiate(bytes, imports);
+    } else {
+        const instance = await WebAssembly.instantiate(module, imports);
+
+        if (instance instanceof WebAssembly.Instance) {
+            return { instance, module };
+        } else {
+            return instance;
+        }
+    }
+
+    function expectedResponseType(type) {
+        switch (type) {
+            case 'basic': case 'cors': case 'default': return true;
+        }
+        return false;
+    }
+}
+
+function initSync(module) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module !== undefined) {
+        if (Object.getPrototypeOf(module) === Object.prototype) {
+            ({module} = module)
+        } else {
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+        }
+    }
+
+    const imports = __wbg_get_imports();
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    return __wbg_finalize_init(instance, module);
+}
+
+async function __wbg_init(module_or_path) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module_or_path !== undefined) {
+        if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
+            ({module_or_path} = module_or_path)
+        } else {
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+        }
+    }
+
+    if (module_or_path === undefined) {
+        module_or_path = new URL('solver_wasm_bg.wasm', import.meta.url);
+    }
+    const imports = __wbg_get_imports();
+
+    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+        module_or_path = fetch(module_or_path);
+    }
+
+    const { instance, module } = await __wbg_load(await module_or_path, imports);
+
+    return __wbg_finalize_init(instance, module);
+}
+
+export { initSync, __wbg_init as default };

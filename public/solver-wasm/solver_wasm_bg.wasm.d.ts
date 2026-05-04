@@ -1,9 +1,20 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_get_htrsubset_cxe_type: (a: number) => number;
+export const __wbg_get_htrsubset_qt_estimate: (a: number) => number;
+export const __wbg_get_htrsubset_quality: (a: number) => number;
+export const __wbg_htrsubset_free: (a: number, b: number) => void;
+export const __wbg_set_htrsubset_cxe_type: (a: number, b: number) => void;
+export const __wbg_set_htrsubset_qt_estimate: (a: number, b: number) => void;
+export const __wbg_set_htrsubset_quality: (a: number, b: number) => void;
 export const build_fmc_tables_wasm: () => [number, number];
+export const classify_htr_subset: (a: number, b: number, c: number) => number;
+export const create_htr_subset_json: (a: number, b: number, c: number) => [number, number];
 export const drop_minmove_search: (a: number) => void;
 export const drop_twophase_search: (a: number) => void;
+export const get_htr_quality_name: (a: number) => [number, number];
+export const get_htr_subset_name: (a: number) => [number, number];
 export const load_minmove_333_bundle: (a: number, b: number) => [number, number];
 export const load_twophase_333_bundle: (a: number, b: number) => [number, number];
 export const optimize_insertion_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

@@ -1,11 +1,28 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class HTRSubset {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cxe_type: number;
+    qt_estimate: number;
+    quality: number;
+}
+
 export function build_fmc_tables_wasm(): string;
+
+export function classify_htr_subset(cp_idx: number, ep_idx: number, sep_idx: number): HTRSubset;
+
+export function create_htr_subset_json(cp_idx: number, ep_idx: number, sep_idx: number): string;
 
 export function drop_minmove_search(search_id: number): void;
 
 export function drop_twophase_search(search_id: number): void;
+
+export function get_htr_quality_name(quality: number): string;
+
+export function get_htr_subset_name(cxe_type: number): string;
 
 export function load_minmove_333_bundle(bytes: Uint8Array): void;
 
@@ -43,9 +60,20 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_get_htrsubset_cxe_type: (a: number) => number;
+    readonly __wbg_get_htrsubset_qt_estimate: (a: number) => number;
+    readonly __wbg_get_htrsubset_quality: (a: number) => number;
+    readonly __wbg_htrsubset_free: (a: number, b: number) => void;
+    readonly __wbg_set_htrsubset_cxe_type: (a: number, b: number) => void;
+    readonly __wbg_set_htrsubset_qt_estimate: (a: number, b: number) => void;
+    readonly __wbg_set_htrsubset_quality: (a: number, b: number) => void;
     readonly build_fmc_tables_wasm: () => [number, number];
+    readonly classify_htr_subset: (a: number, b: number, c: number) => number;
+    readonly create_htr_subset_json: (a: number, b: number, c: number) => [number, number];
     readonly drop_minmove_search: (a: number) => void;
     readonly drop_twophase_search: (a: number) => void;
+    readonly get_htr_quality_name: (a: number) => [number, number];
+    readonly get_htr_subset_name: (a: number) => [number, number];
     readonly load_minmove_333_bundle: (a: number, b: number) => [number, number];
     readonly load_twophase_333_bundle: (a: number, b: number) => [number, number];
     readonly optimize_insertion_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

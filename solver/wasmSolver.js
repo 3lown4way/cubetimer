@@ -41,7 +41,9 @@ async function loadWasmCandidate(specifier) {
   }
   if (!mod) return null;
 
-  if (typeof mod.initSync === "function") {
+  const isNode = typeof process !== "undefined" && !!process.versions?.node;
+  const isBrowserLike = typeof window !== "undefined" || typeof self !== "undefined";
+  if (typeof mod.initSync === "function" && isNode && !isBrowserLike) {
     try {
       const { fileURLToPath } = await import("url");
       const fs = await import("fs");

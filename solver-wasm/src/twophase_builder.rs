@@ -5,6 +5,7 @@ use crate::minmove_core::{
 };
 
 const NOT_SET: u8 = 255;
+const EP_SIZE: usize = 40320;
 const SEP_SIZE: usize = 24;
 const PHASE2_MOVE_COUNT: usize = 10;
 const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] = ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
@@ -190,10 +191,10 @@ fn build_phase2_ep_move_table(
     move_data: &MoveData,
     phase2_move_indices: &[usize; PHASE2_MOVE_COUNT],
 ) -> Result<Vec<u16>, String> {
-    let mut table = vec![0u16; CP_SIZE * PHASE2_MOVE_COUNT];
+    let mut table = vec![0u16; EP_SIZE * PHASE2_MOVE_COUNT];
     let mut state = [0u8; CORNER_COUNT];
     let mut next = [0u8; CORNER_COUNT];
-    for index in 0..CP_SIZE {
+    for index in 0..EP_SIZE {
         decode_perm8(index, &mut state);
         let base = index * PHASE2_MOVE_COUNT;
         for (phase2_move_index, &move_index) in phase2_move_indices.iter().enumerate() {
@@ -288,7 +289,7 @@ pub fn build_all_tables(move_data: &MoveData) -> Result<GeneratedTwophaseTables,
         co: bfs_from_move_table_u16(&co_move, CO_SIZE, 0, MOVE_COUNT),
         eo: bfs_from_move_table_u16(&eo_move, EO_SIZE, 0, MOVE_COUNT),
         slice: bfs_from_move_table_u16(&slice_move, SLICE_SIZE, solved_slice, MOVE_COUNT),
-        phase2_ep: bfs_from_move_table_u16(&phase2_ep_move, CP_SIZE, 0, PHASE2_MOVE_COUNT),
+        phase2_ep: bfs_from_move_table_u16(&phase2_ep_move, EP_SIZE, 0, PHASE2_MOVE_COUNT),
         phase2_cp_sep_joint: build_phase2_cp_sep_joint_dist(&phase2_cp_move, &phase2_sep_move),
         co_move,
         eo_move,
