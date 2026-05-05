@@ -190,6 +190,50 @@ function parseJsonResponse(rawResponse) {
   }
 }
 
+function toMoveArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((move) => String(move || "").trim()).filter(Boolean);
+}
+
+function toNonNegativeInt(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(0, Math.floor(num));
+}
+
+function toInsertionIndex(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return -1;
+  return Math.floor(num);
+}
+
+function normalizeFmcCandidate(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const moveCount = toNonNegativeInt(raw.moveCount ?? raw.move_count ?? (Array.isArray(raw.moves) ? raw.moves.length : 0));
+  const mode = raw.mode ? String(raw.mode) : "solved_finish";
+  return {
+    ...raw,
+    solution: String(raw.solution || "").trim(),
+    moveCount,
+    eoLength: toNonNegativeInt(raw.eoLength ?? raw.eo_length ?? 0),
+    drLength: toNonNegativeInt(raw.drLength ?? raw.dr_length ?? 0),
+    p2Length: toNonNegativeInt(raw.p2Length ?? raw.p2_length ?? 0),
+    eoMoves: toMoveArray(raw.eoMoves ?? raw.eo_moves),
+    drMoves: toMoveArray(raw.drMoves ?? raw.dr_moves),
+    finishMoves: toMoveArray(raw.finishMoves ?? raw.finish_moves),
+    premoves: String(raw.premoves || "").trim(),
+    moves: toMoveArray(raw.moves),
+    mode,
+    leftoverType: raw.leftoverType ? String(raw.leftoverType) : "none",
+    leftoverSignature: raw.leftoverSignature ? String(raw.leftoverSignature) : "",
+    skeletonMoves: toMoveArray(raw.skeletonMoves ?? raw.skeleton_moves),
+    insertionMoves: toMoveArray(raw.insertionMoves ?? raw.insertion_moves),
+    insertionIndex: toInsertionIndex(raw.insertionIndex ?? raw.insertion_index ?? -1),
+    insertionRawLength: toNonNegativeInt(raw.insertionRawLength ?? raw.insertion_raw_length ?? 0),
+    cancellationCount: toNonNegativeInt(raw.cancellationCount ?? raw.cancellation_count ?? 0),
+  };
+}
+
 export async function ensureWasmSolverReady() {
   if (wasmApi) return wasmApi;
   if (wasmApiPromise) return wasmApiPromise;
@@ -396,7 +440,22 @@ export async function solveFmcWasm(scramble, options = {}) {
     const raw = api.solveFmcWasm(scramble, optionsJson);
     if (!raw) return null;
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return parsed && parsed.ok !== undefined ? parsed : null;
+    if (!parsed || parsed.ok === undefined) return null;
+    const moveCountRaw =
+      parsed.moveCount !== undefined || parsed.move_count !== undefined
+        ? parsed.moveCount ?? parsed.move_count
+        : Array.isArray(parsed.moves)
+          ? parsed.moves.length
+          : 0;
+    const candidates = Array.isArray(parsed.candidates)
+      ? parsed.candidates.map(normalizeFmcCandidate).filter(Boolean)
+      : [];
+    return {
+      ...parsed,
+      solution: String(parsed.solution || "").trim(),
+      moveCount: toNonNegativeInt(moveCountRaw),
+      candidates,
+    };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
     return null;

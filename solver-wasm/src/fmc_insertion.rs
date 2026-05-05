@@ -256,6 +256,10 @@ fn build_ranked_windows(
     windows.into_iter().map(|(_, s, e, w)| (s, e, w)).collect()
 }
 
+pub fn insertion_indices(base_len: usize) -> Vec<usize> {
+    (0..=base_len).collect()
+}
+
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
@@ -386,5 +390,19 @@ pub fn optimize_insertion_wasm_impl(
             .to_string()
         }
         None => serde_json::json!({"ok": false, "reason": "NO_SOLUTION"}).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::insertion_indices;
+
+    #[test]
+    fn insertion_indices_cover_zero_through_n_inclusive() {
+        let n = 5usize;
+        let indices = insertion_indices(n);
+        assert_eq!(indices.first().copied(), Some(0));
+        assert_eq!(indices.last().copied(), Some(n));
+        assert_eq!(indices.len(), n + 1);
     }
 }

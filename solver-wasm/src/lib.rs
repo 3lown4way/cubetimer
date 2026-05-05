@@ -8,11 +8,20 @@ pub mod twophase_bundle;
 pub mod twophase_search;
 pub mod fmc_search;
 pub mod fmc_insertion;
+pub mod fmc_leftover;
+pub mod fmc_commutators;
+pub mod fmc_skeleton;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_classifier;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_pruning;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_rewrite;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_search;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_ml;
+#[cfg(feature = "htr_experimental")]
 pub mod htr_lookup;
 mod parser;
 mod permutation;

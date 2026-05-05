@@ -342,13 +342,30 @@ function compareFmcCandidatePriority(a, b) {
   if (!a) return 1;
   if (!b) return -1;
   if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
+  const cancellationDelta = (b.cancellationCount ?? b.cancellationPotential ?? 0)
+    - (a.cancellationCount ?? a.cancellationPotential ?? 0);
+  if (cancellationDelta !== 0) return cancellationDelta;
+  const skeletonLengthDelta = (a.skeletonLength ?? Number.POSITIVE_INFINITY)
+    - (b.skeletonLength ?? Number.POSITIVE_INFINITY);
+  if (skeletonLengthDelta !== 0) return skeletonLengthDelta;
+  const insertionRawLengthDelta = (a.insertionRawLength ?? Number.POSITIVE_INFINITY)
+    - (b.insertionRawLength ?? Number.POSITIVE_INFINITY);
+  if (insertionRawLengthDelta !== 0) return insertionRawLengthDelta;
+  const eoDrLengthA = (a.eoLength ?? 0) + (a.drLength ?? 0);
+  const eoDrLengthB = (b.eoLength ?? 0) + (b.drLength ?? 0);
+  const eoDrLengthDelta = eoDrLengthA - eoDrLengthB;
+  if (eoDrLengthDelta !== 0) return eoDrLengthDelta;
   const insertionDelta = (b.insertionPotential || 0) - (a.insertionPotential || 0);
   if (insertionDelta !== 0) return insertionDelta;
-  const cancellationDelta = (b.cancellationPotential || 0) - (a.cancellationPotential || 0);
-  if (cancellationDelta !== 0) return cancellationDelta;
   const axisDelta = (a.axisSwitches || 0) - (b.axisSwitches || 0);
   if (axisDelta !== 0) return axisDelta;
   return String(a.solution || "").localeCompare(String(b.solution || ""));
+}
+
+export function rankFmcCandidatesForTest(candidates) {
+  const list = Array.isArray(candidates) ? candidates.slice() : [];
+  list.sort(compareFmcCandidatePriority);
+  return list;
 }
 
 function pushRankedUniqueCandidate(list, candidate, limit = Infinity) {
@@ -755,6 +772,8 @@ function createCandidate(source, strategy, moves) {
     strategy: metadata.tag || "",
     usesCfop: !!metadata.usesCfop,
     innerSource: metadata.innerSource || "",
+    mode: metadata.mode || "solved_finish",
+    sourceMode: metadata.sourceMode || "",
     axisName: metadata.axisName || "",
     eoLength: Number.isFinite(metadata.eoLength) ? metadata.eoLength : null,
     drLength: Number.isFinite(metadata.drLength) ? metadata.drLength : null,
@@ -762,9 +781,21 @@ function createCandidate(source, strategy, moves) {
     eoMoves: Array.isArray(metadata.eoMoves) ? metadata.eoMoves : null,
     drMoves: Array.isArray(metadata.drMoves) ? metadata.drMoves : null,
     finishMoves: Array.isArray(metadata.finishMoves) ? metadata.finishMoves : null,
+    rzpUsed: metadata.rzpUsed === true,
     premoveMoves: Array.isArray(metadata.premoveMoves) ? metadata.premoveMoves : null,
     skeletonMoves: Array.isArray(metadata.skeletonMoves) ? metadata.skeletonMoves : null,
+    skeletonLength: Number.isFinite(metadata.skeletonLength)
+      ? metadata.skeletonLength
+      : (Array.isArray(metadata.skeletonMoves) ? metadata.skeletonMoves.length : null),
+    insertionMoves: Array.isArray(metadata.insertionMoves) ? metadata.insertionMoves : null,
+    insertionIndex: Number.isFinite(metadata.insertionIndex) ? metadata.insertionIndex : null,
     insertionBaseMoves: Array.isArray(metadata.insertionBaseMoves) ? metadata.insertionBaseMoves : null,
+    insertionRawLength: Number.isFinite(metadata.insertionRawLength) ? metadata.insertionRawLength : null,
+    leftoverType: typeof metadata.leftoverType === "string" ? metadata.leftoverType : "",
+    signature: typeof metadata.signature === "string" ? metadata.signature : "",
+    cancellationCount: Number.isFinite(metadata.cancellationCount)
+      ? metadata.cancellationCount
+      : structureMetrics.cancellationPotential,
     moves: normalized,
     solution: joinMoves(normalized),
     moveCount: normalized.length,
@@ -1161,6 +1192,16 @@ function buildFmcParts(candidate) {
   const axisNote = candidate.axisName ? `axis ${candidate.axisName}` : "";
   const nissNote = isNiss ? "NISS" : "";
   const rzpNote = candidate.rzpUsed ? "RZP" : "";
+  const hasSkeleton = Array.isArray(candidate.skeletonMoves) && candidate.skeletonMoves.length > 0;
+  const hasInsertionMoves = Array.isArray(candidate.insertionMoves) && candidate.insertionMoves.length > 0;
+  const skeletonNotes = [
+    candidate.leftoverType ? `leftover ${candidate.leftoverType}` : "",
+    candidate.signature ? `sig ${candidate.signature}` : "",
+  ].filter(Boolean).join(", ");
+  const insertionNotes = [
+    Number.isFinite(candidate.insertionIndex) ? `index ${candidate.insertionIndex}` : "",
+    Number.isFinite(candidate.cancellationCount) ? `cancel ${candidate.cancellationCount}` : "",
+  ].filter(Boolean).join(", ");
 
   // For non-NISS: premove comes BEFORE EO/DR/Finish in execution order.
   // For NISS: premoveMoves is a post-move; it is appended AFTER EO/DR/Finish (see below).
@@ -1252,14 +1293,14 @@ function buildFmcParts(candidate) {
         name: "DR",
         solution: joinMoves(candidate.drMoves),
         moveCount: candidate.drMoves.length,
-        notes: "",
+        notes: [rzpNote].filter(Boolean).join(", "),
       });
     } else if (hasSegments && Number.isFinite(candidate.drLength) && candidate.drLength > 0) {
       parts.push({
         name: "DR",
         solution: "",
         moveCount: candidate.drLength,
-        notes: `${candidate.drLength}수`,
+        notes: [`${candidate.drLength}수`, rzpNote].filter(Boolean).join(", "),
       });
     }
     if (hasFinish) {
@@ -1279,12 +1320,32 @@ function buildFmcParts(candidate) {
     }
   }
 
+  if (hasSkeleton) {
+    parts.push({
+      name: "Skeleton",
+      solution: joinMoves(candidate.skeletonMoves),
+      moveCount: candidate.skeletonMoves.length,
+      notes: skeletonNotes,
+      isSummary: true,
+    });
+  }
+
+  if (hasInsertionMoves) {
+    parts.push({
+      name: "Insertion Moves",
+      solution: joinMoves(candidate.insertionMoves),
+      moveCount: candidate.insertionMoves.length,
+      notes: insertionNotes,
+      isSummary: true,
+    });
+  }
+
   // Insertion info (only show when insertion actually happened)
   if (isInsertion && hasInsertionBase) {
     const baseMoveCount = candidate.insertionBaseMoves.length;
     const finalMoveCount = candidate.moveCount;
     parts.push({
-      name: "Insertion",
+      name: "Insertion Summary",
       solution: "",
       moveCount: 0,
       notes: baseMoveCount !== finalMoveCount
@@ -1532,6 +1593,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           const maybeInvert = (arr) => (wcIsNiss && Array.isArray(arr) && arr.length ? invertMoves(arr) : (Array.isArray(arr) && arr.length ? arr : null));
           const candidate = createCandidate(wc.source || "FMC_WASM", {
             tag: wc.source || "wasm",
+            mode: wc.mode || "solved_finish",
+            sourceMode: wc.mode || "",
             axisName: wc.axisName || "",
             eoLength: wc.eoLength,
             drLength: wc.drLength,
@@ -1539,6 +1602,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
             eoMoves: maybeInvert(wc.eoMoves),
             drMoves: maybeInvert(wc.drMoves),
             finishMoves: maybeInvert(wc.finishMoves),
+            skeletonMoves: Array.isArray(wc.skeletonMoves) ? wc.skeletonMoves : null,
+            skeletonLength: Number.isFinite(wc.skeletonLength)
+              ? wc.skeletonLength
+              : (Array.isArray(wc.skeletonMoves) ? wc.skeletonMoves.length : null),
+            insertionMoves: Array.isArray(wc.insertionMoves) ? wc.insertionMoves : null,
+            insertionIndex: wc.insertionIndex,
+            insertionRawLength: wc.insertionRawLength,
+            leftoverType: wc.leftoverType || "",
+            signature: wc.signature || "",
+            cancellationCount: wc.cancellationCount,
+            rzpUsed: wc.rzpUsed === true,
             premoveMoves: wc.premoves ? wc.premoves.split(/\s+/).filter(Boolean) : null,
           }, wcMoves);
           if (candidate) trackCandidate(candidate);
@@ -1661,13 +1735,18 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
               tag: `insertion:${target.source}`,
               usesCfop: target.usesCfop,
               innerSource: target.innerSource || target.source,
+              mode: "skeleton_insertion",
+              sourceMode: target.mode || "solved_finish",
               axisName: target.axisName,
               eoMoves: target.eoMoves,
               drMoves: target.drMoves,
               finishMoves: target.finishMoves,
               premoveMoves: target.premoveMoves,
               skeletonMoves: target.moves.slice(),
+              skeletonLength: target.moves.length,
               insertionBaseMoves: target.moves.slice(),
+              insertionRawLength: optimizedMoves.length,
+              cancellationCount: Math.max(0, target.moveCount - optimizedMoves.length),
             },
             optimizedMoves,
           );
@@ -1780,6 +1859,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     attempts,
     stages: fmcStages,
     parts,
+    candidates: rankedCandidates,
     solutionDisplay: solutionDisplaySections.join("\n"),
     performanceDiagnostics: finalizeDiagnostics(),
   };

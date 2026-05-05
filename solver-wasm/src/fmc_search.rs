@@ -3,6 +3,8 @@ use crate::minmove_core::{
     solution_string_from_path, CubeState, CO_SIZE, EDGE_COUNT, EO_SIZE, LAST_FACE_FREE,
     MOVE_COUNT, SLICE_SIZE,
 };
+use crate::fmc_skeleton::search_skeleton_3c;
+use crate::fmc_commutators::all_3c_algorithms_for_signature;
 use crate::twophase_bundle::TwophaseTables;
 use crate::twophase_search::{solve_phase2, Phase2Input};
 
@@ -56,6 +58,9 @@ const FMC_DR_ROUTE_LIMIT: usize = 8;
 
 /// Allow RZP-derived DR routes up to this many moves longer than the direct shortest DR route.
 const FMC_DR_SLACK: usize = 3;
+const FMC_SKELETON_MAX_DEPTH: u8 = 3;
+const FMC_SKELETON_TOP_K: usize = 2;
+const FMC_SKELETON_INSERTION_TOP_K: usize = 4;
 
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
@@ -694,6 +699,126 @@ pub struct FmcCandidate {
     pub premove_moves: Vec<u8>,
     /// Whether this candidate used RZP for DR (vs direct solve)
     pub rzp_used: bool,
+    /// Candidate mode: solved_finish or hybrid_placeholder for future stages.
+    pub mode: String,
+    /// Leftover classification/signature for hybrid FMC stage.
+    pub leftover_type: String,
+    pub leftover_signature: String,
+    /// Skeleton/insertion decomposition for hybrid portfolio flow.
+    pub skeleton_moves: Vec<u8>,
+    pub insertion_moves: Vec<u8>,
+    pub insertion_index: i32,
+    pub insertion_raw_length: usize,
+    pub cancellation_count: i32,
+}
+
+impl FmcCandidate {
+    fn solved_finish_defaults(
+        moves: Vec<u8>,
+        eo_len: u8,
+        dr_len: u8,
+        p2_len: u8,
+        eo_moves: Vec<u8>,
+        dr_moves: Vec<u8>,
+        finish_moves: Vec<u8>,
+        axis: u8,
+        source_tag: u8,
+        premove_moves: Vec<u8>,
+        rzp_used: bool,
+    ) -> Self {
+        Self {
+            moves,
+            eo_len,
+            dr_len,
+            p2_len,
+            eo_moves,
+            dr_moves,
+            finish_moves,
+            axis,
+            source_tag,
+            premove_moves,
+            rzp_used,
+            mode: "solved_finish".into(),
+            leftover_type: "none".into(),
+            leftover_signature: String::new(),
+            skeleton_moves: Vec::new(),
+            insertion_moves: Vec::new(),
+            insertion_index: -1,
+            insertion_raw_length: 0,
+            cancellation_count: 0,
+        }
+    }
+}
+
+fn convert_skeleton_moves_for_source(
+    skeleton_moves: &[u8],
+    mode: &str,
+    source_tag: u8,
+    cvt: impl Fn(&Vec<u8>) -> Vec<u8>,
+) -> Vec<u8> {
+    let converted = cvt(&skeleton_moves.to_vec());
+    if mode == "skeleton_insertion" && (source_tag == 1 || source_tag == 3) {
+        invert_moves(&converted)
+    } else {
+        converted
+    }
+}
+
+fn search_skeleton_insertions(
+    start_state: &CubeState,
+    base_moves: &[u8],
+    leftover_type: &str,
+    leftover_signature: &str,
+    tables: &TwophaseTables,
+) -> Vec<(Vec<u8>, Vec<u8>, usize, usize, i32)> {
+    if leftover_type != "3C" {
+        return Vec::new();
+    }
+
+    let mut candidates: Vec<(Vec<u8>, Vec<u8>, usize, usize, i32)> = Vec::new();
+    let solved = CubeState::solved();
+
+    for alg in all_3c_algorithms_for_signature(leftover_signature) {
+        let insertion_moves = match parse_scramble(alg.algorithm, &tables.move_data) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        for insertion_index in 0..=base_moves.len() {
+            let mut raw = Vec::with_capacity(base_moves.len() + insertion_moves.len());
+            raw.extend_from_slice(&base_moves[..insertion_index]);
+            raw.extend_from_slice(&insertion_moves);
+            raw.extend_from_slice(&base_moves[insertion_index..]);
+
+            let simplified = simplify_moves(&raw);
+            if simplified.is_empty() {
+                continue;
+            }
+
+            let end_state = start_state.apply_moves(&simplified, &tables.move_data);
+            if end_state != solved {
+                continue;
+            }
+
+            let cancellation_count = raw.len() as i32 - simplified.len() as i32;
+            candidates.push((
+                simplified,
+                insertion_moves.clone(),
+                insertion_index,
+                raw.len(),
+                cancellation_count,
+            ));
+        }
+    }
+
+    candidates.sort_by(|a, b| {
+        a.0.len()
+            .cmp(&b.0.len())
+            .then(b.4.cmp(&a.4))
+            .then(a.2.cmp(&b.2))
+    });
+    candidates.truncate(FMC_SKELETON_INSERTION_TOP_K);
+    candidates
 }
 
 #[derive(Clone, Debug)]
@@ -717,7 +842,7 @@ fn solve_fmc_single_axis(
     p2_node_limit: u64,
     current_best: &mut usize,
     force_rzp: bool,
-) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, bool)> {
+) -> Vec<FmcCandidate> {
     let mut results = Vec::new();
 
     let eo_idx = encode_eo(&state.eo);
@@ -760,6 +885,82 @@ fn solve_fmc_single_axis(
 
             let state_after_dr = state_after_eo.apply_moves(dr_moves, &tables.move_data);
 
+            let skeleton_candidates = search_skeleton_3c(
+                &state_after_dr,
+                tables,
+                FMC_SKELETON_MAX_DEPTH,
+                FMC_SKELETON_TOP_K,
+            );
+            for sk in skeleton_candidates {
+                let mut skeleton_full = Vec::with_capacity(eo_seq.len() + dr_moves.len() + sk.skeleton_moves.len());
+                skeleton_full.extend_from_slice(eo_seq);
+                skeleton_full.extend_from_slice(dr_moves);
+                skeleton_full.extend_from_slice(&sk.skeleton_moves);
+                let simplified = simplify_moves(&skeleton_full);
+                if simplified.is_empty() {
+                    continue;
+                }
+                if simplified.len() != skeleton_full.len() {
+                    continue;
+                }
+
+                if sk.leftover_type == "3C" {
+                    let inserted = search_skeleton_insertions(
+                        state,
+                        &skeleton_full,
+                        &sk.leftover_type,
+                        &sk.leftover_signature,
+                        tables,
+                    );
+                    for (inserted_moves, insertion_moves, insertion_index, insertion_raw_length, cancellation_count) in inserted {
+                        results.push(FmcCandidate {
+                            moves: inserted_moves,
+                            eo_len: eo_seq.len() as u8,
+                            dr_len: dr_moves.len() as u8,
+                            p2_len: 0,
+                            eo_moves: eo_seq.clone(),
+                            dr_moves: dr_moves.clone(),
+                            finish_moves: Vec::new(),
+                            axis: 0,
+                            source_tag: 0,
+                            premove_moves: Vec::new(),
+                            rzp_used: dr_route.rzp_setup_len > 0,
+                            mode: "skeleton_insertion".into(),
+                            leftover_type: sk.leftover_type.clone(),
+                            leftover_signature: sk.leftover_signature.clone(),
+                            skeleton_moves: sk.skeleton_moves.clone(),
+                            insertion_moves,
+                            insertion_index: insertion_index as i32,
+                            insertion_raw_length,
+                            cancellation_count,
+                        });
+                    }
+                    continue;
+                }
+
+                results.push(FmcCandidate {
+                    moves: simplified,
+                    eo_len: eo_seq.len() as u8,
+                    dr_len: dr_moves.len() as u8,
+                    p2_len: 0,
+                    eo_moves: eo_seq.clone(),
+                    dr_moves: dr_moves.clone(),
+                    finish_moves: Vec::new(),
+                    axis: 0,
+                    source_tag: 0,
+                    premove_moves: Vec::new(),
+                    rzp_used: dr_route.rzp_setup_len > 0,
+                    mode: "skeleton_insertion".into(),
+                    leftover_type: sk.leftover_type,
+                    leftover_signature: sk.leftover_signature,
+                    skeleton_moves: sk.skeleton_moves,
+                    insertion_moves: Vec::new(),
+                    insertion_index: -1,
+                    insertion_raw_length: 0,
+                    cancellation_count: 0,
+                });
+            }
+
             let p2_input = match build_p2_input(&state_after_dr) {
                 Some(input) => input,
                 None => continue,
@@ -790,11 +991,17 @@ fn solve_fmc_single_axis(
                 *current_best = simplified.len();
             }
 
-            results.push((
+            results.push(FmcCandidate::solved_finish_defaults(
                 simplified,
+                eo_seq.len() as u8,
+                dr_moves.len() as u8,
+                p2_global.len() as u8,
                 eo_seq.clone(),
                 dr_moves.clone(),
-                p2_global.clone(),
+                p2_global,
+                0,
+                0,
+                vec![],
                 dr_route.rzp_setup_len > 0,
             ));
         }
@@ -847,27 +1054,25 @@ pub fn solve_fmc(
             force_rzp,
         );
 
-        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used) in results {
+        for mut candidate in results {
             let cvt = |v: &Vec<u8>| -> Vec<u8> {
                 v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
             };
-            let original: Vec<u8> = cvt(&moves_in_axis_frame);
+            let original: Vec<u8> = cvt(&candidate.moves);
             let simplified = simplify_moves(&original);
             if !simplified.is_empty() && simplified.len() <= best_count {
-                best_count = simplified.len();
-                all_candidates.push(FmcCandidate {
-                    moves: simplified,
-                    eo_len: eo_raw.len() as u8,
-                    dr_len: dr_raw.len() as u8,
-                    p2_len: p2_raw.len() as u8,
-                    eo_moves: cvt(&eo_raw),
-                    dr_moves: cvt(&dr_raw),
-                    finish_moves: cvt(&p2_raw),
-                    axis,
-                    source_tag: 0,
-                    premove_moves: vec![],
-                    rzp_used,
-                });
+                if candidate.mode == "solved_finish" {
+                    best_count = simplified.len();
+                }
+                candidate.moves = simplified;
+                candidate.eo_moves = cvt(&candidate.eo_moves);
+                candidate.dr_moves = cvt(&candidate.dr_moves);
+                candidate.finish_moves = cvt(&candidate.finish_moves);
+                candidate.skeleton_moves =
+                    convert_skeleton_moves_for_source(&candidate.skeleton_moves, &candidate.mode, 0, cvt);
+                candidate.axis = axis;
+                candidate.source_tag = 0;
+                all_candidates.push(candidate);
             }
         }
     }
@@ -894,30 +1099,27 @@ pub fn solve_fmc(
             force_rzp,
         );
 
-        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used) in results {
+        for mut candidate in results {
             let cvt = |v: &Vec<u8>| -> Vec<u8> {
                 v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
             };
-            let original: Vec<u8> = cvt(&moves_in_axis_frame);
+            let original: Vec<u8> = cvt(&candidate.moves);
             // NISS: invert the solution
             let inverted = invert_moves(&original);
             let simplified = simplify_moves(&inverted);
             if !simplified.is_empty() && simplified.len() <= best_count {
-                best_count = simplified.len();
-                all_candidates.push(FmcCandidate {
-                    moves: simplified,
-                    eo_len: eo_raw.len() as u8,
-                    dr_len: dr_raw.len() as u8,
-                    p2_len: p2_raw.len() as u8,
-                    // NISS: store original (pre-inversion) segments from inverse solve
-                    eo_moves: cvt(&eo_raw),
-                    dr_moves: cvt(&dr_raw),
-                    finish_moves: cvt(&p2_raw),
-                    axis,
-                    source_tag: 1,
-                    premove_moves: vec![],
-                    rzp_used,
-                });
+                if candidate.mode == "solved_finish" {
+                    best_count = simplified.len();
+                }
+                candidate.moves = simplified;
+                candidate.eo_moves = cvt(&candidate.eo_moves);
+                candidate.dr_moves = cvt(&candidate.dr_moves);
+                candidate.finish_moves = cvt(&candidate.finish_moves);
+                candidate.skeleton_moves =
+                    convert_skeleton_moves_for_source(&candidate.skeleton_moves, &candidate.mode, 1, cvt);
+                candidate.axis = axis;
+                candidate.source_tag = 1;
+                all_candidates.push(candidate);
             }
         }
     }
@@ -941,9 +1143,6 @@ pub fn solve_fmc(
                     .collect();
                 let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
 
-                // Use a tighter budget check: skip if premove_len + best possible pipeline >= best
-                let pm_len = pm_set.len();
-
                 let results = solve_fmc_single_axis(
                     &state,
                     tables,
@@ -957,30 +1156,33 @@ pub fn solve_fmc(
                     force_rzp,
                 );
 
-                for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used) in results {
+                for mut candidate in results {
                     let cvt = |v: &Vec<u8>| -> Vec<u8> {
                         v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
                     };
-                    let original: Vec<u8> = cvt(&moves_in_axis);
+                    let original: Vec<u8> = cvt(&candidate.moves);
                     // Direct premove: solution = premoves + pipeline_solution
                     let mut full = pm_set.clone();
                     full.extend_from_slice(&original);
                     let simplified = simplify_moves(&full);
                     if !simplified.is_empty() && simplified.len() <= best_count {
-                        best_count = simplified.len();
-                        all_candidates.push(FmcCandidate {
-                            moves: simplified,
-                            eo_len: eo_raw.len() as u8,
-                            dr_len: dr_raw.len() as u8,
-                            p2_len: p2_raw.len() as u8,
-                            eo_moves: cvt(&eo_raw),
-                            dr_moves: cvt(&dr_raw),
-                            finish_moves: cvt(&p2_raw),
-                            axis,
-                            source_tag: 2,
-                            premove_moves: pm_set.clone(),
-                            rzp_used,
-                        });
+                        if candidate.mode == "solved_finish" {
+                            best_count = simplified.len();
+                        }
+                        candidate.moves = simplified;
+                        candidate.eo_moves = cvt(&candidate.eo_moves);
+                        candidate.dr_moves = cvt(&candidate.dr_moves);
+                        candidate.finish_moves = cvt(&candidate.finish_moves);
+                        candidate.skeleton_moves = convert_skeleton_moves_for_source(
+                            &candidate.skeleton_moves,
+                            &candidate.mode,
+                            2,
+                            cvt,
+                        );
+                        candidate.axis = axis;
+                        candidate.source_tag = 2;
+                        candidate.premove_moves = pm_set.clone();
+                        all_candidates.push(candidate);
                     }
                 }
             }
@@ -1011,31 +1213,33 @@ pub fn solve_fmc(
                     force_rzp,
                 );
 
-                for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used) in results {
+                for mut candidate in results {
                     let cvt = |v: &Vec<u8>| -> Vec<u8> {
                         v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
                     };
-                    let original: Vec<u8> = cvt(&moves_in_axis);
+                    let original: Vec<u8> = cvt(&candidate.moves);
                     // NISS premove: solution = inv(pipeline) + inv(premoves)
                     let mut full = invert_moves(&original);
                     full.extend_from_slice(&invert_moves(pm_set));
                     let simplified = simplify_moves(&full);
                     if !simplified.is_empty() && simplified.len() <= best_count {
-                        best_count = simplified.len();
-                        all_candidates.push(FmcCandidate {
-                            moves: simplified,
-                            eo_len: eo_raw.len() as u8,
-                            dr_len: dr_raw.len() as u8,
-                            p2_len: p2_raw.len() as u8,
-                            // NISS: store original (pre-inversion) segments
-                            eo_moves: cvt(&eo_raw),
-                            dr_moves: cvt(&dr_raw),
-                            finish_moves: cvt(&p2_raw),
-                            axis,
-                            source_tag: 3,
-                            premove_moves: pm_set.clone(),
-                            rzp_used,
-                        });
+                        if candidate.mode == "solved_finish" {
+                            best_count = simplified.len();
+                        }
+                        candidate.moves = simplified;
+                        candidate.eo_moves = cvt(&candidate.eo_moves);
+                        candidate.dr_moves = cvt(&candidate.dr_moves);
+                        candidate.finish_moves = cvt(&candidate.finish_moves);
+                        candidate.skeleton_moves = convert_skeleton_moves_for_source(
+                            &candidate.skeleton_moves,
+                            &candidate.mode,
+                            3,
+                            cvt,
+                        );
+                        candidate.axis = axis;
+                        candidate.source_tag = 3;
+                        candidate.premove_moves = pm_set.clone();
+                        all_candidates.push(candidate);
                     }
                 }
             }
@@ -1086,6 +1290,16 @@ pub fn candidate_to_json(
         .map(|&m| tables.move_data.move_names[m as usize].as_str()).collect();
     let finish_moves_str: Vec<&str> = candidate.finish_moves.iter()
         .map(|&m| tables.move_data.move_names[m as usize].as_str()).collect();
+    let skeleton_moves_str: Vec<&str> = candidate
+        .skeleton_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let insertion_moves_str: Vec<&str> = candidate
+        .insertion_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
 
     serde_json::json!({
         "ok": true,
@@ -1102,5 +1316,143 @@ pub fn candidate_to_json(
         "premoves": premove_str,
         "moves": solution.split_whitespace().collect::<Vec<_>>(),
         "rzpUsed": candidate.rzp_used,
+        "mode": candidate.mode.as_str(),
+        "leftoverType": candidate.leftover_type.as_str(),
+        "leftoverSignature": candidate.leftover_signature.as_str(),
+        "skeletonMoves": skeleton_moves_str,
+        "insertionMoves": insertion_moves_str,
+        "insertionIndex": candidate.insertion_index,
+        "insertionRawLength": candidate.insertion_raw_length,
+        "cancellationCount": candidate.cancellation_count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::minmove_bundle::{MoveTable, PackedTable};
+    use crate::minmove_core::MoveData;
+
+    fn test_tables() -> TwophaseTables {
+        let move_names = [
+            "U", "U'", "U2", "R", "R'", "R2", "F", "F'", "F2", "D", "D'", "D2", "L",
+            "L'", "L2", "B", "B'", "B2",
+        ]
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect::<Vec<_>>();
+        TwophaseTables {
+            move_data: MoveData {
+                move_names,
+                move_face: vec![0; 18],
+                corner_perm_map: vec![0; 18 * 8],
+                corner_ori_delta: vec![0; 18 * 8],
+                edge_perm_map: vec![0; 18 * 12],
+                edge_ori_delta: vec![0; 18 * 12],
+                edge_new_pos_map: vec![0; 18 * 12],
+            },
+            phase1_allowed_moves_by_last_face: vec![vec![]],
+            phase2_allowed_moves_by_last_face: vec![vec![]],
+            phase2_move_indices: [0; 10],
+            phase2_move_faces: [0; 10],
+            co: PackedTable { count: 0, max_distance: 0, nibble_packed: false, payload: vec![] },
+            eo: PackedTable { count: 0, max_distance: 0, nibble_packed: false, payload: vec![] },
+            slice: PackedTable { count: 0, max_distance: 0, nibble_packed: false, payload: vec![] },
+            phase2_ep: PackedTable { count: 0, max_distance: 0, nibble_packed: false, payload: vec![] },
+            phase2_cp_sep_joint: PackedTable { count: 0, max_distance: 0, nibble_packed: false, payload: vec![] },
+            co_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            eo_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            slice_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            phase2_cp_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            phase2_ep_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            phase2_sep_move: MoveTable { states: 0, moves: 0, values: vec![] },
+            solved_slice: 0,
+        }
+    }
+
+    #[test]
+    fn candidate_to_json_includes_existing_and_hybrid_fields() {
+        let tables = test_tables();
+        let mut candidate = FmcCandidate::solved_finish_defaults(
+            vec![0, 5, 11],
+            2,
+            1,
+            3,
+            vec![0, 1],
+            vec![5],
+            vec![11],
+            0,
+            0,
+            vec![3],
+            true,
+        );
+        candidate.skeleton_moves = vec![0, 5];
+        candidate.insertion_moves = vec![11];
+
+        let json = candidate_to_json(&candidate, &tables);
+        assert_eq!(json["ok"], serde_json::json!(true));
+        assert!(json.get("solution").is_some());
+        assert!(json.get("moveCount").is_some());
+        assert!(json.get("eoLength").is_some());
+        assert!(json.get("drLength").is_some());
+        assert!(json.get("p2Length").is_some());
+        assert!(json.get("eoMoves").is_some());
+        assert!(json.get("drMoves").is_some());
+        assert!(json.get("finishMoves").is_some());
+        assert!(json.get("axisName").is_some());
+        assert!(json.get("source").is_some());
+        assert!(json.get("premoves").is_some());
+        assert!(json.get("moves").is_some());
+        assert!(json.get("rzpUsed").is_some());
+
+        assert_eq!(json["mode"], serde_json::json!("solved_finish"));
+        assert_eq!(json["leftoverType"], serde_json::json!("none"));
+        assert_eq!(json["leftoverSignature"], serde_json::json!(""));
+        assert_eq!(json["skeletonMoves"], serde_json::json!(["U", "R2"]));
+        assert_eq!(json["insertionMoves"], serde_json::json!(["D2"]));
+        assert_eq!(json["insertionIndex"], serde_json::json!(-1));
+        assert_eq!(json["insertionRawLength"], serde_json::json!(0));
+        assert_eq!(json["cancellationCount"], serde_json::json!(0));
+    }
+
+    #[test]
+    fn candidate_to_json_preserves_large_insertion_raw_length() {
+        let tables = test_tables();
+        let mut candidate = FmcCandidate::solved_finish_defaults(
+            vec![0],
+            0,
+            0,
+            0,
+            vec![],
+            vec![],
+            vec![],
+            0,
+            0,
+            vec![],
+            false,
+        );
+        candidate.insertion_raw_length = 300;
+
+        let json = candidate_to_json(&candidate, &tables);
+        assert_eq!(json["insertionRawLength"], serde_json::json!(300));
+    }
+
+    #[test]
+    fn skeleton_moves_invert_for_niss_skeleton_candidates_only() {
+        let cvt = |v: &Vec<u8>| v.clone();
+        let skeleton = vec![0, 3, 11];
+
+        let direct = convert_skeleton_moves_for_source(&skeleton, "skeleton_insertion", 0, cvt);
+        assert_eq!(direct, skeleton);
+
+        let niss = convert_skeleton_moves_for_source(&skeleton, "skeleton_insertion", 1, cvt);
+        assert_eq!(niss, invert_moves(&skeleton));
+
+        let premove_niss =
+            convert_skeleton_moves_for_source(&skeleton, "skeleton_insertion", 3, cvt);
+        assert_eq!(premove_niss, invert_moves(&skeleton));
+
+        let solved_finish = convert_skeleton_moves_for_source(&skeleton, "solved_finish", 1, cvt);
+        assert_eq!(solved_finish, skeleton);
+    }
 }
