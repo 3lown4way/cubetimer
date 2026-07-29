@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   benchmark:
@@ -14,12 +14,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/app-wide-performance
-          fetch-depth: 0
-
-      - name: Apply measured hotpath optimizations
-        run: python3 tools/apply-hotpath-optimization.py
 
       - name: Syntax checks
         run: |
@@ -58,17 +52,7 @@ jobs:
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
 
-      - name: Measure explicit F2L library build cost
+      - name: Profile individual formula-library builds
+        env:
+          DEBUG_CFOP_BUILD: "1"
         run: node benchmark-zb-cold.mjs
-
-      - name: Commit validated source changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/solverWorker.js solver/cfop3x3.js benchmark-hotpaths.mjs
-          if git diff --cached --quiet; then
-            echo "No source changes to commit."
-          else
-            git commit -m "Optimize two-phase and default CFOP hot paths"
-            git push origin HEAD:agent/app-wide-performance
-          fi
