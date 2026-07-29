@@ -3300,7 +3300,6 @@ async function getCfopContext() {
 
     // Pre-warm OLL and PLL case libraries so the first real solve doesn't pay
     // a 130ms + 210ms cold-start penalty for these stage formula lookups.
-    _warmOllPllLibraries(ctx);
     contextReady = true;
 
     return ctx;

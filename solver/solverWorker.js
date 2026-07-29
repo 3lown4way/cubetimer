@@ -1244,7 +1244,6 @@ function startBackgroundWarmups() {
   backgroundWarmupsStarted = true;
   // Keep startup focused on the default interactive CFOP path.
   // Other solvers already initialize lazily when their mode is selected.
-  void prewarmInternal3x3StrictCfop();
   void prewarmCubingJs3x3Pattern();
 }
 
