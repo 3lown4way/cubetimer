@@ -27,7 +27,6 @@ jobs:
           node --check tools/compare-f2l-compact-kernel.mjs
 
       - name: Capture baseline and apply compact kernel
-        if: ${{ !contains(hashFiles('solver/cfop3x3.js'), '') }}
         shell: bash
         run: |
           if grep -q 'F2L_COMPACT_KERNEL_VERSION = 2' solver/cfop3x3.js; then
