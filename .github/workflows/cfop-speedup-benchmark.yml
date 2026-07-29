@@ -1,0 +1,25 @@
+name: CFOP speedup benchmark
+
+on:
+  push:
+    branches:
+      - agent/cfop-speedup
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: node --check solver/solverWorker.js
+
+      - name: Run CFOP benchmark 10 times
+        run: node benchmark-cfop-10.mjs
