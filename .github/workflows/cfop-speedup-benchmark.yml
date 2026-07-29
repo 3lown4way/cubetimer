@@ -18,6 +18,8 @@ jobs:
       - name: Syntax checks
         run: |
           node --check benchmark-hotpaths.mjs
+          node --check benchmark-twophase-frontiers.mjs
+          node --check benchmark-zb-cold.mjs
           node --check solver/solverWorker.js
 
       - name: Run CFOP regression benchmark
@@ -25,3 +27,9 @@ jobs:
 
       - name: Run 2-phase and ZB hotpath baseline
         run: node benchmark-hotpaths.mjs
+
+      - name: Compare two-phase frontier counts
+        run: node benchmark-twophase-frontiers.mjs
+
+      - name: Measure ZB cold-start cost
+        run: node benchmark-zb-cold.mjs
