@@ -144,6 +144,10 @@ let f2lCaseLibraryReady = false;
 const formulaValidityCache = new Map();
 const formulaListCache = new Map();
 const singleStageFormulaCaseLibraryCache = new Map();
+let staticZbllCaseIndex = null;
+let staticZbllCaseCount = 0;
+let staticZbllCaseIndexPromise = null;
+let staticZbllCaseLibrary = null;
 const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 2048;
 const FORMULA_LOOKUP_CACHE_LIMIT = 64;
 const normalizeFormulaCache = new Map();
@@ -177,6 +181,51 @@ const cfopLibraryTelemetry = {
   singleStageLibraryTotalBuildMs: 0,
   singleStageLibraryLastBuildMs: 0,
 };
+
+async function ensureStaticZbllCaseIndex() {
+  if (staticZbllCaseIndex) return staticZbllCaseIndex;
+  if (staticZbllCaseIndexPromise) return staticZbllCaseIndexPromise;
+  staticZbllCaseIndexPromise = import("./zbllCaseIndex.js")
+    .then((mod) => {
+      const index = mod?.ZBLL_CASE_INDEX;
+      if (!index || typeof index !== "object") return null;
+      staticZbllCaseIndex = index;
+      staticZbllCaseCount = Number.isFinite(mod?.ZBLL_CASE_COUNT)
+        ? Math.max(0, Math.floor(mod.ZBLL_CASE_COUNT))
+        : Object.keys(index).length;
+      return staticZbllCaseIndex;
+    })
+    .catch(() => null);
+  return staticZbllCaseIndexPromise;
+}
+
+function getStaticZbllCaseLibrary() {
+  if (!staticZbllCaseIndex) return null;
+  if (staticZbllCaseLibrary) return staticZbllCaseLibrary;
+  const packedIndex = staticZbllCaseIndex;
+  staticZbllCaseLibrary = {
+    useZbllKey: true,
+    staticIndex: true,
+    caseMap: {
+      size: staticZbllCaseCount,
+      get(caseKey) {
+        const packedCandidates = packedIndex[caseKey];
+        if (!Array.isArray(packedCandidates) || packedCandidates.length === 0) return undefined;
+        return packedCandidates.map((packed) => {
+          const text = String(Array.isArray(packed) ? packed[0] || "" : "");
+          const formulaKey = String(Array.isArray(packed) ? packed[1] || "" : "") || null;
+          return {
+            text,
+            normalizedText: normalizeFormulaMatchText(text),
+            moves: splitMoves(text),
+            formulaKey,
+          };
+        });
+      },
+    },
+  };
+  return staticZbllCaseLibrary;
+}
 
 function snapshotCfopLibraryTelemetry() {
   return {
@@ -1441,6 +1490,10 @@ function getColorNeutralProbeTargetPairs(solveMode, styleProfileInput) {
   if (solveMode === "zb") return [1, 0];
   if (prefersExtendedCross) return [2, 1, 0];
   return [0];
+}
+
+function normalizeSolverVersion(version) {
+  return String(version || "v2").toLowerCase() === "v1" ? "v1" : "v2";
 }
 
 function normalizeSolveMode(mode) {
@@ -3652,12 +3705,65 @@ async function getF2LCaseLibrary(ctx) {
   return f2lCaseLibraryPromise;
 }
 
+export async function buildZbllCaseIndexData() {
+  const ctx = await getCfopContext();
+  const stage = {
+    name: "ZBLL",
+    solverVersion: "v1",
+    formulaKeys: ["ZBLL", "PLL"],
+    maxDepth: 22,
+    formulaPreAufList: FORMULA_AUF,
+    formulaPostAufList: FORMULA_AUF,
+    key(data) {
+      const c = buildKeyForOrbit(data.CORNERS, [0, 1, 2, 3, 4, 5, 6, 7], true, true);
+      const e = buildKeyForOrbit(data.EDGES, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], true, true);
+      return `C:${c}|E:${e}`;
+    },
+    zbllKey(data) {
+      const topC = buildKeyForOrbit(data.CORNERS, ctx.topCornerPositions, true, true);
+      const topE = buildKeyForOrbit(data.EDGES, ctx.topEdgePositions, true, true);
+      return `ZC:${topC}|ZE:${topE}`;
+    },
+  };
+  const formulas = filterValidFormulas(getFormulaListForStage(stage), ctx);
+  const library = getSingleStageFormulaCaseLibrary(
+    stage,
+    ctx,
+    formulas,
+    FORMULA_AUF,
+    FORMULA_AUF,
+    ["ZBLL", "PLL"],
+    buildFormulaKeyLookup(["ZBLL", "PLL"]),
+  );
+  if (!library?.caseMap || typeof library.caseMap.entries !== "function") {
+    throw new Error("ZBLL_CASE_LIBRARY_EXPORT_UNAVAILABLE");
+  }
+  const index = Object.create(null);
+  let candidateCount = 0;
+  for (const [caseKey, candidates] of library.caseMap.entries()) {
+    if (!Array.isArray(candidates) || candidates.length === 0) continue;
+    index[caseKey] = candidates.map((candidate) => {
+      candidateCount += 1;
+      return [String(candidate?.text || ""), String(candidate?.formulaKey || "")];
+    });
+  }
+  return {
+    index,
+    caseCount: Object.keys(index).length,
+    candidateCount,
+  };
+}
+
 export async function prewarm3x3StrictCfopLibraries(options = {}) {
   const ctx = await getCfopContext();
   if (options.includeF2L !== false) {
     await getF2LCaseLibrary(ctx);
   }
-  if (options.includeSingleStage !== false) {
+  if (options.includeSingleStage !== false && normalizeSolverVersion(options.solverVersion) === "v1") {
+    _warmOllPllLibraries(ctx);
+  }
+  if (options.includeSingleStage !== false && normalizeSolverVersion(options.solverVersion) === "v2") {
+    await ensureStaticZbllCaseIndex();
   }
   return {
     ok: true,
@@ -3757,6 +3863,7 @@ function isPLLSolved(data, ctx) {
 }
 
 function getStageDefinitions(options, ctx, profile, solveMode) {
+  const solverVersion = normalizeSolverVersion(options.solverVersion);
   const useZbStages = solveMode === "zb";
   const useZbLL = useZbStages;
   const useSvWvStages = !useZbStages && options.svWvMode === true;
@@ -3795,6 +3902,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   const llFamilyCalibration = normalizeLlFamilyCalibrationRecord(llFamilyCalibrationInput);
   const enableStyleFallback = hasStyleOptIn && options.enableStyleFallback !== false;
   const preferCompactF2L =
+    solverVersion === "v2" &&
     solveMode === "strict" &&
     !useSvWvStages &&
     !mixedCfopStages &&
@@ -4026,6 +4134,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     {
       name: f2lStageName,
       displayName: f2lStageDisplayName,
+      solverVersion,
       allowRelaxedSearch,
       formulaKeys: ["F2L"],
       mixedCfopStages,
@@ -4158,6 +4267,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     {
       name: stage3Name,
       displayName: stage3Name,
+      solverVersion,
       allowRelaxedSearch,
       formulaKeys: stage3FormulaKeys,
       getFormulaKeys(startPattern) {
@@ -4289,6 +4399,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
     {
       name: stage4Name,
       displayName: stage4Name,
+      solverVersion,
       allowRelaxedSearch,
       formulaKeys: stage4FormulaKeys,
       getDisplayName(startPattern) {
@@ -4809,13 +4920,19 @@ function getSingleStageFormulaCaseLibrary(
   const libraryFormulaKeyLookup = useCanonicalFormulaSet
     ? buildFormulaKeyLookup(canonicalFormulaKeys)
     : formulaKeyLookup;
-  const cacheKey = getSingleStageCaseLibraryKey(
+  const isZbllLibrary = typeof stage.zbllKey === "function" &&
+    Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length > 0 &&
+    canonicalFormulaKeys.includes("ZBLL") &&
+    canonicalFormulaKeys.every((key) => key === "ZBLL" || key === "PLL");
+  const solverVersion = normalizeSolverVersion(stage?.solverVersion);
+  const baseCacheKey = getSingleStageCaseLibraryKey(
     stage,
     libraryFormulas,
     preAufList,
     postAufList,
     canonicalFormulaKeys,
   );
+  const cacheKey = isZbllLibrary ? `${baseCacheKey}::${solverVersion}` : baseCacheKey;
   const cached = singleStageFormulaCaseLibraryCache.get(cacheKey);
   if (cached) {
     touchMapEntry(singleStageFormulaCaseLibraryCache, cacheKey, cached);
@@ -4836,10 +4953,18 @@ function getSingleStageFormulaCaseLibrary(
   if (!solved) return null;
   const builtAt = Date.now();
 
-  const useZbllKey = typeof stage.zbllKey === "function" &&
-    Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length > 0 &&
-    canonicalFormulaKeys.includes("ZBLL") &&
-    canonicalFormulaKeys.every(k => k === "ZBLL" || k === "PLL");
+  const useZbllKey = isZbllLibrary;
+  if (useZbllKey && solverVersion === "v2") {
+    const staticLibrary = getStaticZbllCaseLibrary();
+    if (staticLibrary) {
+      singleStageFormulaCaseLibraryCache.set(cacheKey, staticLibrary);
+      if (performanceCollector) {
+        performanceCollector.libraryCacheHit = true;
+        performanceCollector.cacheSize = singleStageFormulaCaseLibraryCache.size;
+      }
+      return staticLibrary;
+    }
+  }
   const getKeyFn = useZbllKey ? (data) => stage.zbllKey(data) : (data) => stage.key(data);
 
   const formulaDescriptors = libraryFormulas.map((alg) => {
@@ -6619,6 +6744,10 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
   const withPerformance = (result) =>
     isRootPerformanceCall ? attachCfopPerformanceDiagnostics(result, performanceSession) : result;
   const solveMode = normalizeSolveMode(options.mode);
+  const solverVersion = normalizeSolverVersion(options.solverVersion);
+  if (solverVersion === "v2" && (solveMode === "zb" || options.enableMixedCfopStages === true)) {
+    await ensureStaticZbllCaseIndex();
+  }
   const modeProfile = getCfopProfile(solveMode, options);
   const styleProfileInput =
     options.f2lStyleProfile !== undefined ? options.f2lStyleProfile : options.styleProfile;
