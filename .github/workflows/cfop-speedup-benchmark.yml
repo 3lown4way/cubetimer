@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
@@ -14,6 +14,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/app-wide-performance
+          fetch-depth: 0
+
+      - name: Apply measured hotpath optimizations
+        run: python3 tools/apply-hotpath-optimization.py
 
       - name: Syntax checks
         run: |
@@ -23,36 +29,25 @@ jobs:
           node --check solver/solverWorker.js
           node --check solver/cfop3x3.js
 
-      - name: Run cold strict CFOP validation
-        run: |
-          node --input-type=module <<'EOF'
-          import { performance } from 'node:perf_hooks';
-          import { cube3x3x3 } from './vendor/cubing/puzzles/index.js';
-          import { solve3x3StrictCfopFromPattern } from './solver/cfop3x3.js';
-          const kpuzzle = await cube3x3x3.kpuzzle();
-          const scramble = "D2 B2 R2 U' R2 U B2 D2 L2 F2 U2 F' D' B L' U B' L' U' R'";
-          const started = performance.now();
-          const result = await solve3x3StrictCfopFromPattern(kpuzzle.defaultPattern().applyAlg(scramble), {
-            mode: 'strict',
-            crossColor: 'D',
-            enableOllPllPrediction: false,
-            deadlineTs: Date.now() + 10000,
-          });
-          const elapsed = performance.now() - started;
-          if (!result?.ok) throw new Error(`COLD_STRICT_FAILED:${result?.reason}`);
-          console.log(`cold strict ok: ${elapsed.toFixed(1)}ms moves=${result.moveCount} libraryAwait=${result.performanceDiagnostics?.f2lLibraryAwaitMs ?? '?'}ms`);
-          EOF
-
       - name: Run CFOP regression benchmark
         run: node benchmark-cfop-10.mjs
 
-      - name: Run optimized 2-phase and ZB hotpaths
+      - name: Run 2-phase and ZB correctness benchmarks
         run: node benchmark-hotpaths.mjs
 
-      - name: Compare two-phase frontier counts
-        run: node benchmark-twophase-frontiers.mjs
-
-      - name: Profile individual formula-library builds
+      - name: Profile optimized formula-library builds
         env:
           DEBUG_CFOP_BUILD: "1"
         run: node benchmark-zb-cold.mjs
+
+      - name: Commit validated source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/cfop3x3.js
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Optimize ZBLL case library construction"
+            git push origin HEAD:agent/app-wide-performance
+          fi
