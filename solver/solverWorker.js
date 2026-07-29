@@ -7,8 +7,8 @@ let externalSolverModulePromise = null;
 let profileSupportModulesPromise = null;
 let wasmSolverModulePromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
-const STRICT_CFOP_TIMEOUT_MS = 25000;
-const STRICT_CFOP_RETRY_TIMEOUT_MS = 12000;
+const STRICT_CFOP_TIMEOUT_MS = 10000;
+const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;
 const ROUX_333_TIMEOUT_MS = 45000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const TWOPHASE_333_TIMEOUT_MS = 45000;
@@ -1242,12 +1242,9 @@ let backgroundWarmupsStarted = false;
 function startBackgroundWarmups() {
   if (backgroundWarmupsStarted) return;
   backgroundWarmupsStarted = true;
-  void prewarmInternal2x2();
+  // Keep startup focused on the default interactive CFOP path.
+  // Other solvers already initialize lazily when their mode is selected.
   void prewarmInternal3x3StrictCfop();
-  void prewarmInternal3x3Roux();
-  void prewarmInternal3x3Phase();
-  void prewarmWasmSolver();
-  void prewarmTwophaseAndFmcTables();
   void prewarmCubingJs3x3Pattern();
 }
 
@@ -1360,7 +1357,7 @@ const api = {
     let onProgress;
     let crossColor = "D";
     let mode = "strict";
-    let f2lMethod = "mixed";
+    let f2lMethod = "legacy";
     let styleProfile;
     let transitionProfileSolver = "";
     let enableStyleFallback = true;
@@ -1421,26 +1418,35 @@ const api = {
     if (normalizedEventId === "333" && mode === "minmove") {
       return await solveWithInternal3x3Minmove(scramble, onProgress);
     }
-    let f2lTransitionProfile = null;
+    const profileAwareCfop =
+    mode === "zb" ||
+    f2lMethod !== "legacy" ||
+    Boolean(styleProfile) ||
+    Boolean(transitionProfileSolver);
+  let f2lTransitionProfile = null;
+  if (profileAwareCfop && transitionProfileSolver) {
     try {
       f2lTransitionProfile = await getF2LTransitionProfileForSolverLazy(transitionProfileSolver);
     } catch (_) {
       f2lTransitionProfile = null;
     }
-    let f2lDownstreamProfile = null;
-    if (enableOllPllPrediction !== false) {
-      try {
-        f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy(transitionProfileSolver);
-      } catch (_) {
-        f2lDownstreamProfile = null;
-      }
+  }
+  let f2lDownstreamProfile = null;
+  if (enableOllPllPrediction !== false && profileAwareCfop) {
+    try {
+      f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy(transitionProfileSolver);
+    } catch (_) {
+      f2lDownstreamProfile = null;
     }
-    let llFamilyCalibration = null;
+  }
+  let llFamilyCalibration = null;
+  if (profileAwareCfop) {
     try {
       llFamilyCalibration = await getLlFamilyCalibrationForSolverLazy(transitionProfileSolver);
     } catch (_) {
       llFamilyCalibration = null;
     }
+  }
     const hasStyleOptIn =
       (styleProfile !== undefined && styleProfile !== null) || f2lMethod !== "legacy";
     const hasTransitionOptIn = Boolean(f2lTransitionProfile);
