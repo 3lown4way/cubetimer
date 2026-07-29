@@ -8,7 +8,9 @@ const NOT_SET = 255;
 const CP_SIZE = 40320; // 8!
 const EP_SIZE = 40320; // 8!
 const SEP_SIZE = 24; // 4!
-const FAIL_CACHE_LIMIT = 260000;
+const FAIL_TT_SET_COUNT = 1 << 17;
+const FAIL_TT_SET_MASK = FAIL_TT_SET_COUNT - 1;
+const FAIL_TT_ENTRY_COUNT = FAIL_TT_SET_COUNT << 1;
 const FACT = [1, 1, 2, 6, 24, 120, 720, 5040, 40320];
 
 // Bidirectional search constants
@@ -45,9 +47,96 @@ let allowedMovesByLastFace = null;
 // unchanged, while repeated fallback solves avoid rebuilding large Maps.
 const phase2SearchScratch = {
   path: [],
-  failCache: new Map(),
+  failTable: null,
   simplifyBuffer: [],
 };
+
+// Lazily allocated because the WASM path normally handles Phase 2. The exact
+// coordinate tags make hash collisions safe: a collision only replaces an entry.
+function createPhase2FailTable() {
+  return {
+    cp: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    ep: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    sep: new Uint8Array(FAIL_TT_ENTRY_COUNT),
+    face: new Uint8Array(FAIL_TT_ENTRY_COUNT),
+    masks: new Uint32Array(FAIL_TT_ENTRY_COUNT),
+    epochs: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    replacement: new Uint8Array(FAIL_TT_SET_COUNT),
+    epoch: 0,
+  };
+}
+
+function beginPhase2FailTable(table) {
+  let epoch = (table.epoch + 1) & 0xffff;
+  if (epoch === 0) {
+    table.epochs.fill(0);
+    epoch = 1;
+  }
+  table.epoch = epoch;
+}
+
+function phase2FailSet(cp, ep, sep, lastFace) {
+  let hash = Math.imul(cp + 1, 0x9e3779b1);
+  hash ^= Math.imul(ep + 1, 0x85ebca6b);
+  hash ^= Math.imul(sep + 1, 0xc2b2ae35);
+  hash ^= Math.imul(lastFace + 1, 0x27d4eb2d);
+  hash ^= hash >>> 16;
+  return hash & FAIL_TT_SET_MASK;
+}
+
+function getPhase2FailMask(table, cp, ep, sep, lastFace) {
+  const base = phase2FailSet(cp, ep, sep, lastFace) << 1;
+  const epoch = table.epoch;
+  if (
+    table.epochs[base] === epoch &&
+    table.cp[base] === cp && table.ep[base] === ep &&
+    table.sep[base] === sep && table.face[base] === lastFace
+  ) return table.masks[base];
+  const second = base + 1;
+  if (
+    table.epochs[second] === epoch &&
+    table.cp[second] === cp && table.ep[second] === ep &&
+    table.sep[second] === sep && table.face[second] === lastFace
+  ) return table.masks[second];
+  return 0;
+}
+
+function storePhase2FailBit(table, cp, ep, sep, lastFace, bit) {
+  const set = phase2FailSet(cp, ep, sep, lastFace);
+  const base = set << 1;
+  const second = base + 1;
+  const epoch = table.epoch;
+  let slot = -1;
+  if (
+    table.epochs[base] === epoch &&
+    table.cp[base] === cp && table.ep[base] === ep &&
+    table.sep[base] === sep && table.face[base] === lastFace
+  ) slot = base;
+  else if (
+    table.epochs[second] === epoch &&
+    table.cp[second] === cp && table.ep[second] === ep &&
+    table.sep[second] === sep && table.face[second] === lastFace
+  ) slot = second;
+  else if (table.epochs[base] !== epoch) slot = base;
+  else if (table.epochs[second] !== epoch) slot = second;
+  else {
+    slot = base + (table.replacement[set] & 1);
+    table.replacement[set] ^= 1;
+  }
+
+  if (table.epochs[slot] === epoch &&
+      table.cp[slot] === cp && table.ep[slot] === ep &&
+      table.sep[slot] === sep && table.face[slot] === lastFace) {
+    table.masks[slot] |= bit;
+    return;
+  }
+  table.cp[slot] = cp;
+  table.ep[slot] = ep;
+  table.sep[slot] = sep;
+  table.face[slot] = lastFace;
+  table.masks[slot] = bit;
+  table.epochs[slot] = epoch;
+}
 
 function encodePerm8(perm) {
   let idx = 0;
@@ -404,9 +493,10 @@ export async function solvePhase2(input) {
     ? Math.max(128, Math.floor(timeCheckInterval))
     : 1024;
   let checkCounter = 0;
-  // Fail cache persists across IDA* iterations: valid since remaining-budget bits are bound-independent.
-  const failCache = phase2SearchScratch.failCache;
-  failCache.clear();
+  // Lazily created only when the JS fallback is used; epoch reset is O(1).
+  const failTable = phase2SearchScratch.failTable ||
+    (phase2SearchScratch.failTable = createPhase2FailTable());
+  beginPhase2FailTable(failTable);
 
   function shouldStopSearch() {
     if (nodeLimit > 0 && nodes >= nodeLimit) {
@@ -452,10 +542,8 @@ export async function solvePhase2(input) {
 
     if (cp === 0 && ep === 0 && sep === 0) return true;
 
-    const cacheKey = ((((cp * EP_SIZE + ep) * SEP_SIZE + sep) * 7) + lastFace);
-    const seenMask = failCache.get(cacheKey) || 0;
     const bit = 1 << Math.min(remaining, 30);
-    if (seenMask & bit) return Infinity;
+    if (getPhase2FailMask(failTable, cp, ep, sep, lastFace) & bit) return Infinity;
 
     let minNext = Infinity;
     const moves = allowedMovesByLastFace[lastFace];
@@ -480,8 +568,7 @@ export async function solvePhase2(input) {
       if (res < minNext) minNext = res;
     }
 
-    if (failCache.size > FAIL_CACHE_LIMIT) failCache.clear();
-    failCache.set(cacheKey, seenMask | bit);
+    storePhase2FailBit(failTable, cp, ep, sep, lastFace, bit);
     return minNext;
   }
 
