@@ -1,9 +1,6 @@
-name: CFOP speedup benchmark
+name: Solver hotpath benchmark
 
 on:
-  push:
-    branches:
-      - agent/cfop-speedup
   pull_request:
     branches:
       - main
@@ -14,12 +11,17 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Syntax check
-        run: node --check solver/solverWorker.js
+      - name: Syntax checks
+        run: |
+          node --check benchmark-hotpaths.mjs
+          node --check solver/solverWorker.js
 
-      - name: Run CFOP benchmark 10 times
+      - name: Run CFOP regression benchmark
         run: node benchmark-cfop-10.mjs
+
+      - name: Run 2-phase and ZB hotpath baseline
+        run: node benchmark-hotpaths.mjs
