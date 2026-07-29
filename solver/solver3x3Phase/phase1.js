@@ -65,6 +65,13 @@ let drReverseFrontier = null;
 let drReverseDepth = 0;
 let drReverseComplete = false;
 
+// Reused for the lifetime of the worker. Clearing a Map retains its buckets,
+// avoiding repeated allocation and GC during consecutive solves.
+const phase1SearchScratch = {
+  path: [],
+  failCache: new Map(),
+};
+
 const combMemo = new Map();
 function comb(n, k) {
   if (k < 0 || k > n) return 0;
@@ -353,7 +360,8 @@ export async function solvePhase1(input) {
   }
 
   let bound = Math.max(coDist[coIdx], eoDist[eoIdx], sliceDist[sliceIdx], 1);
-  const path = [];
+  const path = phase1SearchScratch.path;
+  path.length = 0;
   let nodes = 0;
   let nodeLimitHit = false;
   let timeLimitHit = false;
@@ -364,7 +372,8 @@ export async function solvePhase1(input) {
   let checkCounter = 0;
   // Fail cache persists across IDA* iterations: "from (state, lastFace) with N remaining moves, no solution exists"
   // This is valid across bound increases because the state space doesn't change.
-  let failCache = new Map();
+  const failCache = phase1SearchScratch.failCache;
+  failCache.clear();
 
   function shouldStopSearch() {
     if (nodeLimit > 0 && nodes >= nodeLimit) {
