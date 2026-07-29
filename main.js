@@ -2737,6 +2737,9 @@ async function solveCurrentScramble() {
         : undefined;
     const crossColorSetting = appState.settings.crossColor || "D";
     const solverMode = appState.settings.solverMode || "strict";
+    const solverVersion = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
+      ? appState.settings.solverVersion
+      : "v2";
     const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
     const selectedPlayerName = String(appState.settings.stylePlayer || "").trim();
     // Always use the user's explicitly selected cross color.
