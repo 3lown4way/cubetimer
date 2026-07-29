@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/cfop-speedup
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -117,6 +120,7 @@ jobs:
         run: node benchmark-cfop-10.mjs
 
       - name: Commit validated source change
+        if: github.event_name == 'push'
         run: |
           if git diff --quiet -- solver/solverWorker.js; then
             echo "No source diff to commit."
