@@ -41,6 +41,14 @@ let p2ReverseDepth = 0;     // how many layers were fully built
 let p2ReverseComplete = false; // true if frontier covers ALL states ≤ p2ReverseDepth steps from solved
 let allowedMovesByLastFace = null;
 
+// Worker-lifetime scratch storage for the JS fallback. The WASM path remains
+// unchanged, while repeated fallback solves avoid rebuilding large Maps.
+const phase2SearchScratch = {
+  path: [],
+  failCache: new Map(),
+  simplifyBuffer: [],
+};
+
 function encodePerm8(perm) {
   let idx = 0;
   for (let i = 0; i < 8; i++) {
@@ -332,8 +340,8 @@ function buildP2ReverseFrontier() {
  * Simplify an array of P2 move slots by cancelling adjacent same-face moves.
  * Uses a stack-based scan to handle chain cancellations.
  */
-function simplifyP2Slots(slots) {
-  const out = [];
+function simplifyP2Slots(slots, out = []) {
+  out.length = 0;
   for (let i = 0; i < slots.length; i++) {
     const m = slots[i];
     if (out.length > 0 && P2_SLOT_FACE[out[out.length - 1]] === P2_SLOT_FACE[m]) {
@@ -386,7 +394,8 @@ export async function solvePhase2(input) {
   buildP2ReverseFrontier();
 
   let bound = Math.max(cpSepDist[cpIdx * SEP_SIZE + sepIdx], epDist[epIdx], 1);
-  const path = [];
+  const path = phase2SearchScratch.path;
+  path.length = 0;
   let nodes = 0;
   let nodeLimitHit = false;
   let timeLimitHit = false;
@@ -396,7 +405,8 @@ export async function solvePhase2(input) {
     : 1024;
   let checkCounter = 0;
   // Fail cache persists across IDA* iterations: valid since remaining-budget bits are bound-independent.
-  let failCache = new Map();
+  const failCache = phase2SearchScratch.failCache;
+  failCache.clear();
 
   function shouldStopSearch() {
     if (nodeLimit > 0 && nodes >= nodeLimit) {
@@ -486,7 +496,7 @@ export async function solvePhase2(input) {
     if (res === true) {
       path.reverse();
       // Simplify: bidirectional path may have cancellable moves at the junction
-      const simplified = simplifyP2Slots(path);
+      const simplified = simplifyP2Slots(path, phase2SearchScratch.simplifyBuffer);
       return { ok: true, moves: simplified.map((m) => PHASE2_MOVE_NAMES[m]), depth: simplified.length, nodes };
     }
     if (!Number.isFinite(res)) break;
