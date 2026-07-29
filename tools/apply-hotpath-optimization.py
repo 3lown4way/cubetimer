@@ -2,9 +2,11 @@ from pathlib import Path
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if new in text:
+    if new and new in text:
         return text
     if old not in text:
+        if not new:
+            return text
         raise RuntimeError(f"{label} marker not found")
     return text.replace(old, new, 1)
 
@@ -22,6 +24,12 @@ worker = replace_once(
     "    await prewarm3x3StrictCfopLibraries();\n",
     "    await prewarm3x3StrictCfopLibraries({ includeF2L: false, includeSingleStage: true });\n",
     "default CFOP prewarm",
+)
+worker = replace_once(
+    worker,
+    "  void prewarmInternal3x3StrictCfop();\n",
+    "",
+    "background CFOP warmup",
 )
 worker_path.write_text(worker)
 
@@ -93,6 +101,12 @@ library_replacement = '''      if (stages[i].preferCompactF2L !== true) {
       }
 '''
 cfop = replace_once(cfop, library_marker, library_replacement, "lazy F2L library")
+cfop = replace_once(
+    cfop,
+    "    _warmOllPllLibraries(ctx);\n",
+    "",
+    "automatic LL library warmup",
+)
 cfop_path.write_text(cfop)
 
 benchmark_path = Path("benchmark-hotpaths.mjs")
