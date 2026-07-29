@@ -3658,7 +3658,6 @@ export async function prewarm3x3StrictCfopLibraries(options = {}) {
     await getF2LCaseLibrary(ctx);
   }
   if (options.includeSingleStage !== false) {
-    _warmOllPllLibraries(ctx);
   }
   return {
     ok: true,
@@ -4843,57 +4842,81 @@ function getSingleStageFormulaCaseLibrary(
     canonicalFormulaKeys.every(k => k === "ZBLL" || k === "PLL");
   const getKeyFn = useZbllKey ? (data) => stage.zbllKey(data) : (data) => stage.key(data);
 
+  const formulaDescriptors = libraryFormulas.map((alg) => {
+    const { leadingRot, rest: strippedAlg } = extractLeadingYRot(alg);
+    const normalizedAlg = normalizeFormulaMatchText(alg);
+    return {
+      alg,
+      leadingRot,
+      strippedAlg,
+      normalizedAlg,
+      fallbackFormulaKey: libraryFormulaKeyLookup?.get(normalizedAlg) ?? null,
+    };
+  });
+  const postAufInverseList = postAufList.map((postAuf) => invertAlg(postAuf));
+  const caseDedupeIndex = new Map();
+
   for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
     const rot = FORMULA_ROTATIONS[r];
     for (let a = 0; a < preAufList.length; a++) {
       const preAuf = preAufList[a];
-      for (let i = 0; i < libraryFormulas.length; i++) {
-        const alg = libraryFormulas[i];
+      for (let i = 0; i < formulaDescriptors.length; i++) {
+        const descriptor = formulaDescriptors[i];
+        const combinedRot = composeYRot(rot, descriptor.leadingRot);
+        const baseCandidate = joinMoves([
+          combinedRot,
+          preAuf,
+          descriptor.strippedAlg,
+          invertRotation(combinedRot),
+        ]);
+        const baseInverse = invertAlg(baseCandidate);
+        const baseMoves = splitMoves(baseCandidate);
+        if (!baseMoves.length || !baseInverse) continue;
+        const netRot = computeNetCubeRotationMoves(baseCandidate);
+
         for (let p = 0; p < postAufList.length; p++) {
           const postAuf = postAufList[p];
-          const candidate = buildFormulaCandidate(rot, preAuf, alg, postAuf);
-          const inverse = invertAlg(candidate);
+          const candidate = postAuf ? joinMoves([baseCandidate, postAuf]) : baseCandidate;
+          const candidateMoves = postAuf ? baseMoves.concat(postAuf) : baseMoves;
+          if (candidateMoves.length > stage.maxDepth) continue;
+          const inverse = postAuf
+            ? joinMoves([postAufInverseList[p], baseInverse])
+            : baseInverse;
           const casePattern = tryApplyAlg(solved, inverse);
           if (!casePattern) continue;
-          const candidateMoves = splitMoves(candidate);
-          if (!candidateMoves.length) continue;
-          if (candidateMoves.length > stage.maxDepth) continue;
-          // If the candidate has a net cube-frame rotation (embedded y/x/z moves
-          // that are not cancelled by conjugation), the pattern produced by
-          // applying the inverse ends up in a rotated frame.  Apply the net
-          // forward rotation to normalize it back to the standard frame so the
-          // library key matches what the runtime key function computes.
-          const netRot = computeNetCubeRotationMoves(candidate);
           const normalizedCasePattern = netRot
             ? (tryApplyAlg(casePattern, netRot) ?? casePattern)
             : casePattern;
           const normalizedCandidate = normalizeFormulaMatchText(candidate);
-          // Look up by full candidate first; fall back to base formula (without AUF/rotation)
-          // so that AUF-prefixed candidates still get the correct formulaKey
-          const normalizedAlg = normalizeFormulaMatchText(alg);
           const formulaKey = libraryFormulaKeyLookup?.get(normalizedCandidate)
-            ?? libraryFormulaKeyLookup?.get(normalizedAlg)
-            ?? null;
+            ?? descriptor.fallbackFormulaKey;
           const caseKey = getKeyFn(normalizedCasePattern.patternData);
-          const caseCandidates = caseMap.get(caseKey) || [];
+          let caseCandidates = caseMap.get(caseKey);
+          let dedupeIndex = caseDedupeIndex.get(caseKey);
+          if (!caseCandidates) {
+            caseCandidates = [];
+            caseMap.set(caseKey, caseCandidates);
+          }
+          if (!dedupeIndex) {
+            dedupeIndex = new Map();
+            caseDedupeIndex.set(caseKey, dedupeIndex);
+          }
           const dedupeKey = `${String(formulaKey || "")}::${normalizedCandidate}`;
-          const existingIndex = caseCandidates.findIndex(
-            (entry) => `${String(entry.formulaKey || "")}::${entry.normalizedText}` === dedupeKey,
-          );
+          const existingIndex = dedupeIndex.get(dedupeKey);
           const nextEntry = {
             text: candidate,
             normalizedText: normalizedCandidate,
             moves: candidateMoves,
             formulaKey,
           };
-          if (existingIndex >= 0) {
+          if (existingIndex !== undefined) {
             if (compareSingleStageCaseCandidateDefault(nextEntry, caseCandidates[existingIndex]) < 0) {
               caseCandidates[existingIndex] = nextEntry;
             }
           } else {
+            dedupeIndex.set(dedupeKey, caseCandidates.length);
             caseCandidates.push(nextEntry);
           }
-          caseMap.set(caseKey, caseCandidates);
         }
       }
     }
