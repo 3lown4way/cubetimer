@@ -1,0 +1,61 @@
+name: Precompiled ZB moves
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-and-benchmark:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'agent/precompile-zb-moves'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Validate helper scripts
+        run: |
+          python -m py_compile tools/apply-precompiled-zb-moves.py
+          node --check tools/benchmark-precompiled-zb.mjs
+          node --check tools/compare-precompiled-zb.mjs
+
+      - name: Capture baseline
+        run: |
+          mkdir -p /tmp/zb-baseline
+          tar --exclude=.git -cf - . | tar -xf - -C /tmp/zb-baseline
+          (cd /tmp/zb-baseline && node tools/benchmark-precompiled-zb.mjs > /tmp/zb-baseline.json)
+
+      - name: Apply source changes and regenerate indexes
+        run: |
+          python tools/apply-precompiled-zb-moves.py
+          node --check solver/cfop3x3.js
+          node --check tools/generate-zbll-case-index.mjs
+          node tools/generate-zbll-case-index.mjs
+          node --check solver/zbllCaseIndex.js
+          node tools/generate-zbll-case-index.mjs --check
+
+      - name: Run solver regression checks
+        run: |
+          node benchmark-solver-versions.mjs
+          node benchmark-cfop-10.mjs
+          node benchmark-hotpaths.mjs
+
+      - name: Compare focused ZB benchmark
+        run: |
+          node tools/benchmark-precompiled-zb.mjs > /tmp/zb-optimized.json
+          node tools/compare-precompiled-zb.mjs /tmp/zb-baseline.json /tmp/zb-optimized.json
+
+      - name: Commit generated changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add solver/cfop3x3.js solver/zbllCaseIndex.js tools/generate-zbll-case-index.mjs
+          git commit -m 'Precompile ZBLL and ZBLS move arrays'
+          git push origin HEAD:${{ github.head_ref }}
