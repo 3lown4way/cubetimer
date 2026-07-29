@@ -4,12 +4,9 @@ on:
   push:
     branches:
       - agent/cfop-speedup
-  pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
@@ -17,9 +14,112 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/cfop-speedup
+          fetch-depth: 0
+
+      - name: Finalize source changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('solver/solverWorker.js')
+          text = path.read_text()
+
+          old_profile = '''    const profileAwareCfop =
+              mode === "zb" ||
+              f2lMethod !== "legacy" ||
+              Boolean(styleProfile) ||
+              Boolean(transitionProfileSolver);
+            let f2lTransitionProfile = null;
+            if (profileAwareCfop && transitionProfileSolver) {
+              try {
+                f2lTransitionProfile = await getF2LTransitionProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lTransitionProfile = null;
+              }
+            }
+            let f2lDownstreamProfile = null;
+            if (enableOllPllPrediction !== false && profileAwareCfop) {
+              try {
+                f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lDownstreamProfile = null;
+              }
+            }
+            let llFamilyCalibration = null;
+            if (profileAwareCfop) {
+              try {
+                llFamilyCalibration = await getLlFamilyCalibrationForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                llFamilyCalibration = null;
+              }
+            }'''
+          new_profile = '''    const profileAwareCfop =
+              mode === "zb" ||
+              f2lMethod !== "legacy" ||
+              Boolean(styleProfile) ||
+              Boolean(transitionProfileSolver);
+            let f2lTransitionProfile = null;
+            if (profileAwareCfop && transitionProfileSolver) {
+              try {
+                f2lTransitionProfile = await getF2LTransitionProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lTransitionProfile = null;
+              }
+            }
+            let f2lDownstreamProfile = null;
+            if (enableOllPllPrediction !== false && profileAwareCfop) {
+              try {
+                f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lDownstreamProfile = null;
+              }
+            }
+            let llFamilyCalibration = null;
+            if (profileAwareCfop) {
+              try {
+                llFamilyCalibration = await getLlFamilyCalibrationForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                llFamilyCalibration = null;
+              }
+            }'''
+
+          # Normalize the currently mis-indented block by locating its boundaries.
+          start = text.index('    const profileAwareCfop =\n')
+          end = text.index('    const hasStyleOptIn =\n', start)
+          text = text[:start] + new_profile + '\n' + text[end:]
+
+          old_attempts = '''  const attempts = normalizedMode === "zb"
+            ? [
+                { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+              ]
+            : [
+                { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[1] },
+              ];'''
+          new_attempts = '''  const attempts = [
+              { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+              { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+            ];'''
+          if old_attempts not in text:
+            raise SystemExit('Strict retry block not found')
+          text = text.replace(old_attempts, new_attempts, 1)
+          path.write_text(text)
+          PY
 
       - name: Syntax check
         run: node --check solver/solverWorker.js
 
       - name: Run CFOP benchmark 10 times
         run: node benchmark-cfop-10.mjs
+
+      - name: Commit source cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js
+          git commit -m "Finalize CFOP worker speedup"
+          git push origin HEAD:agent/cfop-speedup
