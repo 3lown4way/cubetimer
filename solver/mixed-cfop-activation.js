@@ -1,3 +1,22 @@
+// Compatibility bridge for the v1/v2 selector.
+// main.js reads `solverVersion` while dispatching a solve. Keep the binding
+// dynamic so the persisted menu selection is respected until all clients have
+// refreshed to the corrected main bundle.
+if (!Object.prototype.hasOwnProperty.call(globalThis, "solverVersion")) {
+  Object.defineProperty(globalThis, "solverVersion", {
+    configurable: true,
+    get() {
+      try {
+        const raw = globalThis.localStorage?.getItem("cubeTimerState");
+        const selected = raw ? JSON.parse(raw)?.settings?.solverVersion : null;
+        return selected === "v1" ? "v1" : "v2";
+      } catch (_) {
+        return "v2";
+      }
+    },
+  });
+}
+
 const VALID_F2L_METHODS = new Set(["legacy", "balanced", "rotationless", "low-auf", "speed", "mixed"]);
 const DEFAULT_F2L_METHOD = "legacy";
 const MIXED_ACTIVATION_THRESHOLD = 0.45;
