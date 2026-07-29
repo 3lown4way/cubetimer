@@ -1,6 +1,10 @@
+import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { cube3x3x3 } from '../vendor/cubing/puzzles/index.js';
 import { solve3x3StrictCfopFromPattern } from '../solver/cfop3x3.js';
+
+const solverSource = fs.readFileSync(new URL('../solver/cfop3x3.js', import.meta.url), 'utf8');
+const kernelVersion = solverSource.includes('F2L_COMPACT_KERNEL_VERSION = 2') ? 2 : 1;
 
 const scrambles = [
   "D2 B2 R2 U' R2 U B2 D2 L2 F2 U2 F' D' B L' U B' L' U' R'",
@@ -77,7 +81,7 @@ for (const mode of ['strict', 'zb']) {
 
 const payload = {
   marker: 'f2l-compact-kernel',
-  kernelVersion: summaries.some((summary) => summary.transpositionHits > 0) ? 2 : 1,
+  kernelVersion,
   summaries,
 };
 console.log(JSON.stringify(payload));
