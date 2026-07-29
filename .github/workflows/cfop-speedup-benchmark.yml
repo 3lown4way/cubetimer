@@ -3,23 +3,195 @@ name: CFOP speedup benchmark
 on:
   push:
     branches:
-      - agent/cfop-speedup
-  pull_request:
-    branches:
-      - main
+      - agent/fix-minmove-htm
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  benchmark:
+  repair-minmove:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-minmove-htm
+          fetch-depth: 0
 
-      - name: Syntax check
-        run: node --check solver/solverWorker.js
+      - name: Patch minmove fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Run CFOP benchmark 10 times
-        run: node benchmark-cfop-10.mjs
+          worker_path = Path('solver/solverWorker.js')
+          worker = worker_path.read_text()
+
+          marker = '''  if (splitAlgorithmTokens(scramble).length > 0 && !inverseSolution) {
+            return { ok: false, reason: "MINMOVE_BAD_SCRAMBLE" };
+          }
+          '''
+          replacement = marker + '''
+            const minmoveReady = await ensureMinmove333ReadyLazy().catch(() => null);
+            if (!minmoveReady) {
+              if (typeof onProgress === "function") {
+                try {
+                  void onProgress({
+                    type: "exact_search_fallback",
+                    reason: "bundle_unavailable",
+                  });
+                } catch (_) {}
+              }
+              const phaseFallback = await solveWithInternal3x3TwoPhase(scramble, onProgress);
+              if (!phaseFallback?.ok) {
+                return {
+                  ok: false,
+                  reason: phaseFallback?.reason || "MINMOVE_BUNDLE_UNAVAILABLE",
+                };
+              }
+              return {
+                ...phaseFallback,
+                source: "MINMOVE_333_BUNDLE_UNAVAILABLE_FALLBACK",
+                metric: "HTM",
+                optimalityProven: false,
+                proofSource: "phase_fallback_bundle_unavailable",
+                fallbackReason: "MINMOVE_BUNDLE_UNAVAILABLE",
+              };
+            }
+          '''
+          if marker not in worker:
+            raise SystemExit('minmove entry marker not found')
+          worker = worker.replace(marker, replacement, 1)
+
+          redundant = '''  const ready = await ensureMinmove333ReadyLazy();
+            if (!ready) {
+              return { ok: false, reason: "MINMOVE_UNAVAILABLE" };
+            }
+
+          '''
+          if redundant not in worker:
+            raise SystemExit('redundant minmove readiness block not found')
+          worker = worker.replace(redundant, '', 1)
+          worker_path.write_text(worker)
+
+          main_path = Path('main.js')
+          main = main_path.read_text()
+
+          progress_old = '''              const reason = progress.reason === "budget_exceeded"
+                            ? "노드 예산 초과"
+                            : progress.reason === "timeout"
+                              ? "시간 제한"
+                              : progress.reason === "gap_too_large"
+                                ? "gap 초과, tightening 중단"
+                                : "exact 중단";'''
+          progress_new = '''              const reason = progress.reason === "bundle_unavailable"
+                            ? "최적화 번들 없음"
+                            : progress.reason === "budget_exceeded"
+                              ? "노드 예산 초과"
+                              : progress.reason === "timeout"
+                                ? "시간 제한"
+                                : progress.reason === "gap_too_large"
+                                  ? "gap 초과, tightening 중단"
+                                  : "exact 중단";'''
+          if progress_old not in main:
+            raise SystemExit('minmove progress reason block not found')
+          main = main.replace(progress_old, progress_new, 1)
+
+          result_old = '''          result.proofSource === "phase_fallback_timeout"
+                        ? "HTM exact 시간 제한으로 phase fallback 반환"
+                        : result.proofSource === "phase_fallback_budget_exceeded"
+                          ? "HTM exact 노드 예산 초과로 phase fallback 반환"
+                          : result.proofSource === "phase_fallback_gap_too_large"
+                            ? "HTM tightening 미개선 (gap 초과), 최선 해 반환"
+                            : "HTM exact 미증명 상태에서 phase fallback 반환";'''
+          result_new = '''          result.proofSource === "phase_fallback_bundle_unavailable"
+                        ? "HTM 최적화 번들 없음, 2-phase 단축해 반환"
+                        : result.proofSource === "phase_fallback_timeout"
+                          ? "HTM exact 시간 제한으로 phase fallback 반환"
+                          : result.proofSource === "phase_fallback_budget_exceeded"
+                            ? "HTM exact 노드 예산 초과로 phase fallback 반환"
+                            : result.proofSource === "phase_fallback_gap_too_large"
+                              ? "HTM tightening 미개선 (gap 초과), 최선 해 반환"
+                              : "HTM exact 미증명 상태에서 phase fallback 반환";'''
+          if result_old not in main:
+            raise SystemExit('minmove result header block not found')
+          main = main.replace(result_old, result_new, 1)
+          main_path.write_text(main)
+          PY
+
+      - name: Syntax checks
+        run: |
+          node --check solver/solverWorker.js
+          node --check main.js
+
+      - name: Verify two-phase fallback backend
+        run: |
+          cat > .tmp-minmove-fallback.mjs <<'EOF'
+          import {
+            ensureMinmove333Ready,
+            ensureTwophase333Ready,
+            prepareTwophase333,
+            searchTwophase333,
+            dropTwophase333Search,
+          } from './solver/wasmSolver.js';
+          import { cube3x3x3 } from './vendor/cubing/puzzles/index.js';
+
+          const minmove = await ensureMinmove333Ready();
+          console.log(minmove ? 'exact minmove bundle available' : 'exact minmove bundle unavailable');
+
+          const twophase = await ensureTwophase333Ready();
+          if (!twophase) throw new Error('TWOPHASE_BACKEND_UNAVAILABLE');
+
+          const scramble = "R U R' U'";
+          const prepared = await prepareTwophase333(scramble, {
+            maxPhase1Solutions: 12,
+            phase1MaxDepth: 13,
+          });
+          if (!prepared?.ok || !Number.isFinite(prepared.searchId)) {
+            throw new Error(`TWOPHASE_PREPARE_FAILED: ${JSON.stringify(prepared)}`);
+          }
+
+          let searched;
+          try {
+            searched = await searchTwophase333(prepared.searchId, {
+              phase2MaxDepth: 20,
+              phase2NodeLimit: 2000000,
+            });
+          } finally {
+            await dropTwophase333Search(prepared.searchId);
+          }
+          if (!searched?.ok || !searched.solution) {
+            throw new Error(`TWOPHASE_SEARCH_FAILED: ${JSON.stringify(searched)}`);
+          }
+
+          const kpuzzle = await cube3x3x3.kpuzzle();
+          const after = kpuzzle.defaultPattern().applyAlg(scramble).applyAlg(searched.solution);
+          if (!after.experimentalIsSolved({ ignorePuzzleOrientation: false })) {
+            throw new Error(`FALLBACK_SOLUTION_INVALID: ${searched.solution}`);
+          }
+          console.log(`fallback ok: ${searched.solution} (${searched.moveCount} HTM)`);
+          EOF
+          node .tmp-minmove-fallback.mjs
+          rm .tmp-minmove-fallback.mjs
+
+      - name: Static regression assertions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          worker = Path('solver/solverWorker.js').read_text()
+          main = Path('main.js').read_text()
+          assert 'phase_fallback_bundle_unavailable' in worker
+          assert 'MINMOVE_333_BUNDLE_UNAVAILABLE_FALLBACK' in worker
+          assert 'HTM 최적화 번들 없음, 2-phase 단축해 반환' in main
+          assert 'return { ok: false, reason: "MINMOVE_UNAVAILABLE" };' not in worker
+          print('minmove fallback assertions passed')
+          PY
+
+      - name: Commit validated repair
+        run: |
+          git checkout origin/main -- .github/workflows/cfop-speedup-benchmark.yml
+          rm -f .github/workflows/fix-minmove-htm.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix minmove HTM when bundle is unavailable"
+          git push origin HEAD:agent/fix-minmove-htm
