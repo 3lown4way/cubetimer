@@ -25,6 +25,7 @@ const resetSessionBtn = document.getElementById("resetSessionBtn");
 const eventSelect = document.getElementById("eventSelect");
 const crossColorSelect = document.getElementById("crossColorSelect");
 const solverModeSelect = document.getElementById("solverModeSelect");
+const solverVersionSelect = document.getElementById("solverVersionSelect");
 const f2lMethodSelect = document.getElementById("f2lMethodSelect");
 const stylePlayerSelect = document.getElementById("stylePlayerSelect");
 const styleProfileReloadBtn = document.getElementById("styleProfileReloadBtn");
@@ -170,6 +171,7 @@ const HIDE_LIVE_KEY = "cubeTimerHideLiveTime";
 const AO5_KEY = "cubeTimerShowAo5";
 const AO12_KEY = "cubeTimerShowAo12";
 const VALID_SOLVER_MODES = new Set(["strict", "minmove", "twophase", "zb", "roux", "fmc"]);
+const VALID_SOLVER_VERSIONS = new Set(["v1", "v2"]);
 const VALID_F2L_METHODS = new Set(["legacy", "mixed"]);
 function filterF2lMethodOptions() {
   if (!window.f2lMethodSelect) return;
@@ -306,6 +308,7 @@ const defaultState = () => {
       eventId: "333",
       crossColor: "D",
       solverMode: "strict",
+      solverVersion: "v2",
       f2lMethod: DEFAULT_F2L_METHOD,
       f2lMethodSource: DEFAULT_F2L_METHOD_SOURCE,
       stylePlayer: "",
@@ -340,6 +343,7 @@ function loadState() {
     if (!parsed.settings.eventId) parsed.settings.eventId = "333";
     if (!parsed.settings.crossColor) parsed.settings.crossColor = "D";
     if (!parsed.settings.solverMode) parsed.settings.solverMode = "strict";
+    if (!VALID_SOLVER_VERSIONS.has(parsed.settings.solverVersion)) parsed.settings.solverVersion = "v2";
     if (parsed.settings.solverMode === "optimal") parsed.settings.solverMode = "minmove";
     if (parsed.settings.solverMode === "phase" || parsed.settings.solverMode === "two-phase") {
       parsed.settings.solverMode = "twophase";
@@ -2243,6 +2247,7 @@ function buildSolverProfileWarmupKey(payload) {
   return [
     String(payload.transitionProfileSolver || "").trim(),
     String(payload.mode || "strict").trim(),
+    String(payload.solverVersion || "v2").trim(),
     String(payload.f2lMethod || DEFAULT_F2L_METHOD).trim(),
     payload.enableOllPllPrediction === false ? "pred:off" : "pred:on",
     Number(payload.ollPllPredictionWeight || DEFAULT_OLL_PLL_PREDICTION_WEIGHT),
@@ -2270,6 +2275,9 @@ function buildSelectedPlayerProfileWarmupPayload() {
   if (!styleProfile) return null;
   return {
     mode: solverMode,
+    solverVersion: VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
+      ? appState.settings.solverVersion
+      : "v2",
     f2lMethod,
     styleProfile,
     transitionProfileSolver: playerName,
@@ -2599,6 +2607,9 @@ async function solveCurrentScramble() {
   const eventId = appState.settings.eventId;
   if (solverStatus) {
     const solverMode = appState.settings.solverMode || "strict";
+    const solverVersion = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
+      ? appState.settings.solverVersion
+      : "v2";
     const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
     if (isThreeByThreeFamilyEvent(appState.settings.eventId)) {
       solverStatus.textContent =
@@ -2752,6 +2763,7 @@ async function solveCurrentScramble() {
         eventId,
         crossColor,
         mode: solverMode,
+        solverVersion,
         f2lMethod,
         styleProfile: selectedPlayerStyleProfile,
         transitionProfileSolver: selectedPlayerName || undefined,
@@ -3022,6 +3034,14 @@ solverModeSelect?.addEventListener("change", () => {
   appState.settings.solverMode = VALID_SOLVER_MODES.has(solverModeSelect.value)
     ? solverModeSelect.value
     : "strict";
+  saveState();
+});
+
+solverVersionSelect?.addEventListener("change", () => {
+  if (!solverVersionSelect) return;
+  appState.settings.solverVersion = VALID_SOLVER_VERSIONS.has(solverVersionSelect.value)
+    ? solverVersionSelect.value
+    : "v2";
   saveState();
 });
 
@@ -3864,6 +3884,11 @@ async function initApp() {
     }
     if (solverModeSelect) {
       solverModeSelect.value = appState.settings.solverMode || "strict";
+    }
+    if (solverVersionSelect) {
+      solverVersionSelect.value = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
+        ? appState.settings.solverVersion
+        : "v2";
     }
     if (f2lMethodSelect) {
       const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;

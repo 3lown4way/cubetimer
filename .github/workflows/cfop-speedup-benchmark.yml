@@ -1,25 +1,77 @@
-name: CFOP speedup benchmark
+name: Solver hotpath benchmark
 
 on:
-  push:
-    branches:
-      - agent/cfop-speedup
   pull_request:
     branches:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/app-wide-performance
+          fetch-depth: 0
 
-      - name: Syntax check
-        run: node --check solver/solverWorker.js
+      - name: Apply solver v1 v2 implementation
+        run: python3 tools/apply-solver-versioning.py
 
-      - name: Run CFOP benchmark 10 times
+      - name: Generate static ZBLL index
+        run: node tools/generate-zbll-case-index.mjs
+
+      - name: Syntax checks
+        run: |
+          node --check main.js
+          node --check solver/solverWorker.js
+          node --check solver/cfop3x3.js
+          node --check solver/zbllCaseIndex.js
+          node --check benchmark-hotpaths.mjs
+          node --check benchmark-twophase-frontiers.mjs
+          node --check benchmark-solver-versions.mjs
+
+      - name: Static routing assertions
+        run: |
+          grep -q 'id="solverVersionSelect"' index.html
+          grep -q 'solverVersion,' main.js
+          grep -q 'TWOPHASE_333_V1_MAX_FRONTIERS = 12' solver/solverWorker.js
+          grep -q 'TWOPHASE_333_V2_MAX_FRONTIERS = 2' solver/solverWorker.js
+          grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
+          grep -q 'solverVersion === "v2"' solver/cfop3x3.js
+
+      - name: Verify generated ZBLL index
+        run: node tools/generate-zbll-case-index.mjs --check
+
+      - name: Compare solver v1 and v2
+        run: node benchmark-solver-versions.mjs
+
+      - name: Run CFOP regression benchmark
         run: node benchmark-cfop-10.mjs
+
+      - name: Run optimized 2-phase and ZB hotpaths
+        run: node benchmark-hotpaths.mjs
+
+      - name: Compare two-phase frontier counts
+        run: node benchmark-twophase-frontiers.mjs
+
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            index.html \
+            main.js \
+            solver/solverWorker.js \
+            solver/cfop3x3.js \
+            solver/zbllCaseIndex.js \
+            tools/generate-zbll-case-index.mjs
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit."
+          else
+            git commit -m "Add selectable solver v1 and v2"
+            git push origin HEAD:agent/app-wide-performance
+          fi

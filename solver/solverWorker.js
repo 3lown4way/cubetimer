@@ -12,7 +12,8 @@ const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;
 const ROUX_333_TIMEOUT_MS = 45000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const TWOPHASE_333_TIMEOUT_MS = 45000;
-const TWOPHASE_333_MAX_FRONTIERS = 12;
+const TWOPHASE_333_V1_MAX_FRONTIERS = 12;
+const TWOPHASE_333_V2_MAX_FRONTIERS = 2;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const MINMOVE_333_TIMEOUT_MS = 235000;
 const MINMOVE_333_EXACT_PROOF_TIMEOUT_MS = 60000;
@@ -181,6 +182,16 @@ function normalizeMode(mode) {
     return "roux";
   }
   return "strict";
+}
+
+function normalizeSolverVersion(version) {
+  return String(version || "v2").toLowerCase() === "v1" ? "v1" : "v2";
+}
+
+function getTwophaseFrontierLimit(solverVersion) {
+  return normalizeSolverVersion(solverVersion) === "v1"
+    ? TWOPHASE_333_V1_MAX_FRONTIERS
+    : TWOPHASE_333_V2_MAX_FRONTIERS;
 }
 
 function normalizeF2LMethod(method) {
@@ -417,7 +428,8 @@ async function solveWithInternal3x3Phase(scramble, options = {}) {
   return solve3x3InternalPhase(pattern, options);
 }
 
-async function solveWithInternal3x3TwoPhase(scramble, onProgress) {
+async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion = "v2") {
+  const maxFrontiers = getTwophaseFrontierLimit(solverVersion);
   const inverseSolution = invertAlgorithmString(scramble);
   const inverseLength = inverseSolution ? countAlgorithmMoves(inverseSolution) : 0;
   const phaseStartedAt = Date.now();
@@ -441,7 +453,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress) {
     if (wasmReady) {
       const prepared = await withTimeout(
         prepareTwophase333Lazy(scramble, {
-          maxPhase1Solutions: TWOPHASE_333_MAX_FRONTIERS,
+          maxPhase1Solutions: maxFrontiers,
           phase1MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1MaxDepth,
           phase1NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1NodeLimit,
         }),
@@ -473,7 +485,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress) {
     phaseResult = await withTimeout(
       solveWithInternal3x3Phase(scramble, {
         ...INTERNAL_PHASE_FALLBACK_OPTIONS,
-        maxPhase1Solutions: TWOPHASE_333_MAX_FRONTIERS,
+        maxPhase1Solutions: maxFrontiers,
         targetTotalDepth: inverseLength > 0 ? inverseLength - 1 : undefined,
       }),
       TWOPHASE_333_TIMEOUT_MS,
@@ -1172,7 +1184,7 @@ async function prewarmInternal2x2() {
 async function prewarmInternal3x3StrictCfop() {
   try {
     const { prewarm3x3StrictCfopLibraries } = await import("./cfop3x3.js");
-    await prewarm3x3StrictCfopLibraries();
+    await prewarm3x3StrictCfopLibraries({ includeF2L: false, includeSingleStage: true });
   } catch (_) {
     // Warmup failure should not block solving.
   }
@@ -1244,7 +1256,6 @@ function startBackgroundWarmups() {
   backgroundWarmupsStarted = true;
   // Keep startup focused on the default interactive CFOP path.
   // Other solvers already initialize lazily when their mode is selected.
-  void prewarmInternal3x3StrictCfop();
   void prewarmCubingJs3x3Pattern();
 }
 
@@ -1357,6 +1368,7 @@ const api = {
     let onProgress;
     let crossColor = "D";
     let mode = "strict";
+    let solverVersion = "v2";
     let f2lMethod = "legacy";
     let styleProfile;
     let transitionProfileSolver = "";
@@ -1372,6 +1384,9 @@ const api = {
       }
       if (typeof arg1.mode === "string" && arg1.mode) {
         mode = arg1.mode;
+      }
+      if (typeof arg1.solverVersion === "string" && arg1.solverVersion) {
+        solverVersion = arg1.solverVersion;
       }
       if (typeof arg1.f2lMethod === "string" && arg1.f2lMethod) {
         f2lMethod = arg1.f2lMethod;
@@ -1406,6 +1421,7 @@ const api = {
       }
     }
     mode = normalizeMode(mode);
+    solverVersion = normalizeSolverVersion(solverVersion);
     f2lMethod = normalizeF2LMethod(f2lMethod);
     const normalizedEventId = eventId === "333fm" ? "333" : eventId;
     if (!scramble) {
@@ -1413,7 +1429,7 @@ const api = {
     }
     startBackgroundWarmups();
     if (normalizedEventId === "333" && mode === "twophase") {
-      return await solveWithInternal3x3TwoPhase(scramble, onProgress);
+      return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion);
     }
     if (normalizedEventId === "333" && mode === "minmove") {
       return await solveWithInternal3x3Minmove(scramble, onProgress);
@@ -1569,6 +1585,7 @@ const api = {
         const strictResult = await solveWithInternal3x3StrictRetries(scramble, onProgress, {
           crossColor,
           mode,
+          solverVersion,
           f2lMethod,
           transitionProfileSolver,
           styleProfile,
