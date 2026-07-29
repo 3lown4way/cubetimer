@@ -17,6 +17,7 @@ const F2L_CORNER_ORI_FACTOR = 81; // 3^4
 const F2L_EDGE_ORI_FACTOR = 256; // 2^8
 const F2L_CORNER_STATE_COUNT = 136080; // 8P4 * 3^4
 const F2L_COMPACT_KERNEL_VERSION = 2;
+const PRECOMPILED_ZB_CASE_INDEX_VERSION = 2;
 const POPCOUNT_12 = new Uint8Array(1 << 12);
 for (let i = 1; i < POPCOUNT_12.length; i++) {
   POPCOUNT_12[i] = POPCOUNT_12[i >> 1] + (i & 1);
@@ -147,8 +148,11 @@ const formulaListCache = new Map();
 const singleStageFormulaCaseLibraryCache = new Map();
 let staticZbllCaseIndex = null;
 let staticZbllCaseCount = 0;
+let staticZblsCaseIndex = null;
+let staticZblsCaseCount = 0;
 let staticZbllCaseIndexPromise = null;
 let staticZbllCaseLibrary = null;
+let staticZblsCaseLibrary = null;
 const SINGLE_STAGE_LIBRARY_CACHE_LIMIT = 2048;
 const FORMULA_LOOKUP_CACHE_LIMIT = 64;
 const normalizeFormulaCache = new Map();
@@ -184,48 +188,94 @@ const cfopLibraryTelemetry = {
 };
 
 async function ensureStaticZbllCaseIndex() {
-  if (staticZbllCaseIndex) return staticZbllCaseIndex;
+  if (staticZbllCaseIndex && staticZblsCaseIndex) return staticZbllCaseIndex;
   if (staticZbllCaseIndexPromise) return staticZbllCaseIndexPromise;
   staticZbllCaseIndexPromise = import("./zbllCaseIndex.js")
     .then((mod) => {
-      const index = mod?.ZBLL_CASE_INDEX;
-      if (!index || typeof index !== "object") return null;
-      staticZbllCaseIndex = index;
-      staticZbllCaseCount = Number.isFinite(mod?.ZBLL_CASE_COUNT)
-        ? Math.max(0, Math.floor(mod.ZBLL_CASE_COUNT))
-        : Object.keys(index).length;
+      const zbllIndex = mod?.ZBLL_CASE_INDEX;
+      if (zbllIndex && typeof zbllIndex === "object") {
+        staticZbllCaseIndex = zbllIndex;
+        staticZbllCaseCount = Number.isFinite(mod?.ZBLL_CASE_COUNT)
+          ? Math.max(0, Math.floor(mod.ZBLL_CASE_COUNT))
+          : Object.keys(zbllIndex).length;
+      }
+      const zblsIndex = mod?.ZBLS_CASE_INDEX;
+      if (zblsIndex && typeof zblsIndex === "object") {
+        staticZblsCaseIndex = zblsIndex;
+        staticZblsCaseCount = Number.isFinite(mod?.ZBLS_CASE_COUNT)
+          ? Math.max(0, Math.floor(mod.ZBLS_CASE_COUNT))
+          : Object.keys(zblsIndex).length;
+      }
       return staticZbllCaseIndex;
     })
     .catch(() => null);
   return staticZbllCaseIndexPromise;
 }
 
-function getStaticZbllCaseLibrary() {
-  if (!staticZbllCaseIndex) return null;
-  if (staticZbllCaseLibrary) return staticZbllCaseLibrary;
-  const packedIndex = staticZbllCaseIndex;
-  staticZbllCaseLibrary = {
-    useZbllKey: true,
+function createStaticSingleStageCaseLibrary(packedIndex, caseCount, useZbllKey) {
+  if (!packedIndex || typeof packedIndex !== "object") return null;
+  const decodedCases = new Map();
+  const decodeCase = (caseKey) => {
+    if (decodedCases.has(caseKey)) return decodedCases.get(caseKey);
+    const packedCandidates = packedIndex[caseKey];
+    if (!Array.isArray(packedCandidates) || packedCandidates.length === 0) {
+      decodedCases.set(caseKey, undefined);
+      return undefined;
+    }
+    const candidates = new Array(packedCandidates.length);
+    for (let i = 0; i < packedCandidates.length; i++) {
+      const packed = packedCandidates[i];
+      const text = String(Array.isArray(packed) ? packed[0] || "" : "");
+      const formulaKey = String(Array.isArray(packed) ? packed[1] || "" : "") || null;
+      const precompiledMoves = Array.isArray(packed?.[2]) ? packed[2] : null;
+      const normalizedText = String(Array.isArray(packed) ? packed[3] || "" : "")
+        || normalizeFormulaMatchText(text);
+      candidates[i] = {
+        text,
+        normalizedText,
+        moves: precompiledMoves || splitMoves(text),
+        formulaKey,
+      };
+    }
+    decodedCases.set(caseKey, candidates);
+    return candidates;
+  };
+  return {
+    useZbllKey,
     staticIndex: true,
+    precompiledMoves: true,
     caseMap: {
-      size: staticZbllCaseCount,
-      get(caseKey) {
-        const packedCandidates = packedIndex[caseKey];
-        if (!Array.isArray(packedCandidates) || packedCandidates.length === 0) return undefined;
-        return packedCandidates.map((packed) => {
-          const text = String(Array.isArray(packed) ? packed[0] || "" : "");
-          const formulaKey = String(Array.isArray(packed) ? packed[1] || "" : "") || null;
-          return {
-            text,
-            normalizedText: normalizeFormulaMatchText(text),
-            moves: splitMoves(text),
-            formulaKey,
-          };
-        });
+      size: caseCount,
+      get: decodeCase,
+      has(caseKey) {
+        return Object.prototype.hasOwnProperty.call(packedIndex, caseKey);
       },
     },
   };
+}
+
+function getStaticZbllCaseLibrary() {
+  if (!staticZbllCaseIndex) return null;
+  if (!staticZbllCaseLibrary) {
+    staticZbllCaseLibrary = createStaticSingleStageCaseLibrary(
+      staticZbllCaseIndex,
+      staticZbllCaseCount,
+      true,
+    );
+  }
   return staticZbllCaseLibrary;
+}
+
+function getStaticZblsCaseLibrary() {
+  if (!staticZblsCaseIndex) return null;
+  if (!staticZblsCaseLibrary) {
+    staticZblsCaseLibrary = createStaticSingleStageCaseLibrary(
+      staticZblsCaseIndex,
+      staticZblsCaseCount,
+      false,
+    );
+  }
+  return staticZblsCaseLibrary;
 }
 
 function snapshotCfopLibraryTelemetry() {
@@ -3460,6 +3510,8 @@ function buildZblsKey(data, ctx) {
 
 // Returns the ZBLS case-library (hit cache on repeated calls).
 function getZblsLibraryForCtx(ctx) {
+  const staticLibrary = getStaticZblsCaseLibrary();
+  if (staticLibrary) return staticLibrary;
   const zblsStage = {
     name: "ZBLS",
     formulaKeys: ["ZBLS"],
@@ -3777,6 +3829,29 @@ async function getF2LCaseLibrary(ctx) {
   return f2lCaseLibraryPromise;
 }
 
+function packStaticSingleStageCaseIndex(library, errorCode) {
+  if (!library?.caseMap || typeof library.caseMap.entries !== "function") {
+    throw new Error(errorCode);
+  }
+  const index = Object.create(null);
+  let candidateCount = 0;
+  for (const [caseKey, candidates] of library.caseMap.entries()) {
+    if (!Array.isArray(candidates) || candidates.length === 0) continue;
+    index[caseKey] = candidates.map((candidate) => {
+      candidateCount += 1;
+      const text = String(candidate?.text || "");
+      const moves = Array.isArray(candidate?.moves) ? candidate.moves.slice() : splitMoves(text);
+      const normalizedText = String(candidate?.normalizedText || "") || normalizeFormulaMatchText(text);
+      return [text, String(candidate?.formulaKey || ""), moves, normalizedText];
+    });
+  }
+  return {
+    index,
+    caseCount: Object.keys(index).length,
+    candidateCount,
+  };
+}
+
 export async function buildZbllCaseIndexData() {
   const ctx = await getCfopContext();
   const stage = {
@@ -3807,23 +3882,32 @@ export async function buildZbllCaseIndexData() {
     ["ZBLL", "PLL"],
     buildFormulaKeyLookup(["ZBLL", "PLL"]),
   );
-  if (!library?.caseMap || typeof library.caseMap.entries !== "function") {
-    throw new Error("ZBLL_CASE_LIBRARY_EXPORT_UNAVAILABLE");
-  }
-  const index = Object.create(null);
-  let candidateCount = 0;
-  for (const [caseKey, candidates] of library.caseMap.entries()) {
-    if (!Array.isArray(candidates) || candidates.length === 0) continue;
-    index[caseKey] = candidates.map((candidate) => {
-      candidateCount += 1;
-      return [String(candidate?.text || ""), String(candidate?.formulaKey || "")];
-    });
-  }
-  return {
-    index,
-    caseCount: Object.keys(index).length,
-    candidateCount,
+  return packStaticSingleStageCaseIndex(library, "ZBLL_CASE_LIBRARY_EXPORT_UNAVAILABLE");
+}
+
+export async function buildZblsCaseIndexData() {
+  const ctx = await getCfopContext();
+  const stage = {
+    name: "ZBLS",
+    solverVersion: "v1",
+    formulaKeys: ["ZBLS"],
+    maxDepth: 22,
+    formulaPreAufList: FORMULA_AUF,
+    key(data) {
+      return buildZblsKey(data, ctx);
+    },
   };
+  const formulas = filterValidFormulas(getFormulaListForStage(stage), ctx);
+  const library = getSingleStageFormulaCaseLibrary(
+    stage,
+    ctx,
+    formulas,
+    FORMULA_AUF,
+    [""],
+    ["ZBLS"],
+    buildFormulaKeyLookup(["ZBLS"]),
+  );
+  return packStaticSingleStageCaseIndex(library, "ZBLS_CASE_LIBRARY_EXPORT_UNAVAILABLE");
 }
 
 export async function prewarm3x3StrictCfopLibraries(options = {}) {
@@ -4996,6 +5080,9 @@ function getSingleStageFormulaCaseLibrary(
     Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length > 0 &&
     canonicalFormulaKeys.includes("ZBLL") &&
     canonicalFormulaKeys.every((key) => key === "ZBLL" || key === "PLL");
+  const isZblsLibrary = stage?.name === "ZBLS" &&
+    Array.isArray(canonicalFormulaKeys) && canonicalFormulaKeys.length === 1 &&
+    canonicalFormulaKeys[0] === "ZBLS";
   const solverVersion = normalizeSolverVersion(stage?.solverVersion);
   const baseCacheKey = getSingleStageCaseLibraryKey(
     stage,
@@ -5004,7 +5091,9 @@ function getSingleStageFormulaCaseLibrary(
     postAufList,
     canonicalFormulaKeys,
   );
-  const cacheKey = isZbllLibrary ? `${baseCacheKey}::${solverVersion}` : baseCacheKey;
+  const cacheKey = (isZbllLibrary || isZblsLibrary)
+    ? `${baseCacheKey}::${solverVersion}`
+    : baseCacheKey;
   const cached = singleStageFormulaCaseLibraryCache.get(cacheKey);
   if (cached) {
     touchMapEntry(singleStageFormulaCaseLibraryCache, cacheKey, cached);
@@ -5026,8 +5115,10 @@ function getSingleStageFormulaCaseLibrary(
   const builtAt = Date.now();
 
   const useZbllKey = isZbllLibrary;
-  if (useZbllKey && solverVersion === "v2") {
-    const staticLibrary = getStaticZbllCaseLibrary();
+  if (solverVersion === "v2" && (isZbllLibrary || isZblsLibrary)) {
+    const staticLibrary = isZbllLibrary
+      ? getStaticZbllCaseLibrary()
+      : getStaticZblsCaseLibrary();
     if (staticLibrary) {
       singleStageFormulaCaseLibraryCache.set(cacheKey, staticLibrary);
       if (performanceCollector) {
