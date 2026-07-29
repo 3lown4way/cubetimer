@@ -107,6 +107,92 @@ cfop = replace_once(
     "",
     "automatic LL library warmup",
 )
+
+if "const formulaDescriptors = libraryFormulas.map" not in cfop:
+    function_start = cfop.index("function getSingleStageFormulaCaseLibrary(")
+    loop_start = cfop.index("  for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {", function_start)
+    loop_end = cfop.index("\n\n  for (const caseCandidates of caseMap.values())", loop_start)
+    optimized_loop = '''  const formulaDescriptors = libraryFormulas.map((alg) => {
+    const { leadingRot, rest: strippedAlg } = extractLeadingYRot(alg);
+    const normalizedAlg = normalizeFormulaMatchText(alg);
+    return {
+      alg,
+      leadingRot,
+      strippedAlg,
+      normalizedAlg,
+      fallbackFormulaKey: libraryFormulaKeyLookup?.get(normalizedAlg) ?? null,
+    };
+  });
+  const postAufInverseList = postAufList.map((postAuf) => invertAlg(postAuf));
+  const caseDedupeIndex = new Map();
+
+  for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
+    const rot = FORMULA_ROTATIONS[r];
+    for (let a = 0; a < preAufList.length; a++) {
+      const preAuf = preAufList[a];
+      for (let i = 0; i < formulaDescriptors.length; i++) {
+        const descriptor = formulaDescriptors[i];
+        const combinedRot = composeYRot(rot, descriptor.leadingRot);
+        const baseCandidate = joinMoves([
+          combinedRot,
+          preAuf,
+          descriptor.strippedAlg,
+          invertRotation(combinedRot),
+        ]);
+        const baseInverse = invertAlg(baseCandidate);
+        const baseMoves = splitMoves(baseCandidate);
+        if (!baseMoves.length || !baseInverse) continue;
+        const netRot = computeNetCubeRotationMoves(baseCandidate);
+
+        for (let p = 0; p < postAufList.length; p++) {
+          const postAuf = postAufList[p];
+          const candidate = postAuf ? joinMoves([baseCandidate, postAuf]) : baseCandidate;
+          const candidateMoves = postAuf ? baseMoves.concat(postAuf) : baseMoves;
+          if (candidateMoves.length > stage.maxDepth) continue;
+          const inverse = postAuf
+            ? joinMoves([postAufInverseList[p], baseInverse])
+            : baseInverse;
+          const casePattern = tryApplyAlg(solved, inverse);
+          if (!casePattern) continue;
+          const normalizedCasePattern = netRot
+            ? (tryApplyAlg(casePattern, netRot) ?? casePattern)
+            : casePattern;
+          const normalizedCandidate = normalizeFormulaMatchText(candidate);
+          const formulaKey = libraryFormulaKeyLookup?.get(normalizedCandidate)
+            ?? descriptor.fallbackFormulaKey;
+          const caseKey = getKeyFn(normalizedCasePattern.patternData);
+          let caseCandidates = caseMap.get(caseKey);
+          let dedupeIndex = caseDedupeIndex.get(caseKey);
+          if (!caseCandidates) {
+            caseCandidates = [];
+            caseMap.set(caseKey, caseCandidates);
+          }
+          if (!dedupeIndex) {
+            dedupeIndex = new Map();
+            caseDedupeIndex.set(caseKey, dedupeIndex);
+          }
+          const dedupeKey = `${String(formulaKey || "")}::${normalizedCandidate}`;
+          const existingIndex = dedupeIndex.get(dedupeKey);
+          const nextEntry = {
+            text: candidate,
+            normalizedText: normalizedCandidate,
+            moves: candidateMoves,
+            formulaKey,
+          };
+          if (existingIndex !== undefined) {
+            if (compareSingleStageCaseCandidateDefault(nextEntry, caseCandidates[existingIndex]) < 0) {
+              caseCandidates[existingIndex] = nextEntry;
+            }
+          } else {
+            dedupeIndex.set(dedupeKey, caseCandidates.length);
+            caseCandidates.push(nextEntry);
+          }
+        }
+      }
+    }
+  }'''
+    cfop = cfop[:loop_start] + optimized_loop + cfop[loop_end:]
+
 cfop_path.write_text(cfop)
 
 benchmark_path = Path("benchmark-hotpaths.mjs")
