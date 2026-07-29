@@ -12,7 +12,7 @@ const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;
 const ROUX_333_TIMEOUT_MS = 45000;
 const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const TWOPHASE_333_TIMEOUT_MS = 45000;
-const TWOPHASE_333_MAX_FRONTIERS = 12;
+const TWOPHASE_333_MAX_FRONTIERS = 2;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const MINMOVE_333_TIMEOUT_MS = 235000;
 const MINMOVE_333_EXACT_PROOF_TIMEOUT_MS = 60000;
@@ -1172,7 +1172,7 @@ async function prewarmInternal2x2() {
 async function prewarmInternal3x3StrictCfop() {
   try {
     const { prewarm3x3StrictCfopLibraries } = await import("./cfop3x3.js");
-    await prewarm3x3StrictCfopLibraries();
+    await prewarm3x3StrictCfopLibraries({ includeF2L: false, includeSingleStage: true });
   } catch (_) {
     // Warmup failure should not block solving.
   }

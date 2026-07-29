@@ -3796,6 +3796,13 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
   );
   const llFamilyCalibration = normalizeLlFamilyCalibrationRecord(llFamilyCalibrationInput);
   const enableStyleFallback = hasStyleOptIn && options.enableStyleFallback !== false;
+  const preferCompactF2L =
+    solveMode === "strict" &&
+    !useSvWvStages &&
+    !mixedCfopStages &&
+    !hasStyleOptIn &&
+    !f2lTransitionProfile &&
+    !f2lDownstreamProfile;
   const deadlineTs = normalizeNonNegativeDepth(options.deadlineTs, 0);
   const mixedXCrossRate = clampRate01(mixedCaseBias.xcrossRate) ?? 0;
   const mixedXXCrossRate = clampRate01(mixedCaseBias.xxcrossRate) ?? 0;
@@ -4025,6 +4032,7 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       formulaKeys: ["F2L"],
       mixedCfopStages,
       enableStyleFallback,
+      preferCompactF2L,
       deadlineTs,
       f2lStyleProfile,
       // Formula-driven F2L commonly exceeds 16 moves; keep a larger cap here.
@@ -6139,6 +6147,28 @@ function solveStageByFormulaDb(startPattern, stage, ctx) {
     stage.name === "F2L" ||
     (Array.isArray(stage.formulaKeys) && stage.formulaKeys.includes("F2L"))
   ) {
+    if (stage.preferCompactF2L === true) {
+      const compactResult = solveF2LCompactIDA(startPattern, stage, ctx);
+      if (stage.performanceCollector) {
+        stage.performanceCollector.compactPathUsed = true;
+        stage.performanceCollector.compactFallbackUsed = false;
+        stage.performanceCollector.finalMethod = compactResult?.ok
+          ? "compact_ida"
+          : "compact_ida_failed";
+        if (Number.isFinite(compactResult?.nodes)) {
+          stage.performanceCollector.finalNodes = compactResult.nodes;
+        }
+        if (Number.isFinite(compactResult?.bound)) {
+          stage.performanceCollector.finalBound = compactResult.bound;
+        }
+      }
+      if (!compactResult) return compactResult;
+      return {
+        ...compactResult,
+        method: compactResult.ok ? "compact_ida" : "compact_ida_failed",
+        f2lDiagnostics: stage.performanceCollector || null,
+      };
+    }
     const beamResult = solveWithFormulaDbF2L(startPattern, stage, ctx);
     if (beamResult?.ok) {
       if (stage.performanceCollector) {
@@ -6848,9 +6878,11 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         compactPathUsed: false,
         nonCompactPathCount: 0,
       };
-      const f2lLibraryAwaitStartedAt = Date.now();
-      stages[i].f2lCaseLibrary = await getF2LCaseLibrary(ctx);
-      performanceSession.f2lLibraryAwaitMs += Math.max(0, Date.now() - f2lLibraryAwaitStartedAt);
+      if (stages[i].preferCompactF2L !== true) {
+        const f2lLibraryAwaitStartedAt = Date.now();
+        stages[i].f2lCaseLibrary = await getF2LCaseLibrary(ctx);
+        performanceSession.f2lLibraryAwaitMs += Math.max(0, Date.now() - f2lLibraryAwaitStartedAt);
+      }
     } else if (isSingleStageFormulaStage(stages[i])) {
       stages[i].performanceCollector = {
         singleStage: true,

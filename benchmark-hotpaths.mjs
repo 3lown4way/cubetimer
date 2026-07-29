@@ -65,7 +65,7 @@ async function benchmarkTwoPhase() {
     let searchId = null;
     const started = performance.now();
     const prepared = await prepareTwophase333(scramble, {
-      maxPhase1Solutions: 12,
+      maxPhase1Solutions: 2,
       phase1MaxDepth: 13,
       phase1NodeLimit: 4_000_000,
     });
