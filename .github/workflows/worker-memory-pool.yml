@@ -1,0 +1,42 @@
+name: Worker memory pool
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.head_ref == 'agent/solver-worker-pool-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply worker pool patch
+        run: |
+          python -m py_compile tools/apply-worker-memory-pool.py
+          python tools/apply-worker-memory-pool.py
+
+      - name: Validate solver
+        run: |
+          node --check solver/solver3x3Phase/phase1.js
+          node --check solver/solver3x3Phase/phase2.js
+          node benchmark-solver-versions.mjs
+          node benchmark-cfop-10.mjs
+          node benchmark-hotpaths.mjs
+          node benchmark-twophase-frontiers.mjs
+
+      - name: Commit product changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add solver/solver3x3Phase/phase1.js solver/solver3x3Phase/phase2.js
+          git commit -m 'Reuse phase search scratch buffers'
+          git push origin HEAD:${{ github.head_ref }}
