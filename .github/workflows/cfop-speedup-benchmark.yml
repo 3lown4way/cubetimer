@@ -1,0 +1,129 @@
+name: CFOP speedup benchmark
+
+on:
+  push:
+    branches:
+      - agent/cfop-speedup
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/cfop-speedup
+          fetch-depth: 0
+
+      - name: Apply CFOP worker speedups
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('solver/solverWorker.js')
+          text = path.read_text()
+          original = text
+
+          text = text.replace('const STRICT_CFOP_TIMEOUT_MS = 25000;', 'const STRICT_CFOP_TIMEOUT_MS = 10000;')
+          text = text.replace('const STRICT_CFOP_RETRY_TIMEOUT_MS = 12000;', 'const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;')
+          text = text.replace('    let f2lMethod = "mixed";', '    let f2lMethod = "legacy";')
+
+          old_warmup = '''function startBackgroundWarmups() {
+            if (backgroundWarmupsStarted) return;
+            backgroundWarmupsStarted = true;
+            void prewarmInternal2x2();
+            void prewarmInternal3x3StrictCfop();
+            void prewarmInternal3x3Roux();
+            void prewarmInternal3x3Phase();
+            void prewarmWasmSolver();
+            void prewarmTwophaseAndFmcTables();
+            void prewarmCubingJs3x3Pattern();
+          }'''
+          new_warmup = '''function startBackgroundWarmups() {
+            if (backgroundWarmupsStarted) return;
+            backgroundWarmupsStarted = true;
+            // Keep startup focused on the default interactive CFOP path.
+            // Other solvers already initialize lazily when their mode is selected.
+            void prewarmInternal3x3StrictCfop();
+            void prewarmCubingJs3x3Pattern();
+          }'''
+          text = text.replace(old_warmup, new_warmup)
+
+          profile_pattern = re.compile(r'''    let f2lTransitionProfile = null;\n    try \{\n      f2lTransitionProfile = await getF2LTransitionProfileForSolverLazy\(transitionProfileSolver\);\n    \} catch \(_\) \{\n      f2lTransitionProfile = null;\n    \}\n    let f2lDownstreamProfile = null;\n    if \(enableOllPllPrediction !== false\) \{\n      try \{\n        f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy\(transitionProfileSolver\);\n      \} catch \(_\) \{\n        f2lDownstreamProfile = null;\n      \}\n    \}\n    let llFamilyCalibration = null;\n    try \{\n      llFamilyCalibration = await getLlFamilyCalibrationForSolverLazy\(transitionProfileSolver\);\n    \} catch \(_\) \{\n      llFamilyCalibration = null;\n    \}''')
+          profile_replacement = '''    const profileAwareCfop =
+              mode === "zb" ||
+              f2lMethod !== "legacy" ||
+              Boolean(styleProfile) ||
+              Boolean(transitionProfileSolver);
+            let f2lTransitionProfile = null;
+            if (profileAwareCfop && transitionProfileSolver) {
+              try {
+                f2lTransitionProfile = await getF2LTransitionProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lTransitionProfile = null;
+              }
+            }
+            let f2lDownstreamProfile = null;
+            if (enableOllPllPrediction !== false && profileAwareCfop) {
+              try {
+                f2lDownstreamProfile = await getF2LDownstreamProfileForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                f2lDownstreamProfile = null;
+              }
+            }
+            let llFamilyCalibration = null;
+            if (profileAwareCfop) {
+              try {
+                llFamilyCalibration = await getLlFamilyCalibrationForSolverLazy(transitionProfileSolver);
+              } catch (_) {
+                llFamilyCalibration = null;
+              }
+            }'''
+          text, profile_count = profile_pattern.subn(profile_replacement, text, count=1)
+
+          old_attempts = '''  const attempts = normalizedMode === "zb"
+            ? [
+                { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+              ]
+            : [
+                { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+                { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[1] },
+              ];'''
+          new_attempts = '''  const attempts = [
+              { timeoutMs: STRICT_CFOP_TIMEOUT_MS, extraOptions: null },
+              { timeoutMs: STRICT_CFOP_RETRY_TIMEOUT_MS, extraOptions: STRICT_F2L_RETRY_OPTIONS[0] },
+            ];'''
+          text = text.replace(old_attempts, new_attempts)
+
+          if text == original:
+            print('No source changes needed; patch already applied.')
+          else:
+            if profile_count != 1:
+              raise SystemExit(f'Expected one profile-loading block, replaced {profile_count}')
+            path.write_text(text)
+            print('Applied CFOP worker speedups.')
+          PY
+
+      - name: Syntax check
+        run: node --check solver/solverWorker.js
+
+      - name: Run CFOP benchmark 10 times
+        run: node benchmark-cfop-10.mjs
+
+      - name: Commit validated source change
+        run: |
+          if git diff --quiet -- solver/solverWorker.js; then
+            echo "No source diff to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js
+          git commit -m "Speed up default CFOP solve path"
+          git push origin HEAD:agent/cfop-speedup
