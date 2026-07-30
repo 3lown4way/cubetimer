@@ -1,28 +1,26 @@
+pub mod fmc_insertion;
+pub mod fmc_search;
 mod ida;
 pub mod minmove_builder;
 pub mod minmove_bundle;
 pub mod minmove_core;
 pub mod minmove_search;
-pub mod twophase_builder;
-pub mod twophase_bundle;
-pub mod twophase_search;
-pub mod fmc_search;
-pub mod fmc_insertion;
-pub mod htr_classifier;
-pub mod htr_pruning;
-pub mod htr_rewrite;
-pub mod htr_search;
-pub mod htr_ml;
-pub mod htr_lookup;
 mod parser;
 mod permutation;
 mod state;
 mod tables;
+pub mod twophase_builder;
+pub mod twophase_bundle;
+pub mod twophase_search;
 mod utils;
 
+use fmc_insertion::optimize_insertion_wasm_impl;
+use fmc_search::{build_fmc_tables, candidate_to_json, solve_fmc, FmcTables};
 use ida::{build_prune_tables, ida_solve};
 use minmove_bundle::{load_bundle, MinmoveTables};
-use minmove_search::{build_bidirectional_context, search_to_string, MinmoveBidirectionalContext, SearchSession};
+use minmove_search::{
+    build_bidirectional_context, search_to_string, MinmoveBidirectionalContext, SearchSession,
+};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,11 +28,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use twophase_bundle::{load_bundle as load_twophase_bundle, TwophaseTables};
 use twophase_search::{
-    search_twophase_exact_bound, Phase2Input, TwophaseExactOptions, TwophasePrepareOptions,
-    TwophaseSearchOptions, TwophaseSession, solve_phase2,
+    search_twophase_exact_bound, solve_phase2, Phase2Input, TwophaseExactOptions,
+    TwophasePrepareOptions, TwophaseSearchOptions, TwophaseSession,
 };
-use fmc_search::{build_fmc_tables, solve_fmc, candidate_to_json, FmcTables};
-use fmc_insertion::optimize_insertion_wasm_impl;
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize, Deserialize)]
@@ -365,7 +361,11 @@ pub fn search_minmove_bound(search_id: u32, bound: u32, max_nodes: u32) -> Strin
     };
 
     // 0 means unlimited; otherwise use the caller-supplied budget.
-    let node_budget: u64 = if max_nodes == 0 { u64::MAX } else { max_nodes as u64 };
+    let node_budget: u64 = if max_nodes == 0 {
+        u64::MAX
+    } else {
+        max_nodes as u64
+    };
     let result = session.search_bound(tables, bound.min(u8::MAX as u32) as u8, node_budget);
     let solution = if result.found {
         search_to_string(&result, tables)
@@ -527,15 +527,26 @@ pub fn drop_minmove_search(search_id: u32) {
 #[wasm_bindgen]
 pub fn drop_twophase_search(search_id: u32) {
     utils::set_panic_hook();
-    TWOPHASE_SEARCHES.lock().unwrap().sessions.remove(&search_id);
+    TWOPHASE_SEARCHES
+        .lock()
+        .unwrap()
+        .sessions
+        .remove(&search_id);
 }
 
 #[wasm_bindgen]
-pub fn solve_phase2_direct(cp_idx: u32, ep_idx: u32, sep_idx: u32, max_depth: u8, node_limit: u32) -> String {
+pub fn solve_phase2_direct(
+    cp_idx: u32,
+    ep_idx: u32,
+    sep_idx: u32,
+    max_depth: u8,
+    node_limit: u32,
+) -> String {
     utils::set_panic_hook();
     let tables_guard = TWOPHASE_TABLES.lock().unwrap();
     let Some(tables) = tables_guard.as_ref() else {
-        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
     };
     let input = Phase2Input {
         cp_idx: cp_idx as usize,
@@ -544,7 +555,9 @@ pub fn solve_phase2_direct(cp_idx: u32, ep_idx: u32, sep_idx: u32, max_depth: u8
     };
     let result = solve_phase2(&input, tables, max_depth, node_limit as u64);
     if result.ok {
-        let move_names: Vec<String> = result.moves.iter()
+        let move_names: Vec<String> = result
+            .moves
+            .iter()
             .map(|&local_idx| {
                 let global_idx = tables.phase2_move_indices[local_idx as usize];
                 tables.move_data.move_names[global_idx as usize].clone()
@@ -555,13 +568,15 @@ pub fn solve_phase2_direct(cp_idx: u32, ep_idx: u32, sep_idx: u32, max_depth: u8
             "moves": move_names,
             "depth": result.depth,
             "nodes": result.nodes,
-        }).to_string()
+        })
+        .to_string()
     } else {
         serde_json::json!({
             "ok": false,
             "reason": result.reason,
             "nodes": result.nodes,
-        }).to_string()
+        })
+        .to_string()
     }
 }
 
@@ -570,7 +585,8 @@ pub fn build_fmc_tables_wasm() -> String {
     utils::set_panic_hook();
     let tables_guard = TWOPHASE_TABLES.lock().unwrap();
     let Some(tables) = tables_guard.as_ref() else {
-        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
     };
     let fmc = build_fmc_tables(tables);
     drop(tables_guard);
@@ -586,14 +602,17 @@ struct FmcOptionsJson {
     #[serde(rename = "forceRzp", default)]
     force_rzp: bool,
 }
-fn default_max_premove_sets() -> usize { 120 }
+fn default_max_premove_sets() -> usize {
+    120
+}
 
 #[wasm_bindgen]
 pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
     utils::set_panic_hook();
     let tables_guard = TWOPHASE_TABLES.lock().unwrap();
     let Some(tables) = tables_guard.as_ref() else {
-        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
     };
     let fmc_guard = FMC_TABLES.lock().unwrap();
     let Some(fmc_tables) = fmc_guard.as_ref() else {
@@ -601,10 +620,19 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
     };
     let options: FmcOptionsJson = match serde_json::from_str(options_json) {
         Ok(o) => o,
-        Err(e) => return serde_json::json!({"ok": false, "reason": format!("BAD_OPTIONS: {e}")}).to_string(),
+        Err(e) => {
+            return serde_json::json!({"ok": false, "reason": format!("BAD_OPTIONS: {e}")})
+                .to_string()
+        }
     };
 
-    let result = solve_fmc(scramble, tables, fmc_tables, options.max_premove_sets, options.force_rzp);
+    let result = solve_fmc(
+        scramble,
+        tables,
+        fmc_tables,
+        options.max_premove_sets,
+        options.force_rzp,
+    );
 
     if !result.ok {
         return serde_json::json!({"ok": false, "reason": "FMC_NO_SOLUTION"}).to_string();
@@ -624,7 +652,8 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "solution": best_solution,
         "moveCount": best.moves.len(),
         "candidates": candidates_json,
-    }).to_string()
+    })
+    .to_string()
 }
 
 #[wasm_bindgen]
@@ -632,7 +661,8 @@ pub fn optimize_insertion_wasm(scramble: &str, moves_str: &str, options_json: &s
     utils::set_panic_hook();
     let tables_guard = TWOPHASE_TABLES.lock().unwrap();
     let Some(tables) = tables_guard.as_ref() else {
-        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
     };
     optimize_insertion_wasm_impl(scramble, moves_str, options_json, tables)
 }
@@ -644,7 +674,8 @@ pub fn verify_fmc_solution_wasm(scramble: &str, solution: &str) -> String {
     utils::set_panic_hook();
     let tables_guard = TWOPHASE_TABLES.lock().unwrap();
     let Some(tables) = tables_guard.as_ref() else {
-        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
     };
     use minmove_core::{parse_scramble as parse_moves_minmove, CubeState};
     let mut combined = scramble.to_string();
@@ -652,12 +683,12 @@ pub fn verify_fmc_solution_wasm(scramble: &str, solution: &str) -> String {
     combined.push_str(solution);
     match parse_moves_minmove(&combined, &tables.move_data) {
         Ok(moves) => {
-            let solved = CubeState::solved().apply_moves(&moves, &tables.move_data).is_solved();
+            let solved = CubeState::solved()
+                .apply_moves(&moves, &tables.move_data)
+                .is_solved();
             serde_json::json!({"ok": true, "solved": solved}).to_string()
         }
-        Err(e) => {
-            serde_json::json!({"ok": false, "reason": e}).to_string()
-        }
+        Err(e) => serde_json::json!({"ok": false, "reason": e}).to_string(),
     }
 }
 

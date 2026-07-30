@@ -1,4 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+
+use once_cell::sync::Lazy;
 
 use serde::Deserialize;
 
@@ -9,12 +12,96 @@ use crate::minmove_core::{
 use crate::twophase_bundle::TwophaseTables;
 
 const SEP_SIZE: usize = 24;
-const PHASE1_FAIL_CACHE_LIMIT: usize = 220_000;
-const PHASE2_FAIL_CACHE_LIMIT: usize = 260_000;
 const PHASE1_EXACT_FAIL_CACHE_LIMIT: usize = 500_000;
+const FAIL_TT_SET_COUNT: usize = 1 << 17;
+const FAIL_TT_SET_MASK: usize = FAIL_TT_SET_COUNT - 1;
+const FAIL_TT_WAYS: usize = 2;
+const FAIL_TT_SLOTS: usize = FAIL_TT_SET_COUNT * FAIL_TT_WAYS;
 const FOUND_SENTINEL: u16 = u16::MAX;
 const STOP_SENTINEL: u16 = u16::MAX - 1;
 const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];
+
+/// Exact-tagged two-way fail table. Hash collisions only evict entries and
+/// therefore cannot create false pruning. Epochs make solve reset O(1).
+struct FixedFailTable {
+    keys: Box<[u64]>,
+    masks: Box<[u32]>,
+    epochs: Box<[u16]>,
+    epoch: u16,
+}
+
+impl FixedFailTable {
+    fn new() -> Self {
+        Self {
+            keys: vec![0; FAIL_TT_SLOTS].into_boxed_slice(),
+            masks: vec![0; FAIL_TT_SLOTS].into_boxed_slice(),
+            epochs: vec![0; FAIL_TT_SLOTS].into_boxed_slice(),
+            epoch: 1,
+        }
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 {
+            self.epochs.fill(0);
+            self.epoch = 1;
+        }
+    }
+
+    #[inline(always)]
+    fn base_slot(key: u64) -> usize {
+        let mut hash = (key as u32) ^ ((key >> 32) as u32);
+        hash ^= hash >> 16;
+        hash = hash.wrapping_mul(0x7feb_352d);
+        hash ^= hash >> 15;
+        hash = hash.wrapping_mul(0x846c_a68b);
+        hash ^= hash >> 16;
+        ((hash as usize) & FAIL_TT_SET_MASK) * FAIL_TT_WAYS
+    }
+
+    #[inline(always)]
+    fn get(&self, key: u64) -> u32 {
+        let base = Self::base_slot(key);
+        for slot in base..base + FAIL_TT_WAYS {
+            if self.epochs[slot] == self.epoch && self.keys[slot] == key {
+                return self.masks[slot];
+            }
+        }
+        0
+    }
+
+    #[inline(always)]
+    fn insert_or(&mut self, key: u64, bit: u32) {
+        let base = Self::base_slot(key);
+        let mut free = None;
+        for slot in base..base + FAIL_TT_WAYS {
+            if self.epochs[slot] == self.epoch {
+                if self.keys[slot] == key {
+                    self.masks[slot] |= bit;
+                    return;
+                }
+            } else if free.is_none() {
+                free = Some(slot);
+            }
+        }
+        let slot = free.unwrap_or_else(|| {
+            if self.masks[base].count_ones() <= self.masks[base + 1].count_ones() {
+                base
+            } else {
+                base + 1
+            }
+        });
+        self.keys[slot] = key;
+        self.masks[slot] = bit;
+        self.epochs[slot] = self.epoch;
+    }
+}
+
+static PHASE1_FAIL_TABLE: Lazy<Mutex<FixedFailTable>> =
+    Lazy::new(|| Mutex::new(FixedFailTable::new()));
+static PHASE2_FAIL_TABLE: Lazy<Mutex<FixedFailTable>> =
+    Lazy::new(|| Mutex::new(FixedFailTable::new()));
 
 fn default_max_phase1_solutions() -> usize {
     12
@@ -30,7 +117,10 @@ fn default_phase2_max_depth() -> u8 {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TwophasePrepareOptions {
-    #[serde(rename = "maxPhase1Solutions", default = "default_max_phase1_solutions")]
+    #[serde(
+        rename = "maxPhase1Solutions",
+        default = "default_max_phase1_solutions"
+    )]
     pub max_phase1_solutions: usize,
     #[serde(rename = "phase1MaxDepth", default = "default_phase1_max_depth")]
     pub phase1_max_depth: u8,
@@ -182,23 +272,29 @@ fn build_phase2_input(state: &CubeState) -> Option<Phase2Input> {
     Some(Phase2Input {
         cp_idx: encode_perm8(&state.cp),
         ep_idx: encode_perm8(&[
-            state.ep[0], state.ep[1], state.ep[2], state.ep[3], state.ep[4], state.ep[5],
-            state.ep[6], state.ep[7],
+            state.ep[0],
+            state.ep[1],
+            state.ep[2],
+            state.ep[3],
+            state.ep[4],
+            state.ep[5],
+            state.ep[6],
+            state.ep[7],
         ]),
         sep_idx: encode_perm4(&sep),
     })
 }
 
-struct Phase1SearchCtx<'a> {
+struct Phase1SearchCtx<'a, 'b> {
     tables: &'a TwophaseTables,
     path: Vec<u8>,
     nodes: u64,
     node_limit: u64,
     node_limit_hit: bool,
-    fail_cache: HashMap<u64, u32>,
+    fail_cache: &'b mut FixedFailTable,
 }
 
-impl<'a> Phase1SearchCtx<'a> {
+impl<'a, 'b> Phase1SearchCtx<'a, 'b> {
     fn dfs(
         &mut self,
         co: usize,
@@ -226,9 +322,9 @@ impl<'a> Phase1SearchCtx<'a> {
         }
 
         let remaining = (bound - depth) as u32;
-        let cache_key = ((((co as u64) * 2048 + eo as u64) * 495 + slice as u64) * 7)
-            + last_face as u64;
-        let seen_mask = self.fail_cache.get(&cache_key).copied().unwrap_or(0);
+        let cache_key =
+            ((((co as u64) * 2048 + eo as u64) * 495 + slice as u64) * 7) + last_face as u64;
+        let seen_mask = self.fail_cache.get(cache_key);
         let bit = 1u32 << remaining.min(31);
         if (seen_mask & bit) != 0 {
             return STOP_SENTINEL - 1;
@@ -259,10 +355,7 @@ impl<'a> Phase1SearchCtx<'a> {
             }
         }
 
-        if self.fail_cache.len() >= PHASE1_FAIL_CACHE_LIMIT {
-            self.fail_cache.clear();
-        }
-        self.fail_cache.insert(cache_key, seen_mask | bit);
+        self.fail_cache.insert_or(cache_key, bit);
         min_next.unwrap_or((bound as u16) + 1)
     }
 }
@@ -284,13 +377,15 @@ fn solve_phase1(input: &Phase1Input, tables: &TwophaseTables) -> Phase1SolveResu
         .max(tables.eo.get(input.eo_idx))
         .max(tables.slice.get(input.slice_idx))
         .max(1);
+    let mut fail_cache = PHASE1_FAIL_TABLE.lock().unwrap();
+    fail_cache.reset();
     let mut ctx = Phase1SearchCtx {
         tables,
         path: Vec::with_capacity(input.max_depth as usize),
         nodes: 0,
         node_limit: input.node_limit,
         node_limit_hit: false,
-        fail_cache: HashMap::new(),
+        fail_cache: &mut fail_cache,
     };
 
     while bound <= input.max_depth {
@@ -456,16 +551,16 @@ fn solve_phase1_multi(
     }
 }
 
-struct Phase2SearchCtx<'a> {
+struct Phase2SearchCtx<'a, 'b> {
     tables: &'a TwophaseTables,
     path: Vec<u8>,
     nodes: u64,
     node_limit: u64,
     node_limit_hit: bool,
-    fail_cache: HashMap<u64, u32>,
+    fail_cache: &'b mut FixedFailTable,
 }
 
-impl<'a> Phase2SearchCtx<'a> {
+impl<'a, 'b> Phase2SearchCtx<'a, 'b> {
     fn dfs(
         &mut self,
         cp: usize,
@@ -492,10 +587,9 @@ impl<'a> Phase2SearchCtx<'a> {
         }
 
         let remaining = (bound - depth) as u32;
-        let cache_key = ((((cp as u64) * 40320 + ep as u64) * SEP_SIZE as u64 + sep as u64)
-            * 7)
+        let cache_key = ((((cp as u64) * 40320 + ep as u64) * SEP_SIZE as u64 + sep as u64) * 7)
             + last_face as u64;
-        let seen_mask = self.fail_cache.get(&cache_key).copied().unwrap_or(0);
+        let seen_mask = self.fail_cache.get(cache_key);
         let bit = 1u32 << remaining.min(31);
         if (seen_mask & bit) != 0 {
             return STOP_SENTINEL - 1;
@@ -532,15 +626,17 @@ impl<'a> Phase2SearchCtx<'a> {
             }
         }
 
-        if self.fail_cache.len() >= PHASE2_FAIL_CACHE_LIMIT {
-            self.fail_cache.clear();
-        }
-        self.fail_cache.insert(cache_key, seen_mask | bit);
+        self.fail_cache.insert_or(cache_key, bit);
         min_next.unwrap_or((bound as u16) + 1)
     }
 }
 
-pub(crate) fn solve_phase2(input: &Phase2Input, tables: &TwophaseTables, max_depth: u8, node_limit: u64) -> Phase2SolveResult {
+pub(crate) fn solve_phase2(
+    input: &Phase2Input,
+    tables: &TwophaseTables,
+    max_depth: u8,
+    node_limit: u64,
+) -> Phase2SolveResult {
     if input.cp_idx == 0 && input.ep_idx == 0 && input.sep_idx == 0 {
         return Phase2SolveResult {
             ok: true,
@@ -556,18 +652,27 @@ pub(crate) fn solve_phase2(input: &Phase2Input, tables: &TwophaseTables, max_dep
         .get(input.cp_idx * SEP_SIZE + input.sep_idx)
         .max(tables.phase2_ep.get(input.ep_idx))
         .max(1);
+    let mut fail_cache = PHASE2_FAIL_TABLE.lock().unwrap();
+    fail_cache.reset();
     let mut ctx = Phase2SearchCtx {
         tables,
         path: Vec::with_capacity(max_depth as usize),
         nodes: 0,
         node_limit,
         node_limit_hit: false,
-        fail_cache: HashMap::new(),
+        fail_cache: &mut fail_cache,
     };
 
     while bound <= max_depth {
         ctx.path.clear();
-        let result = ctx.dfs(input.cp_idx, input.ep_idx, input.sep_idx, 0, bound, LAST_FACE_FREE);
+        let result = ctx.dfs(
+            input.cp_idx,
+            input.ep_idx,
+            input.sep_idx,
+            0,
+            bound,
+            LAST_FACE_FREE,
+        );
         if result == FOUND_SENTINEL {
             return Phase2SolveResult {
                 ok: true,
@@ -625,10 +730,12 @@ fn run_phase2_pass(
 
         let mut phase2_limit = options.phase2_max_depth as usize;
         if let Some(target_total) = target_total {
-            phase2_limit = phase2_limit.min(target_total.saturating_sub(1).saturating_sub(phase1_depth));
+            phase2_limit =
+                phase2_limit.min(target_total.saturating_sub(1).saturating_sub(phase1_depth));
         }
         if let Some(best_total) = *best_found_total {
-            phase2_limit = phase2_limit.min(best_total.saturating_sub(1).saturating_sub(phase1_depth));
+            phase2_limit =
+                phase2_limit.min(best_total.saturating_sub(1).saturating_sub(phase1_depth));
         }
         if phase2_limit > options.phase2_max_depth as usize {
             phase2_limit = options.phase2_max_depth as usize;
@@ -919,11 +1026,7 @@ impl TwophaseSession {
             options.phase1_max_depth,
             options.phase1_node_limit,
         );
-        let phase1 = solve_phase1_multi(
-            &phase1_input,
-            tables,
-            options.max_phase1_solutions.max(1),
-        );
+        let phase1 = solve_phase1_multi(&phase1_input, tables, options.max_phase1_solutions.max(1));
         if phase1.solutions.is_empty() {
             return Err(if phase1.reason.is_empty() {
                 "PHASE1_NOT_FOUND".into()
