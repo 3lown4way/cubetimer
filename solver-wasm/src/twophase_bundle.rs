@@ -7,7 +7,8 @@ use crate::minmove_core::{
 const BUNDLE_MAGIC: &[u8; 8] = b"TP3BNDL1";
 const BUNDLE_VERSION: u32 = 1;
 const PHASE2_MOVE_COUNT: usize = 10;
-const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] = ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
+const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] =
+    ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
 const OPPOSITE_FACE: [u8; 6] = [3, 4, 5, 0, 1, 2];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,7 +118,11 @@ fn read_u32(bytes: &[u8], offset: &mut usize) -> Result<u32, String> {
 fn resolve_phase2_move_indices(move_data: &MoveData) -> Result<[u8; PHASE2_MOVE_COUNT], String> {
     let mut indices = [0u8; PHASE2_MOVE_COUNT];
     for (slot, name) in PHASE2_MOVE_NAMES.iter().enumerate() {
-        let Some(index) = move_data.move_names.iter().position(|candidate| candidate == name) else {
+        let Some(index) = move_data
+            .move_names
+            .iter()
+            .position(|candidate| candidate == name)
+        else {
             return Err(format!("PHASE2_MOVE_INDEX_NOT_FOUND:{name}"));
         };
         indices[slot] = index as u8;
@@ -125,7 +130,9 @@ fn resolve_phase2_move_indices(move_data: &MoveData) -> Result<[u8; PHASE2_MOVE_
     Ok(indices)
 }
 
-fn build_phase2_allowed_moves_by_last_face(phase2_move_faces: &[u8; PHASE2_MOVE_COUNT]) -> Vec<Vec<u8>> {
+fn build_phase2_allowed_moves_by_last_face(
+    phase2_move_faces: &[u8; PHASE2_MOVE_COUNT],
+) -> Vec<Vec<u8>> {
     let mut allowed = vec![Vec::new(); LAST_FACE_FREE as usize + 1];
     for last_face in 0..=LAST_FACE_FREE as usize {
         for (move_index, &face) in phase2_move_faces.iter().enumerate() {
@@ -203,8 +210,9 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
     if bytes.len() < offset + move_data_len {
         return Err("bundle truncated while reading move data".into());
     }
-    let move_data_file: MoveDataFile = serde_json::from_slice(&bytes[offset..offset + move_data_len])
-        .map_err(|error| format!("failed to parse move data: {error}"))?;
+    let move_data_file: MoveDataFile =
+        serde_json::from_slice(&bytes[offset..offset + move_data_len])
+            .map_err(|error| format!("failed to parse move data: {error}"))?;
     offset += move_data_len;
 
     let move_data = MoveData::try_from(move_data_file)?;
@@ -304,7 +312,8 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
         co: co.ok_or_else(|| "twophase bundle missing CO table".to_string())?,
         eo: eo.ok_or_else(|| "twophase bundle missing EO table".to_string())?,
         slice: slice.ok_or_else(|| "twophase bundle missing Slice table".to_string())?,
-        phase2_ep: phase2_ep.ok_or_else(|| "twophase bundle missing Phase2 EP table".to_string())?,
+        phase2_ep: phase2_ep
+            .ok_or_else(|| "twophase bundle missing Phase2 EP table".to_string())?,
         phase2_cp_sep_joint: phase2_cp_sep_joint
             .ok_or_else(|| "twophase bundle missing Phase2 CPxSEP table".to_string())?,
         co_move: co_move.ok_or_else(|| "twophase bundle missing CO move table".to_string())?,
