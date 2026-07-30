@@ -5,7 +5,7 @@ use crate::minmove_core::{
 };
 use crate::twophase_bundle::TwophaseTables;
 use crate::twophase_search::{solve_phase2, Phase2Input};
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 
 // --- Constants ---
 
@@ -81,6 +81,12 @@ const FMC_MULTI_RELOCATION_PER_KIND_LIMIT: usize = 128;
 /// Only the best first-insertion transitions are expanded with a second
 /// insertion search for each multi skeleton.
 const FMC_MULTI_FIRST_STAGE_LIMIT: usize = 8;
+
+/// Global half turns used inside the HTR subgroup.
+const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
+
+/// Avoid accepting an HTR detour that is materially longer than the normal P2 tail.
+const FMC_HTR_TAIL_SLACK: usize = 2;
 
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
@@ -501,6 +507,8 @@ pub struct FmcTables {
     pub two_corner_two_edge_algorithms: std::collections::HashMap<FmcStateKey, Vec<u8>>,
     /// Guaranteed two-cycle removals that create 4C, 4E or 3C3E skeletons.
     multi_relocation_plans: Vec<FmcMultiRelocationPlan>,
+    /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
+    htr_first_move: OnceCell<std::collections::HashMap<u128, u8>>,
 }
 
 impl FmcTables {
@@ -614,6 +622,7 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
         three_cycle_algorithms,
         two_corner_two_edge_algorithms,
         multi_relocation_plans,
+        htr_first_move: OnceCell::new(),
     }
 }
 
@@ -1260,6 +1269,120 @@ fn collect_axis_skeleton_prefixes(
     prefixes
 }
 
+fn htr_permutation_key(state: &CubeState) -> u128 {
+    let mut key = 0u128;
+    for (index, &piece) in state.cp.iter().enumerate() {
+        key |= (piece as u128) << (index * 3);
+    }
+    for (index, &piece) in state.ep.iter().enumerate() {
+        key |= (piece as u128) << (24 + index * 4);
+    }
+    key
+}
+
+fn build_htr_first_move_table(tables: &TwophaseTables) -> std::collections::HashMap<u128, u8> {
+    let solved = CubeState::solved();
+    let mut first_move = std::collections::HashMap::<u128, u8>::new();
+    let mut queue = std::collections::VecDeque::<CubeState>::new();
+    first_move.insert(htr_permutation_key(&solved), 255);
+    queue.push_back(solved);
+
+    while let Some(state) = queue.pop_front() {
+        for &move_index in &FMC_HTR_HALF_TURN_MOVES {
+            let next = state.apply_move(move_index as usize, &tables.move_data);
+            let key = htr_permutation_key(&next);
+            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
+                entry.insert(move_index);
+                queue.push_back(next);
+            }
+        }
+    }
+    first_move
+}
+
+fn htr_finish_moves(
+    state: &CubeState,
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+) -> Option<Vec<u8>> {
+    if state.co.iter().any(|&value| value != 0) || state.eo.iter().any(|&value| value != 0) {
+        return None;
+    }
+    let table = fmc_tables
+        .htr_first_move
+        .get_or_init(|| build_htr_first_move_table(tables));
+    let mut current = *state;
+    let mut moves = Vec::new();
+    let mut guard = 0usize;
+    loop {
+        let move_index = *table.get(&htr_permutation_key(&current))?;
+        if move_index == 255 {
+            return Some(moves);
+        }
+        moves.push(move_index);
+        current = current.apply_move(move_index as usize, &tables.move_data);
+        guard += 1;
+        if guard > 40 {
+            return None;
+        }
+    }
+}
+
+fn find_htr_tail_from_p2(
+    state_after_dr: &CubeState,
+    p2_moves: &[u8],
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+) -> Option<Vec<u8>> {
+    const ENTRY_DEPTH: usize = 3;
+    let mut queue = std::collections::VecDeque::<(CubeState, Vec<u8>, u8)>::new();
+    let mut seen = std::collections::HashMap::<FmcStateKey, usize>::new();
+    queue.push_back((*state_after_dr, Vec::new(), LAST_FACE_FREE));
+    seen.insert(fmc_state_key(state_after_dr), 0);
+    let mut best: Option<Vec<u8>> = None;
+    while let Some((state, prefix, last_face)) = queue.pop_front() {
+        if let Some(finish) = htr_finish_moves(&state, tables, fmc_tables) {
+            let mut tail = prefix.clone();
+            tail.extend_from_slice(&finish);
+            let tail = simplify_moves(&tail);
+            if tail != p2_moves && tail.len() <= p2_moves.len() + FMC_HTR_TAIL_SLACK {
+                let replace = best.as_ref().is_none_or(|current| {
+                    (tail.len(), tail.clone()) < (current.len(), current.clone())
+                });
+                if replace {
+                    best = Some(tail);
+                }
+            }
+        }
+        if prefix.len() >= ENTRY_DEPTH {
+            continue;
+        }
+        for &move_index in &tables.phase2_move_indices {
+            let face = tables.move_data.move_face[move_index as usize];
+            if last_face < LAST_FACE_FREE && face == last_face {
+                continue;
+            }
+            if last_face < LAST_FACE_FREE
+                && face == OPPOSITE_FACE[last_face as usize]
+                && face < last_face
+            {
+                continue;
+            }
+            let next = state.apply_move(move_index as usize, &tables.move_data);
+            let next_depth = prefix.len() + 1;
+            let key = fmc_state_key(&next);
+            if seen.get(&key).is_some_and(|&depth| depth <= next_depth) {
+                continue;
+            }
+            seen.insert(key, next_depth);
+            let mut next_prefix = prefix.clone();
+            next_prefix.push(move_index);
+            queue.push_back((next, next_prefix, face));
+        }
+    }
+    best
+}
+
 // --- Result Types ---
 
 #[derive(Clone, Debug)]
@@ -1375,11 +1498,13 @@ fn solve_fmc_single_axis(
     p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
     force_rzp: bool,
+    enable_htr_skeletons: bool,
 ) -> Vec<(
     Vec<u8>,
     Vec<u8>,
     Vec<u8>,
     Vec<u8>,
+    bool,
     bool,
     Vec<AxisSkeletonPrefix>,
 )> {
@@ -1467,8 +1592,43 @@ fn solve_fmc_single_axis(
                 dr_moves.clone(),
                 p2_global.clone(),
                 dr_route.rzp_setup_len > 0,
+                false,
                 skeleton_prefixes,
             ));
+
+            if enable_htr_skeletons {
+                if let Some(htr_tail) =
+                    find_htr_tail_from_p2(&state_after_dr, &p2_global, tables, fmc_tables)
+                {
+                    let mut htr_all_moves =
+                        Vec::with_capacity(eo_seq.len() + dr_moves.len() + htr_tail.len());
+                    htr_all_moves.extend_from_slice(eo_seq);
+                    htr_all_moves.extend_from_slice(dr_moves);
+                    htr_all_moves.extend_from_slice(&htr_tail);
+                    let htr_simplified = simplify_moves(&htr_all_moves);
+                    if !htr_simplified.is_empty() && htr_simplified.len() <= *current_best {
+                        if htr_simplified.len() < *current_best {
+                            *current_best = htr_simplified.len();
+                        }
+                        let htr_prefixes = collect_axis_skeleton_prefixes(
+                            &state_after_dr,
+                            eo_seq,
+                            dr_moves,
+                            &htr_tail,
+                            tables,
+                        );
+                        results.push((
+                            htr_simplified,
+                            eo_seq.clone(),
+                            dr_moves.clone(),
+                            htr_tail,
+                            dr_route.rzp_setup_len > 0,
+                            true,
+                            htr_prefixes,
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -1990,6 +2150,7 @@ pub fn solve_fmc(
     max_premove_sets: usize,
     force_rzp: bool,
     enable_multi_insertion: bool,
+    enable_htr_skeletons: bool,
 ) -> FmcResult {
     // Parse scramble
     let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
@@ -2039,15 +2200,19 @@ pub fn solve_fmc(
             &mut p2_cache,
             &mut best_count,
             force_rzp,
+            enable_htr_skeletons,
         );
 
-        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, skeleton_prefixes) in results {
+        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, htr_used, skeleton_prefixes) in
+            results
+        {
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
                     .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
                     .collect()
             };
             let original: Vec<u8> = cvt(&moves_in_axis_frame);
+            let source_tag = if htr_used { 4 } else { 0 };
             let simplified = simplify_moves(&original);
             if !simplified.is_empty() && simplified.len() <= best_count {
                 best_count = simplified.len();
@@ -2060,7 +2225,7 @@ pub fn solve_fmc(
                     dr_moves: cvt(&dr_raw),
                     finish_moves: cvt(&p2_raw),
                     axis,
-                    source_tag: 0,
+                    source_tag,
                     premove_moves: vec![],
                     rzp_used,
                     insertion_moves: vec![],
@@ -2078,7 +2243,7 @@ pub fn solve_fmc(
                     tables,
                     &prefix,
                     axis,
-                    0,
+                    source_tag,
                     &[],
                     rzp_used,
                 ) {
@@ -2112,15 +2277,19 @@ pub fn solve_fmc(
             &mut p2_cache,
             &mut best_count,
             force_rzp,
+            enable_htr_skeletons,
         );
 
-        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, skeleton_prefixes) in results {
+        for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, htr_used, skeleton_prefixes) in
+            results
+        {
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
                     .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
                     .collect()
             };
             let original: Vec<u8> = cvt(&moves_in_axis_frame);
+            let source_tag = if htr_used { 5 } else { 1 };
             // NISS: invert the solution
             let inverted = invert_moves(&original);
             let simplified = simplify_moves(&inverted);
@@ -2136,7 +2305,7 @@ pub fn solve_fmc(
                     dr_moves: cvt(&dr_raw),
                     finish_moves: cvt(&p2_raw),
                     axis,
-                    source_tag: 1,
+                    source_tag,
                     premove_moves: vec![],
                     rzp_used,
                     insertion_moves: vec![],
@@ -2154,7 +2323,7 @@ pub fn solve_fmc(
                     tables,
                     &prefix,
                     axis,
-                    1,
+                    source_tag,
                     &[],
                     rzp_used,
                 ) {
@@ -2194,9 +2363,18 @@ pub fn solve_fmc(
                     &mut p2_cache,
                     &mut best_count,
                     force_rzp,
+                    enable_htr_skeletons,
                 );
 
-                for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used, skeleton_prefixes) in results
+                for (
+                    moves_in_axis,
+                    eo_raw,
+                    dr_raw,
+                    p2_raw,
+                    rzp_used,
+                    htr_used,
+                    skeleton_prefixes,
+                ) in results
                 {
                     let cvt = |v: &[u8]| -> Vec<u8> {
                         v.iter()
@@ -2204,6 +2382,7 @@ pub fn solve_fmc(
                             .collect()
                     };
                     let original: Vec<u8> = cvt(&moves_in_axis);
+                    let source_tag = if htr_used { 6 } else { 2 };
                     // Direct premove: solution = premoves + pipeline_solution
                     let mut full = pm_set.clone();
                     full.extend_from_slice(&original);
@@ -2219,7 +2398,7 @@ pub fn solve_fmc(
                             dr_moves: cvt(&dr_raw),
                             finish_moves: cvt(&p2_raw),
                             axis,
-                            source_tag: 2,
+                            source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
                             insertion_moves: vec![],
@@ -2238,7 +2417,7 @@ pub fn solve_fmc(
                             tables,
                             &prefix,
                             axis,
-                            2,
+                            source_tag,
                             pm_set,
                             rzp_used,
                         ) {
@@ -2267,9 +2446,18 @@ pub fn solve_fmc(
                     &mut p2_cache,
                     &mut best_count,
                     force_rzp,
+                    enable_htr_skeletons,
                 );
 
-                for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used, skeleton_prefixes) in results
+                for (
+                    moves_in_axis,
+                    eo_raw,
+                    dr_raw,
+                    p2_raw,
+                    rzp_used,
+                    htr_used,
+                    skeleton_prefixes,
+                ) in results
                 {
                     let cvt = |v: &[u8]| -> Vec<u8> {
                         v.iter()
@@ -2277,6 +2465,7 @@ pub fn solve_fmc(
                             .collect()
                     };
                     let original: Vec<u8> = cvt(&moves_in_axis);
+                    let source_tag = if htr_used { 7 } else { 3 };
                     // NISS premove: solution = inv(pipeline) + inv(premoves)
                     let mut full = invert_moves(&original);
                     full.extend_from_slice(&invert_moves(pm_set));
@@ -2293,7 +2482,7 @@ pub fn solve_fmc(
                             dr_moves: cvt(&dr_raw),
                             finish_moves: cvt(&p2_raw),
                             axis,
-                            source_tag: 3,
+                            source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
                             insertion_moves: vec![],
@@ -2312,7 +2501,7 @@ pub fn solve_fmc(
                             tables,
                             &prefix,
                             axis,
-                            3,
+                            source_tag,
                             pm_set,
                             rzp_used,
                         ) {
@@ -2397,6 +2586,13 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         1 => format!("FMC_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
         2 => format!("FMC_PREMOVE_{}", AXIS_NAMES[candidate.axis as usize]),
         3 => format!("FMC_PREMOVE_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
+        4 => format!("FMC_HTR_EO_{}", AXIS_NAMES[candidate.axis as usize]),
+        5 => format!("FMC_HTR_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
+        6 => format!("FMC_HTR_PREMOVE_{}", AXIS_NAMES[candidate.axis as usize]),
+        7 => format!(
+            "FMC_HTR_PREMOVE_NISS_{}",
+            AXIS_NAMES[candidate.axis as usize]
+        ),
         _ => "FMC_UNKNOWN".into(),
     };
     let source = if let Some(kind) = candidate.skeleton_kind {
@@ -2505,6 +2701,13 @@ pub fn skeleton_to_json(
         1 => format!("FMC_NISS_{}", AXIS_NAMES[skeleton.axis as usize]),
         2 => format!("FMC_PREMOVE_{}", AXIS_NAMES[skeleton.axis as usize]),
         3 => format!("FMC_PREMOVE_NISS_{}", AXIS_NAMES[skeleton.axis as usize]),
+        4 => format!("FMC_HTR_EO_{}", AXIS_NAMES[skeleton.axis as usize]),
+        5 => format!("FMC_HTR_NISS_{}", AXIS_NAMES[skeleton.axis as usize]),
+        6 => format!("FMC_HTR_PREMOVE_{}", AXIS_NAMES[skeleton.axis as usize]),
+        7 => format!(
+            "FMC_HTR_PREMOVE_NISS_{}",
+            AXIS_NAMES[skeleton.axis as usize]
+        ),
         _ => "FMC_UNKNOWN".into(),
     };
     let (corner_defect_positions, edge_defect_positions) = match skeleton.kind {

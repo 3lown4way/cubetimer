@@ -491,6 +491,7 @@ export async function solveFmcWasm(scramble, options = {}) {
       maxPremoveSets: options.maxPremoveSets ?? 120,
       forceRzp: options.forceRzp ?? false,
       enableMultiInsertion: options.enableMultiInsertion === true,
+      enableHtrSkeletons: options.enableHtrSkeletons === true,
     });
     const raw = api.solveFmcWasm(scramble, optionsJson);
     if (!raw) return null;

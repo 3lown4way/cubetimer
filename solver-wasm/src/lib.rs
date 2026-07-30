@@ -612,6 +612,8 @@ struct FmcOptionsJson {
     force_rzp: bool,
     #[serde(rename = "enableMultiInsertion", default)]
     enable_multi_insertion: bool,
+    #[serde(rename = "enableHtrSkeletons", default)]
+    enable_htr_skeletons: bool,
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -644,6 +646,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.max_premove_sets,
         options.force_rzp,
         options.enable_multi_insertion,
+        options.enable_htr_skeletons,
     );
 
     if !result.ok {
@@ -675,6 +678,8 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
+        "htrCandidateCount": result.candidates.iter().filter(|candidate| candidate.source_tag >= 4).count(),
+        "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| skeleton.source_tag >= 4).count(),
     })
     .to_string()
 }
