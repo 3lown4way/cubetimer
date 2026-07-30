@@ -70,6 +70,20 @@ jobs:
       - name: Apply HTR transform
         run: python3 tools/apply-fmc-htr-skeletons.py
 
+      - name: Repair internal DR call
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('solver-wasm/src/fmc_search.rs')
+          text = path.read_text()
+          pattern = r'(let dr_routes = solve_dr_routes_via_rzp\([\s\S]*?force_rzp,\n)\s*enable_htr_skeletons,\n'
+          text, count = re.subn(pattern, r'\1', text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one internal DR call repair, found {count}')
+          path.write_text(text)
+          PY
+
       - name: Format Rust
         run: cargo fmt --manifest-path solver-wasm/Cargo.toml
 
