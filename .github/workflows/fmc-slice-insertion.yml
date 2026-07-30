@@ -41,7 +41,7 @@ jobs:
       - name: Validate slice insertion
         env:
           FMC_SLICE_RUNS: '100'
-          FMC_SLICE_PREMOVE_SETS: '40'
+          FMC_SLICE_PREMOVE_SETS: '120'
         run: node tools/verify-fmc-slice-insertion.mjs
 
       - name: Commit production changes
