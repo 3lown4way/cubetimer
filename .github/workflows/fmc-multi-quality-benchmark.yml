@@ -1,0 +1,68 @@
+name: FMC multi-insertion quality benchmark
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tools/benchmark-fmc-multi-quality.mjs'
+      - 'tools/compare-fmc-multi-quality.mjs'
+      - '.github/workflows/fmc-multi-quality-benchmark.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout multi-insertion version
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      - name: Checkout 2C2E baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 8b66cd1d4a95a143f6af6244931e72295ad5920b
+          path: baseline
+
+      - name: Install benchmark driver in baseline checkout
+        run: cp current/tools/benchmark-fmc-multi-quality.mjs baseline/tools/benchmark-fmc-multi-quality.mjs
+
+      - name: Syntax-check benchmark tools
+        run: |
+          node --check current/tools/benchmark-fmc-multi-quality.mjs
+          node --check current/tools/compare-fmc-multi-quality.mjs
+
+      - name: Benchmark 2C2E baseline on 1000 scrambles
+        working-directory: baseline
+        env:
+          FMC_QUALITY_RUNS: '1000'
+          FMC_QUALITY_PREMOVE_SETS: '40'
+          FMC_QUALITY_VARIANT: baseline-2c2e
+        run: node tools/benchmark-fmc-multi-quality.mjs --out "$GITHUB_WORKSPACE/baseline-fmc.json"
+
+      - name: Benchmark multi-insertion on 1000 scrambles
+        working-directory: current
+        env:
+          FMC_QUALITY_RUNS: '1000'
+          FMC_QUALITY_PREMOVE_SETS: '40'
+          FMC_QUALITY_VARIANT: multi-insertion
+        run: node tools/benchmark-fmc-multi-quality.mjs --out "$GITHUB_WORKSPACE/current-fmc.json"
+
+      - name: Compare quality and speed
+        run: >-
+          node current/tools/compare-fmc-multi-quality.mjs
+          baseline-fmc.json current-fmc.json comparison-fmc.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmc-multi-insertion-1000
+          path: |
+            baseline-fmc.json
+            current-fmc.json
+            comparison-fmc.json
+          retention-days: 14
