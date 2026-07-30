@@ -3,6 +3,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 lib_path = root / "solver-wasm" / "src" / "lib.rs"
 fmc_path = root / "solver-wasm" / "src" / "fmc_search.rs"
+wrapper_path = root / "solver" / "wasmSolver.js"
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -115,5 +116,20 @@ if "enable_multi_insertion: bool" not in fmc:
         "multi insertion gate",
     )
     fmc_path.write_text(fmc)
+
+wrapper = wrapper_path.read_text()
+if "enableMultiInsertion: options.enableMultiInsertion === true" not in wrapper:
+    wrapper = replace_once(
+        wrapper,
+        '''      maxPremoveSets: options.maxPremoveSets ?? 120,
+      forceRzp: options.forceRzp ?? false,
+''',
+        '''      maxPremoveSets: options.maxPremoveSets ?? 120,
+      forceRzp: options.forceRzp ?? false,
+      enableMultiInsertion: options.enableMultiInsertion === true,
+''',
+        "JS FMC options",
+    )
+    wrapper_path.write_text(wrapper)
 
 print("FMC multi-insertion opt-in transform applied")
