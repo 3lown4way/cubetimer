@@ -386,10 +386,11 @@ fn build_two_corner_two_edge_algorithms(
 /// Exact E2, M2 and S2 edge-only double swaps in the repository cubie convention.
 fn slice_residual_state(axis: u8) -> CubeState {
     let mut state = CubeState::solved();
+    // Repository edge order: UF, UR, UB, UL, DF, DR, DB, DL, FR, FL, BR, BL.
     let swaps: [(usize, usize); 2] = match axis {
-        0 => [(8, 10), (9, 11)], // E2
-        1 => [(1, 5), (3, 7)],   // M2
-        2 => [(0, 6), (2, 4)],   // S2
+        0 => [(8, 11), (9, 10)], // E2: FR↔BL, FL↔BR
+        1 => [(0, 6), (2, 4)],   // M2: UF↔DB, UB↔DF
+        2 => [(1, 7), (3, 5)],   // S2: UR↔DL, UL↔DR
         _ => unreachable!(),
     };
     for (left, right) in swaps {
