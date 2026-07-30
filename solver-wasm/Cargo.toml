@@ -19,6 +19,6 @@ rand_chacha = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 codegen-units = 1
 lto = true

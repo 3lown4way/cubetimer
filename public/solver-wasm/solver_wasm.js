@@ -1,65 +1,5 @@
 /* @ts-self-types="./solver_wasm.d.ts" */
 
-export class HTRSubset {
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(HTRSubset.prototype);
-        obj.__wbg_ptr = ptr;
-        HTRSubsetFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        HTRSubsetFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_htrsubset_free(ptr, 0);
-    }
-    /**
-     * @returns {number}
-     */
-    get cxe_type() {
-        const ret = wasm.__wbg_get_htrsubset_cxe_type(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get qt_estimate() {
-        const ret = wasm.__wbg_get_htrsubset_qt_estimate(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get quality() {
-        const ret = wasm.__wbg_get_htrsubset_quality(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @param {number} arg0
-     */
-    set cxe_type(arg0) {
-        wasm.__wbg_set_htrsubset_cxe_type(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set qt_estimate(arg0) {
-        wasm.__wbg_set_htrsubset_qt_estimate(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set quality(arg0) {
-        wasm.__wbg_set_htrsubset_quality(this.__wbg_ptr, arg0);
-    }
-}
-if (Symbol.dispose) HTRSubset.prototype[Symbol.dispose] = HTRSubset.prototype.free;
-
 /**
  * @returns {string}
  */
@@ -68,36 +8,6 @@ export function build_fmc_tables_wasm() {
     let deferred1_1;
     try {
         const ret = wasm.build_fmc_tables_wasm();
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
-}
-
-/**
- * @param {number} cp_idx
- * @param {number} ep_idx
- * @param {number} sep_idx
- * @returns {HTRSubset}
- */
-export function classify_htr_subset(cp_idx, ep_idx, sep_idx) {
-    const ret = wasm.classify_htr_subset(cp_idx, ep_idx, sep_idx);
-    return HTRSubset.__wrap(ret);
-}
-
-/**
- * @param {number} cp_idx
- * @param {number} ep_idx
- * @param {number} sep_idx
- * @returns {string}
- */
-export function create_htr_subset_json(cp_idx, ep_idx, sep_idx) {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.create_htr_subset_json(cp_idx, ep_idx, sep_idx);
         deferred1_0 = ret[0];
         deferred1_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
@@ -118,40 +28,6 @@ export function drop_minmove_search(search_id) {
  */
 export function drop_twophase_search(search_id) {
     wasm.drop_twophase_search(search_id);
-}
-
-/**
- * @param {number} quality
- * @returns {string}
- */
-export function get_htr_quality_name(quality) {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.get_htr_quality_name(quality);
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
-}
-
-/**
- * @param {number} cxe_type
- * @returns {string}
- */
-export function get_htr_subset_name(cxe_type) {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.get_htr_subset_name(cxe_type);
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
 }
 
 /**
@@ -408,9 +284,6 @@ export function warm_twophase_333() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_81fc77679af83bc6: function(arg0, arg1) {
-            throw new Error(getStringFromWasm0(arg0, arg1));
-        },
         __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -453,10 +326,6 @@ function __wbg_get_imports() {
         "./solver_wasm_bg.js": import0,
     };
 }
-
-const HTRSubsetFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_htrsubset_free(ptr >>> 0, 1));
 
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
