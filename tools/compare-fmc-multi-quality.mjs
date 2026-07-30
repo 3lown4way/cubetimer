@@ -18,8 +18,12 @@ const rows = [];
 let improved = 0;
 let equal = 0;
 let regressed = 0;
+let recovered = 0;
+let lost = 0;
+let bothFailed = 0;
 let totalMovesSaved = 0;
 let maxMovesSaved = 0;
+let commonSolved = 0;
 
 for (let index = 0; index < baseline.rows.length; index += 1) {
   const before = baseline.rows[index];
@@ -27,15 +31,41 @@ for (let index = 0; index < baseline.rows.length; index += 1) {
   if (before.scramble !== after.scramble) {
     throw new Error(`SCRAMBLE_MISMATCH:${index}`);
   }
-  const saved = Number(before.moveCount) - Number(after.moveCount);
-  if (saved > 0) improved += 1;
-  else if (saved === 0) equal += 1;
-  else regressed += 1;
-  totalMovesSaved += saved;
-  maxMovesSaved = Math.max(maxMovesSaved, saved);
+
+  let status;
+  let saved = null;
+  if (before.ok && after.ok) {
+    commonSolved += 1;
+    saved = Number(before.moveCount) - Number(after.moveCount);
+    if (saved > 0) {
+      improved += 1;
+      status = "improved";
+    } else if (saved === 0) {
+      equal += 1;
+      status = "equal";
+    } else {
+      regressed += 1;
+      status = "regressed";
+    }
+    totalMovesSaved += saved;
+    maxMovesSaved = Math.max(maxMovesSaved, saved);
+  } else if (!before.ok && after.ok) {
+    recovered += 1;
+    status = "recovered";
+  } else if (before.ok && !after.ok) {
+    lost += 1;
+    status = "lost";
+  } else {
+    bothFailed += 1;
+    status = "both-failed";
+  }
+
   rows.push({
     index,
     scramble: before.scramble,
+    status,
+    baselineOk: before.ok,
+    currentOk: after.ok,
     baselineMoves: before.moveCount,
     currentMoves: after.moveCount,
     movesSaved: saved,
@@ -52,13 +82,21 @@ const baselineAverageMs = Number(baseline.summary.averageSolveMs || 0);
 const currentAverageMs = Number(current.summary.averageSolveMs || 0);
 const summary = {
   runs: rows.length,
+  commonSolved,
   improved,
   equal,
   regressed,
-  improvementRate: improved / Math.max(1, rows.length),
+  recovered,
+  lost,
+  bothFailed,
+  improvementRate: improved / Math.max(1, commonSolved),
   totalMovesSaved,
-  averageMovesSaved: totalMovesSaved / Math.max(1, rows.length),
+  averageMovesSaved: totalMovesSaved / Math.max(1, commonSolved),
   maxMovesSaved,
+  baselineSolvedCases: baseline.summary.solvedCases,
+  currentSolvedCases: current.summary.solvedCases,
+  baselineSolveRate: baseline.summary.solveRate,
+  currentSolveRate: current.summary.solveRate,
   baselineAverageMoves: baseline.summary.averageMoves,
   currentAverageMoves: current.summary.averageMoves,
   baselineAverageMs,
@@ -81,14 +119,18 @@ const lines = [
   "",
   "| Metric | Baseline (2C2E) | Multi-insertion |",
   "|---|---:|---:|",
-  `| Average moves | ${Number(summary.baselineAverageMoves).toFixed(4)} | ${Number(summary.currentAverageMoves).toFixed(4)} |`,
+  `| Solved cases | ${summary.baselineSolvedCases}/${summary.runs} | ${summary.currentSolvedCases}/${summary.runs} |`,
+  `| Average moves on solved cases | ${Number(summary.baselineAverageMoves).toFixed(4)} | ${Number(summary.currentAverageMoves).toFixed(4)} |`,
   `| Average solve time | ${summary.baselineAverageMs.toFixed(2)} ms | ${summary.currentAverageMs.toFixed(2)} ms |`,
   `| Runtime ratio | 1.000× | ${summary.runtimeRatio.toFixed(3)}× |`,
   "",
-  `- Improved: **${improved}**`,
-  `- Equal: **${equal}**`,
-  `- Regressed: **${regressed}**`,
-  `- Total moves saved: **${totalMovesSaved}**`,
+  `- Improved among common solved cases: **${improved}**`,
+  `- Equal among common solved cases: **${equal}**`,
+  `- Move-count regressions: **${regressed}**`,
+  `- Newly solved by multi-insertion version: **${recovered}**`,
+  `- Lost solutions: **${lost}**`,
+  `- Failed in both versions: **${bothFailed}**`,
+  `- Total moves saved on common solved cases: **${totalMovesSaved}**`,
   `- Maximum saving on one scramble: **${maxMovesSaved}**`,
   `- Multi-insertion generated: **${summary.multiGeneratedCases}/${summary.runs}** cases`,
   `- Multi-insertion entered returned top candidates: **${summary.multiCandidateTopCases}/${summary.runs}** cases`,
@@ -105,6 +147,6 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`);
 }
 
-if (regressed > 0) {
-  throw new Error(`MOVE_COUNT_REGRESSION:${regressed}`);
+if (regressed > 0 || lost > 0) {
+  throw new Error(`FMC_REGRESSION:move=${regressed}:lost=${lost}`);
 }
