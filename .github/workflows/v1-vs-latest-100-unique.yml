@@ -1,0 +1,22 @@
+name: V1 vs latest 100 unique benchmark
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate benchmark
+        run: node --check benchmark-v1-vs-latest-100-unique.mjs
+
+      - name: Run unique 100-scramble comparison
+        run: node benchmark-v1-vs-latest-100-unique.mjs
