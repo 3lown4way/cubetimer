@@ -592,6 +592,7 @@ pub fn build_fmc_tables_wasm() -> String {
     let three_cycle_algorithm_count = fmc.three_cycle_algorithms.len();
     let two_corner_two_edge_algorithm_count = fmc.two_corner_two_edge_algorithms.len();
     let multi_relocation_plan_count = fmc.multi_relocation_plan_count();
+    let slice_relocation_plan_count = fmc.slice_relocation_plan_count();
     drop(tables_guard);
     let mut fmc_guard = FMC_TABLES.lock().unwrap();
     *fmc_guard = Some(fmc);
@@ -600,6 +601,7 @@ pub fn build_fmc_tables_wasm() -> String {
         "threeCycleAlgorithmCount": three_cycle_algorithm_count,
         "twoCornerTwoEdgeAlgorithmCount": two_corner_two_edge_algorithm_count,
         "multiRelocationPlanCount": multi_relocation_plan_count,
+        "sliceRelocationPlanCount": slice_relocation_plan_count,
     })
     .to_string()
 }
@@ -614,6 +616,8 @@ struct FmcOptionsJson {
     enable_multi_insertion: bool,
     #[serde(rename = "enableHtrSkeletons", default)]
     enable_htr_skeletons: bool,
+    #[serde(rename = "enableSliceInsertion", default)]
+    enable_slice_insertion: bool,
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -647,6 +651,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.force_rzp,
         options.enable_multi_insertion,
         options.enable_htr_skeletons,
+        options.enable_slice_insertion,
     );
 
     if !result.ok {
@@ -678,6 +683,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
+        "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| candidate.source_tag >= 4).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| skeleton.source_tag >= 4).count(),
     })
@@ -705,15 +711,15 @@ pub fn verify_fmc_solution_wasm(scramble: &str, solution: &str) -> String {
         return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
             .to_string();
     };
+    use fmc_search::is_fmc_solved_up_to_rotation;
     use minmove_core::{parse_scramble as parse_moves_minmove, CubeState};
     let mut combined = scramble.to_string();
     combined.push(' ');
     combined.push_str(solution);
     match parse_moves_minmove(&combined, &tables.move_data) {
         Ok(moves) => {
-            let solved = CubeState::solved()
-                .apply_moves(&moves, &tables.move_data)
-                .is_solved();
+            let final_state = CubeState::solved().apply_moves(&moves, &tables.move_data);
+            let solved = is_fmc_solved_up_to_rotation(&final_state, tables);
             serde_json::json!({"ok": true, "solved": solved}).to_string()
         }
         Err(e) => serde_json::json!({"ok": false, "reason": e}).to_string(),
