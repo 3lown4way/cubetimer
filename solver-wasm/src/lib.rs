@@ -591,6 +591,7 @@ pub fn build_fmc_tables_wasm() -> String {
     let fmc = build_fmc_tables(tables);
     let three_cycle_algorithm_count = fmc.three_cycle_algorithms.len();
     let two_corner_two_edge_algorithm_count = fmc.two_corner_two_edge_algorithms.len();
+    let multi_relocation_plan_count = fmc.multi_relocation_plan_count();
     drop(tables_guard);
     let mut fmc_guard = FMC_TABLES.lock().unwrap();
     *fmc_guard = Some(fmc);
@@ -598,6 +599,7 @@ pub fn build_fmc_tables_wasm() -> String {
         "ok": true,
         "threeCycleAlgorithmCount": three_cycle_algorithm_count,
         "twoCornerTwoEdgeAlgorithmCount": two_corner_two_edge_algorithm_count,
+        "multiRelocationPlanCount": multi_relocation_plan_count,
     })
     .to_string()
 }
@@ -669,6 +671,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "skeletons": skeletons_json,
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
+        "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
     })
     .to_string()
 }
