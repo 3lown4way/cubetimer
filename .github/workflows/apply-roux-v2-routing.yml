@@ -1,0 +1,37 @@
+name: Apply Roux v2 routing
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/roux-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/roux-v2
+          fetch-depth: 0
+
+      - name: Apply and validate worker routing
+        run: |
+          git apply --check .github/roux-v2-worker.patch
+          git apply .github/roux-v2-worker.patch
+          node --check solver/solverWorker.js
+          node --check solver/rouxExactTablesV2.js
+          node --check solver/roux3x3v2.js
+          node --check tools/verify-roux-v2.mjs
+          node tools/verify-roux-v2.mjs
+
+      - name: Commit worker routing
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/solverWorker.js
+          git commit -m "Route Roux v2 through solver worker"
+          git push origin HEAD:agent/roux-v2
