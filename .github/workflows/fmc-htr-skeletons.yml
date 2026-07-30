@@ -19,6 +19,33 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      - name: Patch HTR transform call matching
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply-fmc-htr-skeletons.py')
+          text = path.read_text()
+          needle = '''fmc = fmc.replace(
+              "            force_rzp,\\n        );",
+              "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
+          )
+          if fmc.count("enable_htr_skeletons,\\n        );") != 4:
+              raise SystemExit("expected four solve_fmc_single_axis HTR arguments")'''
+          replacement = '''fmc = fmc.replace(
+              "            force_rzp,\\n        );",
+              "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
+          )
+          fmc = fmc.replace(
+              "                    force_rzp,\\n                );",
+              "                    force_rzp,\\n                    enable_htr_skeletons,\\n                );",
+          )
+          if fmc.count("enable_htr_skeletons,") < 5:
+              raise SystemExit("expected solve_fmc signature plus four HTR call arguments")'''
+          if needle not in text:
+              raise SystemExit('HTR transform patch anchor missing')
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+
       - name: Apply HTR transform
         run: python3 tools/apply-fmc-htr-skeletons.py
 
