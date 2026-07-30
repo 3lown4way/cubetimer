@@ -1,0 +1,93 @@
+name: Benchmark FMC insertion parent frontier
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/fmc-insertion-parent-frontier-v3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-insertion-parent-frontier-v3
+          fetch-depth: 0
+
+      - name: Capture baseline insertion outputs and timing
+        env:
+          FMC_INSERTION_REPEATS: '10'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/fmc-insertion-baseline.json
+
+      - name: Apply parent-frontier transform
+        run: |
+          python3 tools/apply-fmc-insertion-parent-frontier-v3.py
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo check --release --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          wasm-pack --version
+
+      - name: Build optimized WASM
+        run: |
+          rm -rf solver-wasm/.wasm-pack-out
+          cd solver-wasm
+          wasm-pack build --release --target web --out-dir .wasm-pack-out
+          cp .wasm-pack-out/solver_wasm.js ../public/solver-wasm/solver_wasm.js
+          cp .wasm-pack-out/solver_wasm_bg.wasm ../public/solver-wasm/solver_wasm_bg.wasm
+          cp .wasm-pack-out/solver_wasm.d.ts ../public/solver-wasm/solver_wasm.d.ts
+          cp .wasm-pack-out/solver_wasm_bg.wasm.d.ts ../public/solver-wasm/solver_wasm_bg.wasm.d.ts
+
+      - name: Capture optimized insertion outputs and timing
+        env:
+          FMC_INSERTION_REPEATS: '10'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/fmc-insertion-optimized.json
+
+      - name: Require identical outputs and faster runtime
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const baseline = JSON.parse(fs.readFileSync('/tmp/fmc-insertion-baseline.json', 'utf8'));
+          const optimized = JSON.parse(fs.readFileSync('/tmp/fmc-insertion-optimized.json', 'utf8'));
+          if (baseline.rows.length !== optimized.rows.length) {
+            throw new Error(`row count changed: ${baseline.rows.length} -> ${optimized.rows.length}`);
+          }
+          const identityFields = ['repeat', 'index', 'scramble', 'inputSolution', 'solution', 'moveCount'];
+          for (let i = 0; i < baseline.rows.length; i += 1) {
+            for (const field of identityFields) {
+              if (baseline.rows[i][field] !== optimized.rows[i][field]) {
+                throw new Error(`output changed at row ${i}, field ${field}: ${baseline.rows[i][field]} -> ${optimized.rows[i][field]}`);
+              }
+            }
+          }
+          const ratio = optimized.summary.averageMs / baseline.summary.averageMs;
+          console.log(JSON.stringify({
+            baseline: baseline.summary,
+            optimized: optimized.summary,
+            speedup: 1 / ratio,
+          }, null, 2));
+          if (!(ratio < 0.95)) {
+            throw new Error(`speed gain below 5%: ratio=${ratio}`);
+          }
+          NODE
+
+      - name: Commit optimized source and WASM
+        run: |
+          rm -rf solver-wasm/.wasm-pack-out
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver-wasm/src/fmc_insertion.rs \
+            public/solver-wasm/solver_wasm.js \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            public/solver-wasm/solver_wasm.d.ts \
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          git commit -m "Store FMC insertion BFS paths by parent index"
+          git push origin HEAD:agent/fmc-insertion-parent-frontier-v3
