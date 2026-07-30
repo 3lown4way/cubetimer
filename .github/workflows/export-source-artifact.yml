@@ -1,0 +1,27 @@
+name: Export source artifact
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cubetimer-source
+          path: |
+            solver/
+            vendor/
+            vendor-data/
+            tools/
+            package.json
+            package-lock.json
+            benchmark-solver-versions.mjs
+          if-no-files-found: error
+          retention-days: 1
