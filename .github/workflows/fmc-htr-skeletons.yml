@@ -78,16 +78,16 @@ jobs:
           text, count = re.subn(pattern, r'\1', text, count=1)
           if count != 1:
               raise SystemExit(f'expected one internal DR call repair, found {count}')
-          old = '''            if first_move.insert(key, move_index).is_none() {
-                queue.push_back(next);
-            }'''
-          new = '''            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
+          predecessor_pattern = r'\s*if first_move\.insert\(key, move_index\)\.is_none\(\) \{\s*queue\.push_back\(next\);\s*\}'
+          predecessor_replacement = '''
+            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
                 entry.insert(move_index);
                 queue.push_back(next);
             }'''
-          if old not in text:
-              raise SystemExit('HTR predecessor-table repair anchor missing')
-          path.write_text(text.replace(old, new, 1))
+          text, count = re.subn(predecessor_pattern, predecessor_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one HTR predecessor-table repair, found {count}')
+          path.write_text(text)
           PY
 
       - name: Add bounded HTR entry search
