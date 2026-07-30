@@ -1,0 +1,196 @@
+diff --git a/solver-wasm/src/twophase_search.rs b/solver-wasm/src/twophase_search.rs
+index a404018..0000000 100644
+--- a/solver-wasm/src/twophase_search.rs
++++ b/solver-wasm/src/twophase_search.rs
+@@ -1,4 +1,4 @@
+-use std::collections::{HashMap, HashSet};
++use std::collections::HashMap;
+ use std::sync::Mutex;
+ 
+ use once_cell::sync::Lazy;
+@@ -64,39 +64,48 @@ impl FixedFailTable {
+     #[inline(always)]
+     fn get(&self, key: u64) -> u32 {
+         let base = Self::base_slot(key);
+-        for slot in base..base + FAIL_TT_WAYS {
+-            if self.epochs[slot] == self.epoch && self.keys[slot] == key {
+-                return self.masks[slot];
+-            }
++        let alternate = base + 1;
++        if self.epochs[base] == self.epoch && self.keys[base] == key {
++            return self.masks[base];
++        }
++        if self.epochs[alternate] == self.epoch && self.keys[alternate] == key {
++            return self.masks[alternate];
+         }
+         0
+     }
+ 
+     #[inline(always)]
+     fn insert_or(&mut self, key: u64, bit: u32) {
+         let base = Self::base_slot(key);
+-        let mut free = None;
+-        for slot in base..base + FAIL_TT_WAYS {
+-            if self.epochs[slot] == self.epoch {
+-                if self.keys[slot] == key {
+-                    self.masks[slot] |= bit;
+-                    return;
+-                }
+-            } else if free.is_none() {
+-                free = Some(slot);
+-            }
++        let alternate = base + 1;
++
++        if self.epochs[base] == self.epoch && self.keys[base] == key {
++            self.masks[base] |= bit;
++            return;
++        }
++        if self.epochs[alternate] == self.epoch && self.keys[alternate] == key {
++            self.masks[alternate] |= bit;
++            return;
+         }
+-        let slot = free.unwrap_or_else(|| {
+-            if self.masks[base].count_ones() <= self.masks[base + 1].count_ones() {
++
++        let slot = if self.epochs[base] != self.epoch {
++            base
++        } else if self.epochs[alternate] != self.epoch {
++            alternate
++        } else {
++            if self.masks[base].count_ones() <= self.masks[alternate].count_ones() {
+                 base
+             } else {
+-                base + 1
++                alternate
+             }
+-        });
++        };
+         self.keys[slot] = key;
+         self.masks[slot] = bit;
+         self.epochs[slot] = self.epoch;
+@@ -460,99 +469,137 @@ fn solve_phase1_multi(
+         };
+     }
+ 
+-    let mut seen: HashSet<Vec<u8>> = HashSet::new();
+     let mut solutions = Vec::new();
+-    seen.insert(first.moves.clone());
+     solutions.push(first.moves.clone());
+     let mut enum_path = Vec::with_capacity((first.depth + 1) as usize);
+     let mut enum_nodes = 0u64;
+ 
+     fn enumerate(
+         tables: &TwophaseTables,
+@@ -566,7 +613,6 @@ fn solve_phase1_multi(
+         target_depth: u8,
+         last_face: u8,
+         path: &mut Vec<u8>,
+-        seen: &mut HashSet<Vec<u8>>,
+         solutions: &mut Vec<Vec<u8>>,
+         max_count: usize,
+         nodes: &mut u64,
+@@ -583,10 +629,7 @@ fn solve_phase1_multi(
+         }
+         if co == 0 && eo == 0 && slice == tables.solved_slice as usize {
+             if depth == target_depth {
+-                let candidate = path.clone();
+-                if seen.insert(candidate.clone()) {
+-                    solutions.push(candidate);
+-                }
++                solutions.push(path.clone());
+             }
+             return;
+         }
+@@ -612,7 +655,6 @@ fn solve_phase1_multi(
+                 target_depth,
+                 next_face,
+                 path,
+-                seen,
+                 solutions,
+                 max_count,
+                 nodes,
+@@ -622,22 +664,59 @@ fn solve_phase1_multi(
+         }
+     }
+ 
+-    let mut target = first.depth;
++    // The legacy implementation restarted enumeration at the root, traversed
++    // the entire prefix before the first solution again, and discarded that
++    // duplicate through a HashSet. Resume the same DFS order immediately after
++    // the first path instead. Candidate order and returned algorithms remain
++    // identical; only already-visited work is skipped.
++    let first_depth = first.moves.len();
++    let mut prefix_co = Vec::with_capacity(first_depth + 1);
++    let mut prefix_eo = Vec::with_capacity(first_depth + 1);
++    let mut prefix_slice = Vec::with_capacity(first_depth + 1);
++    let mut prefix_last_face = Vec::with_capacity(first_depth + 1);
++    prefix_co.push(input.co_idx);
++    prefix_eo.push(input.eo_idx);
++    prefix_slice.push(input.slice_idx);
++    prefix_last_face.push(LAST_FACE_FREE);
++    for (depth, &move_index) in first.moves.iter().enumerate() {
++        prefix_co.push(tables.co_move.get(prefix_co[depth], move_index as usize) as usize);
++        prefix_eo.push(tables.eo_move.get(prefix_eo[depth], move_index as usize) as usize);
++        prefix_slice.push(
++            tables
++                .slice_move
++                .get(prefix_slice[depth], move_index as usize) as usize,
++        );
++        prefix_last_face.push(tables.move_data.move_face[move_index as usize]);
++    }
++
++    enum_path.extend_from_slice(&first.moves);
++    for depth in (0..first_depth).rev() {
++        if solutions.len() >= max_count {
++            break;
++        }
++        enum_path.truncate(depth);
++        let allowed = &tables.phase1_allowed_moves_by_last_face
++            [prefix_last_face[depth] as usize];
++        let chosen = first.moves[depth];
++        let Some(chosen_slot) = allowed.iter().position(|&candidate| candidate == chosen) else {
++            continue;
++        };
++        for &move_index in &allowed[chosen_slot + 1..] {
++            if solutions.len() >= max_count {
++                break;
++            }
++            enum_nodes += 1;
++            let next_co = tables.co_move.get(prefix_co[depth], move_index as usize) as usize;
++            let next_eo = tables.eo_move.get(prefix_eo[depth], move_index as usize) as usize;
++            let next_slice = tables
++                .slice_move
++                .get(prefix_slice[depth], move_index as usize) as usize;
++            enum_path.push(move_index);
++            let next_face = tables.move_data.move_face[move_index as usize];
++            enumerate(
++                tables,
++                next_co,
++                next_eo,
++                next_slice,
++                depth as u8 + 1,
++                first.depth,
++                next_face,
++                &mut enum_path,
++                &mut solutions,
++                max_count,
++                &mut enum_nodes,
++            );
++            enum_path.pop();
++        }
++    }
++
++    let mut target = first.depth.saturating_add(1);
+     while solutions.len() < max_count && target <= input.max_depth {
++        enum_path.clear();
+         enumerate(
+             tables,
+             input.co_idx,
+@@ -647,7 +726,6 @@ fn solve_phase1_multi(
+             target,
+             LAST_FACE_FREE,
+             &mut enum_path,
+-            &mut seen,
+             &mut solutions,
+             max_count,
+             &mut enum_nodes,
