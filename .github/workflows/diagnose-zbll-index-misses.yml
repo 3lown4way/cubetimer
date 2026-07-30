@@ -1,0 +1,20 @@
+name: Diagnose ZBLL index misses
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate diagnostic
+        run: node --check diagnose-zbll-index-misses.mjs
+      - name: Diagnose seven ZBLL misses
+        run: node diagnose-zbll-index-misses.mjs
