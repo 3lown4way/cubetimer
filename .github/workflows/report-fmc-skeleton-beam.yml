@@ -1,0 +1,190 @@
+name: Report FMC skeleton beam benchmark
+
+on:
+  push:
+    branches:
+      - agent/fmc-skeleton-beam
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-skeleton-beam
+          fetch-depth: 0
+
+      - name: Prepare main worktree
+        run: |
+          git fetch origin main
+          git worktree add /tmp/fmc-main origin/main
+
+      - name: Compare 100 deterministic scrambles
+        id: benchmark
+        run: |
+          cat > /tmp/report-fmc-skeletons.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { pathToFileURL } from 'node:url';
+          import { performance } from 'node:perf_hooks';
+
+          async function load(root) {
+            const dir = `${root}/public/solver-wasm`;
+            const mod = await import(pathToFileURL(`${dir}/solver_wasm.js`).href);
+            await mod.default(fs.readFileSync(`${dir}/solver_wasm_bg.wasm`));
+            mod.load_twophase_333_bundle(fs.readFileSync(`${dir}/twophase/twophase-333-v1.bin`));
+            const built = JSON.parse(mod.build_fmc_tables_wasm());
+            if (!built.ok) throw new Error(`table build failed: ${JSON.stringify(built)}`);
+            return mod;
+          }
+
+          function scrambles(count) {
+            let x = 0x9e3779b9;
+            const faces = ['U', 'R', 'F', 'D', 'L', 'B'];
+            const suffixes = ['', "'", '2'];
+            const out = [];
+            for (let n = 0; n < count; n++) {
+              const moves = [];
+              let lastFace = -1;
+              let lastAxis = -1;
+              for (let i = 0; i < 21; i++) {
+                let face;
+                while (true) {
+                  x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+                  face = x % 6;
+                  const axis = face % 3;
+                  if (face !== lastFace && !(axis === lastAxis && face < lastFace)) break;
+                }
+                x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+                moves.push(faces[face] + suffixes[x % 3]);
+                lastAxis = face % 3;
+                lastFace = face;
+              }
+              out.push(moves.join(' '));
+            }
+            return out;
+          }
+
+          const baseline = await load('/tmp/fmc-main');
+          const current = await load(process.cwd());
+          const cases = scrambles(100);
+          const options = JSON.stringify({ maxPremoveSets: 80, forceRzp: false });
+          const oldTimes = [];
+          const newTimes = [];
+          const kindCounts = { corner3: 0, edge3: 0 };
+          const sourceCounts = {};
+          let totalSkeletons = 0;
+          let casesWithSkeletons = 0;
+          let totalSkeletonMoves = 0;
+          let totalBestMoves = 0;
+
+          for (let i = 0; i < cases.length; i++) {
+            const scramble = cases[i];
+            let oldResult, newResult;
+            if (i % 2 === 0) {
+              let t = performance.now();
+              oldResult = JSON.parse(baseline.solve_fmc_wasm(scramble, options));
+              oldTimes.push(performance.now() - t);
+              t = performance.now();
+              newResult = JSON.parse(current.solve_fmc_wasm(scramble, options));
+              newTimes.push(performance.now() - t);
+            } else {
+              let t = performance.now();
+              newResult = JSON.parse(current.solve_fmc_wasm(scramble, options));
+              newTimes.push(performance.now() - t);
+              t = performance.now();
+              oldResult = JSON.parse(baseline.solve_fmc_wasm(scramble, options));
+              oldTimes.push(performance.now() - t);
+            }
+
+            if (!oldResult.ok || !newResult.ok) throw new Error(`solve failed at case ${i}`);
+            const oldComparable = JSON.stringify({
+              solution: oldResult.solution,
+              moveCount: oldResult.moveCount,
+              candidates: oldResult.candidates,
+            });
+            const newComparable = JSON.stringify({
+              solution: newResult.solution,
+              moveCount: newResult.moveCount,
+              candidates: newResult.candidates,
+            });
+            if (oldComparable !== newComparable) throw new Error(`complete output changed at case ${i}`);
+            if (newResult.skeletonCount !== newResult.skeletons.length) throw new Error(`count mismatch at ${i}`);
+            if (newResult.skeletons.length > 24) throw new Error(`beam overflow at ${i}`);
+
+            if (newResult.skeletons.length) casesWithSkeletons++;
+            totalBestMoves += newResult.moveCount;
+            for (const s of newResult.skeletons) {
+              if (!(s.kind in kindCounts)) throw new Error(`unknown kind ${s.kind}`);
+              kindCounts[s.kind]++;
+              sourceCounts[s.source] = (sourceCounts[s.source] || 0) + 1;
+              totalSkeletons++;
+              totalSkeletonMoves += s.moveCount;
+            }
+          }
+
+          const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
+          const sorted = xs => [...xs].sort((a, b) => a - b);
+          const percentile = (xs, p) => {
+            const a = sorted(xs);
+            return a[Math.min(a.length - 1, Math.floor((a.length - 1) * p))];
+          };
+          const report = {
+            cases: cases.length,
+            completeOutputsIdentical: true,
+            baselineAverageMs: avg(oldTimes),
+            skeletonAverageMs: avg(newTimes),
+            runtimeRatio: avg(newTimes) / avg(oldTimes),
+            baselineMedianMs: percentile(oldTimes, 0.5),
+            skeletonMedianMs: percentile(newTimes, 0.5),
+            baselineP95Ms: percentile(oldTimes, 0.95),
+            skeletonP95Ms: percentile(newTimes, 0.95),
+            casesWithSkeletons,
+            totalSkeletons,
+            averageSkeletonsPerCase: totalSkeletons / cases.length,
+            averageSkeletonMoveCount: totalSkeletons ? totalSkeletonMoves / totalSkeletons : 0,
+            averageBestMoveCount: totalBestMoves / cases.length,
+            kindCounts,
+            sourceCounts,
+          };
+          fs.writeFileSync('/tmp/fmc-skeleton-report.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (totalSkeletons === 0) throw new Error('no skeletons collected');
+          NODE
+          node /tmp/report-fmc-skeletons.mjs
+
+      - name: Post benchmark report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' > /tmp/fmc-skeleton-comment.md
+          import json
+          r = json.load(open('/tmp/fmc-skeleton-report.json'))
+          print('## Stage 1 skeleton beam benchmark')
+          print()
+          print(f"- 100/100 complete FMC outputs identical: **{str(r['completeOutputsIdentical']).lower()}**")
+          print(f"- Average runtime: **{r['baselineAverageMs']:.2f} → {r['skeletonAverageMs']:.2f} ms** ({r['runtimeRatio']:.3f}×)")
+          print(f"- Median: **{r['baselineMedianMs']:.2f} → {r['skeletonMedianMs']:.2f} ms**")
+          print(f"- p95: **{r['baselineP95Ms']:.2f} → {r['skeletonP95Ms']:.2f} ms**")
+          print(f"- Cases with at least one skeleton: **{r['casesWithSkeletons']}/100**")
+          print(f"- Total skeleton candidates: **{r['totalSkeletons']}** ({r['averageSkeletonsPerCase']:.2f}/case)")
+          print(f"- Kind counts: corner3 **{r['kindCounts']['corner3']}**, edge3 **{r['kindCounts']['edge3']}**")
+          print(f"- Average skeleton length: **{r['averageSkeletonMoveCount']:.2f} HTM**; average completed solution: **{r['averageBestMoveCount']:.2f} HTM**")
+          print()
+          print('Source distribution:')
+          for k, v in sorted(r['sourceCounts'].items(), key=lambda kv: (-kv[1], kv[0])):
+              print(f'- `{k}`: {v}')
+          PY
+          gh pr comment 31 --body-file /tmp/fmc-skeleton-comment.md
+
+      - name: Remove temporary reporting workflow
+        run: |
+          rm -f .github/workflows/report-fmc-skeleton-beam.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record FMC skeleton benchmark [report-complete]"
+          git push origin HEAD:agent/fmc-skeleton-beam
