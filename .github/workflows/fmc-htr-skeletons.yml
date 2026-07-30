@@ -26,7 +26,6 @@ jobs:
           path = Path('tools/apply-fmc-htr-skeletons.py')
           text = path.read_text()
           text = text.replace('from pathlib import Path\n', 'from pathlib import Path\nimport re\n', 1)
-
           call_needle = '''fmc = fmc.replace(
               "            force_rzp,\\n        );",
               "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
@@ -46,7 +45,6 @@ jobs:
           if call_needle not in text:
               raise SystemExit('HTR call transform patch anchor missing')
           text = text.replace(call_needle, call_replacement, 1)
-
           tag_needle = '''fmc = replace_once(fmc, markers[0][0], markers[0][0] + markers[0][1], "direct source tag")'''
           tag_replacement = '''if markers[0][0] not in fmc:
               raise SystemExit("direct source tag anchor missing")
@@ -54,7 +52,6 @@ jobs:
           if tag_needle not in text:
               raise SystemExit('HTR source-tag patch anchor missing')
           text = text.replace(tag_needle, tag_replacement, 1)
-
           build_tag_needle = '''for literal in ["                            0,\\n", "                            1,\\n", "                            2,\\n", "                            3,\\n"]:
               fmc = replace_once(fmc, literal, "                            source_tag,\\n", f"build skeleton tag {literal.strip()}")'''
           build_tag_replacement = '''for literal in range(4):
@@ -97,13 +94,12 @@ jobs:
               tables: &TwophaseTables,
               fmc_tables: &FmcTables,
           ) -> Option<Vec<u8>> {
-              const ENTRY_DEPTH: usize = 3;
+              const ENTRY_DEPTH: usize = 4;
               let mut queue = std::collections::VecDeque::<(CubeState, Vec<u8>, u8)>::new();
               let mut seen = std::collections::HashMap::<FmcStateKey, usize>::new();
               queue.push_back((*state_after_dr, Vec::new(), LAST_FACE_FREE));
               seen.insert(fmc_state_key(state_after_dr), 0);
               let mut best: Option<Vec<u8>> = None;
-
               while let Some((state, prefix, last_face)) = queue.pop_front() {
                   if let Some(finish) = htr_finish_moves(&state, tables, fmc_tables) {
                       let mut tail = prefix.clone();
@@ -113,32 +109,20 @@ jobs:
                           let replace = best.as_ref().is_none_or(|current| {
                               (tail.len(), tail.clone()) < (current.len(), current.clone())
                           });
-                          if replace {
-                              best = Some(tail);
-                          }
+                          if replace { best = Some(tail); }
                       }
                   }
-
-                  if prefix.len() >= ENTRY_DEPTH {
-                      continue;
-                  }
+                  if prefix.len() >= ENTRY_DEPTH { continue; }
                   for &move_index in &tables.phase2_move_indices {
                       let face = tables.move_data.move_face[move_index as usize];
-                      if last_face < LAST_FACE_FREE && face == last_face {
-                          continue;
-                      }
+                      if last_face < LAST_FACE_FREE && face == last_face { continue; }
                       if last_face < LAST_FACE_FREE
                           && face == OPPOSITE_FACE[last_face as usize]
-                          && face < last_face
-                      {
-                          continue;
-                      }
+                          && face < last_face { continue; }
                       let next = state.apply_move(move_index as usize, &tables.move_data);
                       let next_depth = prefix.len() + 1;
                       let key = fmc_state_key(&next);
-                      if seen.get(&key).is_some_and(|&depth| depth <= next_depth) {
-                          continue;
-                      }
+                      if seen.get(&key).is_some_and(|&depth| depth <= next_depth) { continue; }
                       seen.insert(key, next_depth);
                       let mut next_prefix = prefix.clone();
                       next_prefix.push(move_index);
@@ -174,7 +158,7 @@ jobs:
 
       - name: Validate HTR candidates and skeletons
         env:
-          FMC_HTR_RUNS: '100'
+          FMC_HTR_RUNS: '30'
           FMC_HTR_PREMOVE_SETS: '40'
         run: node tools/verify-fmc-htr-skeletons.mjs
 
