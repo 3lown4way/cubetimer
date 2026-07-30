@@ -30,9 +30,9 @@ jobs:
         working-directory: solver-wasm
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
 
-      - name: Smoke-test insertion library
+      - name: Measure insertion coverage
         run: |
-          cat > /tmp/smoke-fmc-three-cycle.mjs <<'NODE'
+          cat > /tmp/measure-fmc-three-cycle.mjs <<'NODE'
           import fs from 'node:fs';
           import { pathToFileURL } from 'node:url';
           const dir = `${process.cwd()}/public/solver-wasm`;
@@ -44,13 +44,50 @@ jobs:
           if (!built.ok || (built.threeCycleAlgorithmCount ?? 0) < 50) {
             throw new Error(`invalid three-cycle table: ${JSON.stringify(built)}`);
           }
-          const scramble = "R U R' U' F2 D L2 B' U2 R2 F D' R' B2 U L' U2 F' D2 R";
-          const result = JSON.parse(mod.solve_fmc_wasm(scramble, JSON.stringify({maxPremoveSets: 80, forceRzp: false})));
-          console.log(JSON.stringify({moveCount: result.moveCount, insertionCandidateCount: result.insertionCandidateCount, sources: result.candidates?.map(c => c.source)}));
-          if (!result.ok) throw new Error('FMC solve failed');
-          for (const candidate of result.candidates) {
-            const verified = JSON.parse(mod.verify_fmc_solution_wasm(scramble, candidate.solution));
-            if (!verified.ok || !verified.solved) throw new Error(`invalid candidate: ${candidate.solution}`);
+
+          function makeScrambles(count) {
+            let x = 0x6d2b79f5;
+            const faces = ['U', 'R', 'F', 'D', 'L', 'B'];
+            const suffixes = ['', "'", '2'];
+            const opposite = [3, 4, 5, 0, 1, 2];
+            const next = () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return x >>>= 0; };
+            const output = [];
+            for (let sample = 0; sample < count; sample++) {
+              const moves = [];
+              let lastFace = -1;
+              for (let index = 0; index < 21; index++) {
+                let face;
+                do { face = next() % 6; }
+                while (face === lastFace || (lastFace >= 0 && face === opposite[lastFace] && face < lastFace));
+                moves.push(faces[face] + suffixes[next() % 3]);
+                lastFace = face;
+              }
+              output.push(moves.join(' '));
+            }
+            return output;
           }
+
+          const options = JSON.stringify({maxPremoveSets: 80, forceRzp: false});
+          let casesWithSkeletons = 0;
+          let totalSkeletons = 0;
+          let casesWithInsertions = 0;
+          let totalInsertions = 0;
+          let insertionsInTop10 = 0;
+          const kindCounts = {corner3: 0, edge3: 0};
+          for (const [index, scramble] of makeScrambles(40).entries()) {
+            const result = JSON.parse(mod.solve_fmc_wasm(scramble, options));
+            if (!result.ok) throw new Error(`FMC solve failed at ${index}`);
+            if (result.skeletonCount > 0) casesWithSkeletons++;
+            totalSkeletons += result.skeletonCount ?? 0;
+            if ((result.insertionCandidateCount ?? 0) > 0) casesWithInsertions++;
+            totalInsertions += result.insertionCandidateCount ?? 0;
+            for (const skeleton of result.skeletons ?? []) kindCounts[skeleton.kind]++;
+            for (const candidate of result.candidates) {
+              const verified = JSON.parse(mod.verify_fmc_solution_wasm(scramble, candidate.solution));
+              if (!verified.ok || !verified.solved) throw new Error(`invalid candidate at ${index}: ${candidate.solution}`);
+              if (candidate.source.startsWith('FMC_INSERTION_')) insertionsInTop10++;
+            }
+          }
+          console.log(JSON.stringify({casesWithSkeletons, totalSkeletons, casesWithInsertions, totalInsertions, insertionsInTop10, kindCounts}, null, 2));
           NODE
-          node /tmp/smoke-fmc-three-cycle.mjs
+          node /tmp/measure-fmc-three-cycle.mjs
