@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - run: echo "exporting source"
       - uses: actions/upload-artifact@v4
         with:
           name: cubetimer-source
