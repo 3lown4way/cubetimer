@@ -67,7 +67,7 @@ jobs:
       - name: Apply HTR transform
         run: python3 tools/apply-fmc-htr-skeletons.py
 
-      - name: Repair internal DR call
+      - name: Repair generated HTR code
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -78,7 +78,16 @@ jobs:
           text, count = re.subn(pattern, r'\1', text, count=1)
           if count != 1:
               raise SystemExit(f'expected one internal DR call repair, found {count}')
-          path.write_text(text)
+          old = '''            if first_move.insert(key, move_index).is_none() {
+                queue.push_back(next);
+            }'''
+          new = '''            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
+                entry.insert(move_index);
+                queue.push_back(next);
+            }'''
+          if old not in text:
+              raise SystemExit('HTR predecessor-table repair anchor missing')
+          path.write_text(text.replace(old, new, 1))
           PY
 
       - name: Add bounded HTR entry search
@@ -94,7 +103,7 @@ jobs:
               tables: &TwophaseTables,
               fmc_tables: &FmcTables,
           ) -> Option<Vec<u8>> {
-              const ENTRY_DEPTH: usize = 4;
+              const ENTRY_DEPTH: usize = 3;
               let mut queue = std::collections::VecDeque::<(CubeState, Vec<u8>, u8)>::new();
               let mut seen = std::collections::HashMap::<FmcStateKey, usize>::new();
               queue.push_back((*state_after_dr, Vec::new(), LAST_FACE_FREE));
@@ -158,7 +167,7 @@ jobs:
 
       - name: Validate HTR candidates and skeletons
         env:
-          FMC_HTR_RUNS: '30'
+          FMC_HTR_RUNS: '100'
           FMC_HTR_PREMOVE_SETS: '40'
         run: node tools/verify-fmc-htr-skeletons.mjs
 
