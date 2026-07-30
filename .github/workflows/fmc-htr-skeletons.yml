@@ -25,6 +25,8 @@ jobs:
           from pathlib import Path
           path = Path('tools/apply-fmc-htr-skeletons.py')
           text = path.read_text()
+          text = text.replace('from pathlib import Path\n', 'from pathlib import Path\nimport re\n', 1)
+
           call_needle = '''fmc = fmc.replace(
               "            force_rzp,\\n        );",
               "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
@@ -51,7 +53,18 @@ jobs:
           fmc = fmc.replace(markers[0][0], markers[0][0] + markers[0][1], 1)'''
           if tag_needle not in text:
               raise SystemExit('HTR source-tag patch anchor missing')
-          path.write_text(text.replace(tag_needle, tag_replacement, 1))
+          text = text.replace(tag_needle, tag_replacement, 1)
+
+          build_tag_needle = '''for literal in ["                            0,\\n", "                            1,\\n", "                            2,\\n", "                            3,\\n"]:
+              fmc = replace_once(fmc, literal, "                            source_tag,\\n", f"build skeleton tag {literal.strip()}")'''
+          build_tag_replacement = '''for literal in range(4):
+              pattern = rf"(\\n\\s+axis,\\n)(\\s*){literal},(\\n\\s+(?:&\\[\\]|pm_set),)"
+              fmc, count = re.subn(pattern, rf"\\1\\2source_tag,\\3", fmc, count=1)
+              if count != 1:
+                  raise SystemExit(f"build skeleton tag {literal}: expected one match, found {count}")'''
+          if build_tag_needle not in text:
+              raise SystemExit('HTR build-skeleton tag patch anchor missing')
+          path.write_text(text.replace(build_tag_needle, build_tag_replacement, 1))
           PY
 
       - name: Apply HTR transform
