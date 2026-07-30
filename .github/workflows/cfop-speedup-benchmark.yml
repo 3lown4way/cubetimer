@@ -21,6 +21,7 @@ jobs:
           node --check solver/solverWorker.js
           node --check solver/cfop3x3.js
           node --check solver/zbllCaseIndex.js
+          node --check tools/verify-zbls-case-coverage.mjs
           node --check benchmark-hotpaths.mjs
           node --check benchmark-twophase-frontiers.mjs
           node --check benchmark-solver-versions.mjs
@@ -36,6 +37,9 @@ jobs:
 
       - name: Verify generated ZBLL index
         run: node tools/generate-zbll-case-index.mjs --check
+
+      - name: Verify complete ZBLS case coverage
+        run: node tools/verify-zbls-case-coverage.mjs
 
       - name: Compare solver v1 and v2
         run: node benchmark-solver-versions.mjs

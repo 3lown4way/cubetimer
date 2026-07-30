@@ -2,6 +2,7 @@ import { getDefaultPattern } from "./context.js";
 import { MOVE_NAMES } from "./moves.js";
 import { SCDB_CFOP_ALGS } from "./scdbCfopAlgs.js";
 import { ZB_FORMULAS } from "./zbDataset.js";
+import { ZBLS_SUPPLEMENTAL_CASES } from "./zblsSupplementalCases.js";
 import { SV_FORMULAS, WV_FORMULAS, SV_BL_FORMULAS, WV_BL_FORMULAS } from "./svWvDataset.js";
 
 const FACE_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
@@ -163,6 +164,18 @@ const formulaCanonicalLookupCache = new Map();
 const CASE_AWARE_FORMULA_PREFERENCE_CACHE_LIMIT = 4096;
 const EXACT_CASE_FORMULA_KEY_CACHE_LIMIT = 32768;
 const EXACT_CASE_FORMULA_PREFERENCE_CACHE_LIMIT = 4096;
+const ZBLS_SUPPLEMENTAL_CASE_MAP = new Map(
+  ZBLS_SUPPLEMENTAL_CASES.map(([caseKey, text]) => [
+    caseKey,
+    Object.freeze({
+      text,
+      normalizedText: text,
+      moves: Object.freeze(splitMoves(text)),
+      formulaKey: "ZBLS",
+      supplemental: true,
+    }),
+  ]),
+);
 const LL_FAMILY_SCORE_CACHE_PER_ENTRY_LIMIT = 8;
 const llFamilyScoresCache = new WeakMap();
 const caseAwareFormulaPreferenceCache = new Map();
@@ -4484,8 +4497,9 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
         useZbStages ? 11 : profile.ollMaxDepth,
       ),
       nodeLimit: normalizeDepth(options.zblsNodeLimit, useZbStages ? 280000 : 0),
-      // IDA* fallback enabled: covers library gaps for the ~4 missing ZBLS cases.
-      disableSearchFallback: false,
+      // The base index plus exact supplemental cases covers every legal ZBLS
+      // state, so pure ZB never routes through generic search fallback.
+      disableSearchFallback: useZbStages,
       moveIndices: ctx.noDMoveIndices,
       isSolved: useZbStages ? isZBLSSolved : isOLLSolved,
       mismatch(data) {
@@ -5289,12 +5303,18 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
       ? stage.zbllKey(startPattern.patternData)
       : stage.key(startPattern.patternData);
     const rawCandidates = library.caseMap.get(startKey);
-    const candidates = Array.isArray(rawCandidates) && allowedFormulaKeySet
+    const filteredCandidates = Array.isArray(rawCandidates) && allowedFormulaKeySet
       ? rawCandidates.filter((cand) => {
           if (!cand || !cand.formulaKey) return true;
           return allowedFormulaKeySet.has(cand.formulaKey);
         })
       : rawCandidates;
+    const zblsSupplement = formulaNamespace === "LL:ZBLS"
+      ? ZBLS_SUPPLEMENTAL_CASE_MAP.get(startKey)
+      : null;
+    const candidates = zblsSupplement
+      ? [zblsSupplement, ...(Array.isArray(filteredCandidates) ? filteredCandidates : [])]
+      : filteredCandidates;
     if (performanceCollector) {
       performanceCollector.candidateCount = Array.isArray(candidates) ? candidates.length : 0;
     }
