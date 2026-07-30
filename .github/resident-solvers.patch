@@ -1,0 +1,186 @@
+--- a/solver/solverWorker.js
++++ b/solver/solverWorker.js
+@@ -1184,12 +1184,107 @@
+ async function prewarmInternal3x3StrictCfop() {
+   try {
+     const { prewarm3x3StrictCfopLibraries } = await import("./cfop3x3.js");
+-    await prewarm3x3StrictCfopLibraries({ includeF2L: false, includeSingleStage: true });
++    await Promise.all([
++      prewarm3x3StrictCfopLibraries({
++        solverVersion: "v1",
++        includeF2L: true,
++        includeSingleStage: true,
++      }),
++      prewarm3x3StrictCfopLibraries({
++        solverVersion: "v2",
++        includeF2L: true,
++        includeSingleStage: true,
++      }),
++    ]);
+   } catch (_) {
+     // Warmup failure should not block solving.
+   }
+ }
+ 
++async function prewarmResidentCfopAndZb() {
++  const startedAt = performance.now();
++  try {
++    const [{ getDefaultPattern }, cfopModule] = await Promise.all([
++      import("./context.js"),
++      import("./cfop3x3.js"),
++    ]);
++    const {
++      prewarm3x3StrictCfopLibraries,
++      solve3x3StrictCfopFromPattern,
++    } = cfopModule;
++
++    await Promise.all([
++      prewarm3x3StrictCfopLibraries({
++        solverVersion: "v1",
++        includeF2L: true,
++        includeSingleStage: true,
++      }),
++      prewarm3x3StrictCfopLibraries({
++        solverVersion: "v2",
++        includeF2L: true,
++        includeSingleStage: true,
++      }),
++    ]);
++
++    const solved = await getDefaultPattern("333");
++    const pattern = solved.applyAlg(PROFILE_PREWARM_SCRAMBLE);
++    const warmed = [];
++    for (const entry of [
++      { mode: "strict", solverVersion: "v2" },
++      { mode: "zb", solverVersion: "v2" },
++      { mode: "strict", solverVersion: "v1" },
++      { mode: "zb", solverVersion: "v1" },
++    ]) {
++      const result = await solve3x3StrictCfopFromPattern(pattern, {
++        mode: entry.mode,
++        solverVersion: entry.solverVersion,
++        scramble: PROFILE_PREWARM_SCRAMBLE,
++        crossColor: "D",
++        f2lMethod: "legacy",
++        enableMixedCfopStages: false,
++        enableOllPllPrediction: false,
++        allowRelaxedSearch: false,
++      }).catch((error) => ({
++        ok: false,
++        reason: String(error?.message || error || "PREWARM_SOLVE_FAILED"),
++      }));
++      warmed.push({
++        mode: entry.mode,
++        solverVersion: entry.solverVersion,
++        ok: result?.ok === true,
++        reason: result?.ok ? null : String(result?.reason || "PREWARM_SOLVE_FAILED"),
++      });
++    }
++
++    return {
++      ok: warmed.every((entry) => entry.ok),
++      elapsedMs: performance.now() - startedAt,
++      warmed,
++    };
++  } catch (error) {
++    return {
++      ok: false,
++      elapsedMs: performance.now() - startedAt,
++      reason: String(error?.message || error || "CFOP_ZB_PREWARM_FAILED"),
++    };
++  }
++}
++
++async function prewarmResidentRouxV2() {
++  const startedAt = performance.now();
++  try {
++    const { prewarm3x3RouxV2 } = await import("./roux3x3v2.js");
++    await prewarm3x3RouxV2();
++    return { ok: true, elapsedMs: performance.now() - startedAt };
++  } catch (error) {
++    return {
++      ok: false,
++      elapsedMs: performance.now() - startedAt,
++      reason: String(error?.message || error || "ROUX_V2_PREWARM_FAILED"),
++    };
++  }
++}
++
+ async function prewarmInternal3x3Roux() {
+   try {
+     const [{ getDefaultPattern }, { solve3x3RouxFromPattern }] = await Promise.all([
+@@ -1251,12 +1346,46 @@
+ }
+ 
+ let backgroundWarmupsStarted = false;
++let residentCfopZbWarmupPromise = null;
++let residentRouxV2WarmupPromise = null;
++let residentSolverWarmupPromise = null;
+ function startBackgroundWarmups() {
+-  if (backgroundWarmupsStarted) return;
++  if (residentSolverWarmupPromise) return residentSolverWarmupPromise;
+   backgroundWarmupsStarted = true;
+-  // Keep startup focused on the default interactive CFOP path.
+-  // Other solvers already initialize lazily when their mode is selected.
+-  void prewarmCubingJs3x3Pattern();
++  const patternWarmupPromise = prewarmCubingJs3x3Pattern();
++  residentCfopZbWarmupPromise = Promise.resolve(patternWarmupPromise)
++    .then(() => prewarmResidentCfopAndZb());
++  residentRouxV2WarmupPromise = Promise.resolve(patternWarmupPromise)
++    .then(() => prewarmResidentRouxV2());
++  residentSolverWarmupPromise = (async () => {
++    const startedAt = performance.now();
++    const [cfopZb, rouxV2] = await Promise.all([
++      residentCfopZbWarmupPromise,
++      residentRouxV2WarmupPromise,
++    ]);
++    return {
++      ok: cfopZb.ok && rouxV2.ok,
++      elapsedMs: performance.now() - startedAt,
++      cfopZb,
++      rouxV2,
++    };
++  })().catch((error) => ({
++    ok: false,
++    reason: String(error?.message || error || "RESIDENT_SOLVER_PREWARM_FAILED"),
++  }));
++  return residentSolverWarmupPromise;
++}
++
++async function waitForRelevantResidentWarmup(eventId, mode, solverVersion) {
++  startBackgroundWarmups();
++  if (eventId !== "333") return;
++  if (mode === "strict" || mode === "zb") {
++    await residentCfopZbWarmupPromise;
++    return;
++  }
++  if (mode === "roux" && normalizeSolverVersion(solverVersion) === "v2") {
++    await residentRouxV2WarmupPromise;
++  }
+ }
+ 
+ async function prewarmProfileSelection(options = {}) {
+@@ -1355,9 +1484,11 @@
+ 
+ const api = {
+   async ping() {
+-    // Start async warmups early; don't block ping response.
+-    startBackgroundWarmups();
+-    return { ok: true };
++    void startBackgroundWarmups();
++    return {
++      ok: true,
++      residentWarmupStarted: true,
++    };
+   },
+   async prewarmProfile(options = {}) {
+     return prewarmProfileSelection(options);
+@@ -1427,7 +1558,7 @@
+     if (!scramble) {
+       return { ok: false, reason: "NO_SCRAMBLE" };
+     }
+-    startBackgroundWarmups();
++    await waitForRelevantResidentWarmup(normalizedEventId, mode, solverVersion);
+     if (normalizedEventId === "333" && mode === "twophase") {
+       return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion);
+     }
