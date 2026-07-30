@@ -1,0 +1,97 @@
+name: Apply FMC insertion speed optimization
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/fmc-speed-only'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-speed-only
+          fetch-depth: 0
+
+      - name: Capture baseline insertion outputs and timing
+        env:
+          FMC_INSERTION_RUNS: '6'
+          FMC_INSERTION_CANDIDATES: '3'
+          FMC_INSERTION_PREMOVES: '80'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/fmc-insertion-baseline.json
+
+      - name: Apply insertion BFS speed transform
+        run: |
+          python3 tools/apply-fmc-insertion-speed.py
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo check --release --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          wasm-pack --version
+
+      - name: Build optimized WASM
+        run: |
+          rm -rf solver-wasm/.wasm-pack-out
+          cd solver-wasm
+          wasm-pack build --release --target web --out-dir .wasm-pack-out
+          cp .wasm-pack-out/solver_wasm.js ../public/solver-wasm/solver_wasm.js
+          cp .wasm-pack-out/solver_wasm_bg.wasm ../public/solver-wasm/solver_wasm_bg.wasm
+          cp .wasm-pack-out/solver_wasm.d.ts ../public/solver-wasm/solver_wasm.d.ts
+          cp .wasm-pack-out/solver_wasm_bg.wasm.d.ts ../public/solver-wasm/solver_wasm_bg.wasm.d.ts
+
+      - name: Capture optimized insertion outputs and timing
+        env:
+          FMC_INSERTION_RUNS: '6'
+          FMC_INSERTION_CANDIDATES: '3'
+          FMC_INSERTION_PREMOVES: '80'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/fmc-insertion-optimized.json
+
+      - name: Require identical insertion results and faster runtime
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const baseline = JSON.parse(fs.readFileSync('/tmp/fmc-insertion-baseline.json', 'utf8'));
+          const optimized = JSON.parse(fs.readFileSync('/tmp/fmc-insertion-optimized.json', 'utf8'));
+          if (baseline.rows.length !== optimized.rows.length) {
+            throw new Error(`row count changed: ${baseline.rows.length} -> ${optimized.rows.length}`);
+          }
+          const fields = ['scramble', 'candidateIndex', 'baseSolution', 'baseMoveCount', 'solution', 'moveCount'];
+          for (let index = 0; index < baseline.rows.length; index += 1) {
+            for (const field of fields) {
+              if (baseline.rows[index][field] !== optimized.rows[index][field]) {
+                throw new Error(`insertion output changed at row ${index}, field ${field}`);
+              }
+            }
+          }
+          const ratio = optimized.summary.averageMs / baseline.summary.averageMs;
+          console.log(JSON.stringify({
+            baseline: baseline.summary,
+            optimized: optimized.summary,
+            speedup: 1 / ratio,
+          }));
+          if (!(ratio < 0.95)) {
+            throw new Error(`insertion speed gain below 5%: ratio=${ratio}`);
+          }
+          NODE
+
+      - name: Commit optimized insertion source and WASM
+        run: |
+          rm -rf solver-wasm/.wasm-pack-out
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver-wasm/src/fmc_insertion.rs \
+            public/solver-wasm/solver_wasm.js \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            public/solver-wasm/solver_wasm.d.ts \
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          git commit -m "Speed up FMC insertion BFS without changing results"
+          git push origin HEAD:agent/fmc-speed-only
