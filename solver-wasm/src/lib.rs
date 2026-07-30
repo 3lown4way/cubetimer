@@ -590,12 +590,14 @@ pub fn build_fmc_tables_wasm() -> String {
     };
     let fmc = build_fmc_tables(tables);
     let three_cycle_algorithm_count = fmc.three_cycle_algorithms.len();
+    let two_corner_two_edge_algorithm_count = fmc.two_corner_two_edge_algorithms.len();
     drop(tables_guard);
     let mut fmc_guard = FMC_TABLES.lock().unwrap();
     *fmc_guard = Some(fmc);
     serde_json::json!({
         "ok": true,
         "threeCycleAlgorithmCount": three_cycle_algorithm_count,
+        "twoCornerTwoEdgeAlgorithmCount": two_corner_two_edge_algorithm_count,
     })
     .to_string()
 }
@@ -666,6 +668,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "skeletonCount": skeletons_json.len(),
         "skeletons": skeletons_json,
         "insertionCandidateCount": result.insertion_candidate_count,
+        "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
     })
     .to_string()
 }
