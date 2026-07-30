@@ -23,11 +23,9 @@ jobs:
 
       - name: Apply and validate completion patch
         run: |
-          base64 -d .github/zbls-complete.patch.b64 > /tmp/zbls-complete.patch
+          base64 -d .github/zbls-complete.patch.b64 | gzip -d > /tmp/zbls-complete.patch
           git apply --check /tmp/zbls-complete.patch
           git apply /tmp/zbls-complete.patch
-          rm .github/zbls-complete.patch.b64
-          rm .github/workflows/apply-zbls-completion.yml
           node --check solver/cfop3x3.js
           node --check solver/zblsSupplementalCases.js
           node --check tools/verify-zbls-case-coverage.mjs
@@ -38,7 +36,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver/cfop3x3.js solver/zblsSupplementalCases.js tools/verify-zbls-case-coverage.mjs .github/workflows/cfop-speedup-benchmark.yml
-          git add -u .github
+          git add solver/cfop3x3.js tools/verify-zbls-case-coverage.mjs
           git commit -m "Complete ZBLS case coverage"
           git push origin HEAD:agent/complete-zbls-index
