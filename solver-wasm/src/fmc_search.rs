@@ -741,6 +741,49 @@ pub struct FmcResult {
     pub candidates: Vec<FmcCandidate>,
 }
 
+#[derive(Default)]
+struct FmcP2Cache {
+    solved: std::collections::HashMap<(usize, usize, usize, u64), Vec<u8>>,
+    exact_failed: std::collections::HashSet<(usize, usize, usize, u8, u64)>,
+}
+
+impl FmcP2Cache {
+    fn solve(
+        &mut self,
+        input: &Phase2Input,
+        tables: &TwophaseTables,
+        max_depth: u8,
+        node_limit: u64,
+    ) -> Option<Vec<u8>> {
+        let solved_key = (input.cp_idx, input.ep_idx, input.sep_idx, node_limit);
+        if let Some(moves) = self.solved.get(&solved_key) {
+            if moves.len() <= max_depth as usize {
+                return Some(moves.clone());
+            }
+        }
+
+        let failed_key = (
+            input.cp_idx,
+            input.ep_idx,
+            input.sep_idx,
+            max_depth,
+            node_limit,
+        );
+        if self.exact_failed.contains(&failed_key) {
+            return None;
+        }
+
+        let result = solve_phase2(input, tables, max_depth, node_limit);
+        if result.ok {
+            self.solved.insert(solved_key, result.moves.clone());
+            Some(result.moves)
+        } else {
+            self.exact_failed.insert(failed_key);
+            None
+        }
+    }
+}
+
 // --- Single-Axis EO→DR→P2 Pipeline ---
 
 /// Runs the EO→DR→P2 pipeline for a single cube state (already conjugated to axis frame).
@@ -754,6 +797,7 @@ fn solve_fmc_single_axis(
     max_dr_depth: u8,
     max_p2_depth: u8,
     p2_node_limit: u64,
+    p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
     force_rzp: bool,
 ) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, bool)> {
@@ -805,12 +849,11 @@ fn solve_fmc_single_axis(
             };
 
             let p2_cap = (*current_best - partial_len).min(max_p2_depth as usize) as u8;
-            let p2_result = solve_phase2(&p2_input, tables, p2_cap, p2_node_limit);
-            if !p2_result.ok {
-                continue;
-            }
-            let p2_global: Vec<u8> = p2_result
-                .moves
+            let p2_moves = match p2_cache.solve(&p2_input, tables, p2_cap, p2_node_limit) {
+                Some(moves) => moves,
+                None => continue,
+            };
+            let p2_global: Vec<u8> = p2_moves
                 .iter()
                 .map(|&local| tables.phase2_move_indices[local as usize])
                 .collect();
@@ -864,6 +907,7 @@ pub fn solve_fmc(
 
     let mut all_candidates: Vec<FmcCandidate> = Vec::new();
     let mut best_count = 40usize;
+    let mut p2_cache = FmcP2Cache::default();
 
     // Build each axis base state once. Premove variants append only their 1-2
     // conjugated moves instead of replaying the full scramble for every attempt.
@@ -888,6 +932,7 @@ pub fn solve_fmc(
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
             FMC_P2_NODE_LIMIT,
+            &mut p2_cache,
             &mut best_count,
             force_rzp,
         );
@@ -940,6 +985,7 @@ pub fn solve_fmc(
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
             FMC_P2_NODE_LIMIT,
+            &mut p2_cache,
             &mut best_count,
             force_rzp,
         );
@@ -1001,6 +1047,7 @@ pub fn solve_fmc(
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
                     FMC_PM_P2_NODE_LIMIT,
+                    &mut p2_cache,
                     &mut best_count,
                     force_rzp,
                 );
@@ -1051,6 +1098,7 @@ pub fn solve_fmc(
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
                     FMC_PM_P2_NODE_LIMIT,
+                    &mut p2_cache,
                     &mut best_count,
                     force_rzp,
                 );
