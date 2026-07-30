@@ -1,0 +1,38 @@
+name: Apply resident solver warmup
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/roux-v2-eager-resident'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/roux-v2-eager-resident
+          fetch-depth: 0
+
+      - name: Apply resident warmup patch
+        run: |
+          git apply --check .github/resident-solvers.patch
+          git apply .github/resident-solvers.patch
+          node --check solver/solverWorker.js
+          node --check tools/verify-resident-solver-prewarm.mjs
+          grep -q 'prewarmResidentCfopAndZb' solver/solverWorker.js
+          grep -q 'prewarmResidentRouxV2' solver/solverWorker.js
+          grep -q 'waitForRelevantResidentWarmup' solver/solverWorker.js
+          node tools/verify-resident-solver-prewarm.mjs
+
+      - name: Commit worker warmup
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/solverWorker.js
+          git commit -m "Preload CFOP ZB and Roux solvers at startup"
+          git push origin HEAD:agent/roux-v2-eager-resident
