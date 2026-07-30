@@ -1,0 +1,1 @@
+This branch benchmarks direct, bidirectional, and bounded-exact two-phase HTM strategies before production integration.
