@@ -24,10 +24,9 @@ jobs:
           TWOPHASE_SPEED_RUNS: '100'
         run: node benchmark-twophase-speed-identity.mjs --out /tmp/twophase-baseline.json
 
-      - name: Apply speed-only Rust patch
+      - name: Apply speed-only Rust transform
         run: |
-          git apply --check .github/twophase-speed-only.patch
-          git apply .github/twophase-speed-only.patch
+          python3 tools/apply-twophase-speed-only.py
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo check --release --manifest-path solver-wasm/Cargo.toml
 
