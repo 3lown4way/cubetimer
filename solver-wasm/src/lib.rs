@@ -15,7 +15,7 @@ pub mod twophase_search;
 mod utils;
 
 use fmc_insertion::optimize_insertion_wasm_impl;
-use fmc_search::{build_fmc_tables, candidate_to_json, solve_fmc, FmcTables};
+use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};
 use ida::{build_prune_tables, ida_solve};
 use minmove_bundle::{load_bundle, MinmoveTables};
 use minmove_search::{
@@ -644,6 +644,12 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         .map(|c| candidate_to_json(c, tables))
         .collect();
 
+    let skeletons_json: Vec<serde_json::Value> = result
+        .skeletons
+        .iter()
+        .map(|s| skeleton_to_json(s, tables))
+        .collect();
+
     let best = &result.candidates[0];
     let best_solution = minmove_core::solution_string_from_path(&best.moves, &tables.move_data);
 
@@ -652,6 +658,8 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "solution": best_solution,
         "moveCount": best.moves.len(),
         "candidates": candidates_json,
+        "skeletonCount": skeletons_json.len(),
+        "skeletons": skeletons_json,
     })
     .to_string()
 }
