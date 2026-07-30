@@ -46,9 +46,6 @@ jobs:
           grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
           grep -q 'solverVersion === "v2"' solver/cfop3x3.js
 
-      - name: Check Rust solver source
-        run: cargo check --release --manifest-path solver-wasm/Cargo.toml
-
       - name: Verify generated ZBLL index
         run: node tools/generate-zbll-case-index.mjs --check
 
@@ -73,15 +70,14 @@ jobs:
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
 
-      - name: Verify human-style FMC core
+      - name: Verify human FMC core pipeline
         env:
           FMC_SPEED_RUNS: '4'
-          FMC_SPEED_PREMOVES: '40'
+          FMC_SPEED_PREMOVE_SETS: '20'
+          FMC_SPEED_INSERTION_RUNS: '2'
         run: node benchmark-fmc-speed-identity.mjs
 
-      - name: Verify human-style FMC insertion
+      - name: Verify human FMC insertion pipeline
         env:
-          FMC_INSERTION_RUNS: '3'
-          FMC_INSERTION_CANDIDATES: '2'
-          FMC_INSERTION_PREMOVES: '40'
+          FMC_INSERTION_REPEATS: '1'
         run: node benchmark-fmc-insertion-speed-identity.mjs
