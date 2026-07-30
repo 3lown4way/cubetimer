@@ -48,6 +48,8 @@ const disabledTimes = [];
 const enabledTimes = [];
 let disabledSolved = 0;
 let enabledSolved = 0;
+let comparedHumanCases = 0;
+let fallbackCases = 0;
 let improved = 0;
 let regressed = 0;
 let sliceCandidateCases = 0;
@@ -62,7 +64,7 @@ for (let index = 0; index < scrambles.length; index += 1) {
     forceRzp: false,
     enableMultiInsertion: false,
     enableHtrSkeletons: false,
-    enableCoverageFallback: false,
+    enableCoverageFallback: true,
   };
 
   let startedAt = performance.now();
@@ -92,15 +94,22 @@ for (let index = 0; index < scrambles.length; index += 1) {
     }
   }
 
-  if (enabled.moveCount < disabled.moveCount) improved += 1;
-  if (enabled.moveCount > disabled.moveCount) regressed += 1;
+  if (disabled.fallbackUsed || enabled.fallbackUsed) {
+    fallbackCases += 1;
+  } else {
+    comparedHumanCases += 1;
+    if (enabled.moveCount < disabled.moveCount) improved += 1;
+    if (enabled.moveCount > disabled.moveCount) regressed += 1;
+  }
 
-  const candidateCount = Number(enabled.sliceInsertionCandidateCount || 0);
-  const skeletons = (enabled.skeletons || []).filter((skeleton) => skeleton.kind === "slice");
-  if (candidateCount > 0) sliceCandidateCases += 1;
-  if (skeletons.length > 0) sliceSkeletonCases += 1;
-  sliceInsertionCandidateCount += candidateCount;
-  sliceSkeletonCount += skeletons.length;
+  if (!enabled.fallbackUsed) {
+    const candidateCount = Number(enabled.sliceInsertionCandidateCount || 0);
+    const skeletons = (enabled.skeletons || []).filter((skeleton) => skeleton.kind === "slice");
+    if (candidateCount > 0) sliceCandidateCases += 1;
+    if (skeletons.length > 0) sliceSkeletonCases += 1;
+    sliceInsertionCandidateCount += candidateCount;
+    sliceSkeletonCount += skeletons.length;
+  }
 }
 
 const disabledAverageMs = average(disabledTimes);
@@ -111,6 +120,8 @@ const summary = {
   tableBuildMs,
   disabledSolved,
   enabledSolved,
+  comparedHumanCases,
+  fallbackCases,
   sliceCandidateCases,
   sliceSkeletonCases,
   sliceInsertionCandidateCount,
