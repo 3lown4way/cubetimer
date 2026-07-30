@@ -22,6 +22,7 @@ jobs:
         run: |
           python tools/apply-fmc-2c2e.py
           python tools/apply-fmc-2c2e-beam.py
+          python tools/fix-fmc-2c2e-transform.py
           cargo fmt --manifest-path solver-wasm/Cargo.toml
 
       - name: Run Rust validation
@@ -149,9 +150,10 @@ jobs:
         run: |
           rm -f tools/apply-fmc-2c2e.py
           rm -f tools/apply-fmc-2c2e-beam.py
+          rm -f tools/fix-fmc-2c2e-transform.py
           rm -f .github/workflows/fmc-2c2e-implementation.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs public/solver-wasm/solver_wasm_bg.wasm tools/apply-fmc-2c2e.py tools/apply-fmc-2c2e-beam.py .github/workflows/fmc-2c2e-implementation.yml
+          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs public/solver-wasm/solver_wasm_bg.wasm tools/apply-fmc-2c2e.py tools/apply-fmc-2c2e-beam.py tools/fix-fmc-2c2e-transform.py .github/workflows/fmc-2c2e-implementation.yml
           git commit -m "Add FMC 2C2E skeleton insertion"
           git push origin HEAD:agent/fmc-2c2e-insertion
