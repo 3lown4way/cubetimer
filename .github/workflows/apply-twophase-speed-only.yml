@@ -26,7 +26,7 @@ jobs:
 
       - name: Apply speed-only Rust transform
         run: |
-          python3 tools/apply-twophase-speed-only.py
+          python3 tools/apply-twophase-speed-only-v2.py
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo check --release --manifest-path solver-wasm/Cargo.toml
 
