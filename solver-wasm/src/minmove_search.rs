@@ -210,19 +210,13 @@ fn build_reverse_frontier(tables: &MinmoveTables) -> ReverseFrontier {
                     key,
                     ReverseBuildNode {
                         node: next_node,
-                        path_code: append_path_code(
-                            current.path_code,
-                            move_index as u8,
-                            prior_depth,
-                        ),
+                        path_code: append_path_code(current.path_code, move_index as u8, prior_depth),
                     },
                 );
             }
         }
 
-        if pending.is_empty()
-            || entries.len().saturating_add(pending.len()) > REVERSE_FRONTIER_MAX_STATES
-        {
+        if pending.is_empty() || entries.len().saturating_add(pending.len()) > REVERSE_FRONTIER_MAX_STATES {
             break;
         }
 
@@ -276,9 +270,7 @@ fn eval_node(node: &CoordNode, tables: &MinmoveTables) -> NodeEval {
     let cp_slice_idx = node.cp as usize * crate::minmove_core::SLICE_SIZE + node.slice as usize;
     let cp_eo_idx = node.cp as usize * EO_SIZE + node.eo as usize;
     let corner_full_idx = node.corner_full_idx as usize;
-    let lb = tables
-        .co_eo_joint
-        .get(co_eo_idx)
+    let lb = tables.co_eo_joint.get(co_eo_idx)
         .max(tables.co_slice_joint.get(co_slice_idx))
         .max(tables.cp_slice_joint.get(cp_slice_idx))
         .max(tables.cp_eo_joint.get(cp_eo_idx))
@@ -287,16 +279,8 @@ fn eval_node(node: &CoordNode, tables: &MinmoveTables) -> NodeEval {
         .max(tables.slice.get(node.slice as usize))
         .max(tables.edge_subset_a.get(esa_idx))
         .max(tables.edge_subset_b.get(esb_idx))
-        .max(
-            tables
-                .edge_subset_c
-                .get(esc_idx.min(tables.edge_subset_c.count.saturating_sub(1))),
-        )
-        .max(
-            tables
-                .edge_subset_d
-                .get(esd_idx.min(tables.edge_subset_d.count.saturating_sub(1))),
-        )
+        .max(tables.edge_subset_c.get(esc_idx.min(tables.edge_subset_c.count.saturating_sub(1))))
+        .max(tables.edge_subset_d.get(esd_idx.min(tables.edge_subset_d.count.saturating_sub(1))))
         .max(tables.edge_perm_subset_a.get(epsa_idx))
         .max(tables.edge_perm_subset_b.get(epsb_idx));
     NodeEval { lower_bound: lb }
@@ -343,12 +327,7 @@ impl SearchSession {
         })
     }
 
-    pub fn search_bound(
-        &mut self,
-        tables: &MinmoveTables,
-        bound: u8,
-        max_nodes: u64,
-    ) -> SearchBoundResult {
+    pub fn search_bound(&mut self, tables: &MinmoveTables, bound: u8, max_nodes: u64) -> SearchBoundResult {
         let mut nodes = 0u64;
         let mut path = Vec::with_capacity(bound as usize);
         let mut interrupted = false;
@@ -364,13 +343,7 @@ impl SearchSession {
             max_nodes,
             &mut interrupted,
         );
-        SearchBoundResult {
-            found,
-            interrupted,
-            bound,
-            nodes,
-            path,
-        }
+        SearchBoundResult { found, interrupted, bound, nodes, path }
     }
 
     fn dfs(
@@ -432,17 +405,7 @@ impl SearchSession {
             let next_node = apply_move_coord(node, move_index as usize, tables);
             path.push(move_index);
             let next_face = tables.move_data.move_face[move_index as usize];
-            if self.dfs(
-                next_node,
-                tables,
-                depth + 1,
-                bound,
-                next_face,
-                path,
-                nodes,
-                max_nodes,
-                interrupted,
-            ) {
+            if self.dfs(next_node, tables, depth + 1, bound, next_face, path, nodes, max_nodes, interrupted) {
                 return true;
             }
             path.pop();
@@ -465,20 +428,14 @@ impl SearchSession {
     }
 
     fn try_reverse_meet(&self, node: CoordNode, remaining_depth: u8, path: &mut Vec<u8>) -> bool {
-        let Some(entry) = self
-            .bidirectional
-            .reverse_frontier
-            .entries
-            .get(&exact_state_key(&node))
-        else {
+        let Some(entry) = self.bidirectional.reverse_frontier.entries.get(&exact_state_key(&node)) else {
             return false;
         };
         if entry.depth > remaining_depth {
             return false;
         }
         for reverse_index in (0..entry.depth).rev() {
-            let move_index =
-                ((entry.path_code >> ((reverse_index as u64) * MOVE_BITS)) & 0x1f) as u8;
+            let move_index = ((entry.path_code >> ((reverse_index as u64) * MOVE_BITS)) & 0x1f) as u8;
             path.push(self.bidirectional.inverse_moves[move_index as usize]);
         }
         true
