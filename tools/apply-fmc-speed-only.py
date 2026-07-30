@@ -12,10 +12,18 @@ def replace_once(old: str, new: str, label: str) -> None:
     text = text.replace(old, new, 1)
 
 
+def replace_exact_count(old: str, new: str, expected: int, label: str) -> None:
+    global text
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(f"{label}: expected {expected} matches, found {count}")
+    text = text.replace(old, new)
+
+
 replace_once(
     "use crate::twophase_search::{solve_phase2, Phase2Input};\n",
-    "use crate::twophase_search::{solve_phase2, Phase2Input};\nuse once_cell::sync::Lazy;\n",
-    "lazy import",
+    "use crate::twophase_search::{solve_phase2, Phase2Input, Phase2SolveResult};\nuse once_cell::sync::Lazy;\n",
+    "FMC imports",
 )
 
 replace_once(
@@ -28,10 +36,50 @@ replace_once(
 }
 
 static FMC_PREMOVE_SETS: Lazy<Vec<Vec<u8>>> = Lazy::new(build_premove_sets);
+type FmcPhase2CacheKey = (usize, usize, usize, u8, u64);
+type FmcPhase2Cache = std::collections::HashMap<FmcPhase2CacheKey, Phase2SolveResult>;
 
 // --- Result Types ---
 """,
-    "static premove sets",
+    "static FMC caches",
+)
+
+replace_once(
+    """    current_best: &mut usize,
+    force_rzp: bool,
+) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, bool)> {
+""",
+    """    current_best: &mut usize,
+    force_rzp: bool,
+    phase2_cache: &mut FmcPhase2Cache,
+) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, bool)> {
+""",
+    "single-axis cache parameter",
+)
+
+replace_once(
+    """            let p2_cap = (*current_best - partial_len).min(max_p2_depth as usize) as u8;
+            let p2_result = solve_phase2(&p2_input, tables, p2_cap, p2_node_limit);
+            if !p2_result.ok {
+""",
+    """            let p2_cap = (*current_best - partial_len).min(max_p2_depth as usize) as u8;
+            let cache_key = (
+                p2_input.cp_idx,
+                p2_input.ep_idx,
+                p2_input.sep_idx,
+                p2_cap,
+                p2_node_limit,
+            );
+            let p2_result = if let Some(cached) = phase2_cache.get(&cache_key) {
+                cached.clone()
+            } else {
+                let result = solve_phase2(&p2_input, tables, p2_cap, p2_node_limit);
+                phase2_cache.insert(cache_key, result.clone());
+                result
+            };
+            if !p2_result.ok {
+""",
+    "Phase-2 exact result cache",
 )
 
 replace_once(
@@ -58,10 +106,11 @@ replace_once(
 
     let mut all_candidates: Vec<FmcCandidate> = Vec::new();
     let mut best_count = 40usize;
+    let mut phase2_cache = FmcPhase2Cache::new();
 
     // --- Phase 1: Direct solve across 3 axes ---
 """,
-    "precompute axis states",
+    "precompute axis states and cache",
 )
 
 replace_once(
@@ -169,6 +218,20 @@ replace_once(
                     .apply_moves(&axis_premoves[axis as usize], &tables.move_data);
 """,
     "inverse premove state reuse",
+)
+
+replace_exact_count(
+    """            &mut best_count,
+            force_rzp,
+        );
+""",
+    """            &mut best_count,
+            force_rzp,
+            &mut phase2_cache,
+        );
+""",
+    4,
+    "pass Phase-2 cache",
 )
 
 path.write_text(text, encoding="utf-8")
