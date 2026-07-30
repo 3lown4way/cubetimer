@@ -68,6 +68,12 @@ const FMC_SKELETON_PER_BUCKET: usize = 2;
 /// Maximum setup depth used to conjugate human-style 3-cycle commutators.
 const FMC_THREE_CYCLE_SETUP_DEPTH: u8 = 2;
 
+/// Maximum setup depth used to relocate PLL-style 2C2E algorithms.
+const FMC_TWO_CORNER_TWO_EDGE_SETUP_DEPTH: u8 = 4;
+
+/// Cap synthetic 2C2E relocation skeletons after deterministic length sorting.
+const FMC_RELOCATION_2C2E_LIMIT: usize = 256;
+
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
 // Move convention: U=0,R=1,F=2,D=3,L=4,B=5
@@ -291,6 +297,75 @@ fn build_three_cycle_algorithms(
     result
 }
 
+fn is_two_corner_two_edge_state(state: &CubeState) -> bool {
+    if state.co.iter().any(|&value| value != 0) || state.eo.iter().any(|&value| value != 0) {
+        return false;
+    }
+    let corners = state
+        .cp
+        .iter()
+        .enumerate()
+        .filter(|(position, piece)| **piece as usize != *position)
+        .count();
+    let edges = state
+        .ep
+        .iter()
+        .enumerate()
+        .filter(|(position, piece)| **piece as usize != *position)
+        .count();
+    corners == 2 && edges == 2
+}
+
+/// Build a deterministic 2C2E library from standard PLL-style double swaps and
+/// canonical conjugating setups. Multiple base families are retained because
+/// orientation-preserving 2C2E states split into practical setup classes.
+fn build_two_corner_two_edge_algorithms(
+    tables: &TwophaseTables,
+) -> std::collections::HashMap<FmcStateKey, Vec<u8>> {
+    // T, Jb, Ra, Rb and F permutations in the repository move convention.
+    // Every sequence is effect-checked before it is admitted to the library.
+    let base_sequences: [Vec<u8>; 5] = [
+        vec![3, 0, 4, 1, 4, 6, 5, 1, 4, 1, 3, 0, 4, 7],
+        vec![3, 0, 4, 7, 3, 0, 4, 1, 4, 6, 5, 1, 4, 1],
+        vec![3, 1, 4, 1, 3, 0, 3, 9, 4, 1, 3, 10, 4, 2, 4],
+        vec![4, 2, 3, 2, 4, 6, 3, 0, 4, 1, 4, 7, 5, 1],
+        vec![4, 1, 7, 3, 0, 4, 1, 4, 6, 5, 1, 4, 1, 3, 0, 4, 0, 3],
+    ];
+    let setups = enumerate_canonical_sequences(
+        FMC_TWO_CORNER_TWO_EDGE_SETUP_DEPTH,
+        &tables.move_data.move_face,
+        true,
+    );
+    let mut result = std::collections::HashMap::<FmcStateKey, Vec<u8>>::new();
+
+    for base in base_sequences {
+        let base = simplify_moves(&base);
+        let base_state = CubeState::solved().apply_moves(&base, &tables.move_data);
+        if !is_two_corner_two_edge_state(&base_state) {
+            continue;
+        }
+
+        let mut variants = vec![base.clone(), invert_moves(&base)];
+        variants.sort();
+        variants.dedup();
+        for algorithm in variants {
+            for setup in &setups {
+                let mut conjugated = Vec::with_capacity(setup.len() * 2 + algorithm.len());
+                conjugated.extend_from_slice(setup);
+                conjugated.extend_from_slice(&algorithm);
+                conjugated.extend_from_slice(&invert_moves(setup));
+                let conjugated = simplify_moves(&conjugated);
+                let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+                if is_two_corner_two_edge_state(&state) {
+                    insert_shortest_algorithm(&mut result, &state, conjugated);
+                }
+            }
+        }
+    }
+
+    result
+}
+
 pub struct FmcTables {
     /// CO×Slice BFS distance table (using EO-preserving moves).
     pub co_slice_dist: Vec<u8>,
@@ -306,6 +381,8 @@ pub struct FmcTables {
     pub axis_solution_move_map: [[u8; 18]; 3],
     /// Human-style commutator/setup algorithms indexed by exact 3-cycle state.
     pub three_cycle_algorithms: std::collections::HashMap<FmcStateKey, Vec<u8>>,
+    /// PLL-style algorithms indexed by exact orientation-preserving 2C2E state.
+    pub two_corner_two_edge_algorithms: std::collections::HashMap<FmcStateKey, Vec<u8>>,
 }
 
 fn build_move_conjugation(js_face_map: &[u8; 6]) -> [u8; 18] {
@@ -400,6 +477,7 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
     }
 
     let three_cycle_algorithms = build_three_cycle_algorithms(tables);
+    let two_corner_two_edge_algorithms = build_two_corner_two_edge_algorithms(tables);
 
     FmcTables {
         co_slice_dist,
@@ -409,6 +487,7 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
         axis_scramble_move_map,
         axis_solution_move_map,
         three_cycle_algorithms,
+        two_corner_two_edge_algorithms,
     }
 }
 
@@ -928,6 +1007,7 @@ static FMC_PREMOVE_SETS: Lazy<Vec<FmcPremoveSet>> = Lazy::new(|| {
 pub enum FmcSkeletonKind {
     Corner3,
     Edge3,
+    Corner2Edge2,
 }
 
 impl FmcSkeletonKind {
@@ -935,6 +1015,7 @@ impl FmcSkeletonKind {
         match self {
             Self::Corner3 => "corner3",
             Self::Edge3 => "edge3",
+            Self::Corner2Edge2 => "corner2edge2",
         }
     }
 
@@ -942,6 +1023,14 @@ impl FmcSkeletonKind {
         match self {
             Self::Corner3 => 0,
             Self::Edge3 => 1,
+            Self::Corner2Edge2 => 2,
+        }
+    }
+
+    fn estimated_insertion_cost(self) -> usize {
+        match self {
+            Self::Corner3 | Self::Edge3 => 8,
+            Self::Corner2Edge2 => 14,
         }
     }
 }
@@ -954,7 +1043,7 @@ struct AxisSkeletonPrefix {
     p2_len: u8,
 }
 
-fn classify_three_cycle(state: &CubeState) -> Option<(FmcSkeletonKind, [u8; 3])> {
+fn classify_insertion_leftover(state: &CubeState) -> Option<(FmcSkeletonKind, Vec<u8>)> {
     if state.co.iter().any(|&v| v != 0) || state.eo.iter().any(|&v| v != 0) {
         return None;
     }
@@ -972,23 +1061,16 @@ fn classify_three_cycle(state: &CubeState) -> Option<(FmcSkeletonKind, [u8; 3])>
         .filter_map(|(i, &piece)| (piece as usize != i).then_some(i as u8))
         .collect();
 
-    if corner_misplaced.len() == 3 && edge_misplaced.is_empty() {
-        return Some((
-            FmcSkeletonKind::Corner3,
-            [
-                corner_misplaced[0],
-                corner_misplaced[1],
-                corner_misplaced[2],
-            ],
-        ));
+    match (corner_misplaced.len(), edge_misplaced.len()) {
+        (3, 0) => Some((FmcSkeletonKind::Corner3, corner_misplaced)),
+        (0, 3) => Some((FmcSkeletonKind::Edge3, edge_misplaced)),
+        (2, 2) => {
+            let mut positions = corner_misplaced;
+            positions.extend_from_slice(&edge_misplaced);
+            Some((FmcSkeletonKind::Corner2Edge2, positions))
+        }
+        _ => None,
     }
-    if edge_misplaced.len() == 3 && corner_misplaced.is_empty() {
-        return Some((
-            FmcSkeletonKind::Edge3,
-            [edge_misplaced[0], edge_misplaced[1], edge_misplaced[2]],
-        ));
-    }
-    None
 }
 
 fn collect_axis_skeleton_prefixes(
@@ -1006,7 +1088,7 @@ fn collect_axis_skeleton_prefixes(
     moves.extend_from_slice(dr_moves);
 
     for p2_len in 0..=p2_moves.len() {
-        if let Some((kind, defect_positions)) = classify_three_cycle(&state) {
+        if let Some((kind, defect_positions)) = classify_insertion_leftover(&state) {
             let simplified = simplify_moves(&moves);
             if !simplified.is_empty() && seen.insert((kind, defect_positions, simplified.clone())) {
                 prefixes.push(AxisSkeletonPrefix {
@@ -1055,7 +1137,7 @@ pub struct FmcCandidate {
 pub struct FmcSkeletonCandidate {
     pub moves: Vec<u8>,
     pub kind: FmcSkeletonKind,
-    pub defect_positions: [u8; 3],
+    pub defect_positions: Vec<u8>,
     pub eo_len: u8,
     pub dr_len: u8,
     pub p2_len: u8,
@@ -1071,6 +1153,7 @@ pub struct FmcResult {
     pub candidates: Vec<FmcCandidate>,
     pub skeletons: Vec<FmcSkeletonCandidate>,
     pub insertion_candidate_count: usize,
+    pub mixed_insertion_candidate_count: usize,
 }
 
 #[derive(Default)]
@@ -1247,7 +1330,7 @@ fn build_skeleton_candidate(
         return None;
     }
     let final_state = scramble_state.apply_moves(&simplified, &tables.move_data);
-    let (kind, defect_positions) = classify_three_cycle(&final_state)?;
+    let (kind, defect_positions) = classify_insertion_leftover(&final_state)?;
     Some(FmcSkeletonCandidate {
         moves: simplified,
         kind,
@@ -1277,7 +1360,7 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
     candidates.retain(|candidate| {
         dedup.insert((
             candidate.kind,
-            candidate.defect_positions,
+            candidate.defect_positions.clone(),
             candidate.moves.clone(),
         ))
     });
@@ -1285,6 +1368,26 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
     let mut selected = Vec::new();
     let mut selected_keys = std::collections::HashSet::new();
     let mut bucket_counts = std::collections::HashMap::<(FmcSkeletonKind, u8, u8), usize>::new();
+
+    // Reserve one beam slot for each supported leftover family before normal
+    // source/axis quotas. Without this, the 24 legacy 3C/3E buckets can fill
+    // the entire beam before any 2C2E relocation skeleton is considered.
+    for kind in [
+        FmcSkeletonKind::Corner3,
+        FmcSkeletonKind::Edge3,
+        FmcSkeletonKind::Corner2Edge2,
+    ] {
+        if let Some((index, candidate)) = candidates
+            .iter()
+            .enumerate()
+            .find(|(index, candidate)| candidate.kind == kind && !selected_keys.contains(index))
+        {
+            let bucket = (candidate.kind, candidate.source_tag, candidate.axis);
+            selected.push(candidate.clone());
+            selected_keys.insert(index);
+            *bucket_counts.entry(bucket).or_insert(0) += 1;
+        }
+    }
 
     for quota in 1..=FMC_SKELETON_PER_BUCKET {
         for (index, candidate) in candidates.iter().enumerate() {
@@ -1349,17 +1452,30 @@ fn synthesize_relocation_skeletons(
     base_candidates.retain(|candidate| seen_solutions.insert(candidate.moves.clone()));
     base_candidates.truncate(8);
 
-    let mut removable_cycles = Vec::<(Vec<u8>, FmcSkeletonKind, [u8; 3])>::new();
-    for algorithm in fmc_tables.three_cycle_algorithms.values() {
+    let mut removable_cycles = Vec::<(Vec<u8>, FmcSkeletonKind, Vec<u8>)>::new();
+    for algorithm in fmc_tables
+        .three_cycle_algorithms
+        .values()
+        .chain(fmc_tables.two_corner_two_edge_algorithms.values())
+    {
         let inverse = invert_moves(algorithm);
         let defect = CubeState::solved().apply_moves(&inverse, &tables.move_data);
-        let Some((kind, positions)) = classify_three_cycle(&defect) else {
+        let Some((kind, positions)) = classify_insertion_leftover(&defect) else {
             continue;
         };
         removable_cycles.push((inverse, kind, positions));
     }
     removable_cycles.sort_by_key(|(moves, kind, positions)| {
-        (moves.len(), kind.rank(), *positions, moves.clone())
+        (moves.len(), kind.rank(), positions.clone(), moves.clone())
+    });
+
+    let mut mixed_seen = 0usize;
+    removable_cycles.retain(|(_, kind, _)| {
+        if *kind != FmcSkeletonKind::Corner2Edge2 {
+            return true;
+        }
+        mixed_seen += 1;
+        mixed_seen <= FMC_RELOCATION_2C2E_LIMIT
     });
 
     let mut output = Vec::new();
@@ -1377,7 +1493,7 @@ fn synthesize_relocation_skeletons(
             output.push(FmcSkeletonCandidate {
                 moves: skeleton_moves,
                 kind: *kind,
-                defect_positions: *positions,
+                defect_positions: positions.clone(),
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
@@ -1424,10 +1540,13 @@ fn optimize_skeleton_insertions(
         let mut best: Option<(Vec<u8>, Vec<u8>, usize)> = None;
         for position in 0..=move_count {
             let relative = relative_cube_state(&prefix_states[position], &target_states[position]);
-            let Some(algorithm) = fmc_tables
-                .three_cycle_algorithms
-                .get(&fmc_state_key(&relative))
-            else {
+            let algorithms = match skeleton.kind {
+                FmcSkeletonKind::Corner3 | FmcSkeletonKind::Edge3 => {
+                    &fmc_tables.three_cycle_algorithms
+                }
+                FmcSkeletonKind::Corner2Edge2 => &fmc_tables.two_corner_two_edge_algorithms,
+            };
+            let Some(algorithm) = algorithms.get(&fmc_state_key(&relative)) else {
                 continue;
             };
 
@@ -1496,6 +1615,7 @@ pub fn solve_fmc(
                 candidates: vec![],
                 skeletons: vec![],
                 insertion_candidate_count: 0,
+                mixed_insertion_candidate_count: 0,
             }
         }
     };
@@ -1820,6 +1940,10 @@ pub fn solve_fmc(
     let inserted_candidates =
         optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
     let insertion_candidate_count = inserted_candidates.len();
+    let mixed_insertion_candidate_count = inserted_candidates
+        .iter()
+        .filter(|candidate| candidate.skeleton_kind == Some(FmcSkeletonKind::Corner2Edge2))
+        .count();
     all_candidates.extend(inserted_candidates);
 
     // Sort by final move count, preferring an insertion result on exact ties.
@@ -1842,6 +1966,7 @@ pub fn solve_fmc(
         candidates: all_candidates,
         skeletons,
         insertion_candidate_count,
+        mixed_insertion_candidate_count,
     }
 }
 
@@ -1940,14 +2065,25 @@ pub fn skeleton_to_json(
         3 => format!("FMC_PREMOVE_NISS_{}", AXIS_NAMES[skeleton.axis as usize]),
         _ => "FMC_UNKNOWN".into(),
     };
+    let (corner_defect_positions, edge_defect_positions) = match skeleton.kind {
+        FmcSkeletonKind::Corner3 => (skeleton.defect_positions.clone(), vec![]),
+        FmcSkeletonKind::Edge3 => (vec![], skeleton.defect_positions.clone()),
+        FmcSkeletonKind::Corner2Edge2 => (
+            skeleton.defect_positions[..2].to_vec(),
+            skeleton.defect_positions[2..].to_vec(),
+        ),
+    };
+    let estimated_insertion_cost = skeleton.kind.estimated_insertion_cost();
 
     serde_json::json!({
         "kind": skeleton.kind.as_str(),
         "solution": solution,
         "moveCount": skeleton.moves.len(),
-        "estimatedInsertionCost": 8,
-        "estimatedFinalMoveCount": skeleton.moves.len() + 8,
+        "estimatedInsertionCost": estimated_insertion_cost,
+        "estimatedFinalMoveCount": skeleton.moves.len() + estimated_insertion_cost,
         "defectPositions": skeleton.defect_positions,
+        "cornerDefectPositions": corner_defect_positions,
+        "edgeDefectPositions": edge_defect_positions,
         "eoLength": skeleton.eo_len,
         "drLength": skeleton.dr_len,
         "p2PrefixLength": skeleton.p2_len,
@@ -1969,8 +2105,8 @@ mod skeleton_tests {
         state.cp[1] = 2;
         state.cp[2] = 0;
         assert_eq!(
-            classify_three_cycle(&state),
-            Some((FmcSkeletonKind::Corner3, [0, 1, 2]))
+            classify_insertion_leftover(&state),
+            Some((FmcSkeletonKind::Corner3, vec![0, 1, 2]))
         );
     }
 
@@ -1981,8 +2117,21 @@ mod skeleton_tests {
         state.ep[5] = 6;
         state.ep[6] = 4;
         assert_eq!(
-            classify_three_cycle(&state),
-            Some((FmcSkeletonKind::Edge3, [4, 5, 6]))
+            classify_insertion_leftover(&state),
+            Some((FmcSkeletonKind::Edge3, vec![4, 5, 6]))
+        );
+    }
+
+    #[test]
+    fn classifies_orientation_preserving_two_corner_two_edge_swap() {
+        let mut state = CubeState::solved();
+        state.cp[0] = 1;
+        state.cp[1] = 0;
+        state.ep[4] = 5;
+        state.ep[5] = 4;
+        assert_eq!(
+            classify_insertion_leftover(&state),
+            Some((FmcSkeletonKind::Corner2Edge2, vec![0, 1, 4, 5]))
         );
     }
 
@@ -2023,13 +2172,13 @@ mod skeleton_tests {
         mixed.ep[0] = 1;
         mixed.ep[1] = 2;
         mixed.ep[2] = 0;
-        assert_eq!(classify_three_cycle(&mixed), None);
+        assert_eq!(classify_insertion_leftover(&mixed), None);
 
         let mut oriented = CubeState::solved();
         oriented.cp[0] = 1;
         oriented.cp[1] = 2;
         oriented.cp[2] = 0;
         oriented.co[0] = 1;
-        assert_eq!(classify_three_cycle(&oriented), None);
+        assert_eq!(classify_insertion_leftover(&oriented), None);
     }
 }
