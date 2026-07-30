@@ -19,19 +19,19 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Patch HTR transform call matching
+      - name: Patch HTR transform matching
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path('tools/apply-fmc-htr-skeletons.py')
           text = path.read_text()
-          needle = '''fmc = fmc.replace(
+          call_needle = '''fmc = fmc.replace(
               "            force_rzp,\\n        );",
               "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
           )
           if fmc.count("enable_htr_skeletons,\\n        );") != 4:
               raise SystemExit("expected four solve_fmc_single_axis HTR arguments")'''
-          replacement = '''fmc = fmc.replace(
+          call_replacement = '''fmc = fmc.replace(
               "            force_rzp,\\n        );",
               "            force_rzp,\\n            enable_htr_skeletons,\\n        );",
           )
@@ -41,9 +41,17 @@ jobs:
           )
           if fmc.count("enable_htr_skeletons,") < 5:
               raise SystemExit("expected solve_fmc signature plus four HTR call arguments")'''
-          if needle not in text:
-              raise SystemExit('HTR transform patch anchor missing')
-          path.write_text(text.replace(needle, replacement, 1))
+          if call_needle not in text:
+              raise SystemExit('HTR call transform patch anchor missing')
+          text = text.replace(call_needle, call_replacement, 1)
+
+          tag_needle = '''fmc = replace_once(fmc, markers[0][0], markers[0][0] + markers[0][1], "direct source tag")'''
+          tag_replacement = '''if markers[0][0] not in fmc:
+              raise SystemExit("direct source tag anchor missing")
+          fmc = fmc.replace(markers[0][0], markers[0][0] + markers[0][1], 1)'''
+          if tag_needle not in text:
+              raise SystemExit('HTR source-tag patch anchor missing')
+          path.write_text(text.replace(tag_needle, tag_replacement, 1))
           PY
 
       - name: Apply HTR transform
