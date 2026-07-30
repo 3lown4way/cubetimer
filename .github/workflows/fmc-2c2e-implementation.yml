@@ -1,9 +1,9 @@
 name: FMC 2C2E implementation
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/fmc-2c2e-insertion
+      - main
 
 permissions:
   contents: write
