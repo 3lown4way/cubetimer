@@ -4,10 +4,14 @@
 /// bidirectional BFS over integer CubeState representations.
 ///
 /// JS equivalent: `optimizeSolutionWithInsertions` in fmcSolver.js.
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use crate::fmc_search::{simplify_moves, MOVE_INVERSE, OPPOSITE_FACE};
-use crate::minmove_core::{parse_scramble, solution_string_from_path, CubeState, CORNER_COUNT, EDGE_COUNT, LAST_FACE_FREE, MOVE_COUNT};
+use crate::minmove_core::{
+    parse_scramble, solution_string_from_path, CubeState, CORNER_COUNT, EDGE_COUNT, LAST_FACE_FREE,
+    MOVE_COUNT,
+};
 use crate::twophase_bundle::TwophaseTables;
 use serde::Deserialize;
 
@@ -94,12 +98,16 @@ fn bfs_frontier(
                     continue;
                 }
 
-                let apply_m = if backward { MOVE_INVERSE[m as usize] } else { m };
+                let apply_m = if backward {
+                    MOVE_INVERSE[m as usize]
+                } else {
+                    m
+                };
                 let next_state = node.state.apply_move(apply_m as usize, move_data);
                 let key = state_key(&next_state);
-                if map.contains_key(&key) {
+                let Entry::Vacant(entry) = map.entry(key) else {
                     continue;
-                }
+                };
 
                 let path: Vec<u8> = if backward {
                     // prepend m so the path reads: meeting_point → root
@@ -112,7 +120,7 @@ fn bfs_frontier(
                     p
                 };
 
-                map.insert(key, path.clone());
+                entry.insert(path.clone());
                 // next_queue last_face uses the actual applied face for pruning
                 let next_last_face = face; // face of m == face of MOVE_INVERSE[m]
                 next_queue.push(Node {
@@ -204,14 +212,30 @@ fn build_ranked_windows(
             let end = start + window;
             let mut score = (window * 8) as i32;
 
-            let left_face = if start > 0 { move_face(moves[start - 1]) as i32 } else { -1 };
+            let left_face = if start > 0 {
+                move_face(moves[start - 1]) as i32
+            } else {
+                -1
+            };
             let first_face = move_face(moves[start]) as i32;
             let last_face = move_face(moves[end - 1]) as i32;
-            let right_face = if end < n { move_face(moves[end]) as i32 } else { -1 };
-            let left_axis = if start > 0 { move_axis(moves[start - 1]) as i32 } else { -1 };
+            let right_face = if end < n {
+                move_face(moves[end]) as i32
+            } else {
+                -1
+            };
+            let left_axis = if start > 0 {
+                move_axis(moves[start - 1]) as i32
+            } else {
+                -1
+            };
             let first_axis = move_axis(moves[start]) as i32;
             let last_axis = move_axis(moves[end - 1]) as i32;
-            let right_axis = if end < n { move_axis(moves[end]) as i32 } else { -1 };
+            let right_axis = if end < n {
+                move_axis(moves[end]) as i32
+            } else {
+                -1
+            };
 
             // Same-face boundary cancellation
             if left_face >= 0 && left_face == first_face {
@@ -247,11 +271,7 @@ fn build_ranked_windows(
     }
 
     // Sort: highest score first; tie-break: larger window, then lower start
-    windows.sort_unstable_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then(b.3.cmp(&a.3))
-            .then(a.1.cmp(&b.1))
-    });
+    windows.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(b.3.cmp(&a.3)).then(a.1.cmp(&b.1)));
 
     windows.into_iter().map(|(_, s, e, w)| (s, e, w)).collect()
 }
@@ -270,10 +290,18 @@ pub struct InsertionOptions {
     #[serde(rename = "maxDepth", default = "default_max_depth")]
     pub max_depth: u8,
 }
-fn default_max_passes() -> usize { 3 }
-fn default_min_window() -> usize { 3 }
-fn default_max_window() -> usize { 7 }
-fn default_max_depth() -> u8 { 6 }
+fn default_max_passes() -> usize {
+    3
+}
+fn default_min_window() -> usize {
+    3
+}
+fn default_max_window() -> usize {
+    7
+}
+fn default_max_depth() -> u8 {
+    6
+}
 
 // ---------------------------------------------------------------------------
 // Core entry point: optimize a solution with insertion-style MITM search
@@ -305,7 +333,10 @@ pub fn optimize_with_insertions(
         let mut states = Vec::with_capacity(n + 1);
         states.push(scramble_state);
         for &m in &current {
-            let next = states.last().unwrap().apply_move(m as usize, &tables.move_data);
+            let next = states
+                .last()
+                .unwrap()
+                .apply_move(m as usize, &tables.move_data);
             states.push(next);
         }
 
