@@ -1,0 +1,63 @@
+name: FMC multi-insertion implementation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fmc-multi-insertion-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement-and-verify:
+    if: github.event.pull_request.head.ref == 'agent/fmc-multi-insertion'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Apply production transform
+        run: python tools/apply-fmc-multi-insertion.py
+
+      - name: Format Rust
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml
+
+      - name: Run release Rust tests
+        run: cargo test --release --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Rebuild release WASM
+        run: |
+          cd solver-wasm
+          wasm-pack build --release --target web --out-dir ../public/solver-wasm
+
+      - name: Verify FMC insertion pipeline
+        env:
+          FMC_INSERTION_REPEATS: '1'
+        run: node benchmark-fmc-insertion-speed-identity.mjs
+
+      - name: Commit generated implementation
+        run: |
+          if git diff --quiet; then
+            echo 'No implementation changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs public/solver-wasm
+          git commit -m 'Add FMC multi-insertion search'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
