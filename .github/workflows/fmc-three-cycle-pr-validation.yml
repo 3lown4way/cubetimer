@@ -1,0 +1,56 @@
+name: FMC three-cycle PR validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: taiki-e/install-action@wasm-pack
+
+      - name: Apply implementation
+        run: |
+          python .github/scripts/apply_fmc_three_cycle_insertion.py
+          python .github/scripts/apply_fmc_three_cycle_metrics.py
+          rustfmt --edition 2021 solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs
+
+      - name: Test Rust
+        run: cargo test --manifest-path solver-wasm/Cargo.toml --release
+
+      - name: Build release WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+
+      - name: Smoke-test insertion library
+        run: |
+          cat > /tmp/smoke-fmc-three-cycle.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { pathToFileURL } from 'node:url';
+          const dir = `${process.cwd()}/public/solver-wasm`;
+          const mod = await import(pathToFileURL(`${dir}/solver_wasm.js`).href);
+          await mod.default(fs.readFileSync(`${dir}/solver_wasm_bg.wasm`));
+          mod.load_twophase_333_bundle(fs.readFileSync(`${dir}/twophase/twophase-333-v1.bin`));
+          const built = JSON.parse(mod.build_fmc_tables_wasm());
+          console.log(JSON.stringify(built));
+          if (!built.ok || (built.threeCycleAlgorithmCount ?? 0) < 50) {
+            throw new Error(`invalid three-cycle table: ${JSON.stringify(built)}`);
+          }
+          const scramble = "R U R' U' F2 D L2 B' U2 R2 F D' R' B2 U L' U2 F' D2 R";
+          const result = JSON.parse(mod.solve_fmc_wasm(scramble, JSON.stringify({maxPremoveSets: 80, forceRzp: false})));
+          console.log(JSON.stringify({moveCount: result.moveCount, insertionCandidateCount: result.insertionCandidateCount, sources: result.candidates?.map(c => c.source)}));
+          if (!result.ok) throw new Error('FMC solve failed');
+          for (const candidate of result.candidates) {
+            const verified = JSON.parse(mod.verify_fmc_solution_wasm(scramble, candidate.solution));
+            if (!verified.ok || !verified.solved) throw new Error(`invalid candidate: ${candidate.solution}`);
+          }
+          NODE
+          node /tmp/smoke-fmc-three-cycle.mjs
