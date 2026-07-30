@@ -31,6 +31,28 @@ jobs:
           node --check tools/benchmark-wasm-search-hotpath.mjs
           node --check tools/compare-wasm-search-hotpath.mjs
 
+      - name: Remove stale missing module declarations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('solver-wasm/src/lib.rs')
+          text = path.read_text(encoding='utf-8')
+          stale = [
+              'pub mod htr_classifier;\n',
+              'pub mod htr_pruning;\n',
+              'pub mod htr_rewrite;\n',
+              'pub mod htr_search;\n',
+              'pub mod htr_ml;\n',
+              'pub mod htr_lookup;\n',
+          ]
+          for declaration in stale:
+              if text.count(declaration) != 1:
+                  raise RuntimeError(f'unexpected stale module declaration count: {declaration.strip()}')
+              text = text.replace(declaration, '', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+
       - name: Build and benchmark baseline
         run: |
           wasm-pack build solver-wasm --target web --out-dir ../.wasm-baseline --release
@@ -60,7 +82,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add solver-wasm/Cargo.toml solver-wasm/src/twophase_search.rs
+          git add solver-wasm/Cargo.toml solver-wasm/src/lib.rs solver-wasm/src/twophase_search.rs
           git add public/solver-wasm/solver_wasm.js public/solver-wasm/solver_wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts public/solver-wasm/package.json
           git add -f public/solver-wasm/solver_wasm_bg.wasm
           git commit -m 'Optimize Rust WASM phase search hotpaths'
