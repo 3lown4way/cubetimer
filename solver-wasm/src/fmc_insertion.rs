@@ -4,10 +4,13 @@
 /// bidirectional BFS over integer CubeState representations.
 ///
 /// JS equivalent: `optimizeSolutionWithInsertions` in fmcSolver.js.
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::fmc_search::{simplify_moves, MOVE_INVERSE, OPPOSITE_FACE};
-use crate::minmove_core::{parse_scramble, solution_string_from_path, CubeState, CORNER_COUNT, EDGE_COUNT, LAST_FACE_FREE, MOVE_COUNT};
+use crate::minmove_core::{
+    parse_scramble, solution_string_from_path, CubeState, CORNER_COUNT, EDGE_COUNT, LAST_FACE_FREE,
+    MOVE_COUNT,
+};
 use crate::twophase_bundle::TwophaseTables;
 use serde::Deserialize;
 
@@ -43,6 +46,29 @@ fn is_half_turn(m: u8) -> bool {
     m % 3 == 2
 }
 
+const INSERTION_LAST_FACE_COUNT: usize = LAST_FACE_FREE as usize + 1;
+type InsertionAllowedMoves = [Vec<u8>; INSERTION_LAST_FACE_COUNT];
+
+fn build_allowed_moves(move_face_table: &[u8]) -> InsertionAllowedMoves {
+    std::array::from_fn(|last_face| {
+        let mut allowed = Vec::with_capacity(MOVE_COUNT);
+        for m in 0..MOVE_COUNT as u8 {
+            let face = move_face_table[m as usize];
+            if last_face < LAST_FACE_FREE as usize && face == last_face as u8 {
+                continue;
+            }
+            if last_face < LAST_FACE_FREE as usize
+                && OPPOSITE_FACE[face as usize] == last_face as u8
+                && face < last_face as u8
+            {
+                continue;
+            }
+            allowed.push(m);
+        }
+        allowed
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Bidirectional BFS frontier
 //
@@ -59,6 +85,7 @@ fn bfs_frontier(
     depth: u8,
     backward: bool,
     move_face_table: &[u8],
+    allowed_moves_by_last_face: &InsertionAllowedMoves,
     move_data: &crate::minmove_core::MoveData,
 ) -> HashMap<StateKey, Vec<u8>> {
     let mut map: HashMap<StateKey, Vec<u8>> = HashMap::with_capacity(1 << (depth * 4).min(20));
@@ -82,44 +109,41 @@ fn bfs_frontier(
     for _ in 0..depth {
         let mut next_queue = Vec::with_capacity(queue.len() * 10);
         for node in &queue {
-            for m in 0..MOVE_COUNT as u8 {
+            for &m in &allowed_moves_by_last_face[node.last_face as usize] {
                 let face = move_face_table[m as usize];
-                let last = node.last_face;
-                // Skip same face
-                if last < LAST_FACE_FREE && face == last {
-                    continue;
-                }
-                // Skip canonical duplicate for opposite-face pairs
-                if last < LAST_FACE_FREE && OPPOSITE_FACE[face as usize] == last && face < last {
-                    continue;
-                }
-
-                let apply_m = if backward { MOVE_INVERSE[m as usize] } else { m };
+                let apply_m = if backward {
+                    MOVE_INVERSE[m as usize]
+                } else {
+                    m
+                };
                 let next_state = node.state.apply_move(apply_m as usize, move_data);
                 let key = state_key(&next_state);
-                if map.contains_key(&key) {
-                    continue;
+
+                match map.entry(key) {
+                    Entry::Occupied(_) => continue,
+                    Entry::Vacant(entry) => {
+                        let path: Vec<u8> = if backward {
+                            // prepend m so the path reads: meeting_point → root
+                            let mut p = Vec::with_capacity(node.path.len() + 1);
+                            p.push(m);
+                            p.extend_from_slice(&node.path);
+                            p
+                        } else {
+                            let mut p = Vec::with_capacity(node.path.len() + 1);
+                            p.extend_from_slice(&node.path);
+                            p.push(m);
+                            p
+                        };
+
+                        entry.insert(path.clone());
+                        // last_face uses the actual applied face; inverse moves share the face.
+                        next_queue.push(Node {
+                            state: next_state,
+                            path,
+                            last_face: face,
+                        });
+                    }
                 }
-
-                let path: Vec<u8> = if backward {
-                    // prepend m so the path reads: meeting_point → root
-                    let mut p = vec![m];
-                    p.extend_from_slice(&node.path);
-                    p
-                } else {
-                    let mut p = node.path.clone();
-                    p.push(m);
-                    p
-                };
-
-                map.insert(key, path.clone());
-                // next_queue last_face uses the actual applied face for pruning
-                let next_last_face = face; // face of m == face of MOVE_INVERSE[m]
-                next_queue.push(Node {
-                    state: next_state,
-                    path,
-                    last_face: next_last_face,
-                });
             }
         }
         queue = next_queue;
@@ -144,6 +168,7 @@ fn find_shorter_segment(
     current_len: usize,
     cache: &mut InsertionCache,
     move_face_table: &[u8],
+    allowed_moves_by_last_face: &InsertionAllowedMoves,
     move_data: &crate::minmove_core::MoveData,
 ) -> Option<Vec<u8>> {
     if current_len <= 1 {
@@ -166,8 +191,22 @@ fn find_shorter_segment(
     let fwd_depth = search_depth / 2;
     let bwd_depth = search_depth - fwd_depth;
 
-    let fwd_map = bfs_frontier(start, fwd_depth, false, move_face_table, move_data);
-    let bwd_map = bfs_frontier(target, bwd_depth, true, move_face_table, move_data);
+    let fwd_map = bfs_frontier(
+        start,
+        fwd_depth,
+        false,
+        move_face_table,
+        allowed_moves_by_last_face,
+        move_data,
+    );
+    let bwd_map = bfs_frontier(
+        target,
+        bwd_depth,
+        true,
+        move_face_table,
+        allowed_moves_by_last_face,
+        move_data,
+    );
 
     let mut best: Option<Vec<u8>> = None;
     for (key, left) in &fwd_map {
@@ -204,14 +243,30 @@ fn build_ranked_windows(
             let end = start + window;
             let mut score = (window * 8) as i32;
 
-            let left_face = if start > 0 { move_face(moves[start - 1]) as i32 } else { -1 };
+            let left_face = if start > 0 {
+                move_face(moves[start - 1]) as i32
+            } else {
+                -1
+            };
             let first_face = move_face(moves[start]) as i32;
             let last_face = move_face(moves[end - 1]) as i32;
-            let right_face = if end < n { move_face(moves[end]) as i32 } else { -1 };
-            let left_axis = if start > 0 { move_axis(moves[start - 1]) as i32 } else { -1 };
+            let right_face = if end < n {
+                move_face(moves[end]) as i32
+            } else {
+                -1
+            };
+            let left_axis = if start > 0 {
+                move_axis(moves[start - 1]) as i32
+            } else {
+                -1
+            };
             let first_axis = move_axis(moves[start]) as i32;
             let last_axis = move_axis(moves[end - 1]) as i32;
-            let right_axis = if end < n { move_axis(moves[end]) as i32 } else { -1 };
+            let right_axis = if end < n {
+                move_axis(moves[end]) as i32
+            } else {
+                -1
+            };
 
             // Same-face boundary cancellation
             if left_face >= 0 && left_face == first_face {
@@ -247,11 +302,7 @@ fn build_ranked_windows(
     }
 
     // Sort: highest score first; tie-break: larger window, then lower start
-    windows.sort_unstable_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then(b.3.cmp(&a.3))
-            .then(a.1.cmp(&b.1))
-    });
+    windows.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(b.3.cmp(&a.3)).then(a.1.cmp(&b.1)));
 
     windows.into_iter().map(|(_, s, e, w)| (s, e, w)).collect()
 }
@@ -270,10 +321,18 @@ pub struct InsertionOptions {
     #[serde(rename = "maxDepth", default = "default_max_depth")]
     pub max_depth: u8,
 }
-fn default_max_passes() -> usize { 3 }
-fn default_min_window() -> usize { 3 }
-fn default_max_window() -> usize { 7 }
-fn default_max_depth() -> u8 { 6 }
+fn default_max_passes() -> usize {
+    3
+}
+fn default_min_window() -> usize {
+    3
+}
+fn default_max_window() -> usize {
+    7
+}
+fn default_max_depth() -> u8 {
+    6
+}
 
 // ---------------------------------------------------------------------------
 // Core entry point: optimize a solution with insertion-style MITM search
@@ -293,6 +352,7 @@ pub fn optimize_with_insertions(
 
     let scramble_state = CubeState::solved().apply_moves(&scramble_moves, &tables.move_data);
     let move_face_table = &tables.move_data.move_face;
+    let allowed_moves_by_last_face = build_allowed_moves(move_face_table);
 
     // Per-call MITM cache to avoid recomputing identical (start, target) pairs across passes
     let mut cache: InsertionCache = HashMap::new();
@@ -305,7 +365,10 @@ pub fn optimize_with_insertions(
         let mut states = Vec::with_capacity(n + 1);
         states.push(scramble_state);
         for &m in &current {
-            let next = states.last().unwrap().apply_move(m as usize, &tables.move_data);
+            let next = states
+                .last()
+                .unwrap()
+                .apply_move(m as usize, &tables.move_data);
             states.push(next);
         }
 
@@ -320,6 +383,7 @@ pub fn optimize_with_insertions(
                 window_size,
                 &mut cache,
                 move_face_table,
+                &allowed_moves_by_last_face,
                 &tables.move_data,
             );
 
