@@ -58,34 +58,65 @@ fn is_half_turn(m: u8) -> bool {
 //   Start from `root`, apply INVERSE(m), store `m` in path.
 //   map[state] = moves that take state → root  (i.e. forward path from meeting point to root)
 // ---------------------------------------------------------------------------
+#[derive(Clone, Copy)]
+struct FrontierNode {
+    state: CubeState,
+    parent: u32,
+    via_move: u8,
+    depth: u8,
+    last_face: u8,
+}
+
+struct BfsFrontier {
+    by_state: HashMap<StateKey, u32>,
+    nodes: Vec<FrontierNode>,
+    backward: bool,
+}
+
+impl BfsFrontier {
+    #[inline(always)]
+    fn path_len(&self, node_index: u32) -> usize {
+        self.nodes[node_index as usize].depth as usize
+    }
+
+    fn reconstruct_path(&self, node_index: u32) -> Vec<u8> {
+        let mut path = Vec::with_capacity(self.path_len(node_index));
+        let mut cursor = node_index;
+        while cursor != 0 {
+            let node = self.nodes[cursor as usize];
+            path.push(node.via_move);
+            cursor = node.parent;
+        }
+        if !self.backward {
+            path.reverse();
+        }
+        path
+    }
+}
+
 fn bfs_frontier(
     root: &CubeState,
     depth: u8,
     backward: bool,
     move_face_table: &[u8],
     move_data: &crate::minmove_core::MoveData,
-) -> HashMap<StateKey, Vec<u8>> {
-    let mut map: HashMap<StateKey, Vec<u8>> = HashMap::with_capacity(1 << (depth * 4).min(20));
-    map.insert(state_key(root), vec![]);
-    if depth == 0 {
-        return map;
-    }
-
-    struct Node {
-        state: CubeState,
-        path: Vec<u8>,
-        last_face: u8,
-    }
-
-    let mut queue = vec![Node {
+) -> BfsFrontier {
+    let mut by_state: HashMap<StateKey, u32> = HashMap::with_capacity(1 << (depth * 4).min(20));
+    let mut nodes = Vec::with_capacity(1 << (depth * 4).min(20));
+    nodes.push(FrontierNode {
         state: *root,
-        path: vec![],
+        parent: 0,
+        via_move: 0,
+        depth: 0,
         last_face: LAST_FACE_FREE,
-    }];
+    });
+    by_state.insert(state_key(root), 0);
 
+    let mut queue = vec![0u32];
     for _ in 0..depth {
         let mut next_queue = Vec::with_capacity(queue.len() * 10);
-        for node in &queue {
+        for &node_index in &queue {
+            let node = nodes[node_index as usize];
             for m in 0..MOVE_COUNT as u8 {
                 let face = move_face_table[m as usize];
                 let last = node.last_face;
@@ -105,35 +136,31 @@ fn bfs_frontier(
                 };
                 let next_state = node.state.apply_move(apply_m as usize, move_data);
                 let key = state_key(&next_state);
-                let Entry::Vacant(entry) = map.entry(key) else {
+                let Entry::Vacant(entry) = by_state.entry(key) else {
                     continue;
                 };
 
-                let path: Vec<u8> = if backward {
-                    // prepend m so the path reads: meeting_point → root
-                    let mut p = vec![m];
-                    p.extend_from_slice(&node.path);
-                    p
-                } else {
-                    let mut p = node.path.clone();
-                    p.push(m);
-                    p
-                };
-
-                entry.insert(path.clone());
-                // next_queue last_face uses the actual applied face for pruning
-                let next_last_face = face; // face of m == face of MOVE_INVERSE[m]
-                next_queue.push(Node {
+                let next_index = nodes.len() as u32;
+                entry.insert(next_index);
+                nodes.push(FrontierNode {
                     state: next_state,
-                    path,
-                    last_face: next_last_face,
+                    parent: node_index,
+                    via_move: m,
+                    depth: node.depth + 1,
+                    // face of m == face of MOVE_INVERSE[m]
+                    last_face: face,
                 });
+                next_queue.push(next_index);
             }
         }
         queue = next_queue;
     }
 
-    map
+    BfsFrontier {
+        by_state,
+        nodes,
+        backward,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,17 +201,17 @@ fn find_shorter_segment(
     let fwd_depth = search_depth / 2;
     let bwd_depth = search_depth - fwd_depth;
 
-    let fwd_map = bfs_frontier(start, fwd_depth, false, move_face_table, move_data);
-    let bwd_map = bfs_frontier(target, bwd_depth, true, move_face_table, move_data);
+    let fwd_frontier = bfs_frontier(start, fwd_depth, false, move_face_table, move_data);
+    let bwd_frontier = bfs_frontier(target, bwd_depth, true, move_face_table, move_data);
 
     let mut best: Option<Vec<u8>> = None;
-    for (key, left) in &fwd_map {
-        if let Some(right) = bwd_map.get(key) {
-            let total_len = left.len() + right.len();
+    for (key, &left_index) in &fwd_frontier.by_state {
+        if let Some(&right_index) = bwd_frontier.by_state.get(key) {
+            let total_len = fwd_frontier.path_len(left_index) + bwd_frontier.path_len(right_index);
             if total_len < current_len {
                 if best.is_none() || total_len < best.as_ref().unwrap().len() {
-                    let mut combined = left.clone();
-                    combined.extend_from_slice(right);
+                    let mut combined = fwd_frontier.reconstruct_path(left_index);
+                    combined.extend_from_slice(&bwd_frontier.reconstruct_path(right_index));
                     best = Some(combined);
                 }
             }
