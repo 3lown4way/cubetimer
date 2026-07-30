@@ -2,37 +2,38 @@
 from pathlib import Path
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if text.count(old) != 1:
-        raise RuntimeError(f"expected one anchor for {label}, found {text.count(old)}")
+def one(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(f"expected one anchor for {label}, found {count}")
     return text.replace(old, new, 1)
 
 
-search_path = Path("solver-wasm/src/twophase_search.rs")
-text = search_path.read_text(encoding="utf-8")
+def first(text: str, old: str, new: str, label: str) -> str:
+    if old not in text:
+        raise RuntimeError(f"missing anchor for {label}")
+    return text.replace(old, new, 1)
 
-text = replace_once(
+
+path = Path("solver-wasm/src/twophase_search.rs")
+text = path.read_text(encoding="utf-8")
+text = one(
     text,
     "use std::collections::{HashMap, HashSet};\n",
     "use std::collections::{HashMap, HashSet};\nuse std::sync::Mutex;\n\nuse once_cell::sync::Lazy;\n",
     "imports",
 )
-
-text = replace_once(
+text = one(
     text,
     "const PHASE1_FAIL_CACHE_LIMIT: usize = 220_000;\nconst PHASE2_FAIL_CACHE_LIMIT: usize = 260_000;\nconst PHASE1_EXACT_FAIL_CACHE_LIMIT: usize = 500_000;\n",
-    "const PHASE1_EXACT_FAIL_CACHE_LIMIT: usize = 500_000;\nconst FAIL_TT_SET_BITS: usize = 17;\nconst FAIL_TT_SET_COUNT: usize = 1 << FAIL_TT_SET_BITS;\nconst FAIL_TT_SET_MASK: usize = FAIL_TT_SET_COUNT - 1;\nconst FAIL_TT_WAYS: usize = 2;\nconst FAIL_TT_SLOTS: usize = FAIL_TT_SET_COUNT * FAIL_TT_WAYS;\n",
+    "const PHASE1_EXACT_FAIL_CACHE_LIMIT: usize = 500_000;\nconst FAIL_TT_SET_COUNT: usize = 1 << 17;\nconst FAIL_TT_SET_MASK: usize = FAIL_TT_SET_COUNT - 1;\nconst FAIL_TT_WAYS: usize = 2;\nconst FAIL_TT_SLOTS: usize = FAIL_TT_SET_COUNT * FAIL_TT_WAYS;\n",
     "cache constants",
 )
 
-insert_anchor = "const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];\n"
-insert_text = r'''const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];
+table_code = r'''const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];
 
-/// Fixed-capacity, two-way set-associative fail table.
-///
-/// Exact 64-bit tags make collisions safe: a collision can only evict an
-/// older entry, never cause a false cache hit or invalid pruning. Generation
-/// epochs provide an O(1) logical reset between solves.
+/// Exact-tagged two-way fail table. Hash collisions only evict entries and
+/// therefore cannot create false pruning. Epochs make solve reset O(1).
 struct FixedFailTable {
     keys: Box<[u64]>,
     masks: Box<[u32]>,
@@ -61,8 +62,6 @@ impl FixedFailTable {
 
     #[inline(always)]
     fn base_slot(key: u64) -> usize {
-        // Fold the exact 64-bit coordinate key to an inexpensive i32 hash,
-        // which maps efficiently to WebAssembly integer operations.
         let mut hash = (key as u32) ^ ((key >> 32) as u32);
         hash ^= hash >> 16;
         hash = hash.wrapping_mul(0x7feb_352d);
@@ -75,7 +74,7 @@ impl FixedFailTable {
     #[inline(always)]
     fn get(&self, key: u64) -> u32 {
         let base = Self::base_slot(key);
-        for slot in base..(base + FAIL_TT_WAYS) {
+        for slot in base..base + FAIL_TT_WAYS {
             if self.epochs[slot] == self.epoch && self.keys[slot] == key {
                 return self.masks[slot];
             }
@@ -86,21 +85,18 @@ impl FixedFailTable {
     #[inline(always)]
     fn insert_or(&mut self, key: u64, bit: u32) {
         let base = Self::base_slot(key);
-        let mut free_slot = None;
-        for slot in base..(base + FAIL_TT_WAYS) {
+        let mut free = None;
+        for slot in base..base + FAIL_TT_WAYS {
             if self.epochs[slot] == self.epoch {
                 if self.keys[slot] == key {
                     self.masks[slot] |= bit;
                     return;
                 }
-            } else if free_slot.is_none() {
-                free_slot = Some(slot);
+            } else if free.is_none() {
+                free = Some(slot);
             }
         }
-
-        // Prefer an unused way. If both ways are occupied, retain the entry
-        // carrying more proven remaining-depth bits.
-        let slot = free_slot.unwrap_or_else(|| {
+        let slot = free.unwrap_or_else(|| {
             if self.masks[base].count_ones() <= self.masks[base + 1].count_ones() {
                 base
             } else {
@@ -118,87 +114,81 @@ static PHASE1_FAIL_TABLE: Lazy<Mutex<FixedFailTable>> =
 static PHASE2_FAIL_TABLE: Lazy<Mutex<FixedFailTable>> =
     Lazy::new(|| Mutex::new(FixedFailTable::new()));
 '''
-text = replace_once(text, insert_anchor, insert_text, "fixed table insertion")
+text = one(
+    text,
+    "const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];\n",
+    table_code,
+    "fixed table insertion",
+)
 
-text = replace_once(
+text = one(
     text,
     "struct Phase1SearchCtx<'a> {\n    tables: &'a TwophaseTables,\n",
     "struct Phase1SearchCtx<'a, 'b> {\n    tables: &'a TwophaseTables,\n",
-    "phase1 context lifetimes",
+    "phase1 lifetimes",
 )
-text = replace_once(
+text = one(
     text,
     "    fail_cache: HashMap<u64, u32>,\n}\n\nimpl<'a> Phase1SearchCtx<'a> {\n",
     "    fail_cache: &'b mut FixedFailTable,\n}\n\nimpl<'a, 'b> Phase1SearchCtx<'a, 'b> {\n",
-    "phase1 cache field",
+    "phase1 field",
 )
-text = replace_once(
-    text,
-    "        let seen_mask = self.fail_cache.get(&cache_key).copied().unwrap_or(0);\n",
-    "        let seen_mask = self.fail_cache.get(cache_key);\n",
-    "phase1 cache lookup",
-)
-text = replace_once(
+lookup = "        let seen_mask = self.fail_cache.get(&cache_key).copied().unwrap_or(0);\n"
+text = first(text, lookup, "        let seen_mask = self.fail_cache.get(cache_key);\n", "phase1 lookup")
+text = one(
     text,
     "        if self.fail_cache.len() >= PHASE1_FAIL_CACHE_LIMIT {\n            self.fail_cache.clear();\n        }\n        self.fail_cache.insert(cache_key, seen_mask | bit);\n",
     "        self.fail_cache.insert_or(cache_key, bit);\n",
-    "phase1 cache insert",
+    "phase1 insert",
 )
-text = replace_once(
+text = one(
     text,
     "    let mut ctx = Phase1SearchCtx {\n        tables,\n",
     "    let mut fail_cache = PHASE1_FAIL_TABLE.lock().unwrap();\n    fail_cache.reset();\n    let mut ctx = Phase1SearchCtx {\n        tables,\n",
-    "phase1 cache acquire",
+    "phase1 acquire",
 )
-text = replace_once(
+text = one(
     text,
     "        fail_cache: HashMap::new(),\n    };\n\n    while bound <= input.max_depth {\n",
     "        fail_cache: &mut fail_cache,\n    };\n\n    while bound <= input.max_depth {\n",
-    "phase1 cache construction",
+    "phase1 construct",
 )
 
-text = replace_once(
+text = one(
     text,
     "struct Phase2SearchCtx<'a> {\n    tables: &'a TwophaseTables,\n",
     "struct Phase2SearchCtx<'a, 'b> {\n    tables: &'a TwophaseTables,\n",
-    "phase2 context lifetimes",
+    "phase2 lifetimes",
 )
-text = replace_once(
+text = one(
     text,
     "    fail_cache: HashMap<u64, u32>,\n}\n\nimpl<'a> Phase2SearchCtx<'a> {\n",
     "    fail_cache: &'b mut FixedFailTable,\n}\n\nimpl<'a, 'b> Phase2SearchCtx<'a, 'b> {\n",
-    "phase2 cache field",
+    "phase2 field",
 )
-text = replace_once(
-    text,
-    "        let seen_mask = self.fail_cache.get(&cache_key).copied().unwrap_or(0);\n",
-    "        let seen_mask = self.fail_cache.get(cache_key);\n",
-    "phase2 cache lookup",
-)
-text = replace_once(
+text = one(text, lookup, "        let seen_mask = self.fail_cache.get(cache_key);\n", "phase2 lookup")
+text = one(
     text,
     "        if self.fail_cache.len() >= PHASE2_FAIL_CACHE_LIMIT {\n            self.fail_cache.clear();\n        }\n        self.fail_cache.insert(cache_key, seen_mask | bit);\n",
     "        self.fail_cache.insert_or(cache_key, bit);\n",
-    "phase2 cache insert",
+    "phase2 insert",
 )
-text = replace_once(
+text = one(
     text,
     "    let mut ctx = Phase2SearchCtx {\n        tables,\n",
     "    let mut fail_cache = PHASE2_FAIL_TABLE.lock().unwrap();\n    fail_cache.reset();\n    let mut ctx = Phase2SearchCtx {\n        tables,\n",
-    "phase2 cache acquire",
+    "phase2 acquire",
 )
-text = replace_once(
+text = one(
     text,
     "        fail_cache: HashMap::new(),\n    };\n\n    while bound <= max_depth {\n",
     "        fail_cache: &mut fail_cache,\n    };\n\n    while bound <= max_depth {\n",
-    "phase2 cache construction",
+    "phase2 construct",
 )
-
-search_path.write_text(text, encoding="utf-8")
+path.write_text(text, encoding="utf-8")
 
 cargo_path = Path("solver-wasm/Cargo.toml")
 cargo = cargo_path.read_text(encoding="utf-8")
-cargo = replace_once(cargo, 'opt-level = "s"\n', "opt-level = 3\n", "release optimization level")
+cargo = one(cargo, 'opt-level = "s"\n', "opt-level = 3\n", "release profile")
 cargo_path.write_text(cargo, encoding="utf-8")
-
 print("Applied Rust/WASM search hotpath candidate")
