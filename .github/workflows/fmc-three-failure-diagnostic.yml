@@ -1,0 +1,20 @@
+name: FMC three-failure diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: node --check tools/diagnose-fmc-three-failures.mjs
+      - name: Diagnose failed FMC cases
+        run: node tools/diagnose-fmc-three-failures.mjs
