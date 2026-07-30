@@ -68,63 +68,88 @@ for (let index = 0; index < scrambles.length; index += 1) {
   const solveMs = performance.now() - startedAt;
 
   if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
-    throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}`);
-  }
-
-  const bestVerification = await verifyFmcSolutionWasm(scramble, result.solution);
-  if (!bestVerification?.ok || bestVerification.solved !== true) {
-    throw new Error(`FMC_BEST_INVALID:${index}:${result.solution}`);
-  }
-
-  const multiCandidates = result.candidates.filter(
-    (candidate) => Number(candidate?.insertionCount || 0) >= 2,
-  );
-  for (const candidate of multiCandidates) {
-    const verification = await verifyFmcSolutionWasm(scramble, candidate.solution);
-    if (!verification?.ok || verification.solved !== true) {
-      throw new Error(`FMC_MULTI_INVALID:${index}:${candidate.solution}`);
+    rows.push({
+      index,
+      scramble,
+      ok: false,
+      reason: String(result?.reason || "FMC_NO_SOLUTION"),
+      solution: "",
+      moveCount: null,
+      solveMs,
+      candidateCount: 0,
+      insertionCandidateCount: 0,
+      mixedInsertionCandidateCount: 0,
+      multiInsertionCandidateCount: 0,
+      multiSkeletonCount: 0,
+      multiCandidateInTop: false,
+      multiCandidateTopCount: 0,
+      bestIsMulti: false,
+      bestSource: "",
+      bestSkeletonKind: "",
+    });
+  } else {
+    const bestVerification = await verifyFmcSolutionWasm(scramble, result.solution);
+    if (!bestVerification?.ok || bestVerification.solved !== true) {
+      throw new Error(`FMC_BEST_INVALID:${index}:${result.solution}`);
     }
+
+    const multiCandidates = result.candidates.filter(
+      (candidate) => Number(candidate?.insertionCount || 0) >= 2,
+    );
+    for (const candidate of multiCandidates) {
+      const verification = await verifyFmcSolutionWasm(scramble, candidate.solution);
+      if (!verification?.ok || verification.solved !== true) {
+        throw new Error(`FMC_MULTI_INVALID:${index}:${candidate.solution}`);
+      }
+    }
+
+    const multiSkeletons = Array.isArray(result.skeletons)
+      ? result.skeletons.filter((skeleton) =>
+          ["corner4", "edge4", "corner3edge3"].includes(String(skeleton?.kind || "")),
+        )
+      : [];
+    const bestCandidate = result.candidates[0] || {};
+
+    rows.push({
+      index,
+      scramble,
+      ok: true,
+      reason: "",
+      solution: String(result.solution),
+      moveCount: Number(result.moveCount || 0),
+      solveMs,
+      candidateCount: result.candidates.length,
+      insertionCandidateCount: Number(result.insertionCandidateCount || 0),
+      mixedInsertionCandidateCount: Number(result.mixedInsertionCandidateCount || 0),
+      multiInsertionCandidateCount: Number(result.multiInsertionCandidateCount || 0),
+      multiSkeletonCount: multiSkeletons.length,
+      multiCandidateInTop: multiCandidates.length > 0,
+      multiCandidateTopCount: multiCandidates.length,
+      bestIsMulti: Number(bestCandidate?.insertionCount || 0) >= 2,
+      bestSource: String(bestCandidate?.source || ""),
+      bestSkeletonKind: String(bestCandidate?.skeletonKind || ""),
+    });
   }
-
-  const multiSkeletons = Array.isArray(result.skeletons)
-    ? result.skeletons.filter((skeleton) =>
-        ["corner4", "edge4", "corner3edge3"].includes(String(skeleton?.kind || "")),
-      )
-    : [];
-  const bestCandidate = result.candidates[0] || {};
-
-  rows.push({
-    index,
-    scramble,
-    solution: String(result.solution),
-    moveCount: Number(result.moveCount || 0),
-    solveMs,
-    candidateCount: result.candidates.length,
-    insertionCandidateCount: Number(result.insertionCandidateCount || 0),
-    mixedInsertionCandidateCount: Number(result.mixedInsertionCandidateCount || 0),
-    multiInsertionCandidateCount: Number(result.multiInsertionCandidateCount || 0),
-    multiSkeletonCount: multiSkeletons.length,
-    multiCandidateInTop: multiCandidates.length > 0,
-    multiCandidateTopCount: multiCandidates.length,
-    bestIsMulti: Number(bestCandidate?.insertionCount || 0) >= 2,
-    bestSource: String(bestCandidate?.source || ""),
-    bestSkeletonKind: String(bestCandidate?.skeletonKind || ""),
-  });
 
   if ((index + 1) % 100 === 0) {
     console.log(`${VARIANT}: ${index + 1}/${RUNS}`);
   }
 }
 
+const solvedRows = rows.filter((row) => row.ok);
 const solveTimes = rows.map((row) => row.solveMs);
+const moveCounts = solvedRows.map((row) => row.moveCount);
 const summary = {
   variant: VARIANT,
   runs: RUNS,
   premoveSets: PREMOVE_SETS,
+  solvedCases: solvedRows.length,
+  failedCases: rows.length - solvedRows.length,
+  solveRate: solvedRows.length / Math.max(1, rows.length),
   tableBuildMs,
-  averageMoves: average(rows.map((row) => row.moveCount)),
-  medianMoves: percentile(rows.map((row) => row.moveCount), 0.5),
-  p95Moves: percentile(rows.map((row) => row.moveCount), 0.95),
+  averageMoves: average(moveCounts),
+  medianMoves: percentile(moveCounts, 0.5),
+  p95Moves: percentile(moveCounts, 0.95),
   averageSolveMs: average(solveTimes),
   medianSolveMs: percentile(solveTimes, 0.5),
   p95SolveMs: percentile(solveTimes, 0.95),
