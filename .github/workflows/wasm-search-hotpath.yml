@@ -1,0 +1,67 @@
+name: WASM search hotpath
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark-and-validate:
+    if: github.head_ref == 'agent/wasm-search-hotpath'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Install Rust WASM toolchain
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          wasm-pack --version
+
+      - name: Validate helper scripts
+        run: |
+          python -m py_compile tools/apply-wasm-search-hotpath.py
+          node --check tools/benchmark-wasm-search-hotpath.mjs
+          node --check tools/compare-wasm-search-hotpath.mjs
+
+      - name: Build and benchmark baseline
+        run: |
+          wasm-pack build solver-wasm --target web --out-dir ../.wasm-baseline --release
+          node --expose-gc tools/benchmark-wasm-search-hotpath.mjs .wasm-baseline > /tmp/wasm-baseline.json
+
+      - name: Apply Rust hotpath candidate
+        run: |
+          python tools/apply-wasm-search-hotpath.py
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo test --manifest-path solver-wasm/Cargo.toml --release
+
+      - name: Build and benchmark candidate
+        run: |
+          wasm-pack build solver-wasm --target web --out-dir ../.wasm-optimized --release
+          node --expose-gc tools/benchmark-wasm-search-hotpath.mjs .wasm-optimized > /tmp/wasm-optimized.json
+          node tools/compare-wasm-search-hotpath.mjs /tmp/wasm-baseline.json /tmp/wasm-optimized.json
+
+      - name: Stage runtime WASM package
+        run: |
+          cp .wasm-optimized/solver_wasm.js public/solver-wasm/solver_wasm.js
+          cp .wasm-optimized/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
+          cp .wasm-optimized/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
+          cp .wasm-optimized/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          cp .wasm-optimized/package.json public/solver-wasm/package.json
+
+      - name: Commit product changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add solver-wasm/Cargo.toml solver-wasm/src/twophase_search.rs
+          git add public/solver-wasm/solver_wasm.js public/solver-wasm/solver_wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts public/solver-wasm/package.json
+          git add -f public/solver-wasm/solver_wasm_bg.wasm
+          git commit -m 'Optimize Rust WASM phase search hotpaths'
+          git push origin HEAD:${{ github.head_ref }}
