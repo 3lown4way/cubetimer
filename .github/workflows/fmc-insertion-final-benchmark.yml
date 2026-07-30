@@ -1,0 +1,144 @@
+name: FMC insertion final benchmark
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare main worktree
+        run: |
+          git fetch origin main
+          git worktree add /tmp/fmc-main origin/main
+
+      - name: Compare 100 deterministic scrambles
+        run: |
+          cat > /tmp/benchmark-fmc-insertion.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { pathToFileURL } from 'node:url';
+          import { performance } from 'node:perf_hooks';
+
+          async function load(root) {
+            const dir = `${root}/public/solver-wasm`;
+            const mod = await import(pathToFileURL(`${dir}/solver_wasm.js`).href);
+            await mod.default(fs.readFileSync(`${dir}/solver_wasm_bg.wasm`));
+            mod.load_twophase_333_bundle(fs.readFileSync(`${dir}/twophase/twophase-333-v1.bin`));
+            const start = performance.now();
+            const built = JSON.parse(mod.build_fmc_tables_wasm());
+            const buildMs = performance.now() - start;
+            if (!built.ok) throw new Error(`table build failed: ${JSON.stringify(built)}`);
+            return {mod, built, buildMs};
+          }
+
+          function makeScrambles(count) {
+            let x = 0x6d2b79f5;
+            const faces = ['U', 'R', 'F', 'D', 'L', 'B'];
+            const suffixes = ['', "'", '2'];
+            const opposite = [3, 4, 5, 0, 1, 2];
+            const next = () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return x >>>= 0; };
+            const output = [];
+            for (let sample = 0; sample < count; sample++) {
+              const moves = [];
+              let lastFace = -1;
+              for (let index = 0; index < 21; index++) {
+                let face;
+                do { face = next() % 6; }
+                while (face === lastFace || (lastFace >= 0 && face === opposite[lastFace] && face < lastFace));
+                moves.push(faces[face] + suffixes[next() % 3]);
+                lastFace = face;
+              }
+              output.push(moves.join(' '));
+            }
+            return output;
+          }
+
+          const baseline = await load('/tmp/fmc-main');
+          const current = await load(process.cwd());
+          const options = JSON.stringify({maxPremoveSets: 80, forceRzp: false});
+          const oldTimes = [];
+          const newTimes = [];
+          let oldMoves = 0;
+          let newMoves = 0;
+          let improved = 0;
+          let equal = 0;
+          let totalInsertions = 0;
+          let top10Insertions = 0;
+          let cornerInsertions = 0;
+          let edgeInsertions = 0;
+
+          for (const [index, scramble] of makeScrambles(100).entries()) {
+            let oldResult;
+            let newResult;
+            if (index % 2 === 0) {
+              let start = performance.now();
+              oldResult = JSON.parse(baseline.mod.solve_fmc_wasm(scramble, options));
+              oldTimes.push(performance.now() - start);
+              start = performance.now();
+              newResult = JSON.parse(current.mod.solve_fmc_wasm(scramble, options));
+              newTimes.push(performance.now() - start);
+            } else {
+              let start = performance.now();
+              newResult = JSON.parse(current.mod.solve_fmc_wasm(scramble, options));
+              newTimes.push(performance.now() - start);
+              start = performance.now();
+              oldResult = JSON.parse(baseline.mod.solve_fmc_wasm(scramble, options));
+              oldTimes.push(performance.now() - start);
+            }
+            if (!oldResult.ok || !newResult.ok) throw new Error(`solve failed at ${index}`);
+            if (newResult.moveCount > oldResult.moveCount) {
+              throw new Error(`move-count regression at ${index}: ${oldResult.moveCount} -> ${newResult.moveCount}`);
+            }
+            oldMoves += oldResult.moveCount;
+            newMoves += newResult.moveCount;
+            if (newResult.moveCount < oldResult.moveCount) improved++;
+            else equal++;
+            totalInsertions += newResult.insertionCandidateCount ?? 0;
+            for (const candidate of newResult.candidates) {
+              const verified = JSON.parse(current.mod.verify_fmc_solution_wasm(scramble, candidate.solution));
+              if (!verified.ok || !verified.solved) throw new Error(`invalid candidate at ${index}`);
+              if (candidate.source.startsWith('FMC_INSERTION_')) {
+                top10Insertions++;
+                if (candidate.skeletonKind === 'corner3') cornerInsertions++;
+                if (candidate.skeletonKind === 'edge3') edgeInsertions++;
+              }
+            }
+          }
+
+          const avg = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+          const sorted = values => [...values].sort((a, b) => a - b);
+          const percentile = (values, p) => {
+            const valuesSorted = sorted(values);
+            return valuesSorted[Math.floor((valuesSorted.length - 1) * p)];
+          };
+          const report = {
+            cases: 100,
+            threeCycleAlgorithmCount: current.built.threeCycleAlgorithmCount,
+            baselineTableBuildMs: baseline.buildMs,
+            insertionTableBuildMs: current.buildMs,
+            baselineAverageMs: avg(oldTimes),
+            insertionAverageMs: avg(newTimes),
+            runtimeRatio: avg(newTimes) / avg(oldTimes),
+            baselineMedianMs: percentile(oldTimes, 0.5),
+            insertionMedianMs: percentile(newTimes, 0.5),
+            baselineP95Ms: percentile(oldTimes, 0.95),
+            insertionP95Ms: percentile(newTimes, 0.95),
+            baselineAverageMoves: oldMoves / 100,
+            insertionAverageMoves: newMoves / 100,
+            improvedCases: improved,
+            equalCases: equal,
+            totalInsertionCandidates: totalInsertions,
+            top10InsertionCandidates: top10Insertions,
+            cornerInsertions,
+            edgeInsertions,
+          };
+          console.log(JSON.stringify(report, null, 2));
+          if (report.runtimeRatio > 1.35) throw new Error(`runtime ratio ${report.runtimeRatio}`);
+          NODE
+          node /tmp/benchmark-fmc-insertion.mjs
