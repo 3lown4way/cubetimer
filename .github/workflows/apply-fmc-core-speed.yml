@@ -1,4 +1,4 @@
-name: Apply FMC premove map optimization
+name: Apply FMC insertion hash optimization
 
 on:
   pull_request:
@@ -19,16 +19,14 @@ jobs:
           ref: agent/fmc-core-speed-v1
           fetch-depth: 0
 
-      - name: Capture current FMC output and timing
+      - name: Capture current insertion output and timing
         env:
-          FMC_SPEED_RUNS: '16'
-          FMC_SPEED_PREMOVE_SETS: '80'
-          FMC_SPEED_INSERTION_RUNS: '4'
-        run: node benchmark-fmc-speed-identity.mjs --out /tmp/fmc-baseline.json
+          FMC_INSERTION_REPEATS: '6'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/insertion-baseline.json
 
-      - name: Precompute conjugated premove maps
+      - name: Apply single-lookup insertion transform
         run: |
-          python3 tools/apply-fmc-premove-map-speed.py
+          python3 tools/apply-fmc-insertion-entry-speed.py
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo check --release --manifest-path solver-wasm/Cargo.toml
 
@@ -48,47 +46,46 @@ jobs:
           cp .wasm-pack-out/solver_wasm.d.ts ../public/solver-wasm/solver_wasm.d.ts
           cp .wasm-pack-out/solver_wasm_bg.wasm.d.ts ../public/solver-wasm/solver_wasm_bg.wasm.d.ts
 
-      - name: Capture optimized FMC output and timing
+      - name: Capture optimized insertion output and timing
         env:
-          FMC_SPEED_RUNS: '16'
-          FMC_SPEED_PREMOVE_SETS: '80'
-          FMC_SPEED_INSERTION_RUNS: '4'
-        run: node benchmark-fmc-speed-identity.mjs --out /tmp/fmc-optimized.json
+          FMC_INSERTION_REPEATS: '6'
+        run: node benchmark-fmc-insertion-speed-identity.mjs --out /tmp/insertion-optimized.json
 
-      - name: Require identical candidates and measurable gain
+      - name: Require identical insertion results and measurable gain
         run: |
           node <<'NODE'
           const fs = require('node:fs');
-          const baseline = JSON.parse(fs.readFileSync('/tmp/fmc-baseline.json', 'utf8'));
-          const optimized = JSON.parse(fs.readFileSync('/tmp/fmc-optimized.json', 'utf8'));
+          const baseline = JSON.parse(fs.readFileSync('/tmp/insertion-baseline.json', 'utf8'));
+          const optimized = JSON.parse(fs.readFileSync('/tmp/insertion-optimized.json', 'utf8'));
           if (baseline.rows.length !== optimized.rows.length) throw new Error('row count changed');
           for (let i = 0; i < baseline.rows.length; i += 1) {
-            for (const field of ['scramble', 'solution', 'moveCount']) {
+            for (const field of ['repeat', 'index', 'scramble', 'inputSolution', 'solution', 'moveCount']) {
               if (baseline.rows[i][field] !== optimized.rows[i][field]) {
-                throw new Error(`FMC output changed at row ${i}, ${field}`);
+                throw new Error(`insertion output changed at row ${i}, ${field}`);
               }
             }
-            if (JSON.stringify(baseline.rows[i].candidates) !== JSON.stringify(optimized.rows[i].candidates)) {
-              throw new Error(`FMC candidate portfolio changed at row ${i}`);
-            }
-            if (JSON.stringify(baseline.rows[i].insertion) !== JSON.stringify(optimized.rows[i].insertion)) {
-              throw new Error(`FMC insertion output changed at row ${i}`);
-            }
           }
-          const ratio = optimized.summary.averageSolveMs / baseline.summary.averageSolveMs;
-          console.log(JSON.stringify({ baseline: baseline.summary, optimized: optimized.summary, solveSpeedup: 1 / ratio }));
-          if (!(ratio < 0.995)) throw new Error(`FMC solve gain below 0.5%: ratio=${ratio}`);
+          const ratio = optimized.summary.averageMs / baseline.summary.averageMs;
+          console.log(JSON.stringify({ baseline: baseline.summary, optimized: optimized.summary, insertionSpeedup: 1 / ratio }));
+          if (!(ratio < 0.995)) throw new Error(`insertion gain below 0.5%: ratio=${ratio}`);
           NODE
+
+      - name: Verify full FMC portfolio after insertion change
+        env:
+          FMC_SPEED_RUNS: '12'
+          FMC_SPEED_PREMOVE_SETS: '80'
+          FMC_SPEED_INSERTION_RUNS: '6'
+        run: node benchmark-fmc-speed-identity.mjs --out /tmp/fmc-regression.json
 
       - name: Commit optimized source and WASM
         run: |
           rm -rf solver-wasm/.wasm-pack-out
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver-wasm/src/fmc_search.rs \
+          git add solver-wasm/src/fmc_insertion.rs \
             public/solver-wasm/solver_wasm.js \
             public/solver-wasm/solver_wasm_bg.wasm \
             public/solver-wasm/solver_wasm.d.ts \
             public/solver-wasm/solver_wasm_bg.wasm.d.ts
-          git commit -m "Precompute FMC premove axis maps"
+          git commit -m "Avoid duplicate insertion hash lookups"
           git push origin HEAD:agent/fmc-core-speed-v1
