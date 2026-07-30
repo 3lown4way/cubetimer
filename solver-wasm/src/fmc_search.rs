@@ -745,9 +745,6 @@ pub struct FmcResult {
 struct FmcP2Cache {
     solved: std::collections::HashMap<(usize, usize, usize, u64), Vec<u8>>,
     exact_failed: std::collections::HashSet<(usize, usize, usize, u8, u64)>,
-    lookups: u64,
-    hits: u64,
-    searches: u64,
 }
 
 impl FmcP2Cache {
@@ -758,11 +755,9 @@ impl FmcP2Cache {
         max_depth: u8,
         node_limit: u64,
     ) -> Option<Vec<u8>> {
-        self.lookups += 1;
         let solved_key = (input.cp_idx, input.ep_idx, input.sep_idx, node_limit);
         if let Some(moves) = self.solved.get(&solved_key) {
             if moves.len() <= max_depth as usize {
-                self.hits += 1;
                 return Some(moves.clone());
             }
         }
@@ -775,11 +770,9 @@ impl FmcP2Cache {
             node_limit,
         );
         if self.exact_failed.contains(&failed_key) {
-            self.hits += 1;
             return None;
         }
 
-        self.searches += 1;
         let result = solve_phase2(input, tables, max_depth, node_limit);
         if result.ok {
             self.solved.insert(solved_key, result.moves.clone());
@@ -1152,8 +1145,6 @@ pub fn solve_fmc(
 
     // Keep top candidates
     all_candidates.truncate(10);
-
-    let _p2_cache_stats = (p2_cache.lookups, p2_cache.hits, p2_cache.searches);
 
     FmcResult {
         ok: !all_candidates.is_empty(),
