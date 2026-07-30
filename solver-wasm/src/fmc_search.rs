@@ -1,10 +1,11 @@
 use crate::minmove_core::{
     encode_co, encode_eo, encode_perm8, encode_slice_from_ep, parse_scramble,
-    solution_string_from_path, CubeState, CO_SIZE, EDGE_COUNT, EO_SIZE, LAST_FACE_FREE,
-    MOVE_COUNT, SLICE_SIZE,
+    solution_string_from_path, CubeState, CO_SIZE, EDGE_COUNT, EO_SIZE, LAST_FACE_FREE, MOVE_COUNT,
+    SLICE_SIZE,
 };
 use crate::twophase_bundle::TwophaseTables;
-use crate::twophase_search::{solve_phase2, Phase2Input};
+use crate::twophase_search::{solve_phase2, Phase2Input, Phase2SolveResult};
+use once_cell::sync::Lazy;
 
 // --- Constants ---
 
@@ -332,13 +333,9 @@ struct DrRoute {
 fn rzp_defect_from_state(state: &CubeState) -> RzpDefect {
     let bad_c = state.co.iter().filter(|&&ori| ori != 0).count() as u8;
 
-    let bad_e_ud_positions = (0..8)
-        .filter(|&pos| state.ep[pos] >= 8)
-        .count() as u8;
+    let bad_e_ud_positions = (0..8).filter(|&pos| state.ep[pos] >= 8).count() as u8;
 
-    let bad_e_slice_positions = (8..EDGE_COUNT)
-        .filter(|&pos| state.ep[pos] < 8)
-        .count() as u8;
+    let bad_e_slice_positions = (8..EDGE_COUNT).filter(|&pos| state.ep[pos] < 8).count() as u8;
 
     RzpDefect {
         bad_c,
@@ -397,7 +394,11 @@ fn solve_dr_routes_via_rzp(
         }
     }
 
-    let slack_limit = if force_rzp { usize::MAX } else { direct_len.saturating_add(FMC_DR_SLACK) };
+    let slack_limit = if force_rzp {
+        usize::MAX
+    } else {
+        direct_len.saturating_add(FMC_DR_SLACK)
+    };
 
     fn dfs(
         state: CubeState,
@@ -483,10 +484,7 @@ fn solve_dr_routes_via_rzp(
     );
 
     routes.sort_by_key(|route| {
-        let priority = route
-            .rzp_defect
-            .and_then(rzp_priority)
-            .unwrap_or(99);
+        let priority = route.rzp_defect.and_then(rzp_priority).unwrap_or(99);
 
         (route.moves.len(), priority, route.rzp_setup_len)
     });
@@ -526,8 +524,14 @@ fn build_p2_input(state: &CubeState) -> Option<Phase2Input> {
 
     let cp_idx = encode_perm8(&state.cp);
     let ep8: [u8; 8] = [
-        state.ep[0], state.ep[1], state.ep[2], state.ep[3],
-        state.ep[4], state.ep[5], state.ep[6], state.ep[7],
+        state.ep[0],
+        state.ep[1],
+        state.ep[2],
+        state.ep[3],
+        state.ep[4],
+        state.ep[5],
+        state.ep[6],
+        state.ep[7],
     ];
     let ep_idx = encode_perm8(&ep8);
     let sep: [u8; 4] = [
@@ -640,15 +644,16 @@ fn build_premove_sets() -> Vec<Vec<u8>> {
     let mut sets: Vec<Vec<u8>> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let push_set = |moves: Vec<u8>, sets: &mut Vec<Vec<u8>>, seen: &mut std::collections::HashSet<Vec<u8>>| {
-        let simplified = simplify_moves(&moves);
-        if simplified.is_empty() || simplified.len() > 2 {
-            return;
-        }
-        if seen.insert(simplified.clone()) {
-            sets.push(simplified);
-        }
-    };
+    let push_set =
+        |moves: Vec<u8>, sets: &mut Vec<Vec<u8>>, seen: &mut std::collections::HashSet<Vec<u8>>| {
+            let simplified = simplify_moves(&moves);
+            if simplified.is_empty() || simplified.len() > 2 {
+                return;
+            }
+            if seen.insert(simplified.clone()) {
+                sets.push(simplified);
+            }
+        };
 
     // Single-face premoves (18)
     for face in 0..6u8 {
@@ -660,9 +665,24 @@ fn build_premove_sets() -> Vec<Vec<u8>> {
     // Double-face premoves: various face pairs
     // Matching the JS FMC_PREMOVE_PAIR_FACES order
     let pair_faces: [(u8, u8); 18] = [
-        (0, 1), (1, 0), (0, 2), (2, 0), (1, 2), (2, 1), // U-R, R-U, U-F, F-U, R-F, F-R
-        (3, 4), (4, 3), (3, 5), (5, 3), (4, 5), (5, 4), // D-L, L-D, D-B, B-D, L-B, B-L
-        (0, 3), (3, 0), (1, 4), (4, 1), (2, 5), (5, 2), // U-D, D-U, R-L, L-R, F-B, B-F
+        (0, 1),
+        (1, 0),
+        (0, 2),
+        (2, 0),
+        (1, 2),
+        (2, 1), // U-R, R-U, U-F, F-U, R-F, F-R
+        (3, 4),
+        (4, 3),
+        (3, 5),
+        (5, 3),
+        (4, 5),
+        (5, 4), // D-L, L-D, D-B, B-D, L-B, B-L
+        (0, 3),
+        (3, 0),
+        (1, 4),
+        (4, 1),
+        (2, 5),
+        (5, 2), // U-D, D-U, R-L, L-R, F-B, B-F
     ];
 
     for &(fa, fb) in &pair_faces {
@@ -675,6 +695,10 @@ fn build_premove_sets() -> Vec<Vec<u8>> {
 
     sets
 }
+
+static FMC_PREMOVE_SETS: Lazy<Vec<Vec<u8>>> = Lazy::new(build_premove_sets);
+type FmcPhase2CacheKey = (usize, usize, usize, u8, u64);
+type FmcPhase2Cache = std::collections::HashMap<FmcPhase2CacheKey, Phase2SolveResult>;
 
 // --- Result Types ---
 
@@ -717,6 +741,7 @@ fn solve_fmc_single_axis(
     p2_node_limit: u64,
     current_best: &mut usize,
     force_rzp: bool,
+    phase2_cache: &mut FmcPhase2Cache,
 ) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, bool)> {
     let mut results = Vec::new();
 
@@ -766,7 +791,20 @@ fn solve_fmc_single_axis(
             };
 
             let p2_cap = (*current_best - partial_len).min(max_p2_depth as usize) as u8;
-            let p2_result = solve_phase2(&p2_input, tables, p2_cap, p2_node_limit);
+            let cache_key = (
+                p2_input.cp_idx,
+                p2_input.ep_idx,
+                p2_input.sep_idx,
+                p2_cap,
+                p2_node_limit,
+            );
+            let p2_result = if let Some(cached) = phase2_cache.get(&cache_key) {
+                cached.clone()
+            } else {
+                let result = solve_phase2(&p2_input, tables, p2_cap, p2_node_limit);
+                phase2_cache.insert(cache_key, result.clone());
+                result
+            };
             if !p2_result.ok {
                 continue;
             }
@@ -823,19 +861,32 @@ pub fn solve_fmc(
         }
     };
 
+    let inv_scramble_moves = invert_moves(&scramble_moves);
+    let direct_axis_states: [CubeState; 3] = std::array::from_fn(|axis| {
+        let conjugated: Vec<u8> = scramble_moves
+            .iter()
+            .map(|&m| fmc_tables.axis_scramble_move_map[axis][m as usize])
+            .collect();
+        CubeState::solved().apply_moves(&conjugated, &tables.move_data)
+    });
+    let inverse_axis_states: [CubeState; 3] = std::array::from_fn(|axis| {
+        let conjugated: Vec<u8> = inv_scramble_moves
+            .iter()
+            .map(|&m| fmc_tables.axis_scramble_move_map[axis][m as usize])
+            .collect();
+        CubeState::solved().apply_moves(&conjugated, &tables.move_data)
+    });
+
     let mut all_candidates: Vec<FmcCandidate> = Vec::new();
     let mut best_count = 40usize;
+    let mut phase2_cache = FmcPhase2Cache::new();
 
     // --- Phase 1: Direct solve across 3 axes ---
     for axis in 0..3u8 {
-        let conjugated: Vec<u8> = scramble_moves
-            .iter()
-            .map(|&m| fmc_tables.axis_scramble_move_map[axis as usize][m as usize])
-            .collect();
-        let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+        let state = &direct_axis_states[axis as usize];
 
         let results = solve_fmc_single_axis(
-            &state,
+            state,
             tables,
             fmc_tables,
             FMC_MAX_EO_DEPTH,
@@ -845,11 +896,14 @@ pub fn solve_fmc(
             FMC_P2_NODE_LIMIT,
             &mut best_count,
             force_rzp,
+            &mut phase2_cache,
         );
 
         for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used) in results {
             let cvt = |v: &Vec<u8>| -> Vec<u8> {
-                v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
+                v.iter()
+                    .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
+                    .collect()
             };
             let original: Vec<u8> = cvt(&moves_in_axis_frame);
             let simplified = simplify_moves(&original);
@@ -873,16 +927,11 @@ pub fn solve_fmc(
     }
 
     // --- Phase 2: NISS (inverse scramble) across 3 axes ---
-    let inv_scramble_moves = invert_moves(&scramble_moves);
     for axis in 0..3u8 {
-        let conjugated: Vec<u8> = inv_scramble_moves
-            .iter()
-            .map(|&m| fmc_tables.axis_scramble_move_map[axis as usize][m as usize])
-            .collect();
-        let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+        let state = &inverse_axis_states[axis as usize];
 
         let results = solve_fmc_single_axis(
-            &state,
+            state,
             tables,
             fmc_tables,
             FMC_MAX_EO_DEPTH,
@@ -892,11 +941,14 @@ pub fn solve_fmc(
             FMC_P2_NODE_LIMIT,
             &mut best_count,
             force_rzp,
+            &mut phase2_cache,
         );
 
         for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used) in results {
             let cvt = |v: &Vec<u8>| -> Vec<u8> {
-                v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
+                v.iter()
+                    .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
+                    .collect()
             };
             let original: Vec<u8> = cvt(&moves_in_axis_frame);
             // NISS: invert the solution
@@ -923,23 +975,23 @@ pub fn solve_fmc(
     }
 
     // --- Phase 3: Premove sweep ---
-    let premove_sets = build_premove_sets();
+    let premove_sets = &*FMC_PREMOVE_SETS;
     let pm_limit = max_premove_sets.min(premove_sets.len());
 
     for pm_idx in 0..pm_limit {
         let pm_set = &premove_sets[pm_idx];
+        let axis_premoves: [Vec<u8>; 3] = std::array::from_fn(|axis| {
+            pm_set
+                .iter()
+                .map(|&m| fmc_tables.axis_scramble_move_map[axis][m as usize])
+                .collect()
+        });
 
-        // Direct with premoves: effective = scramble + premoves
+        // Direct with premoves: apply only the 1-2 premoves to the cached axis state.
         {
-            let mut effective = scramble_moves.clone();
-            effective.extend_from_slice(pm_set);
-
             for axis in 0..3u8 {
-                let conjugated: Vec<u8> = effective
-                    .iter()
-                    .map(|&m| fmc_tables.axis_scramble_move_map[axis as usize][m as usize])
-                    .collect();
-                let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+                let state = direct_axis_states[axis as usize]
+                    .apply_moves(&axis_premoves[axis as usize], &tables.move_data);
 
                 // Use a tighter budget check: skip if premove_len + best possible pipeline >= best
                 let pm_len = pm_set.len();
@@ -955,11 +1007,14 @@ pub fn solve_fmc(
                     FMC_PM_P2_NODE_LIMIT,
                     &mut best_count,
                     force_rzp,
+                    &mut phase2_cache,
                 );
 
                 for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used) in results {
                     let cvt = |v: &Vec<u8>| -> Vec<u8> {
-                        v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
+                        v.iter()
+                            .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
+                            .collect()
                     };
                     let original: Vec<u8> = cvt(&moves_in_axis);
                     // Direct premove: solution = premoves + pipeline_solution
@@ -986,17 +1041,11 @@ pub fn solve_fmc(
             }
         }
 
-        // NISS with premoves: effective = inv_scramble + premoves
+        // NISS with premoves: apply only the 1-2 premoves to the cached inverse-axis state.
         {
-            let mut inv_effective = inv_scramble_moves.clone();
-            inv_effective.extend_from_slice(pm_set);
-
             for axis in 0..3u8 {
-                let conjugated: Vec<u8> = inv_effective
-                    .iter()
-                    .map(|&m| fmc_tables.axis_scramble_move_map[axis as usize][m as usize])
-                    .collect();
-                let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+                let state = inverse_axis_states[axis as usize]
+                    .apply_moves(&axis_premoves[axis as usize], &tables.move_data);
 
                 let results = solve_fmc_single_axis(
                     &state,
@@ -1009,11 +1058,14 @@ pub fn solve_fmc(
                     FMC_PM_P2_NODE_LIMIT,
                     &mut best_count,
                     force_rzp,
+                    &mut phase2_cache,
                 );
 
                 for (moves_in_axis, eo_raw, dr_raw, p2_raw, rzp_used) in results {
                     let cvt = |v: &Vec<u8>| -> Vec<u8> {
-                        v.iter().map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize]).collect()
+                        v.iter()
+                            .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
+                            .collect()
                     };
                     let original: Vec<u8> = cvt(&moves_in_axis);
                     // NISS premove: solution = inv(pipeline) + inv(premoves)
@@ -1059,10 +1111,7 @@ pub fn solve_fmc(
 }
 
 /// Convert FmcCandidate to a JSON-friendly representation.
-pub fn candidate_to_json(
-    candidate: &FmcCandidate,
-    tables: &TwophaseTables,
-) -> serde_json::Value {
+pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> serde_json::Value {
     let solution = solution_string_from_path(&candidate.moves, &tables.move_data);
     let premove_str = if candidate.premove_moves.is_empty() {
         String::new()
@@ -1073,19 +1122,25 @@ pub fn candidate_to_json(
         0 => format!("FMC_EO_{}", AXIS_NAMES[candidate.axis as usize]),
         1 => format!("FMC_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
         2 => format!("FMC_PREMOVE_{}", AXIS_NAMES[candidate.axis as usize]),
-        3 => format!(
-            "FMC_PREMOVE_NISS_{}",
-            AXIS_NAMES[candidate.axis as usize]
-        ),
+        3 => format!("FMC_PREMOVE_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
         _ => "FMC_UNKNOWN".into(),
     };
 
-    let eo_moves_str: Vec<&str> = candidate.eo_moves.iter()
-        .map(|&m| tables.move_data.move_names[m as usize].as_str()).collect();
-    let dr_moves_str: Vec<&str> = candidate.dr_moves.iter()
-        .map(|&m| tables.move_data.move_names[m as usize].as_str()).collect();
-    let finish_moves_str: Vec<&str> = candidate.finish_moves.iter()
-        .map(|&m| tables.move_data.move_names[m as usize].as_str()).collect();
+    let eo_moves_str: Vec<&str> = candidate
+        .eo_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let dr_moves_str: Vec<&str> = candidate
+        .dr_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let finish_moves_str: Vec<&str> = candidate
+        .finish_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
 
     serde_json::json!({
         "ok": true,
