@@ -1989,6 +1989,7 @@ pub fn solve_fmc(
     fmc_tables: &FmcTables,
     max_premove_sets: usize,
     force_rzp: bool,
+    enable_multi_insertion: bool,
 ) -> FmcResult {
     // Parse scramble
     let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
@@ -2325,9 +2326,13 @@ pub fn solve_fmc(
 
     let relocation_skeletons = synthesize_relocation_skeletons(&all_candidates, tables, fmc_tables);
     all_skeletons.extend(relocation_skeletons);
-    let multi_relocation_skeletons =
-        synthesize_multi_relocation_skeletons(&all_candidates, fmc_tables);
-    all_skeletons.extend(multi_relocation_skeletons);
+    if enable_multi_insertion {
+        let multi_relocation_skeletons =
+            synthesize_multi_relocation_skeletons(&all_candidates, fmc_tables);
+        all_skeletons.extend(multi_relocation_skeletons);
+    } else {
+        all_skeletons.retain(|skeleton| skeleton.kind.is_single_insertion());
+    }
     let skeletons = finalize_skeleton_beam(all_skeletons);
 
     let inserted_candidates =
@@ -2338,12 +2343,11 @@ pub fn solve_fmc(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    let mut multi_inserted_candidates = optimize_multi_skeleton_insertions(
-        &original_scramble_state,
-        &skeletons,
-        tables,
-        fmc_tables,
-    );
+    let mut multi_inserted_candidates = if enable_multi_insertion {
+        optimize_multi_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables)
+    } else {
+        Vec::new()
+    };
     multi_inserted_candidates.retain(|candidate| candidate.moves.len() <= single_best);
 
     let mixed_insertion_candidate_count = inserted_candidates

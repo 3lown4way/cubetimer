@@ -610,6 +610,8 @@ struct FmcOptionsJson {
     max_premove_sets: usize,
     #[serde(rename = "forceRzp", default)]
     force_rzp: bool,
+    #[serde(rename = "enableMultiInsertion", default)]
+    enable_multi_insertion: bool,
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -641,6 +643,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         fmc_tables,
         options.max_premove_sets,
         options.force_rzp,
+        options.enable_multi_insertion,
     );
 
     if !result.ok {
