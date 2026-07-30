@@ -84,6 +84,78 @@ jobs:
           path.write_text(text)
           PY
 
+      - name: Add bounded HTR entry search
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('solver-wasm/src/fmc_search.rs')
+          text = path.read_text()
+          replacement = r'''fn find_htr_tail_from_p2(
+              state_after_dr: &CubeState,
+              p2_moves: &[u8],
+              tables: &TwophaseTables,
+              fmc_tables: &FmcTables,
+          ) -> Option<Vec<u8>> {
+              const ENTRY_DEPTH: usize = 3;
+              let mut queue = std::collections::VecDeque::<(CubeState, Vec<u8>, u8)>::new();
+              let mut seen = std::collections::HashMap::<FmcStateKey, usize>::new();
+              queue.push_back((*state_after_dr, Vec::new(), LAST_FACE_FREE));
+              seen.insert(fmc_state_key(state_after_dr), 0);
+              let mut best: Option<Vec<u8>> = None;
+
+              while let Some((state, prefix, last_face)) = queue.pop_front() {
+                  if let Some(finish) = htr_finish_moves(&state, tables, fmc_tables) {
+                      let mut tail = prefix.clone();
+                      tail.extend_from_slice(&finish);
+                      let tail = simplify_moves(&tail);
+                      if tail != p2_moves && tail.len() <= p2_moves.len() + FMC_HTR_TAIL_SLACK {
+                          let replace = best.as_ref().is_none_or(|current| {
+                              (tail.len(), tail.clone()) < (current.len(), current.clone())
+                          });
+                          if replace {
+                              best = Some(tail);
+                          }
+                      }
+                  }
+
+                  if prefix.len() >= ENTRY_DEPTH {
+                      continue;
+                  }
+                  for &move_index in &tables.phase2_move_indices {
+                      let face = tables.move_data.move_face[move_index as usize];
+                      if last_face < LAST_FACE_FREE && face == last_face {
+                          continue;
+                      }
+                      if last_face < LAST_FACE_FREE
+                          && face == OPPOSITE_FACE[last_face as usize]
+                          && face < last_face
+                      {
+                          continue;
+                      }
+                      let next = state.apply_move(move_index as usize, &tables.move_data);
+                      let next_depth = prefix.len() + 1;
+                      let key = fmc_state_key(&next);
+                      if seen.get(&key).is_some_and(|&depth| depth <= next_depth) {
+                          continue;
+                      }
+                      seen.insert(key, next_depth);
+                      let mut next_prefix = prefix.clone();
+                      next_prefix.push(move_index);
+                      queue.push_back((next, next_prefix, face));
+                  }
+              }
+              best
+          }
+
+          // --- Result Types ---'''
+          pattern = r'fn find_htr_tail_from_p2\([\s\S]*?\n}\n\n// --- Result Types ---'
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one HTR tail function replacement, found {count}')
+          path.write_text(text)
+          PY
+
       - name: Format Rust
         run: cargo fmt --manifest-path solver-wasm/Cargo.toml
 
