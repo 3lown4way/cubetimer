@@ -1,12 +1,11 @@
 use crate::minmove_core::{
     apply_move_to_edge_perm_subset_state, apply_move_to_edge_subset_state, choose, decode_co,
     decode_edge_perm_subset_state, decode_edge_subset_state, decode_eo, decode_perm8,
-    decode_slice_index, encode_co, encode_edge_perm_subset_state, encode_edge_subset_state,
-    encode_eo, encode_perm8, edge_subset_state_from_full,
-    EdgePermSubsetState, EdgeSubsetState, MoveData, CO_SIZE, CORNER_COUNT, CORNER_FULL_SIZE,
-    CP_SIZE, EDGE_COUNT, EDGE_PERM_SUBSET_A, EDGE_PERM_SUBSET_B, EDGE_PERM_SUBSET_SIZE,
-    EDGE_SUBSET_A, EDGE_SUBSET_B, EDGE_SUBSET_C, EDGE_SUBSET_D, EDGE_SUBSET_SIZE, EO_SIZE,
-    MOVE_COUNT, SLICE_SIZE,
+    decode_slice_index, edge_subset_state_from_full, encode_co, encode_edge_perm_subset_state,
+    encode_edge_subset_state, encode_eo, encode_perm8, EdgePermSubsetState, EdgeSubsetState,
+    MoveData, CORNER_COUNT, CORNER_FULL_SIZE, CO_SIZE, CP_SIZE, EDGE_COUNT, EDGE_PERM_SUBSET_A,
+    EDGE_PERM_SUBSET_B, EDGE_PERM_SUBSET_SIZE, EDGE_SUBSET_A, EDGE_SUBSET_B, EDGE_SUBSET_C,
+    EDGE_SUBSET_D, EDGE_SUBSET_SIZE, EO_SIZE, MOVE_COUNT, SLICE_SIZE,
 };
 
 const NOT_SET: u8 = 255;
@@ -77,7 +76,8 @@ fn build_co_move_table(move_data: &MoveData) -> Vec<u16> {
             let move_base = move_index * CORNER_COUNT;
             for position in 0..CORNER_COUNT {
                 let old_pos = move_data.corner_perm_map[move_base + position] as usize;
-                next[position] = (state[old_pos] + move_data.corner_ori_delta[move_base + position]) % 3;
+                next[position] =
+                    (state[old_pos] + move_data.corner_ori_delta[move_base + position]) % 3;
             }
             table[base + move_index] = encode_co(&next) as u16;
         }
@@ -96,7 +96,8 @@ fn build_eo_move_table(move_data: &MoveData) -> Vec<u16> {
             let move_base = move_index * EDGE_COUNT;
             for position in 0..EDGE_COUNT {
                 let old_pos = move_data.edge_perm_map[move_base + position] as usize;
-                next[position] = (state[old_pos] + move_data.edge_ori_delta[move_base + position]) & 1;
+                next[position] =
+                    (state[old_pos] + move_data.edge_ori_delta[move_base + position]) & 1;
             }
             table[base + move_index] = encode_eo(&next) as u16;
         }
@@ -287,7 +288,11 @@ pub fn build_co_slice_joint_dist(
 
 /// BFS over the joint (CP, Slice) coordinate space.
 /// Index: cp_idx * SLICE_SIZE + slice_idx. Solved state = 0 * SLICE_SIZE + solved_slice_idx.
-pub fn build_cp_slice_joint_dist(cp_move: &[u16], slice_move: &[u16], solved_slice_idx: usize) -> Vec<u8> {
+pub fn build_cp_slice_joint_dist(
+    cp_move: &[u16],
+    slice_move: &[u16],
+    solved_slice_idx: usize,
+) -> Vec<u8> {
     let size = CP_SIZE * SLICE_SIZE;
     let mut dist = vec![NOT_SET; size];
     let mut queue = Vec::with_capacity(size);
