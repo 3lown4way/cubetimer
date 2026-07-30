@@ -1530,17 +1530,27 @@ const api = {
           return fmcResult || { ok: false, reason: "FMC_FAILED" };
         }
         if (mode === "roux") {
-          const [{ getDefaultPattern }, { solve3x3RouxFromPattern }] = await Promise.all([
+          const useRouxV2 = solverVersion === "v2";
+          const [{ getDefaultPattern }, rouxModule] = await Promise.all([
             import("./context.js"),
-            import("./roux3x3.js"),
+            useRouxV2 ? import("./roux3x3v2.js") : import("./roux3x3.js"),
           ]);
           const solved = await getDefaultPattern("333");
           const pattern = solved.applyAlg(scramble);
           const hardDeadlineTs = Date.now() + Math.max(1000, ROUX_333_TIMEOUT_MS - 250);
+          const solveRoux = useRouxV2
+            ? rouxModule.solve3x3RouxV2FromPattern
+            : rouxModule.solve3x3RouxFromPattern;
           const rouxResult = await withTimeout(
             (async () => {
+              if (useRouxV2) {
+                return solveRoux(pattern, {
+                  crossColor,
+                  deadlineTs: hardDeadlineTs,
+                });
+              }
               const fastDeadlineTs = Math.min(hardDeadlineTs, Date.now() + 5000);
-              const fastResult = await solve3x3RouxFromPattern(pattern, {
+              const fastResult = await solveRoux(pattern, {
                 crossColor,
                 deadlineTs: fastDeadlineTs,
                 enableRecovery: true,
@@ -1552,10 +1562,8 @@ const api = {
                   }
                 },
               });
-              if (fastResult?.ok) {
-                return fastResult;
-              }
-              return await solve3x3RouxFromPattern(pattern, {
+              if (fastResult?.ok) return fastResult;
+              return solveRoux(pattern, {
                 crossColor,
                 deadlineTs: hardDeadlineTs,
                 enableRecovery: true,
@@ -1569,12 +1577,12 @@ const api = {
               });
             })(),
             ROUX_333_TIMEOUT_MS,
-          ).catch(() => ({ ok: false, reason: "ROUX_TIMEOUT", stage: "ROUX" }));
-          if (rouxResult?.ok) {
-            return rouxResult;
-          }
-          
-          // No CFOP fallback - return Roux failure directly
+          ).catch(() => ({
+            ok: false,
+            reason: "ROUX_TIMEOUT",
+            stage: "ROUX",
+            solverVersion: useRouxV2 ? "v2" : "v1",
+          }));
           return rouxResult;
         }
         if (typeof onProgress === "function") {
