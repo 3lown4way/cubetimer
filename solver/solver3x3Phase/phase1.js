@@ -8,7 +8,9 @@ const MOVE_COUNT = 18;
 const NOT_SET = 255;
 const OPPOSITE_FACE = [3, 4, 5, 0, 1, 2];
 const SLICE_EDGE_IDS = new Set([8, 9, 10, 11]);
-const FAIL_CACHE_LIMIT = 220000;
+const FAIL_TT_SET_COUNT = 1 << 17;
+const FAIL_TT_SET_MASK = FAIL_TT_SET_COUNT - 1;
+const FAIL_TT_ENTRY_COUNT = FAIL_TT_SET_COUNT << 1;
 
 // DR reverse frontier constants
 // CO*SLICE state key: co * SLICE_SIZE + sl
@@ -69,8 +71,95 @@ let drReverseComplete = false;
 // avoiding repeated allocation and GC during consecutive solves.
 const phase1SearchScratch = {
   path: [],
-  failCache: new Map(),
+  failTable: null,
 };
+
+// Fixed-capacity 2-way transposition table. Coordinates are stored separately,
+// so collisions can only evict entries; they can never cause an invalid prune.
+function createPhase1FailTable() {
+  return {
+    co: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    eo: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    sl: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    face: new Uint8Array(FAIL_TT_ENTRY_COUNT),
+    masks: new Uint32Array(FAIL_TT_ENTRY_COUNT),
+    epochs: new Uint16Array(FAIL_TT_ENTRY_COUNT),
+    replacement: new Uint8Array(FAIL_TT_SET_COUNT),
+    epoch: 0,
+  };
+}
+
+function beginPhase1FailTable(table) {
+  let epoch = (table.epoch + 1) & 0xffff;
+  if (epoch === 0) {
+    table.epochs.fill(0);
+    epoch = 1;
+  }
+  table.epoch = epoch;
+}
+
+function phase1FailSet(co, eo, sl, lastFace) {
+  let hash = Math.imul(co + 1, 0x9e3779b1);
+  hash ^= Math.imul(eo + 1, 0x85ebca6b);
+  hash ^= Math.imul(sl + 1, 0xc2b2ae35);
+  hash ^= Math.imul(lastFace + 1, 0x27d4eb2d);
+  hash ^= hash >>> 16;
+  return hash & FAIL_TT_SET_MASK;
+}
+
+function getPhase1FailMask(table, co, eo, sl, lastFace) {
+  const base = phase1FailSet(co, eo, sl, lastFace) << 1;
+  const epoch = table.epoch;
+  if (
+    table.epochs[base] === epoch &&
+    table.co[base] === co && table.eo[base] === eo &&
+    table.sl[base] === sl && table.face[base] === lastFace
+  ) return table.masks[base];
+  const second = base + 1;
+  if (
+    table.epochs[second] === epoch &&
+    table.co[second] === co && table.eo[second] === eo &&
+    table.sl[second] === sl && table.face[second] === lastFace
+  ) return table.masks[second];
+  return 0;
+}
+
+function storePhase1FailBit(table, co, eo, sl, lastFace, bit) {
+  const set = phase1FailSet(co, eo, sl, lastFace);
+  const base = set << 1;
+  const second = base + 1;
+  const epoch = table.epoch;
+  let slot = -1;
+  if (
+    table.epochs[base] === epoch &&
+    table.co[base] === co && table.eo[base] === eo &&
+    table.sl[base] === sl && table.face[base] === lastFace
+  ) slot = base;
+  else if (
+    table.epochs[second] === epoch &&
+    table.co[second] === co && table.eo[second] === eo &&
+    table.sl[second] === sl && table.face[second] === lastFace
+  ) slot = second;
+  else if (table.epochs[base] !== epoch) slot = base;
+  else if (table.epochs[second] !== epoch) slot = second;
+  else {
+    slot = base + (table.replacement[set] & 1);
+    table.replacement[set] ^= 1;
+  }
+
+  if (table.epochs[slot] === epoch &&
+      table.co[slot] === co && table.eo[slot] === eo &&
+      table.sl[slot] === sl && table.face[slot] === lastFace) {
+    table.masks[slot] |= bit;
+    return;
+  }
+  table.co[slot] = co;
+  table.eo[slot] = eo;
+  table.sl[slot] = sl;
+  table.face[slot] = lastFace;
+  table.masks[slot] = bit;
+  table.epochs[slot] = epoch;
+}
 
 const combMemo = new Map();
 function comb(n, k) {
@@ -370,10 +459,10 @@ export async function solvePhase1(input) {
     ? Math.max(128, Math.floor(timeCheckInterval))
     : 1024;
   let checkCounter = 0;
-  // Fail cache persists across IDA* iterations: "from (state, lastFace) with N remaining moves, no solution exists"
-  // This is valid across bound increases because the state space doesn't change.
-  const failCache = phase1SearchScratch.failCache;
-  failCache.clear();
+  // The table persists across IDA* bounds. Epoch reset is O(1) per solve.
+  const failTable = phase1SearchScratch.failTable ||
+    (phase1SearchScratch.failTable = createPhase1FailTable());
+  beginPhase1FailTable(failTable);
 
   function shouldStopSearch() {
     if (nodeLimit > 0 && nodes >= nodeLimit) {
@@ -398,10 +487,8 @@ export async function solvePhase1(input) {
     if (f > currentBound) return f;
     if (co === 0 && eo === 0 && sl === solvedSliceIdx) return true;
     const remaining = currentBound - depth;
-    const cacheKey = ((((co * EO_SIZE + eo) * SLICE_SIZE + sl) * 7) + lastFace);
-    const seenMask = failCache.get(cacheKey) || 0;
     const bit = 1 << Math.min(remaining, 30);
-    if (seenMask & bit) return Infinity;
+    if (getPhase1FailMask(failTable, co, eo, sl, lastFace) & bit) return Infinity;
 
     let minNext = Infinity;
     const moves = allowedMovesByLastFace[lastFace];
@@ -427,8 +514,7 @@ export async function solvePhase1(input) {
       }
       if (res < minNext) minNext = res;
     }
-    if (failCache.size > FAIL_CACHE_LIMIT) failCache.clear();
-    failCache.set(cacheKey, seenMask | bit);
+    storePhase1FailBit(failTable, co, eo, sl, lastFace, bit);
     return minNext;
   }
 
