@@ -230,8 +230,22 @@ replace_exact_count(
             &mut phase2_cache,
         );
 """,
-    4,
-    "pass Phase-2 cache",
+    2,
+    "pass Phase-2 cache to direct/NISS",
+)
+
+replace_exact_count(
+    """                    &mut best_count,
+                    force_rzp,
+                );
+""",
+    """                    &mut best_count,
+                    force_rzp,
+                    &mut phase2_cache,
+                );
+""",
+    2,
+    "pass Phase-2 cache to premove paths",
 )
 
 path.write_text(text, encoding="utf-8")
