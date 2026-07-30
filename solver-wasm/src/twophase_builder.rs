@@ -1,6 +1,6 @@
 use crate::minmove_core::{
     choose, decode_co, decode_eo, decode_perm8, decode_slice_index, encode_co, encode_eo,
-    encode_perm8, MoveData, CORNER_COUNT, CO_SIZE, CP_SIZE, EDGE_COUNT, EO_SIZE, MOVE_COUNT,
+    encode_perm8, MoveData, CO_SIZE, CORNER_COUNT, CP_SIZE, EDGE_COUNT, EO_SIZE, MOVE_COUNT,
     SLICE_SIZE,
 };
 
@@ -8,8 +8,7 @@ const NOT_SET: u8 = 255;
 const EP_SIZE: usize = 40320;
 const SEP_SIZE: usize = 24;
 const PHASE2_MOVE_COUNT: usize = 10;
-const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] =
-    ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
+const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] = ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
 const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];
 
 #[derive(Clone, Debug)]
@@ -61,11 +60,7 @@ fn bfs_from_move_table_u16(
 fn resolve_phase2_move_indices(move_data: &MoveData) -> Result<[usize; PHASE2_MOVE_COUNT], String> {
     let mut indices = [0usize; PHASE2_MOVE_COUNT];
     for (slot, name) in PHASE2_MOVE_NAMES.iter().enumerate() {
-        let Some(index) = move_data
-            .move_names
-            .iter()
-            .position(|candidate| candidate == name)
-        else {
+        let Some(index) = move_data.move_names.iter().position(|candidate| candidate == name) else {
             return Err(format!("PHASE2_MOVE_INDEX_NOT_FOUND:{name}"));
         };
         indices[slot] = index;
