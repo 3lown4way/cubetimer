@@ -1,3 +1,4 @@
+// Verifies the exact startup-resident paths used by the solver worker.
 import { getDefaultPattern } from "../solver/context.js";
 import {
   prewarm3x3StrictCfopLibraries,
