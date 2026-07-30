@@ -31,6 +31,8 @@ jobs:
           node --check benchmark-twophase-frontiers.mjs
           node --check benchmark-solver-versions.mjs
           node --check benchmark-roux-v2-1000.mjs
+          node --check benchmark-fmc-speed-identity.mjs
+          node --check benchmark-fmc-insertion-speed-identity.mjs
 
       - name: Static routing assertions
         run: |
@@ -43,6 +45,9 @@ jobs:
           grep -q 'globalThis.indexedDB' solver/rouxExactTableCacheV2.js
           grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
           grep -q 'solverVersion === "v2"' solver/cfop3x3.js
+
+      - name: Check Rust solver source
+        run: cargo check --release --manifest-path solver-wasm/Cargo.toml
 
       - name: Verify generated ZBLL index
         run: node tools/generate-zbll-case-index.mjs --check
@@ -67,3 +72,16 @@ jobs:
 
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
+
+      - name: Verify human-style FMC core
+        env:
+          FMC_SPEED_RUNS: '4'
+          FMC_SPEED_PREMOVES: '40'
+        run: node benchmark-fmc-speed-identity.mjs
+
+      - name: Verify human-style FMC insertion
+        env:
+          FMC_INSERTION_RUNS: '3'
+          FMC_INSERTION_CANDIDATES: '2'
+          FMC_INSERTION_PREMOVES: '40'
+        run: node benchmark-fmc-insertion-speed-identity.mjs
