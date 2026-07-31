@@ -8,6 +8,7 @@ import {
 
 const RUNS = Math.max(1, Number.parseInt(process.env.FMC_SLICE_RUNS || "100", 10));
 const PREMOVE_SETS = Math.max(0, Number.parseInt(process.env.FMC_SLICE_PREMOVE_SETS || "120", 10));
+const EO_FALLBACK_SCRAMBLE = "B' D F2 R2 F R' F2 L U' B2 D' R' F2 D' F' D B R' U L B2";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -21,8 +22,7 @@ function assertOrbitEqual(actual, expected, orbitName, label) {
   assert(JSON.stringify(a.orientation) === JSON.stringify(e.orientation), `${label}:${orbitName}_ORIENTATION`);
 }
 
-// Independent semantic validation against the vendored cubing kpuzzle.
-// Repository edge order is UF, UR, UB, UL, DF, DR, DB, DL, FR, FL, BR, BL.
+// Independent slice semantics against the vendored cubing kpuzzle.
 const solvedPattern = await getDefaultPattern("333");
 const sliceCases = [
   { slice: "E2", outer: "U2 D2", rotation: "y2", swaps: [[8, 11], [9, 10]] },
@@ -40,13 +40,11 @@ for (const testCase of sliceCases) {
     JSON.stringify(sliced.patternData.EDGES.pieces) === JSON.stringify(expectedEdges),
     `${testCase.slice}:EDGE_SWAP_MISMATCH:${JSON.stringify(sliced.patternData.EDGES.pieces)}`,
   );
+  assert(sliced.patternData.EDGES.orientation.every((value) => value === 0), `${testCase.slice}:EDGE_ORIENTATION`);
   assert(
-    sliced.patternData.EDGES.orientation.every((value) => value === 0),
-    `${testCase.slice}:EDGE_ORIENTATION`,
+    sliced.applyAlg(testCase.outer).isIdentical(solvedPattern.applyAlg(testCase.rotation)),
+    `${testCase.slice}:ROTATION_EQUIVALENCE`,
   );
-  const completed = sliced.applyAlg(testCase.outer);
-  const rotation = solvedPattern.applyAlg(testCase.rotation);
-  assert(completed.isIdentical(rotation), `${testCase.slice}:ROTATION_EQUIVALENCE`);
 }
 
 let rngState = 0x7a11ce42;
@@ -84,13 +82,30 @@ const readyStartedAt = performance.now();
 if (!(await buildFmcTablesWasm())) throw new Error("FMC_TABLE_BUILD_FAILED");
 const tableBuildMs = performance.now() - readyStartedAt;
 
+// The known depth-5 coverage hole must now be solved by the human EO6 retry,
+// without invoking the generic two-phase coverage fallback.
+const targeted = await solveFmcWasm(EO_FALLBACK_SCRAMBLE, {
+  maxPremoveSets: PREMOVE_SETS,
+  forceRzp: false,
+  enableMultiInsertion: false,
+  enableHtrSkeletons: false,
+  enableSliceInsertion: false,
+  enableCoverageFallback: false,
+});
+assert(targeted?.ok, "EO_FALLBACK_TARGET_NOT_SOLVED");
+assert(targeted.eoFallbackUsed === true, "EO_FALLBACK_TARGET_NOT_TAGGED");
+assert(targeted.fallbackUsed !== true, "EO_FALLBACK_TARGET_USED_TWOPHASE");
+const targetedVerification = await verifyFmcSolutionWasm(EO_FALLBACK_SCRAMBLE, targeted.solution);
+assert(targetedVerification?.ok && targetedVerification.solved === true, "EO_FALLBACK_TARGET_INVALID");
+
 const scrambles = Array.from({ length: RUNS }, () => deterministicScramble());
 const disabledTimes = [];
 const enabledTimes = [];
 let disabledSolved = 0;
 let enabledSolved = 0;
 let comparedHumanCases = 0;
-let fallbackCases = 0;
+let coverageFallbackCases = 0;
+let eoFallbackCases = 0;
 let improved = 0;
 let regressed = 0;
 let sliceCandidateCases = 0;
@@ -109,22 +124,14 @@ for (let index = 0; index < scrambles.length; index += 1) {
   };
 
   let startedAt = performance.now();
-  const disabled = await solveFmcWasm(scramble, {
-    ...common,
-    enableSliceInsertion: false,
-  });
+  const disabled = await solveFmcWasm(scramble, { ...common, enableSliceInsertion: false });
   disabledTimes.push(performance.now() - startedAt);
 
   startedAt = performance.now();
-  const enabled = await solveFmcWasm(scramble, {
-    ...common,
-    enableSliceInsertion: true,
-  });
+  const enabled = await solveFmcWasm(scramble, { ...common, enableSliceInsertion: true });
   enabledTimes.push(performance.now() - startedAt);
 
-  if (!disabled?.ok || !enabled?.ok) {
-    throw new Error(`FMC_SLICE_SOLVE_FAILED:${index}:${scramble}`);
-  }
+  if (!disabled?.ok || !enabled?.ok) throw new Error(`FMC_SLICE_SOLVE_FAILED:${index}:${scramble}`);
   disabledSolved += 1;
   enabledSolved += 1;
 
@@ -136,9 +143,10 @@ for (let index = 0; index < scrambles.length; index += 1) {
   }
 
   if (disabled.fallbackUsed || enabled.fallbackUsed) {
-    fallbackCases += 1;
+    coverageFallbackCases += 1;
   } else {
     comparedHumanCases += 1;
+    if (disabled.eoFallbackUsed || enabled.eoFallbackUsed) eoFallbackCases += 1;
     if (enabled.moveCount < disabled.moveCount) improved += 1;
     if (enabled.moveCount > disabled.moveCount) regressed += 1;
   }
@@ -158,12 +166,14 @@ const enabledAverageMs = average(enabledTimes);
 const runtimeRatio = enabledAverageMs / Math.max(0.001, disabledAverageMs);
 const summary = {
   semanticSliceCases: sliceCases.length,
+  targetedEoFallbackMoves: targeted.moveCount,
   runs: RUNS,
   tableBuildMs,
   disabledSolved,
   enabledSolved,
   comparedHumanCases,
-  fallbackCases,
+  coverageFallbackCases,
+  eoFallbackCases,
   sliceCandidateCases,
   sliceSkeletonCases,
   sliceInsertionCandidateCount,
@@ -176,6 +186,8 @@ const summary = {
 };
 console.log(JSON.stringify(summary, null, 2));
 
+if (coverageFallbackCases !== 0) throw new Error(`UNEXPECTED_COVERAGE_FALLBACK:${coverageFallbackCases}`);
+if (RUNS === 100 && eoFallbackCases !== 1) throw new Error(`UNEXPECTED_EO_FALLBACK_COUNT:${eoFallbackCases}`);
 if (regressed !== 0) throw new Error(`SLICE_MOVE_COUNT_REGRESSION:${regressed}`);
 if (sliceSkeletonCount === 0) throw new Error("SLICE_SKELETONS_NOT_GENERATED");
 if (sliceInsertionCandidateCount === 0) throw new Error("SLICE_CANDIDATES_NOT_GENERATED");
