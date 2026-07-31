@@ -1375,6 +1375,9 @@ const api = {
     let enableStyleFallback = true;
     let enableOllPllPrediction = true;
     let ollPllPredictionWeight = 0.35;
+    let fmcQualityMode = "sweetSpot";
+    let fmcTargetMoveCount = null;
+    let fmcTimeBudgetMs = null;
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
       scramble = arg1.scramble;
       eventId = arg1.eventId;
@@ -1406,6 +1409,15 @@ const api = {
       if (Number.isFinite(Number(arg1.ollPllPredictionWeight))) {
         ollPllPredictionWeight = Math.max(0, Number(arg1.ollPllPredictionWeight));
       }
+      if (typeof arg1.fmcQualityMode === "string" && arg1.fmcQualityMode) {
+        fmcQualityMode = arg1.fmcQualityMode;
+      }
+      if (Number.isFinite(Number(arg1.fmcTargetMoveCount))) {
+        fmcTargetMoveCount = Math.max(1, Math.floor(Number(arg1.fmcTargetMoveCount)));
+      }
+      if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {
+        fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));
+      }
     } else {
       scramble = arg1;
       eventId = arg2;
@@ -1419,6 +1431,18 @@ const api = {
       if (typeof arg6 === "string" && arg6) {
         f2lMethod = arg6;
       }
+    }
+    const requestedMode = String(mode || "").trim().toLowerCase();
+    if (requestedMode === "fmc-extreme" || requestedMode === "extreme-fmc") {
+      mode = "fmc";
+      fmcQualityMode = "extreme";
+    } else if (
+      requestedMode === "fmc-sweet" ||
+      requestedMode === "fmc-sweetspot" ||
+      requestedMode === "sweetspot-fmc"
+    ) {
+      mode = "fmc";
+      fmcQualityMode = "sweetSpot";
     }
     mode = normalizeMode(mode);
     solverVersion = normalizeSolverVersion(solverVersion);
@@ -1488,41 +1512,31 @@ const api = {
         }
 
         if (mode === "fmc") {
+          const normalizedFmcQuality = String(fmcQualityMode || "sweetSpot").trim().toLowerCase();
+          const isExtremeFmc = normalizedFmcQuality === "extreme";
+          const effectiveFmcTimeBudgetMs = Number.isFinite(fmcTimeBudgetMs)
+            ? fmcTimeBudgetMs
+            : isExtremeFmc
+              ? 90000
+              : 8000;
+          const effectiveFmcTargetMoveCount = Number.isFinite(fmcTargetMoveCount)
+            ? fmcTargetMoveCount
+            : isExtremeFmc
+              ? 20
+              : 24;
           const fmcResult = await withTimeout(
             solveWithFMCSearchLazy(scramble, onProgress, {
-              maxPremoveSets: 12,
-              timeBudgetMs: 30000,
-              sweepBudgetMs: 10000,
-              sweepIncludeInverse: true,
-              targetMoveCount: 20,
+              qualityMode: isExtremeFmc ? "extreme" : "sweetSpot",
+              timeBudgetMs: effectiveFmcTimeBudgetMs,
+              targetMoveCount: effectiveFmcTargetMoveCount,
               allowCfopFallback: false,
               premoveAllowCfopFallback: false,
               preferNonCfop: true,
-              directProfileLevel: "deep",
-              directPhaseAttemptTimeoutMs: 4000,
-              // directStageBudgetMs not set → defaults to min(8000, timeBudgetMs * 0.42) = 8000ms
-              // nissStageBudgetMs not set → same
-              sweepProfileLevel: "balanced",
-              sweepPhaseAttemptTimeoutMs: 1600,
-              sweepAttemptBudgetMs: 1600,
-              sweepUseScout: true,
-              sweepScoutProfileLevel: "light",
-              sweepScoutPhaseAttemptTimeoutMs: 700,
-              sweepScoutAttemptBudgetMs: 700,
-              sweepScoutIncludeInverse: true,
-              sweepRefineSets: 8,
-              verifyLimit: 18,
+              verifyLimit: isExtremeFmc ? 32 : 18,
               enableInsertions: true,
-              insertionCandidateLimit: 3,
-              insertionMaxPasses: 3,
-              insertionMinWindow: 3,
-              insertionMaxWindow: 7,
-              insertionMaxDepth: 6,
-              insertionTimeMs: 5000,
-              insertionThreshold: 24,
               crossColors: normalizeCrossColorList(crossColor),
             }),
-            FMC_333_TIMEOUT_MS,
+            Math.min(FMC_333_TIMEOUT_MS, effectiveFmcTimeBudgetMs + 15000),
           ).catch(() => ({ ok: false, reason: "FMC_TIMEOUT" }));
           if (fmcResult?.ok) {
             return fmcResult;

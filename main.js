@@ -25,6 +25,8 @@ const resetSessionBtn = document.getElementById("resetSessionBtn");
 const eventSelect = document.getElementById("eventSelect");
 const crossColorSelect = document.getElementById("crossColorSelect");
 const solverModeSelect = document.getElementById("solverModeSelect");
+const fmcQualityField = document.getElementById("fmcQualityField");
+const fmcQualitySelect = document.getElementById("fmcQualitySelect");
 const solverVersionSelect = document.getElementById("solverVersionSelect");
 const f2lMethodSelect = document.getElementById("f2lMethodSelect");
 const stylePlayerSelect = document.getElementById("stylePlayerSelect");
@@ -171,6 +173,7 @@ const HIDE_LIVE_KEY = "cubeTimerHideLiveTime";
 const AO5_KEY = "cubeTimerShowAo5";
 const AO12_KEY = "cubeTimerShowAo12";
 const VALID_SOLVER_MODES = new Set(["strict", "minmove", "twophase", "zb", "roux", "fmc"]);
+const VALID_FMC_QUALITY_MODES = new Set(["sweetSpot", "extreme"]);
 const VALID_SOLVER_VERSIONS = new Set(["v1", "v2"]);
 const VALID_F2L_METHODS = new Set(["legacy", "mixed"]);
 function filterF2lMethodOptions() {
@@ -308,6 +311,7 @@ const defaultState = () => {
       eventId: "333",
       crossColor: "D",
       solverMode: "strict",
+      fmcQualityMode: "sweetSpot",
       solverVersion: "v2",
       f2lMethod: DEFAULT_F2L_METHOD,
       f2lMethodSource: DEFAULT_F2L_METHOD_SOURCE,
@@ -343,6 +347,9 @@ function loadState() {
     if (!parsed.settings.eventId) parsed.settings.eventId = "333";
     if (!parsed.settings.crossColor) parsed.settings.crossColor = "D";
     if (!parsed.settings.solverMode) parsed.settings.solverMode = "strict";
+    if (!VALID_FMC_QUALITY_MODES.has(parsed.settings.fmcQualityMode)) {
+      parsed.settings.fmcQualityMode = "sweetSpot";
+    }
     if (!VALID_SOLVER_VERSIONS.has(parsed.settings.solverVersion)) parsed.settings.solverVersion = "v2";
     if (parsed.settings.solverMode === "optimal") parsed.settings.solverMode = "minmove";
     if (parsed.settings.solverMode === "phase" || parsed.settings.solverMode === "two-phase") {
@@ -1409,7 +1416,20 @@ function updateScrambleNav() {
   }
 }
 
+function updateFmcQualityControls() {
+  const isFmcMode = appState.settings.solverMode === "fmc";
+  if (fmcQualityField) fmcQualityField.hidden = !isFmcMode;
+  if (fmcQualitySelect) {
+    fmcQualitySelect.disabled = !isFmcMode;
+    const selected = VALID_FMC_QUALITY_MODES.has(appState.settings.fmcQualityMode)
+      ? appState.settings.fmcQualityMode
+      : "sweetSpot";
+    fmcQualitySelect.value = selected;
+  }
+}
+
 function updateSolverControls() {
+  updateFmcQualityControls();
   if (!findSolutionBtn) return;
   const supported = isSolverSupportedEvent(appState.settings.eventId);
   findSolutionBtn.disabled = solverBusy || !currentScramble || !supported;
@@ -2611,10 +2631,16 @@ async function solveCurrentScramble() {
       ? appState.settings.solverVersion
       : "v2";
     const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
+    const fmcQualityMode = VALID_FMC_QUALITY_MODES.has(appState.settings.fmcQualityMode)
+      ? appState.settings.fmcQualityMode
+      : "sweetSpot";
+    const fmcQualityLabel = fmcQualityMode === "extreme"
+      ? "극한 최적화 · 20수 목표"
+      : "균형 최적화 · 24수 목표";
     if (isThreeByThreeFamilyEvent(appState.settings.eventId)) {
       solverStatus.textContent =
         solverMode === "fmc"
-          ? "계산 중... (3x3 FMC 스타일 탐색: Direct + NISS + Premove)"
+          ? `계산 중... (3x3 FMC ${fmcQualityLabel})`
           : solverMode === "minmove"
             ? "계산 중... (3x3 HTM 최적해 탐색, 스타일 설정 무시)"
             : solverMode === "twophase"
@@ -2740,6 +2766,9 @@ async function solveCurrentScramble() {
     const solverVersion = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
       ? appState.settings.solverVersion
       : "v2";
+    const fmcQualityMode = VALID_FMC_QUALITY_MODES.has(appState.settings.fmcQualityMode)
+      ? appState.settings.fmcQualityMode
+      : "sweetSpot";
     const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
     const selectedPlayerName = String(appState.settings.stylePlayer || "").trim();
     // Always use the user's explicitly selected cross color.
@@ -2767,6 +2796,7 @@ async function solveCurrentScramble() {
         crossColor,
         mode: solverMode,
         solverVersion,
+        fmcQualityMode,
         f2lMethod,
         styleProfile: selectedPlayerStyleProfile,
         transitionProfileSolver: selectedPlayerName || undefined,
@@ -2901,7 +2931,10 @@ async function solveCurrentScramble() {
         const selectedCrossColor = String(result.selectedCrossColor || "").toUpperCase();
         const selectedCrossText =
           isThreeByThreeFamilyEvent(eventId) && selectedCrossColor ? `, cross ${selectedCrossColor}` : "";
-        solverStatus.textContent = `완료 (${duration}ms${nodesText}${styleAppliedText}${styleFallbackText}${llPredictionText}${fallbackText}${selectedCrossText})`;
+        const fmcQualityText = solverMode === "fmc"
+          ? `, ${result.qualityMode === "extreme" ? "FMC Extreme" : "FMC Sweet Spot"}${result.qualityTargetReached ? " 목표 달성" : ""}`
+          : "";
+        solverStatus.textContent = `완료 (${duration}ms${nodesText}${styleAppliedText}${styleFallbackText}${llPredictionText}${fallbackText}${selectedCrossText}${fmcQualityText})`;
       }
       if (solverCopyBtn) {
         solverCopyBtn.disabled = !rawSolutionText;
@@ -3037,7 +3070,17 @@ solverModeSelect?.addEventListener("change", () => {
   appState.settings.solverMode = VALID_SOLVER_MODES.has(solverModeSelect.value)
     ? solverModeSelect.value
     : "strict";
+  updateFmcQualityControls();
   saveState();
+});
+
+fmcQualitySelect?.addEventListener("change", () => {
+  if (!fmcQualitySelect) return;
+  appState.settings.fmcQualityMode = VALID_FMC_QUALITY_MODES.has(fmcQualitySelect.value)
+    ? fmcQualitySelect.value
+    : "sweetSpot";
+  saveState();
+  resetSolverState();
 });
 
 solverVersionSelect?.addEventListener("change", () => {
@@ -3888,6 +3931,12 @@ async function initApp() {
     if (solverModeSelect) {
       solverModeSelect.value = appState.settings.solverMode || "strict";
     }
+    if (fmcQualitySelect) {
+      fmcQualitySelect.value = VALID_FMC_QUALITY_MODES.has(appState.settings.fmcQualityMode)
+        ? appState.settings.fmcQualityMode
+        : "sweetSpot";
+    }
+    updateFmcQualityControls();
     if (solverVersionSelect) {
       solverVersionSelect.value = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
         ? appState.settings.solverVersion
