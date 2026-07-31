@@ -1,0 +1,87 @@
+name: Apply FMC DR flip boundary rewrite
+
+on:
+  pull_request:
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+          fetch-depth: 0
+
+      - name: Apply DR flip transform
+        run: python3 tools/apply_fmc_dr_flip.py
+
+      - name: Validate JavaScript
+        run: |
+          node --check solver/fmcSolver.js
+          git diff --check
+          grep -q 'function buildDrFlipCandidates' solver/fmcSolver.js
+          grep -q 'enableDrFlip: searchLevel >= 3' solver/fmcSolver.js
+
+      - name: Run fixed-scramble DR flip benchmark
+        run: |
+          cat > tools/.fmc-dr-flip-bench.mjs <<'NODE'
+          import { performance } from "node:perf_hooks";
+          import { solveWithFMCSearch } from "../solver/fmcSolver.js";
+
+          const scramble = "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D";
+          const started = performance.now();
+          const result = await solveWithFMCSearch(scramble, null, {
+            qualityMode: "extreme",
+            targetMoveCount: 20,
+            timeBudgetMs: 30000,
+            maxPremoveSets: 180,
+            extremeVariantCount: 8,
+            extremeReservedCompressionPremoves: 24,
+            continueBelowTarget: true,
+            insertionTimeMs: 6000,
+            verifyLimit: 64,
+          });
+          const diagnostics = result?.performanceDiagnostics || {};
+          const stages = diagnostics.wasmStages || [];
+          const reserved = stages.find((stage) => stage.reservedCompression === true);
+          const output = {
+            elapsedMs: Math.round(performance.now() - started),
+            ok: result?.ok === true,
+            reason: result?.reason || null,
+            moveCount: result?.moveCount ?? result?.bestHumanMoveCount ?? null,
+            solution: result?.solution || result?.bestHumanSolution || null,
+            source: result?.source || result?.bestHumanSource || null,
+            reserved,
+            stages,
+            isolation: diagnostics.extremeIsolation || null,
+          };
+          console.log(`DR_FLIP_BENCHMARK ${JSON.stringify(output)}`);
+          if (!reserved || reserved.drFlip !== true) throw new Error("DR_FLIP_STAGE_MISSING");
+          if (!(reserved.drFlipWindowCount > 0)) throw new Error("DR_FLIP_NO_WINDOWS_TESTED");
+          if (output.isolation?.baselineCandidateImported !== false) throw new Error("DR_FLIP_BASELINE_IMPORTED");
+          NODE
+          node tools/.fmc-dr-flip-bench.mjs | tee /tmp/fmc-dr-flip-benchmark.log
+          grep -q 'DR_FLIP_BENCHMARK' /tmp/fmc-dr-flip-benchmark.log
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f tools/.fmc-dr-flip-bench.mjs
+          git rm --ignore-unmatch .github/workflows/fmc-extreme-dr-flip.yml
+          git rm --ignore-unmatch tools/apply_fmc_dr_flip.py
+          git add solver/fmcSolver.js
+          git diff --cached --check
+          git commit -m "Add bounded FMC DR flip rewrites"
+          git push origin HEAD:agent/fmc-extreme-independent-frontier-v2
