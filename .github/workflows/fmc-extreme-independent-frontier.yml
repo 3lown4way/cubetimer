@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/fmc-extreme-independent-frontier
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -194,7 +197,6 @@ jobs:
           text = text.replace("&mut best_count", "&mut raw_exploration_limit")
           rust.write_text(text)
 
-          # Static regression assertions before compiling.
           js_text = js.read_text()
           rust_text = rust.read_text()
           assert "variant === 0 ? 0" not in js_text
