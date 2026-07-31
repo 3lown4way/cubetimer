@@ -1,0 +1,102 @@
+name: FMC Extreme single scramble 60s
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fmc-extreme-single-60s.yml'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Compare Sweet Spot and 60-second Extreme
+        run: |
+          node --input-type=module <<'NODE'
+          import { buildFmcTablesWasm, verifyFmcSolutionWasm } from './solver/wasmSolver.js';
+          import { solveWithFMCSearch } from './solver/fmcSolver.js';
+
+          const scramble = "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D";
+          if (!(await buildFmcTablesWasm())) throw new Error('FMC_TABLE_BUILD_FAILED');
+
+          async function run(label, options) {
+            const progress = [];
+            const started = Date.now();
+            const result = await solveWithFMCSearch(
+              scramble,
+              (event) => {
+                progress.push({ elapsedMs: Date.now() - started, ...event });
+              },
+              options,
+            );
+            const elapsedMs = Date.now() - started;
+            const solution = result?.ok ? result.solution : result?.bestHumanSolution;
+            const moveCount = result?.ok ? result.moveCount : result?.bestHumanMoveCount;
+            let verified = false;
+            if (solution) {
+              const check = await verifyFmcSolutionWasm(scramble, solution);
+              verified = check?.ok === true && check?.solved === true;
+            }
+            const stageEvents = progress.filter((event) =>
+              event?.type === 'fallback_start' || event?.type === 'fallback_success',
+            );
+            const improvements = progress.filter((event) =>
+              event?.type === 'fallback_success' || event?.type === 'candidate_improved',
+            );
+            return {
+              label,
+              elapsedMs,
+              ok: result?.ok === true,
+              reason: result?.reason || null,
+              moveCount: Number.isFinite(moveCount) ? moveCount : null,
+              solution: solution || null,
+              source: result?.source || result?.bestHumanSource || null,
+              verified,
+              humanStyle: result?.humanStyle === true || Boolean(result?.bestHumanSolution),
+              qualityTargetReached: result?.qualityTargetReached === true,
+              stageCount: stageEvents.filter((event) => event.type === 'fallback_start').length,
+              improvements,
+              wasmStages: result?.performanceDiagnostics?.wasmStages || [],
+            };
+          }
+
+          const sweetSpot = await run('sweetSpot', {
+            qualityMode: 'sweetSpot',
+            targetMoveCount: 24,
+            timeBudgetMs: 10000,
+            maxPremoveSets: 120,
+            enableInsertions: true,
+            preferNonCfop: true,
+          });
+
+          const extreme = await run('extreme60s', {
+            qualityMode: 'extreme',
+            targetMoveCount: 20,
+            timeBudgetMs: 60000,
+            maxPremoveSets: 180,
+            extremeVariantCount: 24,
+            continueBelowTarget: true,
+            enableInsertions: true,
+            preferNonCfop: true,
+          });
+
+          const summary = {
+            scramble,
+            sweetSpot,
+            extreme,
+            deltaMoves:
+              Number.isFinite(sweetSpot.moveCount) && Number.isFinite(extreme.moveCount)
+                ? extreme.moveCount - sweetSpot.moveCount
+                : null,
+          };
+          console.log('FMC_SINGLE_RESULT=' + JSON.stringify(summary));
+          if (!sweetSpot.verified || !extreme.verified) {
+            throw new Error('UNVERIFIED_RESULT');
+          }
+          NODE
