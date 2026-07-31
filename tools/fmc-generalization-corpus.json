@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "developmentCasesAreDiagnosticOnly": true,
+    "knownSolutionsMustNeverBeInjectedIntoSearch": true,
+    "holdoutRowsHiddenByDefault": true,
+    "acceptanceRequiresAggregateHoldoutNonRegression": true
+  },
+  "developmentCases": [
+    {
+      "id": "sebastiano-tronto-wr16-2019",
+      "scramble": "R' U' F D2 L2 F R2 U2 R2 B D2 L B2 D' B2 L' R' B D2 B U2 L U2 R' U' F",
+      "knownSolution": "D2 F' D2 U2 F' L2 D R2 D B2 F L2 R' F' D U'",
+      "knownMoveCount": 16,
+      "diagnosticTags": ["inverse", "eo4", "dr10", "direct-finish"]
+    },
+    {
+      "id": "brian-johnson-wr-mean-a1-17-2026",
+      "scramble": "R' U' F D2 F D' R2 B2 L2 B2 U' L2 B2 R2 F2 L R' B U L R' U2 R' U' F",
+      "knownSolution": "F' U' B D2 R B2 R L' U' D2 R F2 D2 F2 D R F'",
+      "knownMoveCount": 17,
+      "diagnosticTags": ["eo4", "dr10", "2e2e-reinsertion"]
+    },
+    {
+      "id": "wong-chong-wen-wr-mean-a1-18-2026",
+      "scramble": "R' U' F U2 F' U' F2 U' F2 R2 U' L2 U F2 U' R F' R' F2 R F' L F R' U' F",
+      "knownSolution": "L' F2 R' U2 F U' B U' B' R2 F2 L2 R2 D2 B2 D' F2 D'",
+      "knownMoveCount": 18,
+      "diagnosticTags": ["eo3", "dr9", "slice-replacement"]
+    }
+  ],
+  "fixedHoldout": {
+    "seed": 2654435769,
+    "count": 24,
+    "scrambleLength": 21
+  },
+  "compressionHoldout": {
+    "seed": 608135816,
+    "count": 6,
+    "scrambleLength": 21
+  }
+}
