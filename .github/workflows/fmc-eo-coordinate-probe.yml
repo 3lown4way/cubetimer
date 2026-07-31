@@ -25,41 +25,70 @@ jobs:
           use solver_wasm::minmove_core::{encode_eo, parse_scramble, solution_string_from_path, CubeState};
           use solver_wasm::twophase_bundle::load_bundle;
 
+          fn move_map(face_map: [usize; 6]) -> [u8; 18] {
+              std::array::from_fn(|move_index| {
+                  let face = move_index / 3;
+                  let turn = move_index % 3;
+                  (face_map[face] * 3 + turn) as u8
+              })
+          }
+
+          fn probe_map(
+              label: &str,
+              map: &[u8; 18],
+              inverse_moves: &[u8],
+              eo_moves: &[u8],
+              full_inverse_solution: &[u8],
+              tables: &solver_wasm::twophase_bundle::TwophaseTables,
+          ) {
+              let mapped_inverse: Vec<u8> = inverse_moves.iter().map(|&m| map[m as usize]).collect();
+              let mapped_eo: Vec<u8> = eo_moves.iter().map(|&m| map[m as usize]).collect();
+              let mapped_full: Vec<u8> = full_inverse_solution.iter().map(|&m| map[m as usize]).collect();
+              let before = CubeState::solved().apply_moves(&mapped_inverse, &tables.move_data);
+              let after = before.apply_moves(&mapped_eo, &tables.move_data);
+              let final_state = before.apply_moves(&mapped_full, &tables.move_data);
+              println!(
+                  "WR16_MAP {} mapped_eo={} before_eo={} after_eo={} full_solved={} after_bits={:?}",
+                  label,
+                  solution_string_from_path(&mapped_eo, &tables.move_data),
+                  encode_eo(&before.eo),
+                  encode_eo(&after.eo),
+                  final_state.is_solved(),
+                  after.eo,
+              );
+          }
+
           fn main() {
               let bytes = std::fs::read("public/solver-wasm/twophase/twophase-333-v1.bin").unwrap();
               let tables = load_bundle(&bytes).unwrap();
               let fmc = build_fmc_tables(&tables);
               println!("MOVE_NAMES {:?}", tables.move_data.move_names);
-              for move_index in 0..18usize {
-                  let state = CubeState::solved().apply_move(move_index, &tables.move_data);
-                  println!(
-                      "SINGLE_MOVE {} eo={} bits={:?}",
-                      tables.move_data.move_names[move_index],
-                      encode_eo(&state.eo),
-                      state.eo,
-                  );
-              }
 
               let inverse_scramble = "F' U R U2 L' U2 B' D2 B' R L B2 D B2 L' D2 B' R2 U2 R2 F' L2 D2 F' U R";
               let eo = "U D' F R";
+              let full_inverse_solution = "U D' F R L2 F' B2 D' R2 D' L2 F U2 D2 F D2";
               let inverse_moves = parse_scramble(inverse_scramble, &tables.move_data).unwrap();
               let eo_moves = parse_scramble(eo, &tables.move_data).unwrap();
+              let full_moves = parse_scramble(full_inverse_solution, &tables.move_data).unwrap();
 
               for axis in 0..3usize {
-                  let map = &fmc.axis_scramble_move_map[axis];
-                  let mapped_inverse: Vec<u8> = inverse_moves.iter().map(|&m| map[m as usize]).collect();
-                  let mapped_eo: Vec<u8> = eo_moves.iter().map(|&m| map[m as usize]).collect();
-                  let before = CubeState::solved().apply_moves(&mapped_inverse, &tables.move_data);
-                  let after = before.apply_moves(&mapped_eo, &tables.move_data);
-                  println!(
-                      "WR16_AXIS {} mapped_eo={} before_eo={} after_eo={} after_bits={:?}",
-                      axis,
-                      solution_string_from_path(&mapped_eo, &tables.move_data),
-                      encode_eo(&before.eo),
-                      encode_eo(&after.eo),
-                      after.eo,
+                  probe_map(
+                      &format!("CURRENT_{}", axis),
+                      &fmc.axis_scramble_move_map[axis],
+                      &inverse_moves,
+                      &eo_moves,
+                      &full_moves,
+                      &tables,
                   );
               }
+
+              // Whole-cube y rotations. These map original R/L quarter turns to
+              // the standard F/B bad-edge pair and therefore cover the EO axis
+              // absent from the current map set.
+              let y_plus = move_map([0, 5, 1, 3, 2, 4]);
+              let y_minus = move_map([0, 2, 4, 3, 5, 1]);
+              probe_map("Y_PLUS", &y_plus, &inverse_moves, &eo_moves, &full_moves, &tables);
+              probe_map("Y_MINUS", &y_minus, &inverse_moves, &eo_moves, &full_moves, &tables);
           }
           RUST
       - name: Run probe
