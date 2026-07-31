@@ -1,0 +1,154 @@
+name: FMC Extreme human anytime validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'solver-wasm/src/fmc_search.rs'
+      - 'solver-wasm/src/lib.rs'
+      - 'solver/fmcSolver.js'
+      - 'solver/solverWorker.js'
+      - 'tools/apply-fmc-extreme-human-anytime.py'
+      - '.github/workflows/fmc-extreme-human-anytime.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply human-anytime implementation
+        run: python3 tools/apply-fmc-extreme-human-anytime.py
+
+      - name: Format Rust
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml
+
+      - name: Rust release tests
+        run: cargo test --release --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build release WASM
+        run: wasm-pack build solver-wasm --release --target web --out-dir ../public/solver-wasm
+
+      - name: JavaScript syntax checks
+        run: |
+          node --check solver/fmcSolver.js
+          node --check solver/solverWorker.js
+
+      - name: Static human-search assertions
+        run: |
+          grep -q 'searchLevel' solver-wasm/src/lib.rs
+          grep -q 'searchVariant' solver-wasm/src/lib.rs
+          grep -q 'incumbentMoveCount' solver-wasm/src/lib.rs
+          grep -q 'direct_eo_limit = \[FMC_EO_LIMIT, 12, 24, 48\]' solver-wasm/src/fmc_search.rs
+          grep -q 'premove_eo_limit = \[FMC_PM_EO_LIMIT, 6, 12, 24\]' solver-wasm/src/fmc_search.rs
+          grep -q 'human-L${searchLevel}-V${variant}' solver/fmcSolver.js
+          grep -q 'FMC_HUMAN_TARGET_NOT_REACHED' solver/fmcSolver.js
+          grep -q 'humanStyle: true' solver/fmcSolver.js
+          if grep -q 'tightenFmcExtremeExact' solver/solverWorker.js solver/fmcSolver.js; then
+            echo 'Raw exact return path is forbidden in FMC Extreme' >&2
+            exit 1
+          fi
+
+      - name: Validate diversified human search
+        run: |
+          node --input-type=module <<'NODE'
+          import { buildFmcTablesWasm, solveFmcWasm, verifyFmcSolutionWasm } from './solver/wasmSolver.js';
+          import { solveWithFMCSearch } from './solver/fmcSolver.js';
+
+          if (!(await buildFmcTablesWasm())) throw new Error('FMC_TABLE_BUILD_FAILED');
+          const scrambles = [
+            "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D",
+            "R2 U2 F' L2 B2 D R2 F2 U' R' B D2 L' F U2 B' R D'",
+            "F R2 D2 B2 U' L2 F2 R' U B' D L2 U2 F' R B2 D' L'",
+          ];
+          let diversified = 0;
+          const rows = [];
+          for (const scramble of scrambles) {
+            const common = {
+              maxPremoveSets: 90,
+              searchLevel: 1,
+              incumbentMoveCount: 40,
+              enableMultiSwitchNiss: true,
+              enableHtrSkeletons: true,
+              enableSliceInsertion: true,
+            };
+            const a = await solveFmcWasm(scramble, { ...common, searchVariant: 0 });
+            const b = await solveFmcWasm(scramble, { ...common, searchVariant: 1 });
+            if (!a?.ok || !b?.ok) throw new Error(`HUMAN_VARIANT_FAILED:${scramble}`);
+            const setA = new Set((a.candidates || []).map((c) => c.solution));
+            const setB = new Set((b.candidates || []).map((c) => c.solution));
+            if ([...setA].some((solution) => !setB.has(solution)) || [...setB].some((solution) => !setA.has(solution))) {
+              diversified += 1;
+            }
+            for (const result of [a, b]) {
+              for (const candidate of result.candidates || []) {
+                if (!String(candidate.source || '').startsWith('FMC_')) {
+                  throw new Error(`NON_HUMAN_SOURCE:${candidate.source}`);
+                }
+                if (/MINMOVE|TWOPHASE|EXACT/.test(String(candidate.source || ''))) {
+                  throw new Error(`RAW_EXACT_SOURCE:${candidate.source}`);
+                }
+                const verification = await verifyFmcSolutionWasm(scramble, candidate.solution);
+                if (!verification?.ok || verification.solved !== true) {
+                  throw new Error(`INVALID_HUMAN_CANDIDATE:${candidate.solution}`);
+                }
+              }
+            }
+            rows.push({ scramble, variant0: a.moveCount, variant1: b.moveCount });
+          }
+          if (diversified < 1) throw new Error('SEARCH_VARIANTS_DID_NOT_DIVERSIFY');
+
+          const progress = [];
+          const easy = await solveWithFMCSearch("R U R' U'", (event) => progress.push(event), {
+            qualityMode: 'extreme',
+            targetMoveCount: 20,
+            timeBudgetMs: 60000,
+            maxPremoveSets: 90,
+            extremeVariantCount: 4,
+            continueBelowTarget: true,
+            enableInsertions: true,
+            preferNonCfop: true,
+          });
+          if (!easy?.ok || easy.humanStyle !== true || easy.moveCount > 20) {
+            throw new Error(`EASY_HUMAN_EXTREME_FAILED:${JSON.stringify(easy)}`);
+          }
+          const stageStarts = progress.filter((event) => event?.type === 'fallback_start' && /^FMC human-L/.test(event.stageName || ''));
+          if (stageStarts.length < 2) throw new Error('BELOW_TARGET_SEARCH_DID_NOT_CONTINUE');
+
+          const gated = await solveWithFMCSearch(scrambles[0], null, {
+            qualityMode: 'extreme',
+            targetMoveCount: 1,
+            timeBudgetMs: 60000,
+            maxPremoveSets: 40,
+            extremeVariantCount: 4,
+            continueBelowTarget: false,
+            enableInsertions: true,
+            preferNonCfop: true,
+          });
+          if (gated?.ok !== false || gated?.reason !== 'FMC_HUMAN_TARGET_NOT_REACHED') {
+            throw new Error(`HARD_TARGET_GATE_FAILED:${JSON.stringify(gated)}`);
+          }
+
+          console.log(JSON.stringify({ diversified, rows, easyMoveCount: easy.moveCount, stageStarts: stageStarts.length }, null, 2));
+          NODE
+
+      - name: Commit production implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs solver/fmcSolver.js solver/solverWorker.js public/solver-wasm/solver_wasm_bg.wasm
+          git rm -f .github/workflows/fmc-extreme-human-anytime.yml tools/apply-fmc-extreme-human-anytime.py
+          git commit -m "Make FMC Extreme a deeper human anytime search"
+          git push origin HEAD:${{ github.head_ref }}
