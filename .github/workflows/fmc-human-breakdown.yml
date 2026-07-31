@@ -42,13 +42,27 @@ jobs:
             || (result.candidates || []).sort((a,b) => a.moveCount - b.moveCount)[0];
           if (!candidate) throw new Error('CANDIDATE_NOT_FOUND');
           const check = await verifyFmcSolutionWasm(scramble, candidate.solution);
-          const fields = {
+          const compactCandidates = (result.candidates || []).map((c) => ({
+            source: c.source,
+            axisName: c.axisName,
+            moveCount: c.moveCount,
+            solution: c.solution,
+            eoLength: c.eoLength,
+            eoMoves: c.eoMoves,
+            drLength: c.drLength,
+            drMoves: c.drMoves,
+            p2Length: c.p2Length,
+            finishMoves: c.finishMoves,
+            premoves: c.premoves,
+            skeletonKind: c.skeletonKind,
+            insertionPosition: c.insertionPosition,
+            insertions: c.insertions,
+          }));
+          console.log('FMC_BREAKDOWN=' + JSON.stringify({
             scramble,
             verified: check?.ok === true && check?.solved === true,
-            candidate,
-            skeletons: (result.skeletons || []).filter((s) =>
-              s.source === candidate.innerSource || s.solution === candidate.skeletonSolution
-            ),
-          };
-          console.log('FMC_BREAKDOWN=' + JSON.stringify(fields));
+            winner: candidate,
+            candidates: compactCandidates,
+            skeletons: result.skeletons || [],
+          }));
           NODE
