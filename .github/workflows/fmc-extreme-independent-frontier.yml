@@ -3,7 +3,7 @@ name: Apply FMC Extreme isolation patch
 on:
   push:
     branches:
-      - agent/fmc-extreme-independent-frontier
+      - agent/fmc-extreme-independent-frontier-v2
   pull_request:
     branches:
       - main
@@ -20,7 +20,7 @@ jobs:
       - name: Check out branch
         uses: actions/checkout@v4
         with:
-          ref: agent/fmc-extreme-independent-frontier
+          ref: agent/fmc-extreme-independent-frontier-v2
           fetch-depth: 0
 
       - name: Install Rust
@@ -214,4 +214,4 @@ jobs:
           git rm .github/workflows/fmc-extreme-independent-frontier.yml
           git add -A
           git commit -m "Separate FMC Extreme raw frontier from final best"
-          git push origin HEAD:agent/fmc-extreme-independent-frontier
+          git push origin HEAD:agent/fmc-extreme-independent-frontier-v2
