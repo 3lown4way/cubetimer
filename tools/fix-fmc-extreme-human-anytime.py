@@ -10,40 +10,18 @@ def replace_once(source, old, new, label):
         raise SystemExit(f"MISSING:{label}")
     return source.replace(old, new, 1)
 
-# The first transform's generic signature anchor matches the multi-switch helper.
-# Keep that variant parameter, and add the intended parameter to the actual
-# EO→DR→P2 single-axis search as well.
-text = replace_once(
-    text,
-    '''fn solve_fmc_single_axis(
-    state: &CubeState,
-    tables: &TwophaseTables,
-    fmc_tables: &FmcTables,
-    max_eo_depth: u8,
-    eo_limit: usize,
-    max_dr_depth: u8,
-    max_p2_depth: u8,
-    p2_node_limit: u64,
-    p2_cache: &mut FmcP2Cache,
-    current_best: &mut usize,
-    force_rzp: bool,
-''',
-    '''fn solve_fmc_single_axis(
-    state: &CubeState,
-    tables: &TwophaseTables,
-    fmc_tables: &FmcTables,
-    max_eo_depth: u8,
-    eo_limit: usize,
-    max_dr_depth: u8,
-    max_p2_depth: u8,
-    p2_node_limit: u64,
-    p2_cache: &mut FmcP2Cache,
-    current_best: &mut usize,
-    search_variant: u32,
-    force_rzp: bool,
-''',
-    "single-axis variant signature",
-)
+# The first transform's generic signature anchor can match a neighboring helper.
+# Locate the actual EO→DR→P2 function and patch only its signature block.
+single_start = text.index("fn solve_fmc_single_axis(")
+single_end = text.index(") -> Vec<(\n", single_start)
+single_header = text[single_start:single_end]
+if "search_variant: u32" not in single_header:
+    old_pair = "    current_best: &mut usize,\n    force_rzp: bool,\n"
+    new_pair = "    current_best: &mut usize,\n    search_variant: u32,\n    force_rzp: bool,\n"
+    if old_pair not in single_header:
+        raise SystemExit("MISSING:single-axis current-best pair")
+    single_header = single_header.replace(old_pair, new_pair, 1)
+    text = text[:single_start] + single_header + text[single_end:]
 
 # Global replacement inside solve_fmc_with_eo_depth also touched the newly
 # inserted profile tables. Restore their level-0 constants.
@@ -64,7 +42,7 @@ for wrong, right, label in [
     text = replace_once(text, wrong, right, label)
 
 # The multi-switch helper intentionally gained a search_variant parameter.
-# Thread a distinct deterministic variant into direct and inverse boundary
+# Thread distinct deterministic variants into direct and inverse boundary
 # continuation searches.
 text = replace_once(
     text,
