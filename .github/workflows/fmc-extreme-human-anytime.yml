@@ -31,7 +31,6 @@ jobs:
       - name: Apply human-anytime implementation
         run: |
           python3 tools/apply-fmc-extreme-human-anytime.py
-          python3 tools/fix-fmc-extreme-human-anytime.py
           python3 tools/refine-fmc-extreme-human-variants.py
 
       - name: Format Rust
