@@ -1318,7 +1318,7 @@ const FMC_QUALITY_PRESETS = Object.freeze({
   }),
   extreme: Object.freeze({
     targetMoveCount: 20,
-    timeBudgetMs: 90000,
+    timeBudgetMs: 300000,
     maxPremoveSets: 180,
     insertionCandidateLimit: 6,
     insertionMaxPasses: 5,
@@ -1376,24 +1376,28 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
   }
 
   if (qualityMode === "extreme") {
-    return [
-      stage("baseline", { maxPremoveSets: capPremoves(40) }),
-      stage("eo-multi-switch", {
-        maxPremoveSets: capPremoves(80),
-        enableMultiSwitchNiss: true,
-      }),
-      stage("deep-eo-dr", {
-        maxPremoveSets: capPremoves(120),
-        enableDeepMultiSwitchNiss: true,
-      }),
-      stage("full-human-portfolio", {
-        maxPremoveSets: requestedPremoveSets,
-        enableMultiInsertion: true,
-        enableHtrSkeletons: true,
-        enableSliceInsertion: true,
-        enableDeepMultiSwitchNiss: true,
-      }),
-    ];
+    const requestedVariants = Number.isFinite(options.extremeVariantCount)
+      ? Math.max(4, Math.min(24, Math.floor(options.extremeVariantCount)))
+      : 12;
+    const stages = [];
+    for (let variant = 0; variant < requestedVariants; variant += 1) {
+      const searchLevel = variant === 0 ? 0 : variant < 3 ? 1 : variant < 7 ? 2 : 3;
+      const premoveCap =
+        searchLevel === 0 ? 40 : searchLevel === 1 ? 90 : searchLevel === 2 ? 140 : requestedPremoveSets;
+      stages.push(
+        stage(`human-L${searchLevel}-V${variant}`, {
+          maxPremoveSets: capPremoves(premoveCap),
+          searchLevel,
+          searchVariant: variant,
+          enableMultiSwitchNiss: searchLevel >= 1,
+          enableDeepMultiSwitchNiss: searchLevel >= 2,
+          enableHtrSkeletons: searchLevel >= 2,
+          enableSliceInsertion: searchLevel >= 2,
+          enableMultiInsertion: searchLevel >= 3,
+        }),
+      );
+    }
+    return stages;
   }
 
   return [
@@ -1619,6 +1623,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   // Start with the cheapest human pipeline. More expensive stages run only while
   // the current incumbent is above the selected quality target.
   let wasmFmcDone = false;
+  const continueBelowTarget = qualityMode === "extreme" && options.continueBelowTarget !== false;
   try {
     const wasmFmcStartedAt = Date.now();
     const fmcTablesOk = await buildFmcTablesWasm();
@@ -1627,7 +1632,13 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       const wasmStages = buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRzp);
       for (let stageIndex = 0; stageIndex < wasmStages.length; stageIndex += 1) {
         if (remainingMs(deadlineTs) <= 250) break;
-        if (Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount) break;
+        if (
+          Number.isFinite(bestMoveCount) &&
+          bestMoveCount <= targetMoveCount &&
+          !continueBelowTarget
+        ) {
+          break;
+        }
 
         const qualityStage = wasmStages[stageIndex];
         notify({
@@ -1636,8 +1647,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           reason: Number.isFinite(bestMoveCount) ? `${bestMoveCount}T > ${targetMoveCount}T` : qualityMode,
         });
 
+        const stageOptions = {
+          ...qualityStage.options,
+          incumbentMoveCount: Number.isFinite(bestMoveCount)
+            ? Math.max(1, bestMoveCount - (bestMoveCount <= targetMoveCount ? 1 : 0))
+            : 40,
+        };
         const solveStartedAt = Date.now();
-        const wasmResult = await solveFmcWasm(scramble, qualityStage.options);
+        const wasmResult = await solveFmcWasm(scramble, stageOptions);
         const stageElapsedMs = Date.now() - solveStartedAt;
         diagnostics.wasmStages.push({
           name: qualityStage.name,
@@ -1645,12 +1662,12 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           ok: wasmResult?.ok === true,
           moveCount: Number.isFinite(wasmResult?.moveCount) ? wasmResult.moveCount : null,
           candidateCount: Array.isArray(wasmResult?.candidates) ? wasmResult.candidates.length : 0,
-          maxPremoveSets: qualityStage.options.maxPremoveSets,
-          multiSwitch: qualityStage.options.enableMultiSwitchNiss === true,
-          deepMultiSwitch: qualityStage.options.enableDeepMultiSwitchNiss === true,
-          htr: qualityStage.options.enableHtrSkeletons === true,
-          sliceInsertion: qualityStage.options.enableSliceInsertion === true,
-          multiInsertion: qualityStage.options.enableMultiInsertion === true,
+          maxPremoveSets: stageOptions.maxPremoveSets,
+          multiSwitch: stageOptions.enableMultiSwitchNiss === true,
+          deepMultiSwitch: stageOptions.enableDeepMultiSwitchNiss === true,
+          htr: stageOptions.enableHtrSkeletons === true,
+          sliceInsertion: stageOptions.enableSliceInsertion === true,
+          multiInsertion: stageOptions.enableMultiInsertion === true,
         });
         diagnostics.phaseTimingsMs.direct += stageElapsedMs;
         diagnostics.phaseRuns.direct.calls += 1;
@@ -1896,6 +1913,20 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     incrementCounter(diagnostics.sourceCounts.ranked, rankedCandidates[i]?.source || "UNKNOWN");
   }
   const best = rankedCandidates[0];
+  if (qualityMode === "extreme" && best.moveCount > targetMoveCount) {
+    return {
+      ok: false,
+      reason: "FMC_HUMAN_TARGET_NOT_REACHED",
+      qualityMode,
+      qualityTarget: targetMoveCount,
+      qualityTargetReached: false,
+      bestHumanSolution: best.solution,
+      bestHumanMoveCount: best.moveCount,
+      bestHumanSource: best.source,
+      attempts,
+      performanceDiagnostics: finalizeDiagnostics(),
+    };
+  }
   diagnostics.selectedCandidate = {
     source: best?.source || null,
     innerSource: best?.innerSource || null,
@@ -1931,6 +1962,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     qualityMode,
     qualityTarget: targetMoveCount,
     qualityTargetReached: best.moveCount <= targetMoveCount,
+    humanStyle: true,
+    continueBelowTarget,
     attempts,
     stages: fmcStages,
     parts,

@@ -730,6 +730,7 @@ struct EoSearchCtx<'a> {
     path: Vec<u8>,
     solutions: Vec<Vec<u8>>,
     limit: usize,
+    variant: u32,
 }
 
 impl<'a> EoSearchCtx<'a> {
@@ -748,7 +749,21 @@ impl<'a> EoSearchCtx<'a> {
         }
 
         let mut min_next = 255u8;
-        for &m in &self.tables.phase1_allowed_moves_by_last_face[last_face as usize] {
+        let allowed = &self.tables.phase1_allowed_moves_by_last_face[last_face as usize];
+        let allowed_len = allowed.len();
+        let rotation = if allowed_len == 0 {
+            0
+        } else {
+            ((self.variant / 2) as usize) % allowed_len
+        };
+        for offset in 0..allowed_len {
+            let forward_index = (offset + rotation) % allowed_len;
+            let index = if self.variant & 1 == 0 {
+                forward_index
+            } else {
+                allowed_len - 1 - forward_index
+            };
+            let m = allowed[index];
             if self.solutions.len() >= self.limit {
                 return 255;
             }
@@ -771,6 +786,7 @@ fn find_eo_sequences(
     fmc_tables: &FmcTables,
     max_depth: u8,
     limit: usize,
+    variant: u32,
 ) -> Vec<Vec<u8>> {
     if eo_idx == 0 {
         return vec![vec![]]; // already solved
@@ -786,18 +802,49 @@ fn find_eo_sequences(
         eo_dist: &fmc_tables.eo_dist,
         path: Vec::with_capacity(max_depth as usize),
         solutions: Vec::new(),
-        limit,
+        // Collect a wider deterministic pool, then assign different residue
+        // buckets to search variants. This makes additional Extreme time cover
+        // new EO branches instead of replaying the same shortest prefix set.
+        limit: limit.saturating_mul(4).max(limit),
+        variant,
     };
 
     for d in min_depth..=max_depth {
-        if ctx.solutions.len() >= limit {
+        if ctx.solutions.len() >= ctx.limit {
             break;
         }
         ctx.path.clear();
         ctx.dfs(eo_idx, 0, d, LAST_FACE_FREE);
     }
 
-    ctx.solutions
+    let mut solutions = ctx.solutions;
+    solutions.sort_by_key(|moves| (moves.len(), moves.clone()));
+    solutions.dedup();
+    if variant == 0 {
+        solutions.truncate(limit);
+        return solutions;
+    }
+
+    // Non-zero variants deliberately evaluate a disjoint slice of the wider
+    // EO pool. Do not refill from the complete pool: doing that made every
+    // variant converge back to the same candidate set.
+    const VARIANT_BUCKETS: usize = 4;
+    let bucket = variant as usize % VARIANT_BUCKETS;
+    let mut selected: Vec<Vec<u8>> = solutions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, moves)| (index % VARIANT_BUCKETS == bucket).then_some(moves.clone()))
+        .take(limit)
+        .collect();
+
+    // Very small EO pools can leave a residue bucket empty. In that case retain
+    // one rotated candidate so the variant stays productive without recreating
+    // the entire baseline set.
+    if selected.is_empty() && !solutions.is_empty() {
+        let rotation = (variant as usize * 17) % solutions.len();
+        selected.push(solutions[rotation].clone());
+    }
+    selected
 }
 
 // --- DR Solving (first-move table chase) ---
@@ -1638,6 +1685,7 @@ fn collect_multi_switch_niss_boundaries(
         fmc_tables,
         max_eo_depth,
         FMC_MULTI_NISS_BOUNDARY_EO_LIMIT,
+        0,
     );
     let mut best_eo = None;
     let mut best_dr = None;
@@ -1739,6 +1787,7 @@ fn solve_multi_switch_niss_single_axis(
             FMC_MULTI_NISS_CONTINUATION_P2_NODE_LIMIT,
             p2_cache,
             &mut continuation_best,
+            0,
             force_rzp,
             false,
         );
@@ -1796,6 +1845,7 @@ fn solve_fmc_single_axis(
     p2_node_limit: u64,
     p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
+    search_variant: u32,
     force_rzp: bool,
     enable_htr_skeletons: bool,
 ) -> Vec<(
@@ -1810,7 +1860,14 @@ fn solve_fmc_single_axis(
     let mut results = Vec::new();
 
     let eo_idx = encode_eo(&state.eo);
-    let eo_seqs = find_eo_sequences(eo_idx, tables, fmc_tables, max_eo_depth, eo_limit);
+    let eo_seqs = find_eo_sequences(
+        eo_idx,
+        tables,
+        fmc_tables,
+        max_eo_depth,
+        eo_limit,
+        search_variant,
+    );
 
     for eo_seq in &eo_seqs {
         if eo_seq.len() >= *current_best {
@@ -1964,7 +2021,10 @@ fn build_skeleton_candidate(
     })
 }
 
-fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcSkeletonCandidate> {
+fn finalize_skeleton_beam(
+    mut candidates: Vec<FmcSkeletonCandidate>,
+    beam_limit: usize,
+) -> Vec<FmcSkeletonCandidate> {
     candidates.sort_by_key(|candidate| {
         (
             candidate.moves.len(),
@@ -2013,7 +2073,7 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
 
     for quota in 1..=FMC_SKELETON_PER_BUCKET {
         for (index, candidate) in candidates.iter().enumerate() {
-            if selected.len() >= FMC_SKELETON_BEAM_LIMIT {
+            if selected.len() >= beam_limit {
                 break;
             }
             if selected_keys.contains(&index) {
@@ -2030,9 +2090,9 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
         }
     }
 
-    if selected.len() < FMC_SKELETON_BEAM_LIMIT {
+    if selected.len() < beam_limit {
         for (index, candidate) in candidates.into_iter().enumerate() {
-            if selected.len() >= FMC_SKELETON_BEAM_LIMIT {
+            if selected.len() >= beam_limit {
                 break;
             }
             if selected_keys.insert(index) {
@@ -2586,6 +2646,9 @@ fn solve_fmc_with_eo_depth(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    search_level: u8,
+    search_variant: u32,
+    incumbent_move_count: usize,
     max_eo_depth: u8,
 ) -> FmcResult {
     // Parse scramble
@@ -2606,11 +2669,19 @@ fn solve_fmc_with_eo_depth(
         }
     };
 
+    let search_level = search_level.min(3) as usize;
+    let direct_eo_limit = [FMC_EO_LIMIT, 12, 24, 48][search_level];
+    let premove_eo_limit = [FMC_PM_EO_LIMIT, 6, 12, 24][search_level];
+    let p2_node_limit = [FMC_P2_NODE_LIMIT, 8_000_000, 24_000_000, 64_000_000][search_level];
+    let premove_p2_node_limit =
+        [FMC_PM_P2_NODE_LIMIT, 2_000_000, 8_000_000, 20_000_000][search_level];
+    let skeleton_beam_limit = [FMC_SKELETON_BEAM_LIMIT, 48, 96, 160][search_level];
+
     let mut all_candidates: Vec<FmcCandidate> = Vec::new();
     let mut all_skeletons: Vec<FmcSkeletonCandidate> = Vec::new();
     let original_scramble_state =
         CubeState::solved().apply_moves(&scramble_moves, &tables.move_data);
-    let mut best_count = 40usize;
+    let mut best_count = incumbent_move_count.clamp(1, 40);
     let mut p2_cache = FmcP2Cache::default();
 
     // Build each axis base state once. Premove variants append only their 1-2
@@ -2632,12 +2703,13 @@ fn solve_fmc_with_eo_depth(
             tables,
             fmc_tables,
             max_eo_depth,
-            FMC_EO_LIMIT,
+            direct_eo_limit,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
-            FMC_P2_NODE_LIMIT,
+            p2_node_limit,
             &mut p2_cache,
             &mut best_count,
+            search_variant.wrapping_add(axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
         );
@@ -2709,12 +2781,13 @@ fn solve_fmc_with_eo_depth(
             tables,
             fmc_tables,
             max_eo_depth,
-            FMC_EO_LIMIT,
+            direct_eo_limit,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
-            FMC_P2_NODE_LIMIT,
+            p2_node_limit,
             &mut p2_cache,
             &mut best_count,
+            search_variant.wrapping_add(101 + axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
         );
@@ -2873,7 +2946,12 @@ fn solve_fmc_with_eo_depth(
     let pm_limit = max_premove_sets.min(premove_sets.len());
 
     for pm_idx in 0..pm_limit {
-        let premove = &premove_sets[pm_idx];
+        let premove_index = if premove_sets.is_empty() {
+            0
+        } else {
+            ((search_variant as usize * 37) + pm_idx * 53) % premove_sets.len()
+        };
+        let premove = &premove_sets[premove_index];
         let pm_set = &premove.moves;
         let conjugated_premoves = &premove.axis_moves;
 
@@ -2891,12 +2969,16 @@ fn solve_fmc_with_eo_depth(
                     tables,
                     fmc_tables,
                     max_eo_depth,
-                    FMC_PM_EO_LIMIT,
+                    premove_eo_limit,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
-                    FMC_PM_P2_NODE_LIMIT,
+                    premove_p2_node_limit,
                     &mut p2_cache,
                     &mut best_count,
+                    search_variant
+                        .wrapping_add(1009)
+                        .wrapping_add(pm_idx as u32 * 131)
+                        .wrapping_add(axis as u32 * 17),
                     force_rzp,
                     enable_htr_skeletons,
                 );
@@ -2974,12 +3056,16 @@ fn solve_fmc_with_eo_depth(
                     tables,
                     fmc_tables,
                     max_eo_depth,
-                    FMC_PM_EO_LIMIT,
+                    premove_eo_limit,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
-                    FMC_PM_P2_NODE_LIMIT,
+                    premove_p2_node_limit,
                     &mut p2_cache,
                     &mut best_count,
+                    search_variant
+                        .wrapping_add(2003)
+                        .wrapping_add(pm_idx as u32 * 131)
+                        .wrapping_add(axis as u32 * 17),
                     force_rzp,
                     enable_htr_skeletons,
                 );
@@ -3068,7 +3154,7 @@ fn solve_fmc_with_eo_depth(
     } else {
         all_skeletons.retain(|skeleton| skeleton.kind.is_single_insertion());
     }
-    let skeletons = finalize_skeleton_beam(all_skeletons);
+    let skeletons = finalize_skeleton_beam(all_skeletons, skeleton_beam_limit);
 
     let inserted_candidates =
         optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
@@ -3139,7 +3225,11 @@ pub fn solve_fmc(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    search_level: u8,
+    search_variant: u32,
+    incumbent_move_count: usize,
 ) -> FmcResult {
+    let requested_eo_depth = FMC_MAX_EO_DEPTH.saturating_add(search_level.min(3));
     let primary = solve_fmc_with_eo_depth(
         scramble,
         tables,
@@ -3151,7 +3241,10 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH,
+        search_level,
+        search_variant,
+        incumbent_move_count,
+        requested_eo_depth,
     );
     if primary.ok {
         return primary;
@@ -3168,7 +3261,10 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH.saturating_add(1),
+        search_level,
+        search_variant,
+        incumbent_move_count,
+        requested_eo_depth.saturating_add(1),
     );
     fallback.eo_fallback_used = fallback.ok;
     fallback
