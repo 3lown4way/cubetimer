@@ -10,6 +10,7 @@ on:
       - 'solver/fmcSolver.js'
       - 'solver/solverWorker.js'
       - 'tools/apply-fmc-extreme-human-anytime.py'
+      - 'tools/fix-fmc-extreme-human-anytime.py'
       - '.github/workflows/fmc-extreme-human-anytime.yml'
 
 permissions:
@@ -27,7 +28,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply human-anytime implementation
-        run: python3 tools/apply-fmc-extreme-human-anytime.py
+        run: |
+          python3 tools/apply-fmc-extreme-human-anytime.py
+          python3 tools/fix-fmc-extreme-human-anytime.py
 
       - name: Format Rust
         run: cargo fmt --manifest-path solver-wasm/Cargo.toml
@@ -149,6 +152,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs solver/fmcSolver.js solver/solverWorker.js public/solver-wasm/solver_wasm_bg.wasm
-          git rm -f .github/workflows/fmc-extreme-human-anytime.yml tools/apply-fmc-extreme-human-anytime.py
+          git rm -f .github/workflows/fmc-extreme-human-anytime.yml tools/apply-fmc-extreme-human-anytime.py tools/fix-fmc-extreme-human-anytime.py
           git commit -m "Make FMC Extreme a deeper human anytime search"
           git push origin HEAD:${{ github.head_ref }}
