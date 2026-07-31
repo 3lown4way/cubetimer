@@ -1344,6 +1344,9 @@ struct AxisSkeletonPrefix {
     eo_len: u8,
     dr_len: u8,
     p2_len: u8,
+    eo_moves: Vec<u8>,
+    dr_moves: Vec<u8>,
+    finish_moves: Vec<u8>,
 }
 
 fn classify_insertion_leftover(state: &CubeState) -> Option<(FmcSkeletonKind, Vec<u8>)> {
@@ -1409,6 +1412,9 @@ fn collect_axis_skeleton_prefixes(
                     eo_len: eo_moves.len() as u8,
                     dr_len: dr_moves.len() as u8,
                     p2_len: p2_len as u8,
+                    eo_moves: eo_moves.to_vec(),
+                    dr_moves: dr_moves.to_vec(),
+                    finish_moves: p2_moves[..p2_len].to_vec(),
                 });
             }
         }
@@ -1561,6 +1567,8 @@ pub struct FmcCandidate {
     pub premove_moves: Vec<u8>,
     /// Whether this candidate used RZP for DR (vs direct solve)
     pub rzp_used: bool,
+    /// Skeleton before insertion and cancellation, when applicable.
+    pub skeleton_moves: Vec<u8>,
     /// Exact algorithm inserted into a 3-cycle skeleton, when applicable.
     pub insertion_moves: Vec<u8>,
     pub insertion_position: Option<u8>,
@@ -1576,6 +1584,9 @@ pub struct FmcSkeletonCandidate {
     pub eo_len: u8,
     pub dr_len: u8,
     pub p2_len: u8,
+    pub eo_moves: Vec<u8>,
+    pub dr_moves: Vec<u8>,
+    pub finish_moves: Vec<u8>,
     pub axis: u8,
     pub source_tag: u8,
     pub premove_moves: Vec<u8>,
@@ -1996,6 +2007,9 @@ fn build_skeleton_candidate(
     moves: Vec<u8>,
     tables: &TwophaseTables,
     prefix: &AxisSkeletonPrefix,
+    eo_moves: Vec<u8>,
+    dr_moves: Vec<u8>,
+    finish_moves: Vec<u8>,
     axis: u8,
     source_tag: u8,
     premove_moves: &[u8],
@@ -2014,6 +2028,9 @@ fn build_skeleton_candidate(
         eo_len: prefix.eo_len,
         dr_len: prefix.dr_len,
         p2_len: prefix.p2_len,
+        eo_moves,
+        dr_moves,
+        finish_moves,
         axis,
         source_tag,
         premove_moves: premove_moves.to_vec(),
@@ -2179,6 +2196,9 @@ fn synthesize_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2223,6 +2243,9 @@ fn synthesize_multi_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2267,6 +2290,9 @@ fn synthesize_slice_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2355,23 +2381,20 @@ fn best_single_insertion(
         moves: insertion_moves.clone(),
         position: insertion_position.min(u8::MAX as usize) as u8,
     });
-    let finish_moves = insertion_steps
-        .iter()
-        .flat_map(|step| step.moves.iter().copied())
-        .collect();
 
     Some(FmcCandidate {
         moves,
         eo_len: skeleton.eo_len,
         dr_len: skeleton.dr_len,
         p2_len: skeleton.p2_len,
-        eo_moves: vec![],
-        dr_moves: vec![],
-        finish_moves,
+        eo_moves: skeleton.eo_moves.clone(),
+        dr_moves: skeleton.dr_moves.clone(),
+        finish_moves: skeleton.finish_moves.clone(),
         axis: skeleton.axis,
         source_tag: skeleton.source_tag,
         premove_moves: skeleton.premove_moves.clone(),
         rzp_used: skeleton.rzp_used,
+        skeleton_moves: skeleton.moves.clone(),
         insertion_moves: insertion_steps[0].moves.clone(),
         insertion_position: Some(insertion_steps[0].position),
         skeleton_kind: Some(origin_kind),
@@ -2422,23 +2445,20 @@ fn best_slice_insertion(
         moves: insertion_moves.clone(),
         position: insertion_position.min(u8::MAX as usize) as u8,
     });
-    let finish_moves = insertion_steps
-        .iter()
-        .flat_map(|step| step.moves.iter().copied())
-        .collect();
 
     Some(FmcCandidate {
         moves,
         eo_len: skeleton.eo_len,
         dr_len: skeleton.dr_len,
         p2_len: skeleton.p2_len,
-        eo_moves: vec![],
-        dr_moves: vec![],
-        finish_moves,
+        eo_moves: skeleton.eo_moves.clone(),
+        dr_moves: skeleton.dr_moves.clone(),
+        finish_moves: skeleton.finish_moves.clone(),
         axis: skeleton.axis,
         source_tag: skeleton.source_tag,
         premove_moves: skeleton.premove_moves.clone(),
         rzp_used: skeleton.rzp_used,
+        skeleton_moves: skeleton.moves.clone(),
         insertion_moves: insertion_steps[0].moves.clone(),
         insertion_position: Some(insertion_steps[0].position),
         skeleton_kind: Some(origin_kind),
@@ -2556,6 +2576,9 @@ fn optimize_multi_skeleton_insertions(
                     eo_len: skeleton.eo_len,
                     dr_len: skeleton.dr_len,
                     p2_len: skeleton.p2_len,
+                    eo_moves: skeleton.eo_moves.clone(),
+                    dr_moves: skeleton.dr_moves.clone(),
+                    finish_moves: skeleton.finish_moves.clone(),
                     axis: skeleton.axis,
                     source_tag: skeleton.source_tag,
                     premove_moves: skeleton.premove_moves.clone(),
@@ -2739,6 +2762,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag,
                     premove_moves: vec![],
                     rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2753,6 +2777,9 @@ fn solve_fmc_with_eo_depth(
                     original_prefix,
                     tables,
                     &prefix,
+                    cvt(&prefix.eo_moves),
+                    cvt(&prefix.dr_moves),
+                    cvt(&prefix.finish_moves),
                     axis,
                     source_tag,
                     &[],
@@ -2820,6 +2847,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag,
                     premove_moves: vec![],
                     rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2834,6 +2862,9 @@ fn solve_fmc_with_eo_depth(
                     inverse_prefix,
                     tables,
                     &prefix,
+                    cvt(&prefix.eo_moves),
+                    cvt(&prefix.dr_moves),
+                    cvt(&prefix.finish_moves),
                     axis,
                     source_tag,
                     &[],
@@ -2889,6 +2920,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag: if result.stage_tag == 0 { 8 } else { 9 },
                     premove_moves: vec![],
                     rzp_used: result.rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2932,6 +2964,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag: if result.stage_tag == 0 { 10 } else { 11 },
                     premove_moves: vec![],
                     rzp_used: result.rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -3018,6 +3051,7 @@ fn solve_fmc_with_eo_depth(
                             source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
+                            skeleton_moves: vec![],
                             insertion_moves: vec![],
                             insertion_position: None,
                             skeleton_kind: None,
@@ -3033,6 +3067,9 @@ fn solve_fmc_with_eo_depth(
                             full_prefix,
                             tables,
                             &prefix,
+                            cvt(&prefix.eo_moves),
+                            cvt(&prefix.dr_moves),
+                            cvt(&prefix.finish_moves),
                             axis,
                             source_tag,
                             pm_set,
@@ -3106,6 +3143,7 @@ fn solve_fmc_with_eo_depth(
                             source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
+                            skeleton_moves: vec![],
                             insertion_moves: vec![],
                             insertion_position: None,
                             skeleton_kind: None,
@@ -3121,6 +3159,9 @@ fn solve_fmc_with_eo_depth(
                             full_prefix,
                             tables,
                             &prefix,
+                            cvt(&prefix.eo_moves),
+                            cvt(&prefix.dr_moves),
+                            cvt(&prefix.finish_moves),
                             axis,
                             source_tag,
                             pm_set,
@@ -3339,6 +3380,18 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         .iter()
         .map(|&m| tables.move_data.move_names[m as usize].as_str())
         .collect();
+    let skeleton_solution = if candidate.skeleton_moves.is_empty() {
+        String::new()
+    } else {
+        solution_string_from_path(&candidate.skeleton_moves, &tables.move_data)
+    };
+    let raw_insertion_move_count = candidate.skeleton_moves.len()
+        + candidate
+            .insertion_steps
+            .iter()
+            .map(|step| step.moves.len())
+            .sum::<usize>();
+    let cancellation_count = raw_insertion_move_count.saturating_sub(candidate.moves.len());
 
     let mut value = serde_json::json!({
         "ok": true,
@@ -3382,6 +3435,22 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
             .collect();
         let object = value.as_object_mut().unwrap();
         object.insert("baseSource".into(), serde_json::json!(base_source));
+        object.insert(
+            "skeletonSolution".into(),
+            serde_json::json!(skeleton_solution),
+        );
+        object.insert(
+            "skeletonMoveCount".into(),
+            serde_json::json!(candidate.skeleton_moves.len()),
+        );
+        object.insert(
+            "rawInsertionMoveCount".into(),
+            serde_json::json!(raw_insertion_move_count),
+        );
+        object.insert(
+            "cancellationCount".into(),
+            serde_json::json!(cancellation_count),
+        );
         object.insert("skeletonKind".into(), serde_json::json!(kind.as_str()));
         object.insert("insertionPosition".into(), serde_json::json!(position));
         object.insert("insertionMoves".into(), serde_json::json!(insertion_moves));
@@ -3455,6 +3524,21 @@ pub fn skeleton_to_json(
         ),
     };
     let estimated_insertion_cost = skeleton.kind.estimated_insertion_cost();
+    let eo_moves: Vec<&str> = skeleton
+        .eo_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let dr_moves: Vec<&str> = skeleton
+        .dr_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let finish_moves: Vec<&str> = skeleton
+        .finish_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
 
     serde_json::json!({
         "kind": skeleton.kind.as_str(),
@@ -3468,6 +3552,9 @@ pub fn skeleton_to_json(
         "eoLength": skeleton.eo_len,
         "drLength": skeleton.dr_len,
         "p2PrefixLength": skeleton.p2_len,
+        "eoMoves": eo_moves,
+        "drMoves": dr_moves,
+        "finishMoves": finish_moves,
         "axisName": AXIS_NAMES[skeleton.axis as usize],
         "source": source,
         "premoves": premove_str,

@@ -765,6 +765,13 @@ function createCandidate(source, strategy, moves) {
     premoveMoves: Array.isArray(metadata.premoveMoves) ? metadata.premoveMoves : null,
     skeletonMoves: Array.isArray(metadata.skeletonMoves) ? metadata.skeletonMoves : null,
     insertionBaseMoves: Array.isArray(metadata.insertionBaseMoves) ? metadata.insertionBaseMoves : null,
+    skeletonKind: metadata.skeletonKind || null,
+    insertionMoves: Array.isArray(metadata.insertionMoves) ? metadata.insertionMoves : null,
+    insertionPosition: Number.isFinite(metadata.insertionPosition) ? metadata.insertionPosition : null,
+    insertions: Array.isArray(metadata.insertions) ? metadata.insertions : [],
+    rawInsertionMoveCount: Number.isFinite(metadata.rawInsertionMoveCount) ? metadata.rawInsertionMoveCount : null,
+    cancellationCount: Number.isFinite(metadata.cancellationCount) ? metadata.cancellationCount : null,
+    baseSource: metadata.baseSource || "",
     moves: normalized,
     solution: joinMoves(normalized),
     moveCount: normalized.length,
@@ -1137,174 +1144,85 @@ async function solveFmcEO(scrambleText, options = {}) {
 function buildFmcParts(candidate) {
   if (!candidate) return [];
   const parts = [];
+  const sourceText = `${candidate.source || ""} ${candidate.baseSource || ""} ${candidate.strategy || ""}`;
+  const isInsertion = /^FMC_INSERTION(?:_|$)/.test(candidate.source || "") || candidate.source === "FMC_INSERTION";
+  const isNiss = /NISS/.test(sourceText);
+  const isHtr = /HTR/.test(sourceText);
+  const axisNote = candidate.axisName ? `${candidate.axisName}축` : "";
+  const sideNote = isNiss ? "inverse side" : "normal side";
   const hasPremove = Array.isArray(candidate.premoveMoves) && candidate.premoveMoves.length > 0;
-  const hasEo = Array.isArray(candidate.eoMoves) && candidate.eoMoves.length > 0;
-  const hasDr = Array.isArray(candidate.drMoves) && candidate.drMoves.length > 0;
-  const hasFinish = Array.isArray(candidate.finishMoves) && candidate.finishMoves.length > 0;
-  const hasSegments = hasEo || hasDr || hasFinish;
-  const isInsertion = candidate.source === "FMC_INSERTION";
-  const hasInsertionBase = Array.isArray(candidate.insertionBaseMoves) && candidate.insertionBaseMoves.length > 0;
-  // NISS candidates store segments as inv(EO_inv), inv(DR_inv), inv(Finish_inv).
-  // Their execution order on the original scramble is: finishMoves → drMoves → eoMoves [→ postmove if any].
-  // FMC_PREMOVE_NISS: NISS solve from premove sweep; premoveMoves is a post-move applied at the end.
-  // FMC_INSERTION derived from a NISS base: strategy tag encodes the base source.
-  const isNiss =
-    candidate.source === "FMC_NISS" ||
-    candidate.source === "FMC_PREMOVE_SCOUT_NISS" ||
-    candidate.source === "FMC_PREMOVE_NISS" ||
-    /^FMC_(PREMOVE_)?NISS(_|$)/.test(candidate.source || "") ||
-    (candidate.source === "FMC_INSERTION" && /FMC_(PREMOVE_)?NISS/.test(candidate.strategy || ""));
 
-  const sourceNote = candidate.source
-    ? candidate.source.replace(/^FMC_/, "").replace(/_/g, " ")
-    : "";
-  const axisNote = candidate.axisName ? `axis ${candidate.axisName}` : "";
-  const nissNote = isNiss ? "NISS" : "";
-  const rzpNote = candidate.rzpUsed ? "RZP" : "";
-
-  // For non-NISS: premove comes BEFORE EO/DR/Finish in execution order.
-  // For NISS: premoveMoves is a post-move; it is appended AFTER EO/DR/Finish (see below).
-  if (hasPremove && !isNiss) {
-    const sol = joinMoves(candidate.premoveMoves);
+  const pushSummary = (name, moves, moveCount, notes = "") => {
+    const normalizedMoves = Array.isArray(moves) ? moves : [];
+    const count = Number.isFinite(moveCount) ? moveCount : normalizedMoves.length;
+    if (!normalizedMoves.length && !(Number.isFinite(count) && count > 0) && !notes) return;
     parts.push({
-      name: "Premove",
-      solution: sol,
-      moveCount: candidate.premoveMoves.length,
-      notes: "",
-    });
-  }
-
-  if (isNiss) {
-    // For NISS, execution order on original scramble is: Finish → DR → EO
-    // (stored moves are already the inverted segments from the inverse solve)
-    if (hasFinish) {
-      parts.push({
-        name: "Finish",
-        solution: joinMoves(candidate.finishMoves),
-        moveCount: candidate.finishMoves.length,
-        notes: [nissNote, axisNote].filter(Boolean).join(", "),
-      });
-    } else if (hasSegments && Number.isFinite(candidate.p2Length) && candidate.p2Length > 0) {
-      parts.push({
-        name: "Finish",
-        solution: "",
-        moveCount: candidate.p2Length,
-        notes: [`${candidate.p2Length}수`, nissNote, axisNote].filter(Boolean).join(", "),
-      });
-    }
-    if (hasDr) {
-      parts.push({
-        name: "DR",
-        solution: joinMoves(candidate.drMoves),
-        moveCount: candidate.drMoves.length,
-        notes: [nissNote, rzpNote].filter(Boolean).join(", "),
-      });
-    } else if (hasSegments && Number.isFinite(candidate.drLength) && candidate.drLength > 0) {
-      parts.push({
-        name: "DR",
-        solution: "",
-        moveCount: candidate.drLength,
-        notes: [`${candidate.drLength}수`, nissNote, rzpNote].filter(Boolean).join(", "),
-      });
-    }
-    if (hasEo) {
-      parts.push({
-        name: "EO",
-        solution: joinMoves(candidate.eoMoves),
-        moveCount: candidate.eoMoves.length,
-        notes: nissNote,
-      });
-    } else if (hasSegments && Number.isFinite(candidate.eoLength) && candidate.eoLength > 0) {
-      parts.push({
-        name: "EO",
-        solution: "",
-        moveCount: candidate.eoLength,
-        notes: [`${candidate.eoLength}수`, nissNote].filter(Boolean).join(", "),
-      });
-    }
-    // For NISS with premove: the premove is a post-move applied AFTER Finish → DR → EO.
-    if (hasPremove) {
-      parts.push({
-        name: "Postmove",
-        solution: joinMoves(candidate.premoveMoves),
-        moveCount: candidate.premoveMoves.length,
-        notes: nissNote,
-      });
-    }
-  } else {
-    if (hasEo) {
-      parts.push({
-        name: "EO",
-        solution: joinMoves(candidate.eoMoves),
-        moveCount: candidate.eoMoves.length,
-        notes: axisNote,
-      });
-    } else if (hasSegments && Number.isFinite(candidate.eoLength) && candidate.eoLength > 0) {
-      parts.push({
-        name: "EO",
-        solution: "",
-        moveCount: candidate.eoLength,
-        notes: `${candidate.eoLength}수` + (axisNote ? `, ${axisNote}` : ""),
-      });
-    }
-    if (hasDr) {
-      parts.push({
-        name: "DR",
-        solution: joinMoves(candidate.drMoves),
-        moveCount: candidate.drMoves.length,
-        notes: "",
-      });
-    } else if (hasSegments && Number.isFinite(candidate.drLength) && candidate.drLength > 0) {
-      parts.push({
-        name: "DR",
-        solution: "",
-        moveCount: candidate.drLength,
-        notes: `${candidate.drLength}수`,
-      });
-    }
-    if (hasFinish) {
-      parts.push({
-        name: "Finish",
-        solution: joinMoves(candidate.finishMoves),
-        moveCount: candidate.finishMoves.length,
-        notes: "",
-      });
-    } else if (hasSegments && Number.isFinite(candidate.p2Length) && candidate.p2Length > 0) {
-      parts.push({
-        name: "Finish",
-        solution: "",
-        moveCount: candidate.p2Length,
-        notes: `${candidate.p2Length}수`,
-      });
-    }
-  }
-
-  // Insertion info (only show when insertion actually happened)
-  if (isInsertion && hasInsertionBase) {
-    const baseMoveCount = candidate.insertionBaseMoves.length;
-    const finalMoveCount = candidate.moveCount;
-    parts.push({
-      name: "Insertion",
-      solution: "",
-      moveCount: 0,
-      notes: baseMoveCount !== finalMoveCount
-        ? `${baseMoveCount} → ${finalMoveCount}`
-        : "no improvement",
+      name,
+      solution: joinMoves(normalizedMoves),
+      moveCount: Number.isFinite(count) ? count : 0,
+      notes,
       isSummary: true,
     });
+  };
+
+  if (hasPremove) {
+    pushSummary(isNiss ? "Postmove" : "Premove", candidate.premoveMoves, candidate.premoveMoves.length, isNiss ? "NISS" : "");
   }
 
-  // Final
+  pushSummary(
+    isNiss ? "NISS 탐색" : "정방향 탐색",
+    [],
+    0,
+    [sideNote, axisNote].filter(Boolean).join(", "),
+  );
+  pushSummary("EO", candidate.eoMoves, candidate.eoLength, [axisNote, sideNote].filter(Boolean).join(", "));
+  pushSummary("DR", candidate.drMoves, candidate.drLength, [candidate.rzpUsed ? "RZP" : "", sideNote].filter(Boolean).join(", "));
+  if (isHtr) pushSummary("HTR", [], 0, sideNote);
+  pushSummary("P2 / Skeleton 진행", candidate.finishMoves, candidate.p2Length, sideNote);
+
+  if (isInsertion) {
+    const skeletonKindLabel = {
+      corner3: "3-corner cycle",
+      edge3: "3-edge cycle",
+      corner2edge2: "2C2E",
+      slice: "slice leave",
+      corner4: "4-corner leave",
+      edge4: "4-edge leave",
+      corner3edge3: "3C3E leave",
+    }[candidate.skeletonKind] || candidate.skeletonKind || "insertion leave";
+    const skeletonMoves = Array.isArray(candidate.skeletonMoves) ? candidate.skeletonMoves : [];
+    pushSummary("Skeleton", skeletonMoves, skeletonMoves.length || null, skeletonKindLabel);
+    pushSummary("Leave", [], 0, skeletonKindLabel);
+
+    const insertions = Array.isArray(candidate.insertions) && candidate.insertions.length
+      ? candidate.insertions
+      : Array.isArray(candidate.insertionMoves) && candidate.insertionMoves.length
+        ? [{ kind: candidate.skeletonKind, moves: candidate.insertionMoves, position: candidate.insertionPosition }]
+        : [];
+    insertions.forEach((entry, index) => {
+      const moves = Array.isArray(entry?.moves) ? entry.moves : [];
+      const positionNote = Number.isFinite(entry?.position) ? `위치 ${entry.position}` : "";
+      const kindNote = entry?.kind || candidate.skeletonKind || "";
+      pushSummary(`Insertion ${index + 1}`, moves, moves.length, [kindNote, positionNote].filter(Boolean).join(", "));
+    });
+
+    const rawCount = Number.isFinite(candidate.rawInsertionMoveCount)
+      ? candidate.rawInsertionMoveCount
+      : skeletonMoves.length + insertions.reduce((sum, entry) => sum + (Array.isArray(entry?.moves) ? entry.moves.length : 0), 0);
+    const cancellation = Number.isFinite(candidate.cancellationCount)
+      ? candidate.cancellationCount
+      : Math.max(0, rawCount - candidate.moveCount);
+    pushSummary("Cancellation", [], 0, `${rawCount} → ${candidate.moveCount} (-${cancellation})`);
+  }
+
   parts.push({
     name: "Final",
     solution: candidate.solution,
     moveCount: candidate.moveCount,
-    notes: [sourceNote, axisNote].filter(Boolean).join(", "),
+    notes: [isNiss ? "NISS" : "", axisNote, candidate.source || ""].filter(Boolean).join(", "),
   });
-
   return parts;
 }
-
 
 const FMC_QUALITY_PRESETS = Object.freeze({
   sweetSpot: Object.freeze({
@@ -1680,9 +1598,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           for (const wc of wasmResult.candidates) {
             if (!wc.ok || !wc.solution) continue;
             const wcMoves = typeof wc.solution === "string" ? wc.solution.split(/\s+/).filter(Boolean) : wc.moves;
-            const wcIsNiss =
-              /^FMC_(PREMOVE_)?NISS(_|$)/.test(wc.source || "") ||
-              /FMC_MULTI_NISS_INVERSE/.test(wc.source || "");
+            const wcIsNiss = /NISS/.test(wc.source || "");
             const maybeInvert = (arr) =>
               wcIsNiss && Array.isArray(arr) && arr.length
                 ? invertMoves(arr)
@@ -1702,6 +1618,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
                 drMoves: maybeInvert(wc.drMoves),
                 finishMoves: maybeInvert(wc.finishMoves),
                 premoveMoves: wc.premoves ? wc.premoves.split(/\s+/).filter(Boolean) : null,
+                skeletonKind: wc.skeletonKind || null,
+                skeletonMoves: wc.skeletonSolution ? wc.skeletonSolution.split(/\s+/).filter(Boolean) : null,
+                insertionMoves: Array.isArray(wc.insertionMoves) ? wc.insertionMoves : null,
+                insertionPosition: wc.insertionPosition,
+                insertions: Array.isArray(wc.insertions) ? wc.insertions : [],
+                rawInsertionMoveCount: wc.rawInsertionMoveCount,
+                cancellationCount: wc.cancellationCount,
+                baseSource: wc.baseSource || "",
               },
               wcMoves,
             );
@@ -1913,6 +1837,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     incrementCounter(diagnostics.sourceCounts.ranked, rankedCandidates[i]?.source || "UNKNOWN");
   }
   const best = rankedCandidates[0];
+  const parts = buildFmcParts(best);
+  const fmcStages = parts.length > 0 ? parts : [{ name: "FMC Best", solution: best.solution }];
   if (qualityMode === "extreme" && best.moveCount > targetMoveCount) {
     return {
       ok: false,
@@ -1923,6 +1849,10 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       bestHumanSolution: best.solution,
       bestHumanMoveCount: best.moveCount,
       bestHumanSource: best.source,
+      bestHumanStages: fmcStages,
+      bestHumanParts: parts,
+      stages: fmcStages,
+      parts,
       attempts,
       performanceDiagnostics: finalizeDiagnostics(),
     };
@@ -1936,17 +1866,6 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const candidateLines = rankedCandidates
     .slice(0, 3)
     .map((candidate, index) => `${index + 1}. ${candidate.moveCount}수 [${candidate.source}] ${candidate.solution}`);
-
-  // Build FMC part breakdown for the best candidate
-  const parts = buildFmcParts(best);
-
-  // Use parts directly as stages — preserves isSummary, moveCount, notes for all rows
-  // (Skeleton, Insertion summary rows are included; renderSolverStages handles isSummary correctly)
-  const fmcStages = parts.length > 0 ? parts : [
-    { name: "FMC Direct", solution: direct?.solution || "-" },
-    { name: "FMC NISS", solution: inverse?.solution ? invertAlg(inverse.solution) : "-" },
-    { name: "FMC Best", solution: best.solution },
-  ];
 
   // solutionDisplay holds top candidates supplementary info.
   // Parts breakdown is carried via stages (= parts) and rendered as stageLines in the UI.

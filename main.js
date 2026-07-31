@@ -1530,8 +1530,7 @@ function renderSolverStages(stages, fallbackSolution = "") {
     const displayMoveCount = explicitMoveCount !== null ? explicitMoveCount : stageMoves.length;
     const isSummary = stage?.isSummary === true;
     const notes = typeof stage?.notes === "string" && stage.notes ? stage.notes : "";
-    // Skip summary stages that have no moves (e.g., "Insertion: no insertion")
-    if (isSummary && stageMoves.length === 0) continue;
+    // Method summaries may intentionally contain notes without executable moves.
     if (isSummary) {
       const mcPart = displayMoveCount > 0 ? ` (${displayMoveCount}수)` : "";
       title.textContent = notes
@@ -2941,24 +2940,52 @@ async function solveCurrentScramble() {
       }
       showSolverVisualResult(currentScramble, rawSolutionText, result.stages);
     } else {
-      lastSolution = "";
-      lastSolutionDisplay = "";
-      clearSolverVisualResult();
       const rawReason = result?.reason || "";
-      const reason = rawReason === "MINMOVE_UNAVAILABLE"
-        ? "minmove HTM bundle 또는 WASM 모듈을 찾지 못했습니다."
-        : rawReason === "MINMOVE_TIMEOUT"
-          ? "minmove exact 탐색이 시간 제한 안에 끝나지 않았습니다."
-          : rawReason.startsWith("ROUX_") || rawReason.includes("SB_FAILED") || rawReason.includes("CMLL_FAILED") || rawReason.includes("LSE_FAILED") || rawReason.includes("FB_FAILED") || rawReason.includes("FINAL_NOT_SOLVED")
-            ? "Roux 해법으로 풀 수 없는 스크램블입니다. 다른 스크램블을 시도해주세요."
-            : rawReason || "해를 찾지 못했습니다.";
-      if (solverStatus) solverStatus.textContent = reason;
-      if (solverSolution) solverSolution.textContent = "-";
-      if (solverMoveCount) solverMoveCount.textContent = "0 수";
-      if (solverCopyBtn) solverCopyBtn.disabled = true;
-      const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
-      f2lMethodSelect.value = VALID_F2L_METHODS.has(f2lMethod) ? f2lMethod : DEFAULT_F2L_METHOD;
-      filterF2lMethodOptions();
+      const hasFmcBest =
+        rawReason === "FMC_HUMAN_TARGET_NOT_REACHED" &&
+        typeof result?.bestHumanSolution === "string" &&
+        result.bestHumanSolution.trim();
+      if (hasFmcBest) {
+        const bestSolution = normalizeDisplayText(result.bestHumanSolution.trim());
+        const bestStages = Array.isArray(result.bestHumanStages) ? result.bestHumanStages : result.stages;
+        const stageLines = Array.isArray(bestStages)
+          ? bestStages.map((stage) => {
+              const sol = normalizeDisplayText(stage?.solution || "");
+              const notes = typeof stage?.notes === "string" && stage.notes ? ` [${stage.notes}]` : "";
+              const mc = Number.isFinite(stage?.moveCount) && stage.moveCount > 0 ? ` (${stage.moveCount}수)` : "";
+              return stage?.isSummary
+                ? `${stage.name}${mc}${notes}${sol ? ": " + sol : ""}`
+                : `${stage.name}${mc}${notes}: ${sol || "-"}`;
+            })
+          : [];
+        lastSolution = bestSolution;
+        lastSolutionDisplay = stageLines.join("\n") || bestSolution;
+        if (solverStatus) {
+          solverStatus.textContent = `FMC Extreme 목표 미달 — 현재 최선 ${result.bestHumanMoveCount}수 (목표 ${result.qualityTarget}수)`;
+        }
+        if (solverSolution) solverSolution.textContent = lastSolutionDisplay;
+        if (solverMoveCount) solverMoveCount.textContent = `${result.bestHumanMoveCount} 수`;
+        if (solverCopyBtn) solverCopyBtn.disabled = false;
+        showSolverVisualResult(currentScramble, bestSolution, bestStages);
+      } else {
+        lastSolution = "";
+        lastSolutionDisplay = "";
+        clearSolverVisualResult();
+        const reason = rawReason === "MINMOVE_UNAVAILABLE"
+          ? "minmove HTM bundle 또는 WASM 모듈을 찾지 못했습니다."
+          : rawReason === "MINMOVE_TIMEOUT"
+            ? "minmove exact 탐색이 시간 제한 안에 끝나지 않았습니다."
+            : rawReason.startsWith("ROUX_") || rawReason.includes("SB_FAILED") || rawReason.includes("CMLL_FAILED") || rawReason.includes("LSE_FAILED") || rawReason.includes("FB_FAILED") || rawReason.includes("FINAL_NOT_SOLVED")
+              ? "Roux 해법으로 풀 수 없는 스크램블입니다. 다른 스크램블을 시도해주세요."
+              : rawReason || "해를 찾지 못했습니다.";
+        if (solverStatus) solverStatus.textContent = reason;
+        if (solverSolution) solverSolution.textContent = "-";
+        if (solverMoveCount) solverMoveCount.textContent = "0 수";
+        if (solverCopyBtn) solverCopyBtn.disabled = true;
+        const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
+        f2lMethodSelect.value = VALID_F2L_METHODS.has(f2lMethod) ? f2lMethod : DEFAULT_F2L_METHOD;
+        filterF2lMethodOptions();
+      }
     }
   } catch (error) {
     console.error("해 찾기 실패", error);
