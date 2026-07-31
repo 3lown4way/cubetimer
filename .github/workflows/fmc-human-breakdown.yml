@@ -1,0 +1,54 @@
+name: FMC human breakdown
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fmc-human-breakdown.yml'
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Print winning human FMC candidate metadata
+        run: |
+          node --input-type=module <<'NODE'
+          import { buildFmcTablesWasm, solveFmcWasm, verifyFmcSolutionWasm } from './solver/wasmSolver.js';
+
+          const scramble = "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D";
+          if (!(await buildFmcTablesWasm())) throw new Error('FMC_TABLE_BUILD_FAILED');
+
+          const result = await solveFmcWasm(scramble, {
+            maxPremoveSets: 180,
+            searchLevel: 3,
+            searchVariant: 0,
+            incumbentMoveCount: 40,
+            enableMultiSwitchNiss: true,
+            enableDeepMultiSwitchNiss: true,
+            enableHtrSkeletons: true,
+            enableSliceInsertion: true,
+            enableMultiInsertion: true,
+            enableCoverageFallback: false,
+          });
+          if (!result?.ok) throw new Error(`FMC_FAILED:${JSON.stringify(result)}`);
+          const targetSolution = "B2 L2 B2 L' F2 L' D2 L' D2 U L D' B2 U L2 U F D2 L U F";
+          const candidate = (result.candidates || []).find((c) => c.solution === targetSolution)
+            || (result.candidates || []).sort((a,b) => a.moveCount - b.moveCount)[0];
+          if (!candidate) throw new Error('CANDIDATE_NOT_FOUND');
+          const check = await verifyFmcSolutionWasm(scramble, candidate.solution);
+          const fields = {
+            scramble,
+            verified: check?.ok === true && check?.solved === true,
+            candidate,
+            skeletons: (result.skeletons || []).filter((s) =>
+              s.source === candidate.innerSource || s.solution === candidate.skeletonSolution
+            ),
+          };
+          console.log('FMC_BREAKDOWN=' + JSON.stringify(fields));
+          NODE
