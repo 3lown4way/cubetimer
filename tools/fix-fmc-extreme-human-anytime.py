@@ -31,30 +31,9 @@ profile_fixes = [
 for pattern, replacement in profile_fixes:
     text = re.sub(pattern, replacement, text, count=1, flags=re.S)
 
-# The multi-switch helper intentionally gained a search_variant parameter.
-def thread_multi_switch_variant(source, call_name, variant_expression):
-    start = source.index(call_name)
-    end = source.index("            );", start) + len("            );")
-    block = source[start:end]
-    if "search_variant.wrapping_add" in block:
-        return source
-    old = "                &mut best_count,\n                force_rzp,\n"
-    new = f"                &mut best_count,\n                {variant_expression},\n                force_rzp,\n"
-    if old not in block:
-        raise SystemExit(f"MISSING:{call_name} current-best pair")
-    block = block.replace(old, new, 1)
-    return source[:start] + block + source[end:]
-
-text = thread_multi_switch_variant(
-    text,
-    "let direct_results = solve_multi_switch_niss_single_axis(",
-    "search_variant.wrapping_add(3001 + axis as u32 * 17)",
-)
-text = thread_multi_switch_variant(
-    text,
-    "let inverse_results = solve_multi_switch_niss_single_axis(",
-    "search_variant.wrapping_add(4001 + axis as u32 * 17)",
-)
+# Multi-switch NISS remains deterministic in this stage. Search diversification
+# comes from EO move ordering, EO candidate buckets, and premove ordering; do not
+# add an argument that the multi-switch helper does not accept.
 
 PATH.write_text(text)
 print("Fixed FMC Extreme human-anytime transform anchors")
