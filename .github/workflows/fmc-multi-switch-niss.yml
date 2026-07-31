@@ -19,12 +19,20 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Apply multi-switch NISS
+      - name: Apply base multi-switch NISS
         run: |
           if grep -q "enable_multi_switch_niss" solver-wasm/src/fmc_search.rs; then
-            echo "Production transform already applied"
+            echo "Base production transform already applied"
           else
             python3 tools/apply-fmc-multi-switch-niss.py
+          fi
+
+      - name: Apply tiered standard and deep modes
+        run: |
+          if grep -q "enable_deep_multi_switch_niss" solver-wasm/src/fmc_search.rs; then
+            echo "Tiered production refinement already applied"
+          else
+            python3 tools/refine-fmc-multi-switch-niss.py
           fi
 
       - name: Format Rust
@@ -43,52 +51,11 @@ jobs:
       - name: Restore generated ignore files
         run: git restore --source=HEAD -- .gitignore public/solver-wasm/.gitignore 2>/dev/null || true
 
-      - name: Benchmark full EO and DR boundaries
+      - name: Benchmark baseline standard and deep modes
         env:
-          FMC_MULTI_NISS_RUNS: '100'
+          FMC_MULTI_NISS_RUNS: '1000'
           FMC_MULTI_NISS_PREMOVES: '40'
-          FMC_MULTI_NISS_LABEL: full
-        run: node tools/verify-fmc-multi-switch-niss.mjs
-
-      - name: Save full implementation
-        run: cp solver-wasm/src/fmc_search.rs /tmp/fmc_search_full.rs
-
-      - name: Benchmark EO boundaries only
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('solver-wasm/src/fmc_search.rs')
-          s = p.read_text()
-          old = '[best_eo, best_dr].into_iter().flatten().collect()'
-          new = '[best_eo, None].into_iter().flatten().collect()'
-          if s.count(old) != 1:
-              raise SystemExit(f'EO-only anchor count: {s.count(old)}')
-          p.write_text(s.replace(old, new, 1))
-          PY
-          (cd solver-wasm && wasm-pack build --target web --release --out-dir ../public/solver-wasm)
-          FMC_MULTI_NISS_RUNS=100 FMC_MULTI_NISS_PREMOVES=40 FMC_MULTI_NISS_LABEL=eo-only node tools/verify-fmc-multi-switch-niss.mjs
-
-      - name: Benchmark DR boundaries only
-        run: |
-          cp /tmp/fmc_search_full.rs solver-wasm/src/fmc_search.rs
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('solver-wasm/src/fmc_search.rs')
-          s = p.read_text()
-          old = '[best_eo, best_dr].into_iter().flatten().collect()'
-          new = '[None, best_dr].into_iter().flatten().collect()'
-          if s.count(old) != 1:
-              raise SystemExit(f'DR-only anchor count: {s.count(old)}')
-          p.write_text(s.replace(old, new, 1))
-          PY
-          (cd solver-wasm && wasm-pack build --target web --release --out-dir ../public/solver-wasm)
-          FMC_MULTI_NISS_RUNS=100 FMC_MULTI_NISS_PREMOVES=40 FMC_MULTI_NISS_LABEL=dr-only node tools/verify-fmc-multi-switch-niss.mjs
-
-      - name: Restore full production WASM
-        run: |
-          cp /tmp/fmc_search_full.rs solver-wasm/src/fmc_search.rs
-          (cd solver-wasm && wasm-pack build --target web --release --out-dir ../public/solver-wasm)
-          git restore --source=HEAD -- .gitignore public/solver-wasm/.gitignore 2>/dev/null || true
+        run: node tools/verify-fmc-multi-switch-niss-1000.mjs
 
       - name: Commit production implementation
         run: |
@@ -99,6 +66,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No production changes to commit"
           else
-            git commit -m "Add opt-in FMC multi-switch NISS"
+            git commit -m "Tier FMC multi-switch NISS modes"
             git push origin HEAD:${{ github.head_ref }}
           fi
