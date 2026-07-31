@@ -620,6 +620,8 @@ struct FmcOptionsJson {
     enable_slice_insertion: bool,
     #[serde(rename = "enableMultiSwitchNiss", default)]
     enable_multi_switch_niss: bool,
+    #[serde(rename = "enableDeepMultiSwitchNiss", default)]
+    enable_deep_multi_switch_niss: bool,
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -655,6 +657,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_htr_skeletons,
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
+        options.enable_deep_multi_switch_niss,
     );
 
     if !result.ok {

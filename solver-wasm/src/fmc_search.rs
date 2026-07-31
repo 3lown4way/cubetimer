@@ -1629,6 +1629,7 @@ fn collect_multi_switch_niss_boundaries(
     max_eo_depth: u8,
     current_best: usize,
     force_rzp: bool,
+    include_dr_boundaries: bool,
 ) -> Vec<FmcNissBoundary> {
     let eo_idx = encode_eo(&state.eo);
     let eo_sequences = find_eo_sequences(
@@ -1689,7 +1690,10 @@ fn collect_multi_switch_niss_boundaries(
         }
     }
 
-    [best_eo, best_dr].into_iter().flatten().collect()
+    [best_eo, if include_dr_boundaries { best_dr } else { None }]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// Switch to the inverse side at a stage boundary. If T = S·A is the state at
@@ -1703,6 +1707,7 @@ fn solve_multi_switch_niss_single_axis(
     p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
     force_rzp: bool,
+    include_dr_boundaries: bool,
 ) -> Vec<FmcBoundaryNissResult> {
     let boundaries = collect_multi_switch_niss_boundaries(
         state,
@@ -1711,6 +1716,7 @@ fn solve_multi_switch_niss_single_axis(
         max_eo_depth,
         *current_best,
         force_rzp,
+        include_dr_boundaries,
     );
     let mut output = Vec::new();
 
@@ -2579,6 +2585,7 @@ fn solve_fmc_with_eo_depth(
     enable_htr_skeletons: bool,
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
+    enable_deep_multi_switch_niss: bool,
     max_eo_depth: u8,
 ) -> FmcResult {
     // Parse scramble
@@ -2766,7 +2773,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     // --- Phase 2b: stage-boundary multi-switch NISS ---
-    if enable_multi_switch_niss {
+    if enable_multi_switch_niss || enable_deep_multi_switch_niss {
         for axis in 0..3u8 {
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
@@ -2782,6 +2789,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut best_count,
                 force_rzp,
+                enable_deep_multi_switch_niss,
             );
             for result in direct_results {
                 let simplified = simplify_moves(&cvt(&result.moves));
@@ -2823,6 +2831,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut best_count,
                 force_rzp,
+                enable_deep_multi_switch_niss,
             );
             for result in inverse_results {
                 let effective_inverse_solution = cvt(&result.moves);
@@ -3129,6 +3138,7 @@ pub fn solve_fmc(
     enable_htr_skeletons: bool,
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
+    enable_deep_multi_switch_niss: bool,
 ) -> FmcResult {
     let primary = solve_fmc_with_eo_depth(
         scramble,
@@ -3140,6 +3150,7 @@ pub fn solve_fmc(
         enable_htr_skeletons,
         enable_slice_insertion,
         enable_multi_switch_niss,
+        enable_deep_multi_switch_niss,
         FMC_MAX_EO_DEPTH,
     );
     if primary.ok {
@@ -3156,6 +3167,7 @@ pub fn solve_fmc(
         enable_htr_skeletons,
         enable_slice_insertion,
         enable_multi_switch_niss,
+        enable_deep_multi_switch_niss,
         FMC_MAX_EO_DEPTH.saturating_add(1),
     );
     fallback.eo_fallback_used = fallback.ok;
