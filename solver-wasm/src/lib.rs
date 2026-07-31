@@ -704,6 +704,8 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
+        "multiInsertionTransitionCount": result.multi_insertion_transition_count,
+        "multiInsertionPairCount": result.multi_insertion_pair_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
         "eoFallbackUsed": result.eo_fallback_used,

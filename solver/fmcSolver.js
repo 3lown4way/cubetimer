@@ -1660,6 +1660,12 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           htr: stageOptions.enableHtrSkeletons === true,
           sliceInsertion: stageOptions.enableSliceInsertion === true,
           multiInsertion: stageOptions.enableMultiInsertion === true,
+          multiInsertionTransitionCount: Number.isFinite(wasmResult?.multiInsertionTransitionCount)
+            ? wasmResult.multiInsertionTransitionCount
+            : 0,
+          multiInsertionPairCount: Number.isFinite(wasmResult?.multiInsertionPairCount)
+            ? wasmResult.multiInsertionPairCount
+            : 0,
           reservedCompression: qualityStage.options.reservedCompression === true,
           rawExplorationLimit: stageOptions.incumbentMoveCount,
           finalBestImportedAsRawLimit: qualityMode !== "extreme",
