@@ -1538,6 +1538,7 @@ pub struct FmcResult {
     pub mixed_insertion_candidate_count: usize,
     pub multi_insertion_candidate_count: usize,
     pub slice_insertion_candidate_count: usize,
+    pub eo_fallback_used: bool,
 }
 
 #[derive(Default)]
@@ -2377,7 +2378,7 @@ fn optimize_multi_skeleton_insertions(
 
 // --- Full FMC Solver ---
 
-pub fn solve_fmc(
+fn solve_fmc_with_eo_depth(
     scramble: &str,
     tables: &TwophaseTables,
     fmc_tables: &FmcTables,
@@ -2386,6 +2387,7 @@ pub fn solve_fmc(
     enable_multi_insertion: bool,
     enable_htr_skeletons: bool,
     enable_slice_insertion: bool,
+    max_eo_depth: u8,
 ) -> FmcResult {
     // Parse scramble
     let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
@@ -2399,6 +2401,7 @@ pub fn solve_fmc(
                 mixed_insertion_candidate_count: 0,
                 multi_insertion_candidate_count: 0,
                 slice_insertion_candidate_count: 0,
+                eo_fallback_used: false,
             }
         }
     };
@@ -2428,7 +2431,7 @@ pub fn solve_fmc(
             &state,
             tables,
             fmc_tables,
-            FMC_MAX_EO_DEPTH,
+            max_eo_depth,
             FMC_EO_LIMIT,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
@@ -2505,7 +2508,7 @@ pub fn solve_fmc(
             &state,
             tables,
             fmc_tables,
-            FMC_MAX_EO_DEPTH,
+            max_eo_depth,
             FMC_EO_LIMIT,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
@@ -2591,7 +2594,7 @@ pub fn solve_fmc(
                     &state,
                     tables,
                     fmc_tables,
-                    FMC_MAX_EO_DEPTH,
+                    max_eo_depth,
                     FMC_PM_EO_LIMIT,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
@@ -2674,7 +2677,7 @@ pub fn solve_fmc(
                     &state,
                     tables,
                     fmc_tables,
-                    FMC_MAX_EO_DEPTH,
+                    max_eo_depth,
                     FMC_PM_EO_LIMIT,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
@@ -2817,7 +2820,50 @@ pub fn solve_fmc(
         mixed_insertion_candidate_count,
         multi_insertion_candidate_count,
         slice_insertion_candidate_count,
+        eo_fallback_used: false,
     }
+}
+
+/// Run the normal depth-5 human FMC profile first. Only when it produces no
+/// candidate at all, retry the same pipeline with depth-6 EO coverage.
+pub fn solve_fmc(
+    scramble: &str,
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+    max_premove_sets: usize,
+    force_rzp: bool,
+    enable_multi_insertion: bool,
+    enable_htr_skeletons: bool,
+    enable_slice_insertion: bool,
+) -> FmcResult {
+    let primary = solve_fmc_with_eo_depth(
+        scramble,
+        tables,
+        fmc_tables,
+        max_premove_sets,
+        force_rzp,
+        enable_multi_insertion,
+        enable_htr_skeletons,
+        enable_slice_insertion,
+        FMC_MAX_EO_DEPTH,
+    );
+    if primary.ok {
+        return primary;
+    }
+
+    let mut fallback = solve_fmc_with_eo_depth(
+        scramble,
+        tables,
+        fmc_tables,
+        max_premove_sets,
+        force_rzp,
+        enable_multi_insertion,
+        enable_htr_skeletons,
+        enable_slice_insertion,
+        FMC_MAX_EO_DEPTH.saturating_add(1),
+    );
+    fallback.eo_fallback_used = fallback.ok;
+    fallback
 }
 
 /// Convert FmcCandidate to a JSON-friendly representation.

@@ -684,6 +684,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
+        "eoFallbackUsed": result.eo_fallback_used,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| candidate.source_tag >= 4).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| skeleton.source_tag >= 4).count(),
     })
