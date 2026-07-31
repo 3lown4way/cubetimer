@@ -1,0 +1,53 @@
+name: FMC breakdown implementation snippets
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/fmc-breakdown-snippets.yml'
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: Print relevant snippets
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          checks = {
+            'solver-wasm/src/fmc_search.rs': [
+              'struct AxisSkeletonPrefix',
+              'pub struct FmcCandidate',
+              'pub struct FmcSkeletonCandidate',
+              'fn collect_axis_skeleton_prefixes',
+              'Some(FmcSkeletonCandidate {',
+              'Some(FmcCandidate {',
+              'pub fn candidate_to_json',
+              'pub fn skeleton_to_json',
+            ],
+            'solver/fmcSolver.js': [
+              'function buildFmcParts',
+              'const wcIsNiss',
+              'FMC_HUMAN_TARGET_NOT_REACHED',
+            ],
+            'main.js': [
+              'renderSolverStages',
+              'solverApi.solve',
+              'NO_SOLUTION',
+            ],
+          }
+          for file, needles in checks.items():
+            lines = Path(file).read_text().splitlines()
+            print(f'===== {file} =====')
+            for needle in needles:
+              print(f'--- {needle} ---')
+              found = [i for i, line in enumerate(lines) if needle in line]
+              for i in found:
+                lo=max(0,i-8); hi=min(len(lines),i+28)
+                for n in range(lo,hi):
+                  print(f'{n+1:05d}: {lines[n]}')
+                print()
+          PY
