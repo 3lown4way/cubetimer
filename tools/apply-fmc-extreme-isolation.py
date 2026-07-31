@@ -126,10 +126,31 @@ rust = replace_exact(
     "    let mut raw_exploration_limit = incumbent_move_count.clamp(1, 40);",
     "raw ceiling declaration",
 )
-ref_count = rust.count("&mut best_count")
-if ref_count < 1:
-    raise SystemExit("raw ceiling references: no &mut best_count references found")
-rust = rust.replace("&mut best_count", "&mut raw_exploration_limit")
+
+# Every remaining use in this function is a ceiling check or a completed-result
+# tightening operation. Rename the checks, then remove all tightening operations.
+rust = rust.replace("best_count", "raw_exploration_limit")
+
+tightening_block = re.compile(
+    r"(?m)^\s*if simplified\.len\(\) < raw_exploration_limit \{\n"
+    r"\s*raw_exploration_limit = simplified\.len\(\);\n"
+    r"\s*\}\n"
+)
+rust, tightening_block_count = tightening_block.subn("", rust)
+if tightening_block_count < 2:
+    raise SystemExit(
+        f"raw ceiling tightening blocks: expected at least 2, found {tightening_block_count}"
+    )
+
+standalone_tightening = re.compile(
+    r"(?m)^\s*raw_exploration_limit = simplified\.len\(\);\n"
+)
+rust, standalone_count = standalone_tightening.subn("", rust)
+if standalone_count < 4:
+    raise SystemExit(
+        f"raw ceiling standalone tightening: expected at least 4, found {standalone_count}"
+    )
+
 rust_path.write_text(rust)
 
 assert "human-L0-" not in js
@@ -137,4 +158,6 @@ assert "baselineCandidateImported: false" in js
 assert "rawLimitIndependentFromFinalBest: true" in js
 assert "*current_best = simplified.len()" not in rust
 assert "*current_best = htr_simplified.len()" not in rust
+assert "best_count" not in rust
+assert "raw_exploration_limit = simplified.len()" not in rust
 assert "let mut raw_exploration_limit" in rust
