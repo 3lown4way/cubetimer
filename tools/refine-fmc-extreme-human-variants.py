@@ -39,11 +39,14 @@ new = '''        solutions: Vec::new(),
     let mut solutions = ctx.solutions;
     solutions.sort_by_key(|moves| (moves.len(), moves.clone()));
     solutions.dedup();
-    if variant == 0 || solutions.len() <= limit {
+    if variant == 0 {
         solutions.truncate(limit);
         return solutions;
     }
 
+    // Non-zero variants deliberately evaluate a disjoint slice of the wider
+    // EO pool. Do not refill from the complete pool: doing that made every
+    // variant converge back to the same candidate set.
     const VARIANT_BUCKETS: usize = 4;
     let bucket = variant as usize % VARIANT_BUCKETS;
     let mut selected: Vec<Vec<u8>> = solutions
@@ -53,17 +56,12 @@ new = '''        solutions: Vec::new(),
         .take(limit)
         .collect();
 
-    if selected.len() < limit {
+    // Very small EO pools can leave a residue bucket empty. In that case retain
+    // one rotated candidate so the variant stays productive without recreating
+    // the entire baseline set.
+    if selected.is_empty() && !solutions.is_empty() {
         let rotation = (variant as usize * 17) % solutions.len();
-        for offset in 0..solutions.len() {
-            if selected.len() >= limit {
-                break;
-            }
-            let moves = solutions[(rotation + offset) % solutions.len()].clone();
-            if !selected.contains(&moves) {
-                selected.push(moves);
-            }
-        }
+        selected.push(solutions[rotation].clone());
     }
     selected
 }
