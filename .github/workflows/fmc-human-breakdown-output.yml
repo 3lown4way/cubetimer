@@ -21,7 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply breakdown implementation
-        run: python3 tools/apply-fmc-human-breakdown-output.py
+        run: |
+          sed -i 's/constructor_count < 8/constructor_count < 4/' tools/apply-fmc-human-breakdown-output.py
+          python3 tools/apply-fmc-human-breakdown-output.py
 
       - name: Format and test Rust
         run: |
@@ -81,16 +83,13 @@ jobs:
           if (!byName.get('EO').solution || !byName.get('DR').solution) {
             throw new Error(`PHASE_MOVES_NOT_PRESERVED:${JSON.stringify(stages)}`);
           }
-          console.log('FMC_BREAKDOWN_RESULT=' + JSON.stringify({
-            solution,
-            stages,
-          }));
+          console.log('FMC_BREAKDOWN_RESULT=' + JSON.stringify({ solution, stages }));
           NODE
 
       - name: Commit production implementation
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "418982982+github-actions[bot]@users.noreply.github.com"
           git add solver-wasm/src/fmc_search.rs solver/fmcSolver.js main.js public/solver-wasm/solver_wasm_bg.wasm
           git rm -f .github/workflows/fmc-human-breakdown-output.yml .github/workflows/fmc-breakdown-snippets.yml tools/apply-fmc-human-breakdown-output.py
           git commit -m "Show human FMC phase and insertion breakdowns"
