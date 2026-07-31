@@ -151,8 +151,11 @@ fmc = replace_once(
     "boundary eo call",
 )
 
-fmc = replace_once(
-    fmc,
+single_axis_start = fmc.index("fn solve_fmc_single_axis(")
+single_axis_end = fmc.index(") -> Vec<(", single_axis_start)
+single_axis_signature = fmc[single_axis_start:single_axis_end]
+single_axis_signature = replace_once(
+    single_axis_signature,
     '''    p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
     force_rzp: bool,
@@ -164,6 +167,7 @@ fmc = replace_once(
 ''',
     "single axis signature",
 )
+fmc = fmc[:single_axis_start] + single_axis_signature + fmc[single_axis_end:]
 fmc = replace_once(
     fmc,
     '''    let eo_seqs = find_eo_sequences(eo_idx, tables, fmc_tables, max_eo_depth, eo_limit);
@@ -245,10 +249,14 @@ fmc = replace_once(
 start = fmc.index("fn solve_fmc_with_eo_depth(")
 end = fmc.index("\n/// Run the normal depth-5 human FMC profile first.", start)
 body = fmc[start:end]
-body = body.replace("FMC_EO_LIMIT,", "direct_eo_limit,")
-body = body.replace("FMC_PM_EO_LIMIT,", "premove_eo_limit,")
-body = body.replace("FMC_P2_NODE_LIMIT,", "p2_node_limit,")
-body = body.replace("FMC_PM_P2_NODE_LIMIT,", "premove_p2_node_limit,")
+profile_end = body.index("    let mut all_candidates: Vec<FmcCandidate>")
+profile_prefix = body[:profile_end]
+search_body = body[profile_end:]
+search_body = search_body.replace("FMC_EO_LIMIT,", "direct_eo_limit,")
+search_body = search_body.replace("FMC_PM_EO_LIMIT,", "premove_eo_limit,")
+search_body = search_body.replace("FMC_P2_NODE_LIMIT,", "p2_node_limit,")
+search_body = search_body.replace("FMC_PM_P2_NODE_LIMIT,", "premove_p2_node_limit,")
+body = profile_prefix + search_body
 
 needle = '''            &mut p2_cache,
             &mut best_count,
