@@ -241,8 +241,9 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
     if bytes.len() < offset + move_data_len {
         return Err("bundle truncated while reading move data".into());
     }
-    let move_data_file: MoveDataFile = serde_json::from_slice(&bytes[offset..offset + move_data_len])
-        .map_err(|error| format!("failed to parse move data: {error}"))?;
+    let move_data_file: MoveDataFile =
+        serde_json::from_slice(&bytes[offset..offset + move_data_len])
+            .map_err(|error| format!("failed to parse move data: {error}"))?;
     offset += move_data_len;
 
     let move_data = MoveData::try_from(move_data_file)?;
@@ -290,8 +291,16 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
                 values.push(lo | (hi << 8));
             }
             offset += payload_len;
-            let states = if MOVE_COUNT > 0 { entry_count / MOVE_COUNT } else { 0 };
-            let table = MoveTable { states, moves: MOVE_COUNT, values };
+            let states = if MOVE_COUNT > 0 {
+                entry_count / MOVE_COUNT
+            } else {
+                0
+            };
+            let table = MoveTable {
+                states,
+                moves: MOVE_COUNT,
+                values,
+            };
             match TableKind::from_u8(raw_kind) {
                 Some(TableKind::CoMove) => co_move = Some(table),
                 Some(TableKind::EoMove) => eo_move = Some(table),
@@ -372,8 +381,10 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
         } else {
             edge_subset_d.ok_or_else(|| "missing edge subset D table".to_string())?
         },
-        edge_perm_subset_a: edge_perm_subset_a.ok_or_else(|| "missing edge permutation subset A table".to_string())?,
-        edge_perm_subset_b: edge_perm_subset_b.ok_or_else(|| "missing edge permutation subset B table".to_string())?,
+        edge_perm_subset_a: edge_perm_subset_a
+            .ok_or_else(|| "missing edge permutation subset A table".to_string())?,
+        edge_perm_subset_b: edge_perm_subset_b
+            .ok_or_else(|| "missing edge permutation subset B table".to_string())?,
         corner_full: corner_full.ok_or_else(|| "missing corner full (CP×CO) table".to_string())?,
         co_eo_joint: co_eo_joint.ok_or_else(|| "missing CO+EO joint table".to_string())?,
         co_move: co_move.ok_or_else(|| "missing CO move table".to_string())?,

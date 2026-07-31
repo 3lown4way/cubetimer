@@ -1299,15 +1299,17 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
       : 12;
     const stages = [];
     for (let variant = 0; variant < requestedVariants; variant += 1) {
-      const searchLevel = variant === 0 ? 0 : variant < 3 ? 1 : variant < 7 ? 2 : 3;
+      // Extreme starts above the baseline-equivalent L0 profile.
+      const searchLevel = variant < 2 ? 1 : variant < 7 ? 2 : 3;
       const premoveCap =
-        searchLevel === 0 ? 40 : searchLevel === 1 ? 90 : searchLevel === 2 ? 140 : requestedPremoveSets;
+        searchLevel === 1 ? 90 : searchLevel === 2 ? 140 : requestedPremoveSets;
       stages.push(
         stage(`human-L${searchLevel}-V${variant}`, {
           maxPremoveSets: capPremoves(premoveCap),
           searchLevel,
           searchVariant: variant,
-          enableMultiSwitchNiss: searchLevel >= 1,
+          rawExplorationLimit: searchLevel === 1 ? 28 : searchLevel === 2 ? 31 : 34,
+          enableMultiSwitchNiss: true,
           enableDeepMultiSwitchNiss: searchLevel >= 2,
           enableHtrSkeletons: searchLevel >= 2,
           enableSliceInsertion: searchLevel >= 2,
@@ -1418,6 +1420,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     totalBudgetMs: timeBudgetMs,
     wasmStages: [],
     sweepBudgetMs,
+    extremeIsolation:
+      qualityMode === "extreme"
+        ? {
+            baselineCandidateImported: false,
+            baselineCacheReused: false,
+            rawLimitIndependentFromFinalBest: true,
+          }
+        : null,
     searchProfiles: {
       direct: directProfileLevel,
       sweep: sweepProfileLevel,
@@ -1565,11 +1575,20 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           reason: Number.isFinite(bestMoveCount) ? `${bestMoveCount}T > ${targetMoveCount}T` : qualityMode,
         });
 
+        const rawExplorationLimit =
+            qualityMode === "extreme"
+              ? Number.isFinite(qualityStage.options.rawExplorationLimit)
+                ? Math.max(24, Math.min(40, Math.floor(qualityStage.options.rawExplorationLimit)))
+                : 32
+              : Number.isFinite(bestMoveCount)
+                ? Math.max(1, bestMoveCount - (bestMoveCount <= targetMoveCount ? 1 : 0))
+                : 40;
+        const { rawExplorationLimit: _rawExplorationLimit, ...wasmQualityOptions } = qualityStage.options;
         const stageOptions = {
-          ...qualityStage.options,
-          incumbentMoveCount: Number.isFinite(bestMoveCount)
-            ? Math.max(1, bestMoveCount - (bestMoveCount <= targetMoveCount ? 1 : 0))
-            : 40,
+          ...wasmQualityOptions,
+          // Kept under the legacy WASM option name for compatibility. In Extreme
+          // this is a fixed raw-path ceiling, not the completed-solution incumbent.
+          incumbentMoveCount: rawExplorationLimit,
         };
         const solveStartedAt = Date.now();
         const wasmResult = await solveFmcWasm(scramble, stageOptions);
@@ -1586,6 +1605,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           htr: stageOptions.enableHtrSkeletons === true,
           sliceInsertion: stageOptions.enableSliceInsertion === true,
           multiInsertion: stageOptions.enableMultiInsertion === true,
+          rawExplorationLimit: stageOptions.incumbentMoveCount,
+          finalBestImportedAsRawLimit: qualityMode !== "extreme",
         });
         diagnostics.phaseTimingsMs.direct += stageElapsedMs;
         diagnostics.phaseRuns.direct.calls += 1;

@@ -1941,10 +1941,9 @@ fn solve_fmc_single_axis(
             if simplified.is_empty() {
                 continue;
             }
-
-            if simplified.len() < *current_best {
-                *current_best = simplified.len();
-            }
+            // `current_best` is a raw exploration ceiling. A complete
+            // candidate must not tighten it; longer skeletons may compress
+            // below the final best after insertion and cancellation.
 
             let skeleton_prefixes = collect_axis_skeleton_prefixes(
                 &state_after_dr,
@@ -1974,9 +1973,7 @@ fn solve_fmc_single_axis(
                     htr_all_moves.extend_from_slice(&htr_tail);
                     let htr_simplified = simplify_moves(&htr_all_moves);
                     if !htr_simplified.is_empty() && htr_simplified.len() <= *current_best {
-                        if htr_simplified.len() < *current_best {
-                            *current_best = htr_simplified.len();
-                        }
+                        // HTR completion also leaves the raw ceiling unchanged.
                         let htr_prefixes = collect_axis_skeleton_prefixes(
                             &state_after_dr,
                             eo_seq,
@@ -2704,7 +2701,9 @@ fn solve_fmc_with_eo_depth(
     let mut all_skeletons: Vec<FmcSkeletonCandidate> = Vec::new();
     let original_scramble_state =
         CubeState::solved().apply_moves(&scramble_moves, &tables.move_data);
-    let mut best_count = incumbent_move_count.clamp(1, 40);
+    // Independent from the best completed solution: Extreme can retain
+    // 28-34 move raw skeletons after finding a 20-21 move result.
+    let mut raw_exploration_limit = incumbent_move_count.clamp(1, 40);
     let mut p2_cache = FmcP2Cache::default();
 
     // Build each axis base state once. Premove variants append only their 1-2
@@ -2731,7 +2730,7 @@ fn solve_fmc_with_eo_depth(
             FMC_MAX_P2_DEPTH,
             p2_node_limit,
             &mut p2_cache,
-            &mut best_count,
+            &mut raw_exploration_limit,
             search_variant.wrapping_add(axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
@@ -2748,8 +2747,7 @@ fn solve_fmc_with_eo_depth(
             let original: Vec<u8> = cvt(&moves_in_axis_frame);
             let source_tag = if htr_used { 4 } else { 0 };
             let simplified = simplify_moves(&original);
-            if !simplified.is_empty() && simplified.len() <= best_count {
-                best_count = simplified.len();
+            if !simplified.is_empty() && simplified.len() <= raw_exploration_limit {
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
                     eo_len: eo_raw.len() as u8,
@@ -2813,7 +2811,7 @@ fn solve_fmc_with_eo_depth(
             FMC_MAX_P2_DEPTH,
             p2_node_limit,
             &mut p2_cache,
-            &mut best_count,
+            &mut raw_exploration_limit,
             search_variant.wrapping_add(101 + axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
@@ -2832,8 +2830,7 @@ fn solve_fmc_with_eo_depth(
             // NISS: invert the solution
             let inverted = invert_moves(&original);
             let simplified = simplify_moves(&inverted);
-            if !simplified.is_empty() && simplified.len() <= best_count {
-                best_count = simplified.len();
+            if !simplified.is_empty() && simplified.len() <= raw_exploration_limit {
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
                     eo_len: eo_raw.len() as u8,
@@ -2891,22 +2888,19 @@ fn solve_fmc_with_eo_depth(
                 fmc_tables,
                 max_eo_depth,
                 &mut p2_cache,
-                &mut best_count,
+                &mut raw_exploration_limit,
                 force_rzp,
                 enable_deep_multi_switch_niss,
             );
             for result in direct_results {
                 let simplified = simplify_moves(&cvt(&result.moves));
                 if simplified.is_empty()
-                    || simplified.len() > best_count
+                    || simplified.len() > raw_exploration_limit
                     || !original_scramble_state
                         .apply_moves(&simplified, &tables.move_data)
                         .is_solved()
                 {
                     continue;
-                }
-                if simplified.len() < best_count {
-                    best_count = simplified.len();
                 }
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
@@ -2934,7 +2928,7 @@ fn solve_fmc_with_eo_depth(
                 fmc_tables,
                 max_eo_depth,
                 &mut p2_cache,
-                &mut best_count,
+                &mut raw_exploration_limit,
                 force_rzp,
                 enable_deep_multi_switch_niss,
             );
@@ -2942,15 +2936,12 @@ fn solve_fmc_with_eo_depth(
                 let effective_inverse_solution = cvt(&result.moves);
                 let simplified = simplify_moves(&invert_moves(&effective_inverse_solution));
                 if simplified.is_empty()
-                    || simplified.len() > best_count
+                    || simplified.len() > raw_exploration_limit
                     || !original_scramble_state
                         .apply_moves(&simplified, &tables.move_data)
                         .is_solved()
                 {
                     continue;
-                }
-                if simplified.len() < best_count {
-                    best_count = simplified.len();
                 }
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
@@ -3007,7 +2998,7 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     premove_p2_node_limit,
                     &mut p2_cache,
-                    &mut best_count,
+                    &mut raw_exploration_limit,
                     search_variant
                         .wrapping_add(1009)
                         .wrapping_add(pm_idx as u32 * 131)
@@ -3037,8 +3028,7 @@ fn solve_fmc_with_eo_depth(
                     let mut full = pm_set.clone();
                     full.extend_from_slice(&original);
                     let simplified = simplify_moves(&full);
-                    if !simplified.is_empty() && simplified.len() <= best_count {
-                        best_count = simplified.len();
+                    if !simplified.is_empty() && simplified.len() <= raw_exploration_limit {
                         all_candidates.push(FmcCandidate {
                             moves: simplified,
                             eo_len: eo_raw.len() as u8,
@@ -3098,7 +3088,7 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     premove_p2_node_limit,
                     &mut p2_cache,
-                    &mut best_count,
+                    &mut raw_exploration_limit,
                     search_variant
                         .wrapping_add(2003)
                         .wrapping_add(pm_idx as u32 * 131)
@@ -3128,8 +3118,7 @@ fn solve_fmc_with_eo_depth(
                     let mut full = invert_moves(&original);
                     full.extend_from_slice(&invert_moves(pm_set));
                     let simplified = simplify_moves(&full);
-                    if !simplified.is_empty() && simplified.len() <= best_count {
-                        best_count = simplified.len();
+                    if !simplified.is_empty() && simplified.len() <= raw_exploration_limit {
                         all_candidates.push(FmcCandidate {
                             moves: simplified,
                             eo_len: eo_raw.len() as u8,
