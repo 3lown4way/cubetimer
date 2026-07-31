@@ -1,0 +1,177 @@
+name: FMC NISS rescue experiment
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+
+      - name: Apply low-budget NISS rescue patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('solver-wasm/src/fmc_search.rs')
+          text = path.read_text()
+
+          replacement = '''/// A DR axis has two distinct EO-axis choices. The first three frames
+          /// preserve the existing search order; the final three are used by the
+          /// Extreme NISS rescue pass only.
+          const FMC_FRAME_COUNT: usize = 6;
+          const AXIS_SCRAMBLE_MAPS_JS: [[u8; 6]; FMC_FRAME_COUNT] = [
+              [0, 1, 2, 3, 4, 5],
+              [5, 4, 2, 3, 0, 1],
+              [2, 3, 1, 0, 4, 5],
+              [0, 1, 4, 5, 3, 2],
+              [2, 3, 4, 5, 0, 1],
+              [4, 5, 0, 1, 2, 3],
+          ];
+
+          const AXIS_SOLUTION_MAPS_JS: [[u8; 6]; FMC_FRAME_COUNT] = [
+              [0, 1, 2, 3, 4, 5],
+              [4, 5, 2, 3, 1, 0],
+              [3, 2, 0, 1, 4, 5],
+              [0, 1, 5, 4, 2, 3],
+              [4, 5, 0, 1, 2, 3],
+              [2, 3, 4, 5, 0, 1],
+          ];
+
+          const AXIS_NAMES: [&str; FMC_FRAME_COUNT] = [
+              "UD", "FB", "RL", "UD_EO_RL", "FB_EO_RL", "RL_EO_UD",
+          ];'''.replace('          ', '')
+
+          pattern = re.compile(
+              r'/// Axis scramble maps in JS face convention\..*?const AXIS_NAMES: \[&str; 3\] = \["UD", "FB", "RL"\];',
+              re.S,
+          )
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'axis replacement count={count}')
+
+          replacements = [
+              ('pub axis_scramble_move_map: [[u8; 18]; 3],',
+               'pub axis_scramble_move_map: [[u8; 18]; FMC_FRAME_COUNT],'),
+              ('pub axis_solution_move_map: [[u8; 18]; 3],',
+               'pub axis_solution_move_map: [[u8; 18]; FMC_FRAME_COUNT],'),
+              ('let mut axis_scramble_move_map = [[0u8; 18]; 3];\n    let mut axis_solution_move_map = [[0u8; 18]; 3];\n    for i in 0..3 {',
+               'let mut axis_scramble_move_map = [[0u8; 18]; FMC_FRAME_COUNT];\n    let mut axis_solution_move_map = [[0u8; 18]; FMC_FRAME_COUNT];\n    for i in 0..FMC_FRAME_COUNT {'),
+              ('let inverse_axis_states: [CubeState; 3] = std::array::from_fn(|axis| {',
+               'let inverse_axis_states: [CubeState; FMC_FRAME_COUNT] = std::array::from_fn(|axis| {'),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'missing anchor: {old[:60]}')
+              text = text.replace(old, new, 1)
+
+          old_loop = '''    for axis in 0..3u8 {
+                  let state = inverse_axis_states[axis as usize];
+
+                  let results = solve_fmc_single_axis(
+                      &state,
+                      tables,
+                      fmc_tables,
+                      max_eo_depth,
+                      direct_eo_limit,
+                      FMC_MAX_DR_DEPTH,
+                      FMC_MAX_P2_DEPTH,
+                      p2_node_limit,
+                      &mut p2_cache,
+                      &mut raw_exploration_limit,
+                      search_variant.wrapping_add(101 + axis as u32 * 17),
+                      force_rzp,
+                      enable_htr_skeletons,
+                  );'''.replace('              ', '')
+          new_loop = '''    let inverse_frame_count = if search_level >= 3 { FMC_FRAME_COUNT } else { 3 };
+              for axis in 0..inverse_frame_count as u8 {
+                  let state = inverse_axis_states[axis as usize];
+                  let rescue_frame = axis >= 3;
+                  let axis_eo_limit = if rescue_frame {
+                      direct_eo_limit.min(16)
+                  } else {
+                      direct_eo_limit
+                  };
+                  let axis_p2_node_limit = if rescue_frame {
+                      p2_node_limit.min(8_000_000)
+                  } else {
+                      p2_node_limit
+                  };
+
+                  let results = solve_fmc_single_axis(
+                      &state,
+                      tables,
+                      fmc_tables,
+                      max_eo_depth,
+                      axis_eo_limit,
+                      FMC_MAX_DR_DEPTH,
+                      FMC_MAX_P2_DEPTH,
+                      axis_p2_node_limit,
+                      &mut p2_cache,
+                      &mut raw_exploration_limit,
+                      search_variant.wrapping_add(101 + axis as u32 * 17),
+                      force_rzp,
+                      enable_htr_skeletons && !rescue_frame,
+                  );'''.replace('              ', '')
+          if old_loop not in text:
+              raise SystemExit('inverse loop anchor not found')
+          text = text.replace(old_loop, new_loop, 1)
+          path.write_text(text)
+          PY
+          rustfmt solver-wasm/src/fmc_search.rs
+
+      - name: Test and build
+        run: |
+          cargo test --release --manifest-path solver-wasm/Cargo.toml
+          if ! command -v wasm-pack >/dev/null 2>&1; then cargo install wasm-pack --locked; fi
+          cd solver-wasm
+          wasm-pack build --target web --out-dir ../public/solver-wasm
+
+      - name: Run development cases
+        run: |
+          cat > tools/.fmc-niss-rescue-dev.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { performance } from 'node:perf_hooks';
+          import { buildFmcTablesWasm, solveFmcWasm, verifyFmcSolutionWasm } from '../solver/wasmSolver.js';
+
+          const corpus = JSON.parse(fs.readFileSync('tools/fmc-generalization-corpus.json', 'utf8'));
+          const profile = {
+            maxPremoveSets: 0,
+            searchLevel: 3,
+            searchVariant: 7,
+            incumbentMoveCount: 34,
+            forceRzp: false,
+            enableCoverageFallback: true,
+            enableMultiSwitchNiss: true,
+            enableDeepMultiSwitchNiss: true,
+            enableHtrSkeletons: true,
+            enableSliceInsertion: true,
+            enableMultiInsertion: true,
+          };
+          if (!(await buildFmcTablesWasm())) throw new Error('FMC_TABLE_BUILD_FAILED');
+          const rows = [];
+          for (const testCase of corpus.developmentCases.slice(0, 3)) {
+            const started = performance.now();
+            const result = await solveFmcWasm(testCase.scramble, profile);
+            const elapsedMs = Math.round(performance.now() - started);
+            if (!result?.ok || !result.solution) throw new Error(`SOLVE_FAILED:${testCase.id}`);
+            const verification = await verifyFmcSolutionWasm(testCase.scramble, result.solution);
+            if (!verification?.ok || verification.solved !== true) throw new Error(`INVALID:${testCase.id}`);
+            rows.push({ id: testCase.id, known: testCase.knownMoveCount, found: result.moveCount, elapsedMs, source: result.source, solution: result.solution });
+          }
+          console.log(`NISS_RESCUE_DEV ${JSON.stringify(rows)}`);
+          NODE
+          node tools/.fmc-niss-rescue-dev.mjs
