@@ -24,6 +24,23 @@ jobs:
         run: |
           sed -i 's/constructor_count < 8/constructor_count < 4/' tools/apply-fmc-human-breakdown-output.py
           python3 tools/apply-fmc-human-breakdown-output.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('solver-wasm/src/fmc_search.rs')
+          lines = path.read_text().splitlines()
+          out = []
+          inserted = 0
+          for line in lines:
+              if 'insertion_moves:' in line and not line.lstrip().startswith('pub '):
+                  previous = out[-1] if out else ''
+                  if 'skeleton_moves:' not in previous:
+                      indent = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{indent}skeleton_moves: vec![],')
+                      inserted += 1
+              out.append(line)
+          path.write_text('\n'.join(out) + '\n')
+          print(f'filled missing skeleton fields: {inserted}')
+          PY
 
       - name: Format and test Rust
         run: |
@@ -89,7 +106,7 @@ jobs:
       - name: Commit production implementation
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "418982982+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add solver-wasm/src/fmc_search.rs solver/fmcSolver.js main.js public/solver-wasm/solver_wasm_bg.wasm
           git rm -f .github/workflows/fmc-human-breakdown-output.yml .github/workflows/fmc-breakdown-snippets.yml tools/apply-fmc-human-breakdown-output.py
           git commit -m "Show human FMC phase and insertion breakdowns"
