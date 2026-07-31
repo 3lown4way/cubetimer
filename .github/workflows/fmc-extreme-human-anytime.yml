@@ -130,10 +130,13 @@ jobs:
             throw new Error(`SEARCH_VARIANTS_DID_NOT_DIVERSIFY:${JSON.stringify(rows)}`);
           }
 
+          // This fixed scramble has a verified ~22-move human FMC result. A 24-move
+          // target exercises the same continue-after-target branch without using a
+          // toy scramble whose only short solution is the forbidden inverse scramble.
           const progress = [];
-          const easy = await solveWithFMCSearch("R U R' U'", (event) => progress.push(event), {
+          const continuation = await solveWithFMCSearch(scrambles[0], (event) => progress.push(event), {
             qualityMode: 'extreme',
-            targetMoveCount: 20,
+            targetMoveCount: 24,
             timeBudgetMs: 60000,
             maxPremoveSets: 90,
             extremeVariantCount: 4,
@@ -141,8 +144,8 @@ jobs:
             enableInsertions: true,
             preferNonCfop: true,
           });
-          if (!easy?.ok || easy.humanStyle !== true || easy.moveCount > 20) {
-            throw new Error(`EASY_HUMAN_EXTREME_FAILED:${JSON.stringify(easy)}`);
+          if (!continuation?.ok || continuation.humanStyle !== true || continuation.moveCount > 24) {
+            throw new Error(`HUMAN_CONTINUATION_FAILED:${JSON.stringify(continuation)}`);
           }
           const stageStarts = progress.filter((event) => event?.type === 'fallback_start' && /^FMC human-L/.test(event.stageName || ''));
           if (stageStarts.length < 2) throw new Error('BELOW_TARGET_SEARCH_DID_NOT_CONTINUE');
@@ -161,7 +164,12 @@ jobs:
             throw new Error(`HARD_TARGET_GATE_FAILED:${JSON.stringify(gated)}`);
           }
 
-          console.log(JSON.stringify({ diversified, rows, easyMoveCount: easy.moveCount, stageStarts: stageStarts.length }, null, 2));
+          console.log(JSON.stringify({
+            diversified,
+            rows,
+            continuationMoveCount: continuation.moveCount,
+            stageStarts: stageStarts.length,
+          }, null, 2));
           NODE
 
       - name: Commit production implementation
