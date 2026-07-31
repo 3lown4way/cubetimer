@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
 
 jobs:
   patch-and-validate:
@@ -33,6 +35,7 @@ jobs:
         uses: taiki-e/install-action@wasm-pack
 
       - name: Patch FMC Extreme isolation
+        id: patch
         shell: bash
         run: |
           python3 - <<'PY'
@@ -176,20 +179,24 @@ jobs:
           PY
 
       - name: Check JavaScript syntax
+        id: jscheck
         run: node --check solver/fmcSolver.js
 
       - name: Format Rust
         run: cargo fmt --manifest-path solver-wasm/Cargo.toml
 
       - name: Test Rust solver
+        id: rusttest
         run: cargo test --manifest-path solver-wasm/Cargo.toml
 
       - name: Rebuild solver WASM
+        id: wasm
         run: |
           cd solver-wasm
           wasm-pack build --target web --out-dir ../public/solver-wasm
 
       - name: Validate patch and diff
+        id: validate
         shell: bash
         run: |
           node --check solver/fmcSolver.js
@@ -207,6 +214,7 @@ jobs:
           PY
 
       - name: Commit generated implementation
+        id: commit
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -215,3 +223,11 @@ jobs:
           git add -A
           git commit -m "Separate FMC Extreme raw frontier from final best"
           git push origin HEAD:agent/fmc-extreme-independent-frontier-v2
+
+      - name: Report workflow result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr comment 46 --repo 3lown4way/cubetimer --body "FMC Extreme implementation workflow: **${{ job.status }}**. patch=${{ steps.patch.outcome }}, js=${{ steps.jscheck.outcome }}, rust=${{ steps.rusttest.outcome }}, wasm=${{ steps.wasm.outcome }}, validate=${{ steps.validate.outcome }}, commit=${{ steps.commit.outcome }}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
