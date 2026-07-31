@@ -1,0 +1,92 @@
+name: FMC Extreme fixed scramble benchmark
+
+on:
+  pull_request:
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+
+      - name: Run isolated Extreme variants
+        shell: bash
+        run: |
+          cat > /tmp/fmc-extreme-fixed.mjs <<'JS'
+          import { performance } from "node:perf_hooks";
+          import {
+            buildFmcTablesWasm,
+            solveFmcWasm,
+            verifyFmcSolutionWasm,
+          } from "${{ github.workspace }}/solver/wasmSolver.js";
+
+          const scramble = "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D";
+          const ready = await buildFmcTablesWasm();
+          if (!ready) throw new Error("FMC_TABLE_BUILD_FAILED");
+
+          const variants = [
+            { variant: 0, level: 1, rawLimit: 28, premoves: 90 },
+            { variant: 1, level: 1, rawLimit: 28, premoves: 90 },
+            { variant: 2, level: 2, rawLimit: 31, premoves: 140 },
+            { variant: 3, level: 2, rawLimit: 31, premoves: 140 },
+          ];
+
+          const rows = [];
+          let best = null;
+          for (const profile of variants) {
+            const started = performance.now();
+            const result = await solveFmcWasm(scramble, {
+              maxPremoveSets: profile.premoves,
+              forceRzp: false,
+              searchLevel: profile.level,
+              searchVariant: profile.variant,
+              incumbentMoveCount: profile.rawLimit,
+              enableMultiSwitchNiss: true,
+              enableDeepMultiSwitchNiss: profile.level >= 2,
+              enableHtrSkeletons: profile.level >= 2,
+              enableSliceInsertion: profile.level >= 2,
+              enableMultiInsertion: false,
+              enableCoverageFallback: true,
+            });
+            const elapsedMs = performance.now() - started;
+            if (!result?.ok || !result.solution) {
+              throw new Error(`FMC_VARIANT_FAILED:${profile.variant}:${result?.reason || "unknown"}`);
+            }
+            const verification = await verifyFmcSolutionWasm(scramble, result.solution);
+            if (!verification?.ok || verification.solved !== true) {
+              throw new Error(`FMC_VARIANT_INVALID:${profile.variant}`);
+            }
+            const skeletons = Array.isArray(result.skeletons) ? result.skeletons : [];
+            const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+            const row = {
+              ...profile,
+              elapsedMs: Math.round(elapsedMs),
+              moveCount: Number(result.moveCount),
+              source: String(result.source || ""),
+              solution: String(result.solution),
+              candidateCount: candidates.length,
+              skeletonCount: skeletons.length,
+              maxRawSkeleton: skeletons.reduce(
+                (max, item) => Math.max(max, Number(item?.moveCount || item?.skeletonMoveCount || 0)),
+                0,
+              ),
+              insertionCandidateCount: Number(result.insertionCandidateCount || 0),
+              multiSwitchNissCandidateCount: Number(result.multiSwitchNissCandidateCount || 0),
+            };
+            rows.push(row);
+            if (!best || row.moveCount < best.moveCount) best = row;
+            console.log(`VARIANT_RESULT ${JSON.stringify(row)}`);
+          }
+          console.log(`BENCHMARK_RESULT ${JSON.stringify({ scramble, best, rows })}`);
+          JS
+          node /tmp/fmc-extreme-fixed.mjs
