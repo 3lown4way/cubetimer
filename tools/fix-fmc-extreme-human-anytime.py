@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / "solver-wasm/src/fmc_search.rs"
@@ -10,7 +11,13 @@ def replace_once(source, old, new, label):
         raise SystemExit(f"MISSING:{label}")
     return source.replace(old, new, 1)
 
-# The first transform's generic signature anchor can match a neighboring helper.
+
+def regex_once(source, pattern, replacement, label):
+    updated, count = re.subn(pattern, replacement, source, count=1, flags=re.S)
+    if count != 1:
+        raise SystemExit(f"MISSING:{label}")
+    return updated
+
 # Locate the actual EO→DR→P2 function and patch only its signature block.
 single_start = text.index("fn solve_fmc_single_axis(")
 single_end = text.index(") -> Vec<(\n", single_start)
@@ -23,27 +30,34 @@ if "search_variant: u32" not in single_header:
     single_header = single_header.replace(old_pair, new_pair, 1)
     text = text[:single_start] + single_header + text[single_end:]
 
-# Global replacement inside solve_fmc_with_eo_depth also touched the newly
-# inserted profile tables. Restore their level-0 constants.
-for wrong, right, label in [
-    ("[direct_eo_limit, 12, 24, 48]", "[FMC_EO_LIMIT, 12, 24, 48]", "direct EO profile"),
-    ("[premove_eo_limit, 6, 12, 24]", "[FMC_PM_EO_LIMIT, 6, 12, 24]", "premove EO profile"),
+# Global call-site replacement also touches the newly inserted level tables.
+# Restore their level-0 constants while accepting rustfmt line wrapping.
+profiles = [
     (
-        "[p2_node_limit, 8_000_000, 24_000_000, 64_000_000]",
-        "[FMC_P2_NODE_LIMIT, 8_000_000, 24_000_000, 64_000_000]",
+        r"(let\s+direct_eo_limit\s*=\s*\[\s*)direct_eo_limit(\s*,\s*12\s*,\s*24\s*,\s*48\s*\])",
+        r"\1FMC_EO_LIMIT\2",
+        "direct EO profile",
+    ),
+    (
+        r"(let\s+premove_eo_limit\s*=\s*\[\s*)premove_eo_limit(\s*,\s*6\s*,\s*12\s*,\s*24\s*\])",
+        r"\1FMC_PM_EO_LIMIT\2",
+        "premove EO profile",
+    ),
+    (
+        r"(let\s+p2_node_limit\s*=\s*\[\s*)p2_node_limit(\s*,\s*8_000_000\s*,\s*24_000_000\s*,\s*64_000_000\s*\])",
+        r"\1FMC_P2_NODE_LIMIT\2",
         "direct P2 profile",
     ),
     (
-        "[premove_p2_node_limit, 2_000_000, 8_000_000, 20_000_000]",
-        "[FMC_PM_P2_NODE_LIMIT, 2_000_000, 8_000_000, 20_000_000]",
+        r"(let\s+premove_p2_node_limit\s*=\s*\[\s*)premove_p2_node_limit(\s*,\s*2_000_000\s*,\s*8_000_000\s*,\s*20_000_000\s*\])",
+        r"\1FMC_PM_P2_NODE_LIMIT\2",
         "premove P2 profile",
     ),
-]:
-    text = replace_once(text, wrong, right, label)
+]
+for pattern, replacement, label in profiles:
+    text = regex_once(text, pattern, replacement, label)
 
 # The multi-switch helper intentionally gained a search_variant parameter.
-# Thread distinct deterministic variants into direct and inverse boundary
-# continuation searches.
 text = replace_once(
     text,
     '''            let direct_results = solve_multi_switch_niss_single_axis(
