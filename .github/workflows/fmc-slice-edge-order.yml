@@ -1,4 +1,4 @@
-name: FMC corrected slice validation
+name: FMC slice and EO fallback validation
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Correct slice edge order
+      - name: Apply slice and staged EO fallback
         run: python3 tools/fix-fmc-slice-edge-order.py
 
       - name: Format Rust
@@ -38,21 +38,21 @@ jobs:
       - name: Restore generated ignore files
         run: git restore --source=HEAD -- .gitignore public/solver-wasm/.gitignore 2>/dev/null || true
 
-      - name: Validate cubie semantics and slice insertion
+      - name: Validate slice insertion and EO fallback
         env:
           FMC_SLICE_RUNS: '100'
           FMC_SLICE_PREMOVE_SETS: '120'
         run: node tools/verify-fmc-slice-insertion.mjs
 
-      - name: Commit production correction
+      - name: Commit production changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver-wasm/src/fmc_search.rs public/solver-wasm/solver_wasm_bg.wasm
+          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs public/solver-wasm/solver_wasm_bg.wasm
           git add public/solver-wasm/solver_wasm.js public/solver-wasm/solver_wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts public/solver-wasm/package.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No production changes to commit"
           else
-            git commit -m "Correct FMC slice cubie ordering"
+            git commit -m "Add staged FMC EO coverage fallback"
             git push origin HEAD:${{ github.head_ref }}
           fi
