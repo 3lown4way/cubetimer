@@ -618,6 +618,8 @@ struct FmcOptionsJson {
     enable_htr_skeletons: bool,
     #[serde(rename = "enableSliceInsertion", default)]
     enable_slice_insertion: bool,
+    #[serde(rename = "enableMultiSwitchNiss", default)]
+    enable_multi_switch_niss: bool,
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -652,6 +654,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_multi_insertion,
         options.enable_htr_skeletons,
         options.enable_slice_insertion,
+        options.enable_multi_switch_niss,
     );
 
     if !result.ok {
@@ -684,6 +687,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
+        "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
         "eoFallbackUsed": result.eo_fallback_used,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| candidate.source_tag >= 4).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| skeleton.source_tag >= 4).count(),
