@@ -21,7 +21,19 @@ pub const CORNER_FULL_SIZE: usize = 88_179_840;
 
 const OPPOSITE_FACE: [u8; 6] = [3, 4, 5, 0, 1, 2];
 const FACTORIAL: [usize; 13] = [
-    1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600,
+    1,
+    1,
+    2,
+    6,
+    24,
+    120,
+    720,
+    5040,
+    40320,
+    362880,
+    3628800,
+    39916800,
+    479001600,
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -432,9 +444,7 @@ pub fn decode_edge_subset_state(mut index: usize) -> EdgeSubsetState {
         let mut pos = 0usize;
         loop {
             if (avail_mask >> pos) & 1 == 1 {
-                if count == d {
-                    break;
-                }
+                if count == d { break; }
                 count += 1;
             }
             pos += 1;
@@ -509,8 +519,7 @@ pub fn apply_move_to_edge_subset_state(
         let old_pos = state.positions[piece_index] as usize;
         let new_pos = move_data.edge_new_pos_map[base + old_pos] as usize;
         next.positions[piece_index] = new_pos as u8;
-        next.flips[piece_index] =
-            (state.flips[piece_index] + move_data.edge_ori_delta[base + new_pos]) & 1;
+        next.flips[piece_index] = (state.flips[piece_index] + move_data.edge_ori_delta[base + new_pos]) & 1;
     }
     next
 }
@@ -520,9 +529,7 @@ pub fn apply_move_to_edge_perm_subset_state(
     move_index: usize,
     move_data: &MoveData,
 ) -> EdgePermSubsetState {
-    let mut next = EdgePermSubsetState {
-        positions: [0u8; 8],
-    };
+    let mut next = EdgePermSubsetState { positions: [0u8; 8] };
     let base = move_index * EDGE_COUNT;
     for piece_index in 0..8 {
         let old_pos = state.positions[piece_index] as usize;
