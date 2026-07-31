@@ -1,0 +1,345 @@
+name: FMC forced-prefix diagnostic
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Check out FMC branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+
+      - name: Inject forced-prefix diagnostic export
+        run: |
+          cat >> solver-wasm/src/fmc_search.rs <<'RUST'
+
+          /// Diagnostic-only forced-prefix replay. Known solutions are used only
+          /// to locate valid EO/DR checkpoints and are never passed into solve_fmc.
+          pub fn diagnose_forced_fmc_path(
+              scramble: &str,
+              solution: &str,
+              tables: &TwophaseTables,
+              fmc_tables: &FmcTables,
+          ) -> String {
+              let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
+                  Ok(moves) => moves,
+                  Err(error) => return serde_json::json!({"ok": false, "reason": format!("SCRAMBLE:{error}")}).to_string(),
+              };
+              let solution_moves = match parse_scramble(solution, &tables.move_data) {
+                  Ok(moves) => moves,
+                  Err(error) => return serde_json::json!({"ok": false, "reason": format!("SOLUTION:{error}")}).to_string(),
+              };
+
+              let solved_key = fmc_state_key(&CubeState::solved());
+              let mut path_reports = Vec::<serde_json::Value>::new();
+
+              for axis in 0..3usize {
+                  let move_map = &fmc_tables.axis_scramble_move_map[axis];
+                  let axis_scramble: Vec<u8> = scramble_moves
+                      .iter()
+                      .map(|&move_index| move_map[move_index as usize])
+                      .collect();
+                  let axis_solution: Vec<u8> = solution_moves
+                      .iter()
+                      .map(|&move_index| move_map[move_index as usize])
+                      .collect();
+                  let normal_start = CubeState::solved().apply_moves(&axis_scramble, &tables.move_data);
+                  let inverse_start = invert_state(&normal_start);
+                  let inverse_solution = invert_moves(&axis_solution);
+
+                  for (side_name, start_state, side_moves) in [
+                      ("normal", normal_start.clone(), axis_solution.clone()),
+                      ("inverse", inverse_start, inverse_solution),
+                  ] {
+                      let final_state = start_state.apply_moves(&side_moves, &tables.move_data);
+                      if fmc_state_key(&final_state) != solved_key {
+                          path_reports.push(serde_json::json!({
+                              "axis": AXIS_NAMES[axis],
+                              "side": side_name,
+                              "validFullPath": false,
+                          }));
+                          continue;
+                      }
+
+                      let mut current = start_state.clone();
+                      let mut eo_points = Vec::<usize>::new();
+                      let mut dr_points = Vec::<usize>::new();
+                      for (index, &move_index) in side_moves.iter().enumerate() {
+                          current = current.apply_moves(&[move_index], &tables.move_data);
+                          let length = index + 1;
+                          let eo_solved = encode_eo(&current.eo) == 0;
+                          if eo_solved {
+                              eo_points.push(length);
+                          }
+                          if eo_solved
+                              && encode_co(&current.co) == 0
+                              && encode_slice_from_ep(&current.ep) == tables.solved_slice as usize
+                          {
+                              dr_points.push(length);
+                          }
+                      }
+
+                      let Some(&eo_len) = eo_points.first() else {
+                          path_reports.push(serde_json::json!({
+                              "axis": AXIS_NAMES[axis],
+                              "side": side_name,
+                              "validFullPath": true,
+                              "eoDetected": false,
+                          }));
+                          continue;
+                      };
+                      let Some(&dr_len) = dr_points.iter().find(|&&length| length >= eo_len) else {
+                          path_reports.push(serde_json::json!({
+                              "axis": AXIS_NAMES[axis],
+                              "side": side_name,
+                              "validFullPath": true,
+                              "eoDetected": true,
+                              "eoLen": eo_len,
+                              "drDetected": false,
+                          }));
+                          continue;
+                      };
+
+                      let eo_moves = side_moves[..eo_len].to_vec();
+                      let dr_moves = side_moves[eo_len..dr_len].to_vec();
+                      let dr_prefix = side_moves[..dr_len].to_vec();
+                      let finish_moves = side_moves[dr_len..].to_vec();
+                      let eo_state = start_state.apply_moves(&eo_moves, &tables.move_data);
+                      let dr_state = start_state.apply_moves(&dr_prefix, &tables.move_data);
+                      let eo_key = fmc_state_key(&eo_state);
+                      let dr_key = fmc_state_key(&dr_state);
+
+                      let mut eo_exact_generated = false;
+                      let mut eo_state_generated = false;
+                      let mut eo_generated_count = 0usize;
+                      let mut eo_exact_best_rank: Option<usize> = None;
+                      let mut seen_eo = std::collections::HashSet::<Vec<u8>>::new();
+                      for variant in 0..8u32 {
+                          let generated = find_eo_sequences(
+                              encode_eo(&start_state.eo),
+                              tables,
+                              fmc_tables,
+                              6,
+                              512,
+                              variant,
+                          );
+                          for (rank, candidate) in generated.into_iter().enumerate() {
+                              if !seen_eo.insert(candidate.clone()) {
+                                  continue;
+                              }
+                              eo_generated_count += 1;
+                              if candidate == eo_moves {
+                                  eo_exact_generated = true;
+                                  eo_exact_best_rank = Some(eo_exact_best_rank.map_or(rank, |old| old.min(rank)));
+                              }
+                              let candidate_state = start_state.apply_moves(&candidate, &tables.move_data);
+                              if fmc_state_key(&candidate_state) == eo_key {
+                                  eo_state_generated = true;
+                              }
+                          }
+                      }
+
+                      let last_face_before_dr = last_face_of_moves(&eo_moves, tables);
+                      let generated_dr = solve_dr_routes_via_rzp(
+                          &eo_state,
+                          fmc_tables,
+                          tables,
+                          FMC_MAX_DR_DEPTH,
+                          last_face_before_dr,
+                          false,
+                      );
+                      let dr_route_count = generated_dr.len();
+                      let dr_exact_generated = generated_dr.iter().any(|route| route.moves == dr_moves);
+                      let dr_state_generated = generated_dr.iter().any(|route| {
+                          let candidate_state = eo_state.apply_moves(&route.moves, &tables.move_data);
+                          fmc_state_key(&candidate_state) == dr_key
+                      });
+                      let dr_best_generated_len = generated_dr.iter().map(|route| route.moves.len()).min();
+
+                      let boundaries = collect_multi_switch_niss_boundaries(
+                          &start_state,
+                          tables,
+                          fmc_tables,
+                          5,
+                          34,
+                          false,
+                          true,
+                      );
+                      let boundary_count = boundaries.len();
+                      let eo_boundary_exact = boundaries
+                          .iter()
+                          .any(|boundary| boundary.stage_tag == 0 && boundary.prefix_moves == eo_moves);
+                      let eo_boundary_state = boundaries.iter().any(|boundary| {
+                          boundary.stage_tag == 0
+                              && fmc_state_key(&start_state.apply_moves(&boundary.prefix_moves, &tables.move_data)) == eo_key
+                      });
+                      let dr_boundary_exact = boundaries
+                          .iter()
+                          .any(|boundary| boundary.stage_tag == 1 && boundary.prefix_moves == dr_prefix);
+                      let dr_boundary_state = boundaries.iter().any(|boundary| {
+                          boundary.stage_tag == 1
+                              && fmc_state_key(&start_state.apply_moves(&boundary.prefix_moves, &tables.move_data)) == dr_key
+                      });
+
+                      let mut continuation_best_len: Option<usize> = None;
+                      let mut continuation_exact = false;
+                      let mut continuation_count = 0usize;
+                      for variant in 0..8u32 {
+                          let mut cache = FmcP2Cache::default();
+                          let mut current_best = finish_moves.len().saturating_add(1).max(1);
+                          let continuations = solve_fmc_single_axis(
+                              &dr_state,
+                              tables,
+                              fmc_tables,
+                              5,
+                              32,
+                              FMC_MAX_DR_DEPTH,
+                              FMC_MAX_P2_DEPTH,
+                              5_000_000,
+                              &mut cache,
+                              &mut current_best,
+                              variant,
+                              false,
+                              true,
+                          );
+                          continuation_count += continuations.len();
+                          for continuation in continuations {
+                              let moves = continuation.0;
+                              continuation_best_len = Some(
+                                  continuation_best_len.map_or(moves.len(), |old| old.min(moves.len())),
+                              );
+                              if moves == finish_moves {
+                                  continuation_exact = true;
+                              }
+                          }
+                      }
+
+                      path_reports.push(serde_json::json!({
+                          "axis": AXIS_NAMES[axis],
+                          "side": side_name,
+                          "validFullPath": true,
+                          "eoLen": eo_len,
+                          "drLen": dr_len,
+                          "finishLen": finish_moves.len(),
+                          "eoMoves": solution_string_from_path(&eo_moves, &tables.move_data),
+                          "drMoves": solution_string_from_path(&dr_moves, &tables.move_data),
+                          "finishMoves": solution_string_from_path(&finish_moves, &tables.move_data),
+                          "eoGenerator": {
+                              "candidateCount": eo_generated_count,
+                              "exact": eo_exact_generated,
+                              "stateEquivalent": eo_state_generated,
+                              "exactBestRank": eo_exact_best_rank,
+                          },
+                          "drGenerator": {
+                              "routeCount": dr_route_count,
+                              "exact": dr_exact_generated,
+                              "stateEquivalent": dr_state_generated,
+                              "bestGeneratedLen": dr_best_generated_len,
+                          },
+                          "boundary": {
+                              "count": boundary_count,
+                              "eoExact": eo_boundary_exact,
+                              "eoStateEquivalent": eo_boundary_state,
+                              "drExact": dr_boundary_exact,
+                              "drStateEquivalent": dr_boundary_state,
+                          },
+                          "continuation": {
+                              "knownFinishLen": finish_moves.len(),
+                              "candidateCount": continuation_count,
+                              "exact": continuation_exact,
+                              "bestFoundLen": continuation_best_len,
+                          },
+                      }));
+                  }
+              }
+
+              path_reports.sort_by_key(|report| {
+                  let dr = report.get("drLen").and_then(|value| value.as_u64()).unwrap_or(999);
+                  let eo = report.get("eoLen").and_then(|value| value.as_u64()).unwrap_or(999);
+                  let finish = report.get("finishLen").and_then(|value| value.as_u64()).unwrap_or(999);
+                  (dr, eo, finish)
+              });
+
+              serde_json::json!({
+                  "ok": true,
+                  "solutionMoveCount": solution_moves.len(),
+                  "paths": path_reports,
+              })
+              .to_string()
+          }
+          RUST
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('solver-wasm/src/lib.rs')
+          text = path.read_text()
+          text = text.replace(
+              'use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};',
+              'use fmc_search::{build_fmc_tables, candidate_to_json, diagnose_forced_fmc_path, skeleton_to_json, solve_fmc, FmcTables};',
+              1,
+          )
+          text += r'''
+
+          #[wasm_bindgen]
+          pub fn diagnose_fmc_forced_path(scramble: &str, solution: &str) -> String {
+              utils::set_panic_hook();
+              let tables_guard = TWOPHASE_TABLES.lock().unwrap();
+              let Some(tables) = tables_guard.as_ref() else {
+                  return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"}).to_string();
+              };
+              let mut fmc_guard = FMC_TABLES.lock().unwrap();
+              if fmc_guard.is_none() {
+                  *fmc_guard = Some(build_fmc_tables(tables));
+              }
+              diagnose_forced_fmc_path(scramble, solution, tables, fmc_guard.as_ref().unwrap())
+          }
+          '''
+          path.write_text(text)
+          PY
+          rustfmt solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs
+
+      - name: Test and build diagnostic WASM
+        run: |
+          cargo test --release --manifest-path solver-wasm/Cargo.toml
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --locked
+          fi
+          cd solver-wasm
+          wasm-pack build --target web --out-dir ../public/solver-wasm
+
+      - name: Run forced-prefix replay
+        run: |
+          cat > /tmp/fmc-forced-prefix.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { fileURLToPath, pathToFileURL } from 'node:url';
+          import path from 'node:path';
+
+          const root = process.cwd();
+          const moduleUrl = pathToFileURL(path.join(root, 'public/solver-wasm/solver_wasm.js')).href;
+          const mod = await import(moduleUrl);
+          const wasmBytes = fs.readFileSync(path.join(root, 'public/solver-wasm/solver_wasm_bg.wasm'));
+          mod.initSync({ module: wasmBytes });
+          const bundle = fs.readFileSync(path.join(root, 'public/solver-wasm/twophase/twophase-333-v1.bin'));
+          mod.load_twophase_333_bundle(bundle);
+          const built = JSON.parse(mod.build_fmc_tables_wasm());
+          if (!built.ok) throw new Error('FMC_TABLE_BUILD_FAILED');
+
+          const corpus = JSON.parse(fs.readFileSync(path.join(root, 'tools/fmc-generalization-corpus.json'), 'utf8'));
+          for (const testCase of corpus.developmentCases.slice(0, 3)) {
+            const result = JSON.parse(mod.diagnose_fmc_forced_path(testCase.scramble, testCase.knownSolution));
+            console.log(`FORCED_PREFIX ${testCase.id} ${JSON.stringify(result)}`);
+          }
+          NODE
+          node /tmp/fmc-forced-prefix.mjs
