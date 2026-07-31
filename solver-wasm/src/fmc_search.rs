@@ -82,6 +82,9 @@ const FMC_MULTI_RELOCATION_PER_KIND_LIMIT: usize = 128;
 /// insertion search for each multi skeleton.
 const FMC_MULTI_FIRST_STAGE_LIMIT: usize = 8;
 
+/// Maximum number of synthetic leave-slice relocation plans retained.
+const FMC_SLICE_RELOCATION_LIMIT: usize = 64;
+
 /// Global half turns used inside the HTR subgroup.
 const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
 
@@ -380,6 +383,69 @@ fn build_two_corner_two_edge_algorithms(
     result
 }
 
+/// Exact E2, M2 and S2 edge-only double swaps in the repository cubie convention.
+fn slice_residual_state(axis: u8) -> CubeState {
+    let mut state = CubeState::solved();
+    // Repository edge order: UF, UR, UB, UL, DF, DR, DB, DL, FR, FL, BR, BL.
+    let swaps: [(usize, usize); 2] = match axis {
+        0 => [(8, 11), (9, 10)], // E2: FR↔BL, FL↔BR
+        1 => [(0, 6), (2, 4)],   // M2: UF↔DB, UB↔DF
+        2 => [(1, 7), (3, 5)],   // S2: UR↔DL, UL↔DR
+        _ => unreachable!(),
+    };
+    for (left, right) in swaps {
+        state.ep.swap(left, right);
+    }
+    state
+}
+
+/// Opposite outer half turns which complete the corresponding slice half turn
+/// up to a free whole-cube x2/y2/z2 rotation.
+fn slice_outer_pair(axis: u8) -> [u8; 2] {
+    match axis {
+        0 => [2, 11], // U2 D2 completes E2
+        1 => [5, 14], // R2 L2 completes M2
+        2 => [8, 17], // F2 B2 completes S2
+        _ => unreachable!(),
+    }
+}
+
+fn slice_rotation_target(axis: u8, tables: &TwophaseTables) -> CubeState {
+    slice_residual_state(axis).apply_moves(&slice_outer_pair(axis), &tables.move_data)
+}
+
+fn classify_slice_leftover(state: &CubeState) -> Option<(u8, Vec<u8>)> {
+    if state.co.iter().any(|&value| value != 0)
+        || state.eo.iter().any(|&value| value != 0)
+        || state
+            .cp
+            .iter()
+            .enumerate()
+            .any(|(position, &piece)| piece as usize != position)
+    {
+        return None;
+    }
+    for axis in 0..3u8 {
+        let residual = slice_residual_state(axis);
+        if state.ep == residual.ep {
+            let positions = state
+                .ep
+                .iter()
+                .enumerate()
+                .filter_map(|(position, &piece)| {
+                    (piece as usize != position).then_some(position as u8)
+                })
+                .collect();
+            return Some((axis, positions));
+        }
+    }
+    None
+}
+
+pub fn is_fmc_solved_up_to_rotation(state: &CubeState, tables: &TwophaseTables) -> bool {
+    state.is_solved() || (0..3u8).any(|axis| *state == slice_rotation_target(axis, tables))
+}
+
 #[derive(Clone, Debug)]
 struct FmcMultiRelocationPlan {
     moves: Vec<u8>,
@@ -390,7 +456,7 @@ struct FmcMultiRelocationPlan {
 fn build_multi_relocation_plans(
     tables: &TwophaseTables,
     three_cycle_algorithms: &std::collections::HashMap<FmcStateKey, Vec<u8>>,
-) -> Vec<FmcMultiRelocationPlan> {
+) -> (Vec<FmcMultiRelocationPlan>, Vec<FmcMultiRelocationPlan>) {
     let mut corner_removals = Vec::<Vec<u8>>::new();
     let mut edge_removals = Vec::<Vec<u8>>::new();
 
@@ -411,6 +477,8 @@ fn build_multi_relocation_plans(
 
     let mut shortest_by_state =
         std::collections::HashMap::<FmcStateKey, FmcMultiRelocationPlan>::new();
+    let mut slice_by_state =
+        std::collections::HashMap::<FmcStateKey, FmcMultiRelocationPlan>::new();
 
     let mut consider_pair = |first: &[u8], second: &[u8]| {
         let mut moves = Vec::with_capacity(first.len() + second.len());
@@ -424,16 +492,20 @@ fn build_multi_relocation_plans(
         let Some((kind, defect_positions)) = classify_insertion_leftover(&state) else {
             return;
         };
-        if !kind.is_multi_insertion() {
-            return;
-        }
         let key = fmc_state_key(&state);
         let plan = FmcMultiRelocationPlan {
             moves,
             kind,
             defect_positions,
         };
-        match shortest_by_state.entry(key) {
+        let destination = if kind == FmcSkeletonKind::Slice {
+            &mut slice_by_state
+        } else if kind.is_multi_insertion() {
+            &mut shortest_by_state
+        } else {
+            return;
+        };
+        match destination.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(plan);
             }
@@ -464,7 +536,7 @@ fn build_multi_relocation_plans(
         }
     }
 
-    let mut result = Vec::new();
+    let mut multi = Vec::new();
     for kind in [
         FmcSkeletonKind::Corner4,
         FmcSkeletonKind::Edge4,
@@ -483,9 +555,19 @@ fn build_multi_relocation_plans(
             )
         });
         plans.truncate(FMC_MULTI_RELOCATION_PER_KIND_LIMIT);
-        result.extend(plans);
+        multi.extend(plans);
     }
-    result
+
+    let mut slice: Vec<FmcMultiRelocationPlan> = slice_by_state.into_values().collect();
+    slice.sort_by_key(|plan| {
+        (
+            plan.moves.len(),
+            plan.defect_positions.clone(),
+            plan.moves.clone(),
+        )
+    });
+    slice.truncate(FMC_SLICE_RELOCATION_LIMIT);
+    (multi, slice)
 }
 
 pub struct FmcTables {
@@ -507,6 +589,8 @@ pub struct FmcTables {
     pub two_corner_two_edge_algorithms: std::collections::HashMap<FmcStateKey, Vec<u8>>,
     /// Guaranteed two-cycle removals that create 4C, 4E or 3C3E skeletons.
     multi_relocation_plans: Vec<FmcMultiRelocationPlan>,
+    /// Exact E2/M2/S2 leave-slice relocation plans.
+    slice_relocation_plans: Vec<FmcMultiRelocationPlan>,
     /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
     htr_first_move: OnceCell<std::collections::HashMap<u128, u8>>,
 }
@@ -514,6 +598,10 @@ pub struct FmcTables {
 impl FmcTables {
     pub fn multi_relocation_plan_count(&self) -> usize {
         self.multi_relocation_plans.len()
+    }
+
+    pub fn slice_relocation_plan_count(&self) -> usize {
+        self.slice_relocation_plans.len()
     }
 }
 
@@ -610,7 +698,8 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
 
     let three_cycle_algorithms = build_three_cycle_algorithms(tables);
     let two_corner_two_edge_algorithms = build_two_corner_two_edge_algorithms(tables);
-    let multi_relocation_plans = build_multi_relocation_plans(tables, &three_cycle_algorithms);
+    let (multi_relocation_plans, slice_relocation_plans) =
+        build_multi_relocation_plans(tables, &three_cycle_algorithms);
 
     FmcTables {
         co_slice_dist,
@@ -622,6 +711,7 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
         three_cycle_algorithms,
         two_corner_two_edge_algorithms,
         multi_relocation_plans,
+        slice_relocation_plans,
         htr_first_move: OnceCell::new(),
     }
 }
@@ -1143,6 +1233,7 @@ pub enum FmcSkeletonKind {
     Corner3,
     Edge3,
     Corner2Edge2,
+    Slice,
     Corner4,
     Edge4,
     Corner3Edge3,
@@ -1154,6 +1245,7 @@ impl FmcSkeletonKind {
             Self::Corner3 => "corner3",
             Self::Edge3 => "edge3",
             Self::Corner2Edge2 => "corner2edge2",
+            Self::Slice => "slice",
             Self::Corner4 => "corner4",
             Self::Edge4 => "edge4",
             Self::Corner3Edge3 => "corner3edge3",
@@ -1165,14 +1257,16 @@ impl FmcSkeletonKind {
             Self::Corner3 => 0,
             Self::Edge3 => 1,
             Self::Corner2Edge2 => 2,
-            Self::Corner4 => 3,
-            Self::Edge4 => 4,
-            Self::Corner3Edge3 => 5,
+            Self::Slice => 3,
+            Self::Corner4 => 4,
+            Self::Edge4 => 5,
+            Self::Corner3Edge3 => 6,
         }
     }
 
     fn estimated_insertion_cost(self) -> usize {
         match self {
+            Self::Slice => 2,
             Self::Corner3 | Self::Edge3 => 8,
             Self::Corner2Edge2 => 14,
             Self::Corner4 | Self::Edge4 | Self::Corner3Edge3 => 16,
@@ -1180,7 +1274,10 @@ impl FmcSkeletonKind {
     }
 
     fn is_single_insertion(self) -> bool {
-        matches!(self, Self::Corner3 | Self::Edge3 | Self::Corner2Edge2)
+        matches!(
+            self,
+            Self::Corner3 | Self::Edge3 | Self::Corner2Edge2 | Self::Slice
+        )
     }
 
     fn is_multi_insertion(self) -> bool {
@@ -1197,6 +1294,9 @@ struct AxisSkeletonPrefix {
 }
 
 fn classify_insertion_leftover(state: &CubeState) -> Option<(FmcSkeletonKind, Vec<u8>)> {
+    if let Some((_axis, positions)) = classify_slice_leftover(state) {
+        return Some((FmcSkeletonKind::Slice, positions));
+    }
     if state.co.iter().any(|&v| v != 0) || state.eo.iter().any(|&v| v != 0) {
         return None;
     }
@@ -1437,6 +1537,8 @@ pub struct FmcResult {
     pub insertion_candidate_count: usize,
     pub mixed_insertion_candidate_count: usize,
     pub multi_insertion_candidate_count: usize,
+    pub slice_insertion_candidate_count: usize,
+    pub eo_fallback_used: bool,
 }
 
 #[derive(Default)]
@@ -1874,6 +1976,50 @@ fn synthesize_multi_relocation_skeletons(
     output
 }
 
+fn synthesize_slice_relocation_skeletons(
+    candidates: &[FmcCandidate],
+    fmc_tables: &FmcTables,
+) -> Vec<FmcSkeletonCandidate> {
+    let mut base_candidates = candidates.to_vec();
+    base_candidates.sort_by_key(|candidate| {
+        (
+            candidate.moves.len(),
+            candidate.source_tag,
+            candidate.axis,
+            candidate.moves.clone(),
+        )
+    });
+    let mut seen_solutions = std::collections::HashSet::new();
+    base_candidates.retain(|candidate| seen_solutions.insert(candidate.moves.clone()));
+    base_candidates.truncate(6);
+
+    let mut output = Vec::new();
+    for candidate in base_candidates {
+        for plan in &fmc_tables.slice_relocation_plans {
+            let mut skeleton_moves = Vec::with_capacity(candidate.moves.len() + plan.moves.len());
+            skeleton_moves.extend_from_slice(&candidate.moves);
+            skeleton_moves.extend_from_slice(&plan.moves);
+            let skeleton_moves = simplify_moves(&skeleton_moves);
+            if skeleton_moves.is_empty() {
+                continue;
+            }
+            output.push(FmcSkeletonCandidate {
+                moves: skeleton_moves,
+                kind: FmcSkeletonKind::Slice,
+                defect_positions: plan.defect_positions.clone(),
+                eo_len: candidate.eo_len,
+                dr_len: candidate.dr_len,
+                p2_len: candidate.p2_len,
+                axis: candidate.axis,
+                source_tag: candidate.source_tag,
+                premove_moves: candidate.premove_moves.clone(),
+                rzp_used: candidate.rzp_used,
+            });
+        }
+    }
+    output
+}
+
 fn single_algorithm_library<'a>(
     kind: FmcSkeletonKind,
     fmc_tables: &'a FmcTables,
@@ -1976,6 +2122,95 @@ fn best_single_insertion(
     })
 }
 
+fn best_slice_insertion(
+    scramble_state: &CubeState,
+    skeleton: &FmcSkeletonCandidate,
+    origin_kind: FmcSkeletonKind,
+    prior_steps: &[FmcInsertionStep],
+    tables: &TwophaseTables,
+) -> Option<FmcCandidate> {
+    let move_count = skeleton.moves.len();
+    let rotation_targets: [CubeState; 3] =
+        std::array::from_fn(|axis| slice_rotation_target(axis as u8, tables));
+    let mut best: Option<(Vec<u8>, Vec<u8>, usize)> = None;
+
+    for position in 0..=move_count {
+        for slice_axis in 0..3u8 {
+            let algorithm = slice_outer_pair(slice_axis).to_vec();
+            let mut full = Vec::with_capacity(move_count + algorithm.len());
+            full.extend_from_slice(&skeleton.moves[..position]);
+            full.extend_from_slice(&algorithm);
+            full.extend_from_slice(&skeleton.moves[position..]);
+            let full = simplify_moves(&full);
+            let final_state = scramble_state.apply_moves(&full, &tables.move_data);
+            if !rotation_targets.iter().any(|target| *target == final_state) {
+                continue;
+            }
+            let replace = best
+                .as_ref()
+                .is_none_or(|(current, current_algorithm, current_pos)| {
+                    (full.len(), algorithm.len(), position)
+                        < (current.len(), current_algorithm.len(), *current_pos)
+                });
+            if replace {
+                best = Some((full, algorithm, position));
+            }
+        }
+    }
+
+    let (moves, insertion_moves, insertion_position) = best?;
+    let mut insertion_steps = prior_steps.to_vec();
+    insertion_steps.push(FmcInsertionStep {
+        kind: FmcSkeletonKind::Slice,
+        moves: insertion_moves.clone(),
+        position: insertion_position.min(u8::MAX as usize) as u8,
+    });
+    let finish_moves = insertion_steps
+        .iter()
+        .flat_map(|step| step.moves.iter().copied())
+        .collect();
+
+    Some(FmcCandidate {
+        moves,
+        eo_len: skeleton.eo_len,
+        dr_len: skeleton.dr_len,
+        p2_len: skeleton.p2_len,
+        eo_moves: vec![],
+        dr_moves: vec![],
+        finish_moves,
+        axis: skeleton.axis,
+        source_tag: skeleton.source_tag,
+        premove_moves: skeleton.premove_moves.clone(),
+        rzp_used: skeleton.rzp_used,
+        insertion_moves: insertion_steps[0].moves.clone(),
+        insertion_position: Some(insertion_steps[0].position),
+        skeleton_kind: Some(origin_kind),
+        insertion_steps,
+    })
+}
+
+fn complete_single_insertion(
+    scramble_state: &CubeState,
+    skeleton: &FmcSkeletonCandidate,
+    origin_kind: FmcSkeletonKind,
+    prior_steps: &[FmcInsertionStep],
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+) -> Option<FmcCandidate> {
+    if skeleton.kind == FmcSkeletonKind::Slice {
+        best_slice_insertion(scramble_state, skeleton, origin_kind, prior_steps, tables)
+    } else {
+        best_single_insertion(
+            scramble_state,
+            skeleton,
+            origin_kind,
+            prior_steps,
+            tables,
+            fmc_tables,
+        )
+    }
+}
+
 fn optimize_skeleton_insertions(
     scramble_state: &CubeState,
     skeletons: &[FmcSkeletonCandidate],
@@ -1986,7 +2221,7 @@ fn optimize_skeleton_insertions(
         .iter()
         .filter(|skeleton| skeleton.kind.is_single_insertion())
         .filter_map(|skeleton| {
-            best_single_insertion(
+            complete_single_insertion(
                 scramble_state,
                 skeleton,
                 skeleton.kind,
@@ -2100,7 +2335,7 @@ fn optimize_multi_skeleton_insertions(
 
         let mut best: Option<FmcCandidate> = None;
         for (_, _, residual, first_step) in transitions {
-            let Some(candidate) = best_single_insertion(
+            let Some(candidate) = complete_single_insertion(
                 scramble_state,
                 &residual,
                 skeleton.kind,
@@ -2143,7 +2378,7 @@ fn optimize_multi_skeleton_insertions(
 
 // --- Full FMC Solver ---
 
-pub fn solve_fmc(
+fn solve_fmc_with_eo_depth(
     scramble: &str,
     tables: &TwophaseTables,
     fmc_tables: &FmcTables,
@@ -2151,6 +2386,8 @@ pub fn solve_fmc(
     force_rzp: bool,
     enable_multi_insertion: bool,
     enable_htr_skeletons: bool,
+    enable_slice_insertion: bool,
+    max_eo_depth: u8,
 ) -> FmcResult {
     // Parse scramble
     let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
@@ -2163,6 +2400,8 @@ pub fn solve_fmc(
                 insertion_candidate_count: 0,
                 mixed_insertion_candidate_count: 0,
                 multi_insertion_candidate_count: 0,
+                slice_insertion_candidate_count: 0,
+                eo_fallback_used: false,
             }
         }
     };
@@ -2192,7 +2431,7 @@ pub fn solve_fmc(
             &state,
             tables,
             fmc_tables,
-            FMC_MAX_EO_DEPTH,
+            max_eo_depth,
             FMC_EO_LIMIT,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
@@ -2269,7 +2508,7 @@ pub fn solve_fmc(
             &state,
             tables,
             fmc_tables,
-            FMC_MAX_EO_DEPTH,
+            max_eo_depth,
             FMC_EO_LIMIT,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
@@ -2355,7 +2594,7 @@ pub fn solve_fmc(
                     &state,
                     tables,
                     fmc_tables,
-                    FMC_MAX_EO_DEPTH,
+                    max_eo_depth,
                     FMC_PM_EO_LIMIT,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
@@ -2438,7 +2677,7 @@ pub fn solve_fmc(
                     &state,
                     tables,
                     fmc_tables,
-                    FMC_MAX_EO_DEPTH,
+                    max_eo_depth,
                     FMC_PM_EO_LIMIT,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
@@ -2515,6 +2754,12 @@ pub fn solve_fmc(
 
     let relocation_skeletons = synthesize_relocation_skeletons(&all_candidates, tables, fmc_tables);
     all_skeletons.extend(relocation_skeletons);
+    if enable_slice_insertion {
+        let slice_skeletons = synthesize_slice_relocation_skeletons(&all_candidates, fmc_tables);
+        all_skeletons.extend(slice_skeletons);
+    } else {
+        all_skeletons.retain(|skeleton| skeleton.kind != FmcSkeletonKind::Slice);
+    }
     if enable_multi_insertion {
         let multi_relocation_skeletons =
             synthesize_multi_relocation_skeletons(&all_candidates, fmc_tables);
@@ -2543,6 +2788,10 @@ pub fn solve_fmc(
         .iter()
         .filter(|candidate| candidate.skeleton_kind == Some(FmcSkeletonKind::Corner2Edge2))
         .count();
+    let slice_insertion_candidate_count = inserted_candidates
+        .iter()
+        .filter(|candidate| candidate.skeleton_kind == Some(FmcSkeletonKind::Slice))
+        .count();
     let multi_insertion_candidate_count = multi_inserted_candidates.len();
     let insertion_candidate_count = inserted_candidates.len() + multi_insertion_candidate_count;
     all_candidates.extend(inserted_candidates);
@@ -2570,7 +2819,51 @@ pub fn solve_fmc(
         insertion_candidate_count,
         mixed_insertion_candidate_count,
         multi_insertion_candidate_count,
+        slice_insertion_candidate_count,
+        eo_fallback_used: false,
     }
+}
+
+/// Run the normal depth-5 human FMC profile first. Only when it produces no
+/// candidate at all, retry the same pipeline with depth-6 EO coverage.
+pub fn solve_fmc(
+    scramble: &str,
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+    max_premove_sets: usize,
+    force_rzp: bool,
+    enable_multi_insertion: bool,
+    enable_htr_skeletons: bool,
+    enable_slice_insertion: bool,
+) -> FmcResult {
+    let primary = solve_fmc_with_eo_depth(
+        scramble,
+        tables,
+        fmc_tables,
+        max_premove_sets,
+        force_rzp,
+        enable_multi_insertion,
+        enable_htr_skeletons,
+        enable_slice_insertion,
+        FMC_MAX_EO_DEPTH,
+    );
+    if primary.ok {
+        return primary;
+    }
+
+    let mut fallback = solve_fmc_with_eo_depth(
+        scramble,
+        tables,
+        fmc_tables,
+        max_premove_sets,
+        force_rzp,
+        enable_multi_insertion,
+        enable_htr_skeletons,
+        enable_slice_insertion,
+        FMC_MAX_EO_DEPTH.saturating_add(1),
+    );
+    fallback.eo_fallback_used = fallback.ok;
+    fallback
 }
 
 /// Convert FmcCandidate to a JSON-friendly representation.
@@ -2717,6 +3010,7 @@ pub fn skeleton_to_json(
             skeleton.defect_positions[..2].to_vec(),
             skeleton.defect_positions[2..].to_vec(),
         ),
+        FmcSkeletonKind::Slice => (vec![], skeleton.defect_positions.clone()),
         FmcSkeletonKind::Corner4 => (skeleton.defect_positions.clone(), vec![]),
         FmcSkeletonKind::Edge4 => (vec![], skeleton.defect_positions.clone()),
         FmcSkeletonKind::Corner3Edge3 => (
