@@ -367,6 +367,35 @@ function pushRankedUniqueCandidate(list, candidate, limit = Infinity) {
   }
 }
 
+function buildRoundRobinCandidateOrder(candidateBuckets, fallbackCandidates) {
+  const buckets = Array.isArray(candidateBuckets)
+    ? candidateBuckets.map((bucket) =>
+        Array.isArray(bucket) ? bucket.slice().sort(compareFmcCandidatePriority) : [],
+      )
+    : [];
+  const ordered = [];
+  const seen = new Set();
+  let depth = 0;
+  while (buckets.some((bucket) => depth < bucket.length)) {
+    for (const bucket of buckets) {
+      const candidate = bucket[depth];
+      if (!candidate || seen.has(candidate.solution)) continue;
+      seen.add(candidate.solution);
+      ordered.push(candidate);
+    }
+    depth += 1;
+  }
+  const fallback = Array.isArray(fallbackCandidates)
+    ? fallbackCandidates.slice().sort(compareFmcCandidatePriority)
+    : [];
+  for (const candidate of fallback) {
+    if (!candidate || seen.has(candidate.solution)) continue;
+    seen.add(candidate.solution);
+    ordered.push(candidate);
+  }
+  return ordered;
+}
+
 const FMC_SEARCH_PROFILE_PRESETS = Object.freeze({
   micro: Object.freeze({
     candidateLimit: 3,
@@ -1297,17 +1326,37 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
     const requestedVariants = Number.isFinite(options.extremeVariantCount)
       ? Math.max(4, Math.min(24, Math.floor(options.extremeVariantCount)))
       : 12;
+    const reservedCompressionVariant = requestedVariants > 7 ? 7 : requestedVariants - 1;
+    const reservedCompressionPremoves = Number.isFinite(options.extremeReservedCompressionPremoves)
+      ? Math.max(
+          12,
+          Math.min(requestedPremoveSets, Math.floor(options.extremeReservedCompressionPremoves)),
+        )
+      : Math.min(requestedPremoveSets, 48);
+    const variantOrder = [0, reservedCompressionVariant];
+    for (let variant = 1; variant < requestedVariants; variant += 1) {
+      if (!variantOrder.includes(variant)) variantOrder.push(variant);
+    }
+
     const stages = [];
-    for (let variant = 0; variant < requestedVariants; variant += 1) {
-      // Extreme starts above the baseline-equivalent L0 profile.
-      const searchLevel = variant < 2 ? 1 : variant < 7 ? 2 : 3;
-      const premoveCap =
-        searchLevel === 1 ? 90 : searchLevel === 2 ? 140 : requestedPremoveSets;
+    for (const variant of variantOrder) {
+      const reservedCompression = variant === reservedCompressionVariant;
+      // Reserve multi-insertion immediately after one fast L1 scout. Repeated
+      // L2 searches can no longer consume the entire short Extreme budget.
+      const searchLevel = reservedCompression ? 3 : variant < 2 ? 1 : variant < 7 ? 2 : 3;
+      const premoveCap = reservedCompression
+        ? reservedCompressionPremoves
+        : searchLevel === 1
+          ? 90
+          : searchLevel === 2
+            ? 140
+            : requestedPremoveSets;
       stages.push(
-        stage(`human-L${searchLevel}-V${variant}`, {
+        stage(`human-L${searchLevel}-V${variant}${reservedCompression ? "-reserved" : ""}`, {
           maxPremoveSets: capPremoves(premoveCap),
           searchLevel,
           searchVariant: variant,
+          reservedCompression,
           rawExplorationLimit: searchLevel === 1 ? 28 : searchLevel === 2 ? 31 : 34,
           enableMultiSwitchNiss: true,
           enableDeepMultiSwitchNiss: searchLevel >= 2,
@@ -1405,6 +1454,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const inverseScramble = invertAlg(scramble);
   const reverseScrambleCanonical = canonicalizeAlg(inverseScramble);
   const candidates = [];
+  const extremeStageCandidateBuckets = new Map();
   const verificationCache = new Map();
   const directPremovePatternCache = new Map();
   const inversePremovePatternCache = new Map();
@@ -1419,6 +1469,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     targetMoveCount,
     totalBudgetMs: timeBudgetMs,
     wasmStages: [],
+    extremeStageCandidateBuckets: [],
     sweepBudgetMs,
     extremeIsolation:
       qualityMode === "extreme"
@@ -1583,7 +1634,11 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
               : Number.isFinite(bestMoveCount)
                 ? Math.max(1, bestMoveCount - (bestMoveCount <= targetMoveCount ? 1 : 0))
                 : 40;
-        const { rawExplorationLimit: _rawExplorationLimit, ...wasmQualityOptions } = qualityStage.options;
+        const {
+          rawExplorationLimit: _rawExplorationLimit,
+          reservedCompression: _reservedCompression,
+          ...wasmQualityOptions
+        } = qualityStage.options;
         const stageOptions = {
           ...wasmQualityOptions,
           // Kept under the legacy WASM option name for compatibility. In Extreme
@@ -1605,6 +1660,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           htr: stageOptions.enableHtrSkeletons === true,
           sliceInsertion: stageOptions.enableSliceInsertion === true,
           multiInsertion: stageOptions.enableMultiInsertion === true,
+          reservedCompression: qualityStage.options.reservedCompression === true,
           rawExplorationLimit: stageOptions.incumbentMoveCount,
           finalBestImportedAsRawLimit: qualityMode !== "extreme",
         });
@@ -1650,7 +1706,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
               },
               wcMoves,
             );
-            if (candidate) trackCandidate(candidate);
+            if (candidate) {
+              trackCandidate(candidate);
+              if (qualityMode === "extreme") {
+                const stageBucket = extremeStageCandidateBuckets.get(qualityStage.name) || [];
+                pushRankedUniqueCandidate(stageBucket, candidate, 12);
+                extremeStageCandidateBuckets.set(qualityStage.name, stageBucket);
+              }
+            }
           }
           wasmFmcDone = true;
           diagnostics.phaseRuns.direct.successes += 1;
@@ -1681,6 +1744,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   }
 
   candidates.sort(compareFmcCandidatePriority);
+  const verificationCandidates =
+    qualityMode === "extreme"
+      ? buildRoundRobinCandidateOrder([...extremeStageCandidateBuckets.values()], candidates)
+      : candidates;
+  diagnostics.extremeStageCandidateBuckets = [...extremeStageCandidateBuckets.entries()].map(
+    ([name, bucket]) => ({
+      name,
+      candidateCount: bucket.length,
+      bestMoveCount: bucket.length ? bucket[0].moveCount : null,
+    }),
+  );
   diagnostics.candidateCounts.beforeVerification = candidates.length;
   diagnostics.moveCountDistribution.generated = buildMoveCountDistribution(candidates);
   diagnostics.topCandidates.generated = snapshotTopCandidates(candidates);
@@ -1692,17 +1766,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const requestedVerifyLimit = Number.isFinite(options.verifyLimit)
     ? Math.max(8, Math.floor(options.verifyLimit))
     : 24;
-  const verifyLimit = Math.min(candidates.length, requestedVerifyLimit);
+  const verifyLimit = Math.min(verificationCandidates.length, requestedVerifyLimit);
   const verificationStartedAt = Date.now();
   for (let i = 0; i < verifyLimit; i += 1) {
-    const candidate = candidates[i];
+    const candidate = verificationCandidates[i];
     if (await verifyCandidate(null, candidate, { cache: verificationCache, scrambleString: scramble })) {
       validCandidates.push(candidate);
     }
   }
-  if (!validCandidates.length && verifyLimit < candidates.length) {
-    for (let i = verifyLimit; i < candidates.length; i += 1) {
-      const candidate = candidates[i];
+  if (!validCandidates.length && verifyLimit < verificationCandidates.length) {
+    for (let i = verifyLimit; i < verificationCandidates.length; i += 1) {
+      const candidate = verificationCandidates[i];
       if (await verifyCandidate(null, candidate, { cache: verificationCache, scrambleString: scramble })) {
         validCandidates.push(candidate);
         if (validCandidates.length >= 3) break;
