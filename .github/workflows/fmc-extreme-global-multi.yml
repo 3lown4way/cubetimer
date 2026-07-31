@@ -1,0 +1,116 @@
+name: Apply global FMC multi-insertion search
+
+on:
+  pull_request:
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+    types: [opened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fmc-extreme-global-multi
+  cancel-in-progress: false
+
+jobs:
+  patch-test-benchmark-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+          fetch-depth: 0
+
+      - name: Apply global multi-insertion patch
+        run: python3 tools/apply_fmc_global_multi.py
+
+      - name: Format and validate source
+        run: |
+          rustfmt --edition 2021 solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs
+          node --check solver/fmcSolver.js
+          git diff --check
+          grep -q 'FMC_MULTI_GLOBAL_TRANSITION_LIMIT: usize = 64' solver-wasm/src/fmc_search.rs
+          grep -q 'enumerate_joint_second_insertions' solver-wasm/src/fmc_search.rs
+          grep -q 'multiInsertionPairCount' solver-wasm/src/lib.rs
+
+      - name: Run Rust tests
+        run: cargo test --release --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Rebuild web WASM
+        run: |
+          cd solver-wasm
+          wasm-pack build --target web --out-dir ../public/solver-wasm
+
+      - name: Run fixed-scramble global insertion benchmark
+        run: |
+          cat > tools/.fmc-global-multi-bench.mjs <<'NODE'
+          import { performance } from "node:perf_hooks";
+          import { solveWithFMCSearch } from "../solver/fmcSolver.js";
+
+          const scramble = "U R2 U' R B D R B' R' B2 U' F' D' R F' L' B L2 F R D";
+          const started = performance.now();
+          const result = await solveWithFMCSearch(scramble, null, {
+            qualityMode: "extreme",
+            targetMoveCount: 20,
+            timeBudgetMs: 30000,
+            maxPremoveSets: 180,
+            extremeVariantCount: 8,
+            extremeReservedCompressionPremoves: 24,
+            continueBelowTarget: true,
+            insertionTimeMs: 6000,
+            verifyLimit: 64,
+          });
+          const diagnostics = result?.performanceDiagnostics || {};
+          const stages = diagnostics.wasmStages || [];
+          const reserved = stages.find((stage) => stage.reservedCompression === true);
+          const output = {
+            elapsedMs: Math.round(performance.now() - started),
+            ok: result?.ok === true,
+            reason: result?.reason || null,
+            moveCount: result?.moveCount ?? result?.bestHumanMoveCount ?? null,
+            solution: result?.solution || result?.bestHumanSolution || null,
+            source: result?.source || result?.bestHumanSource || null,
+            reserved,
+            stages,
+            isolation: diagnostics.extremeIsolation || null,
+          };
+          console.log(`GLOBAL_MULTI_BENCHMARK ${JSON.stringify(output)}`);
+          if (!reserved || reserved.multiInsertion !== true) {
+            throw new Error("GLOBAL_MULTI_RESERVED_STAGE_MISSING");
+          }
+          if (!(reserved.multiInsertionTransitionCount > 0)) {
+            throw new Error("GLOBAL_MULTI_NO_TRANSITIONS");
+          }
+          if (!(reserved.multiInsertionPairCount > 0)) {
+            throw new Error("GLOBAL_MULTI_NO_JOINT_PAIRS");
+          }
+          if (output.isolation?.baselineCandidateImported !== false) {
+            throw new Error("GLOBAL_MULTI_BASELINE_IMPORTED");
+          }
+          NODE
+          node tools/.fmc-global-multi-bench.mjs | tee /tmp/fmc-global-multi-benchmark.log
+          grep -q 'GLOBAL_MULTI_BENCHMARK' /tmp/fmc-global-multi-benchmark.log
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f tools/.fmc-global-multi-bench.mjs
+          git rm --ignore-unmatch .github/workflows/fmc-extreme-global-multi.yml
+          git rm --ignore-unmatch tools/apply_fmc_global_multi.py
+          git add solver-wasm/src/fmc_search.rs solver-wasm/src/lib.rs solver/fmcSolver.js
+          git add public/solver-wasm/solver_wasm.js public/solver-wasm/solver_wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          git diff --cached --check
+          git commit -m "Search FMC multi-insertions jointly"
+          git push origin HEAD:agent/fmc-extreme-independent-frontier-v2
