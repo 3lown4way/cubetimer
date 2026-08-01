@@ -75,10 +75,12 @@ export function formatBenchmarkSolveRecord({
 
   if (normalizedStages.length) {
     normalizedStages.forEach((stage) => {
-      if (stage.solution || stage.moveCount === 0) {
-        lines.push(`${stage.name} (${stage.moveCount}회전): ${stage.solution || "-"}`);
+      if (stage.solution) {
+        lines.push(`${stage.name} (${stage.moveCount}회전): ${stage.solution}`);
       } else if (stage.note) {
         lines.push(`${stage.name}: ${stage.note}`);
+      } else {
+        lines.push(`${stage.name} (0회전): -`);
       }
     });
 
@@ -170,7 +172,7 @@ async function writeClipboard(text) {
   }
 }
 
-function replaceUnitText(text) {
+export function replaceBenchmarkUnitText(text) {
   return String(text || "")
     .replace(/FMC 목표 수/g, "FMC 목표 회전")
     .replace(/평균 해 길이/g, "평균 회전")
@@ -185,7 +187,7 @@ function normalizeVisibleUnits(root = document.body) {
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
   nodes.forEach((node) => {
-    const next = replaceUnitText(node.nodeValue);
+    const next = replaceBenchmarkUnitText(node.nodeValue);
     if (next !== node.nodeValue) node.nodeValue = next;
   });
 
