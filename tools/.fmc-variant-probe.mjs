@@ -6,13 +6,14 @@ import {
 } from "../solver/wasmSolver.js";
 
 const testCase = {
-  id: "random-example-1",
-  scramble: "L2 D2 F R' F' U2 R B D2 L F U' F2 R2 U' B R B' U' B' L' U' B R' B",
+  id: "random-example-2",
+  scramble: "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2",
 };
-const variants = [155, 192, 229, 266];
-const baseProfile = {
+const searchVariant = 155;
+const profile = {
   maxPremoveSets: 24,
   searchLevel: 3,
+  searchVariant,
   incumbentMoveCount: 34,
   forceRzp: false,
   enableCoverageFallback: true,
@@ -22,26 +23,18 @@ const baseProfile = {
   enableSliceInsertion: true,
   enableMultiInsertion: true,
 };
-
 if (!(await buildFmcTablesWasm())) throw new Error("FMC_TABLE_BUILD_FAILED");
-const rows = [];
-for (const searchVariant of variants) {
-  const started = performance.now();
-  const result = await solveFmcWasm(testCase.scramble, { ...baseProfile, searchVariant });
-  const elapsedMs = Math.round(performance.now() - started);
-  if (!result?.ok || !result.solution) throw new Error(`SOLVE_FAILED:${searchVariant}`);
-  const verification = await verifyFmcSolutionWasm(testCase.scramble, result.solution);
-  if (!verification?.ok || verification.solved !== true) throw new Error(`VERIFY_FAILED:${searchVariant}`);
-  const row = {
-    id: testCase.id,
-    searchVariant,
-    moveCount: Number(result.moveCount),
-    elapsedMs,
-    source: String(result.source || ""),
-    solution: result.solution,
-  };
-  rows.push(row);
-  console.log(`FMC_VARIANT_ROW ${JSON.stringify(row)}`);
-}
-rows.sort((a, b) => a.moveCount - b.moveCount || a.elapsedMs - b.elapsedMs || a.searchVariant - b.searchVariant);
-console.log(`FMC_VARIANT_SUMMARY ${JSON.stringify({ id: testCase.id, best: rows[0], rows })}`);
+const started = performance.now();
+const result = await solveFmcWasm(testCase.scramble, profile);
+const elapsedMs = Math.round(performance.now() - started);
+if (!result?.ok || !result.solution) throw new Error("SOLVE_FAILED");
+const verification = await verifyFmcSolutionWasm(testCase.scramble, result.solution);
+if (!verification?.ok || verification.solved !== true) throw new Error("VERIFY_FAILED");
+console.log(`FMC_SHARED_RETRY ${JSON.stringify({
+  id: testCase.id,
+  searchVariant,
+  moveCount: Number(result.moveCount),
+  elapsedMs,
+  source: String(result.source || ""),
+  solution: result.solution,
+})}`);
