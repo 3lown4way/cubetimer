@@ -6,19 +6,20 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/fmc-extreme-independent-frontier-v2
+          fetch-depth: 0
 
-      - name: Run temporary WR16 MITM diagnostic
-        run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin wr16_mitm_diag
+      - name: Run temporary complementary MITM experiment
+        run: bash tools/.fmc-complementary-mitm-experiment.sh
 
       - name: Syntax checks
         run: |
