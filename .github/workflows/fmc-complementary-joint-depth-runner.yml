@@ -1,0 +1,46 @@
+name: Temporary FMC complementary rescue runner
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: write
+
+jobs:
+  run-experiment:
+    if: github.event.pull_request.head.ref == 'agent/fmc-complementary-joint-depth-trigger'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out target FMC branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+          fetch-depth: 0
+
+      - name: Run gated experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          cleanup_main() {
+            status=$?
+            git fetch origin main
+            rm -rf /tmp/fmc-main-clean
+            git worktree add --detach /tmp/fmc-main-clean origin/main
+            cd /tmp/fmc-main-clean
+            if [ -f .github/workflows/fmc-complementary-joint-depth-runner.yml ]; then
+              git rm .github/workflows/fmc-complementary-joint-depth-runner.yml
+              git commit -m "Remove temporary FMC complementary rescue runner"
+              git push origin HEAD:main
+            fi
+            exit $status
+          }
+          trap cleanup_main EXIT
+
+          bash tools/.fmc-complementary-joint-depth-experiment.sh
