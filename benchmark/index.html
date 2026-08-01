@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Solver Benchmark · CubeTimer</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "cubing/scramble": "../vendor/cubing/scramble/index.js",
+          "random-uint-below": "../vendor/random-uint-below/index.js",
+          "comlink": "../vendor/comlink/index.js"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="benchmark.css" />
+  </head>
+  <body>
+    <main class="benchmark-app">
+      <header class="page-header panel">
+        <div>
+          <a class="back-link" href="../" aria-label="CubeTimer로 돌아가기">← Solver</a>
+          <h1>Solver Benchmark</h1>
+          <p>동일한 브라우저 환경에서 솔버 모드별 실행 시간, 해 길이, 성공률을 측정합니다.</p>
+        </div>
+        <div class="header-status" id="workerStatus" data-state="idle">Worker 준비 전</div>
+      </header>
+
+      <section class="panel controls-panel" aria-labelledby="benchmarkSettingsTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="benchmarkSettingsTitle">벤치마크 설정</h2>
+            <p>워밍업은 집계에서 제외됩니다. 사용자 스크램블을 넣으면 자동 생성 대신 해당 목록을 사용합니다.</p>
+          </div>
+        </div>
+
+        <div class="control-grid">
+          <label>
+            솔버 모드
+            <select id="modeSelect">
+              <option value="strict" selected>CFOP 단계형</option>
+              <option value="zb">ZB Hybrid</option>
+              <option value="roux">Roux 단계형</option>
+              <option value="twophase">Two-Phase 실용해</option>
+              <option value="minmove">minmove HTM</option>
+              <option value="fmc">FMC 스타일</option>
+            </select>
+          </label>
+
+          <label>
+            솔버 버전
+            <select id="versionSelect">
+              <option value="v1">v1</option>
+              <option value="v2" selected>v2</option>
+            </select>
+          </label>
+
+          <label>
+            Cross 색상
+            <select id="crossColorSelect">
+              <option value="D" selected>Yellow (D)</option>
+              <option value="CN">Color Neutral</option>
+              <option value="U">White (U)</option>
+              <option value="F">Green (F)</option>
+              <option value="B">Blue (B)</option>
+              <option value="R">Red (R)</option>
+              <option value="L">Orange (L)</option>
+            </select>
+          </label>
+
+          <label>
+            측정 횟수
+            <input id="runCountInput" type="number" min="1" max="1000" step="1" value="10" />
+          </label>
+
+          <label>
+            워밍업 횟수
+            <input id="warmupCountInput" type="number" min="0" max="20" step="1" value="1" />
+          </label>
+
+          <label>
+            1회 제한 시간
+            <div class="input-with-unit">
+              <input id="timeoutInput" type="number" min="1" max="300" step="1" value="60" />
+              <span>초</span>
+            </div>
+          </label>
+
+          <label id="fmcQualityField" hidden>
+            FMC 품질
+            <select id="fmcQualitySelect">
+              <option value="sweetSpot" selected>Sweet Spot</option>
+              <option value="extreme">Extreme</option>
+            </select>
+          </label>
+
+          <label id="fmcTargetField" hidden>
+            FMC 목표 수
+            <select id="fmcTargetSelect">
+              <option value="24" selected>24수 이하</option>
+              <option value="20">20수 이하</option>
+              <option value="19">20수 미만 (19수 이하)</option>
+              <option value="18">18수 이하</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="scramble-input-label" for="customScramblesInput">
+          사용자 스크램블 목록 <span>(선택, 한 줄에 하나)</span>
+          <textarea id="customScramblesInput" rows="5" spellcheck="false" placeholder="R U R' U' ..."></textarea>
+        </label>
+
+        <div class="action-row">
+          <button id="runBtn" class="primary" type="button">벤치마크 시작</button>
+          <button id="stopBtn" class="danger" type="button" disabled>중지</button>
+          <button id="exportBtn" class="secondary" type="button" disabled>CSV 내보내기</button>
+          <button id="clearBtn" class="ghost" type="button">결과 지우기</button>
+        </div>
+      </section>
+
+      <section class="panel progress-panel" aria-live="polite">
+        <div class="progress-copy">
+          <strong id="progressTitle">대기 중</strong>
+          <span id="progressDetail">설정을 선택하고 벤치마크를 시작하세요.</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </section>
+
+      <section class="summary-grid" aria-label="벤치마크 요약">
+        <article class="metric panel">
+          <span>성공률</span>
+          <strong id="successMetric">-</strong>
+          <small id="successSubmetric">0 / 0</small>
+        </article>
+        <article class="metric panel">
+          <span>평균 시간</span>
+          <strong id="averageTimeMetric">-</strong>
+          <small id="medianTimeMetric">중앙값 -</small>
+        </article>
+        <article class="metric panel">
+          <span>P95 시간</span>
+          <strong id="p95TimeMetric">-</strong>
+          <small id="rangeTimeMetric">범위 -</small>
+        </article>
+        <article class="metric panel">
+          <span>평균 해 길이</span>
+          <strong id="averageMovesMetric">-</strong>
+          <small id="rangeMovesMetric">범위 -</small>
+        </article>
+      </section>
+
+      <section class="panel results-panel">
+        <div class="section-heading compact">
+          <div>
+            <h2>개별 실행 결과</h2>
+            <p id="resultsCaption">아직 측정된 결과가 없습니다.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>상태</th>
+                <th>시간</th>
+                <th>수</th>
+                <th>Source</th>
+                <th>스크램블</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr class="empty-row">
+                <td colspan="6">벤치마크 결과가 여기에 표시됩니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        측정값에는 브라우저, CPU 전원 상태, 캐시 및 첫 로딩 비용이 영향을 줍니다.
+      </footer>
+    </main>
+
+    <script type="module" src="benchmark.js"></script>
+  </body>
+</html>
