@@ -31,6 +31,7 @@ jobs:
           node --check benchmark-twophase-frontiers.mjs
           node --check benchmark-solver-versions.mjs
           node --check benchmark-roux-v2-1000.mjs
+          node --check benchmark-zb-reliability.mjs
           node --check benchmark/benchmark-copy-record.js
           node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark-fmc-speed-identity.mjs
@@ -46,6 +47,7 @@ jobs:
           grep -q 'import("./rouxExactTableCacheV2.js")' solver/rouxExactTablesV2.js
           grep -q 'globalThis.indexedDB' solver/rouxExactTableCacheV2.js
           grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
+          grep -q 'if (!library.staticIndex) return null' solver/cfop3x3.js
           grep -q 'solverVersion === "v2"' solver/cfop3x3.js
           grep -q 'import "./benchmark-copy-record.js"' benchmark/benchmark-fixed.js
 
@@ -72,6 +74,12 @@ jobs:
 
       - name: Run optimized 2-phase and ZB hotpaths
         run: node benchmark-hotpaths.mjs
+
+      - name: Verify Pure ZB reliability
+        env:
+          ZB_RELIABILITY_RUNS: '1000'
+          ZB_RELIABILITY_TIMEOUT_MS: '10000'
+        run: node benchmark-zb-reliability.mjs
 
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
