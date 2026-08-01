@@ -153,27 +153,52 @@
       </section>
 
       <section class="panel results-panel">
-        <div class="section-heading compact">
+        <div class="section-heading compact results-heading">
           <div>
             <h2>개별 실행 결과</h2>
             <p id="resultsCaption">아직 측정된 결과가 없습니다.</p>
+          </div>
+          <div class="results-tools">
+            <span>열 제목을 눌러 오름차순·내림차순 정렬</span>
+            <button id="resetSortBtn" class="ghost sort-reset" type="button" disabled>기록 순서로</button>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>#</th>
-                <th>상태</th>
-                <th>시간</th>
-                <th>수</th>
-                <th>Source</th>
+                <th aria-sort="ascending">
+                  <button type="button" class="sort-button" data-sort-key="index" data-active="true">
+                    # <span class="sort-indicator" aria-hidden="true">↑</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort-button" data-sort-key="status">
+                    상태 <span class="sort-indicator" aria-hidden="true">↕</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort-button" data-sort-key="elapsedMs">
+                    시간 <span class="sort-indicator" aria-hidden="true">↕</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort-button" data-sort-key="moveCount">
+                    수 <span class="sort-indicator" aria-hidden="true">↕</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort-button" data-sort-key="source">
+                    Source <span class="sort-indicator" aria-hidden="true">↕</span>
+                  </button>
+                </th>
                 <th>스크램블</th>
+                <th>상세</th>
               </tr>
             </thead>
             <tbody id="resultsBody">
               <tr class="empty-row">
-                <td colspan="6">벤치마크 결과가 여기에 표시됩니다.</td>
+                <td colspan="7">벤치마크 결과가 여기에 표시됩니다.</td>
               </tr>
             </tbody>
           </table>
@@ -184,6 +209,23 @@
         FMC Extreme 선택 시 제한 시간이 120초 미만이면 자동으로 120초로 조정됩니다.
       </footer>
     </main>
+
+    <dialog id="resultDetailDialog" class="result-detail-dialog" aria-labelledby="resultDetailTitle">
+      <article class="result-detail-card">
+        <header class="result-detail-header">
+          <div>
+            <h2 id="resultDetailTitle">솔빙 상세</h2>
+            <p id="resultDetailMeta"></p>
+          </div>
+          <button id="resultDetailCloseBtn" class="dialog-close" type="button" aria-label="상세 창 닫기">×</button>
+        </header>
+        <div id="resultDetailBody" class="result-detail-body"></div>
+        <footer class="result-detail-footer">
+          <button id="resultDetailCopySolutionBtn" class="secondary" type="button">최종 해 복사</button>
+          <button id="resultDetailCloseFooterBtn" class="ghost" type="button">닫기</button>
+        </footer>
+      </article>
+    </dialog>
 
     <script type="module" src="benchmark-fixed.js"></script>
   </body>
