@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run temporary complementary FMC experiment
-        run: bash tools/.fmc-complementary-joint-depth-experiment.sh
+        run: bash tools/.fmc-complementary-joint-depth-v2.sh
 
       - name: Syntax checks
         run: |
