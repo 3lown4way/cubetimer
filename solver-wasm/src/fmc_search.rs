@@ -3770,6 +3770,15 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    // Completed-solution pruning is separate from the raw skeleton frontier.
+    // Multi-switch can tighten this completed ceiling, but must never shrink
+    // the 28/31/34-move budget reserved for selected skeleton exploration.
+    let mut completed_best = all_candidates
+        .iter()
+        .map(|candidate| candidate.moves.len())
+        .min()
+        .unwrap_or(raw_exploration_limit);
+
     // --- Phase 2b: stage-boundary multi-switch NISS ---
     if enable_multi_switch_niss || enable_deep_multi_switch_niss {
         for axis in 0..3u8 {
@@ -3785,7 +3794,7 @@ fn solve_fmc_with_eo_depth(
                 fmc_tables,
                 max_eo_depth,
                 &mut p2_cache,
-                &mut raw_exploration_limit,
+                &mut completed_best,
                 force_rzp,
                 enable_deep_multi_switch_niss,
             );
@@ -3825,7 +3834,7 @@ fn solve_fmc_with_eo_depth(
                 fmc_tables,
                 max_eo_depth,
                 &mut p2_cache,
-                &mut raw_exploration_limit,
+                &mut completed_best,
                 force_rzp,
                 enable_deep_multi_switch_niss,
             );
@@ -4178,6 +4187,12 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    completed_best = all_candidates
+        .iter()
+        .map(|candidate| candidate.moves.len())
+        .min()
+        .unwrap_or(completed_best);
+
     // --- Phase 3: Premove sweep ---
     let premove_sets = &*FMC_PREMOVE_SETS;
     let pm_limit = max_premove_sets.min(premove_sets.len());
@@ -4191,6 +4206,10 @@ fn solve_fmc_with_eo_depth(
         let premove = &premove_sets[premove_index];
         let pm_set = &premove.moves;
         let conjugated_premoves = &premove.axis_moves;
+        // One diverse premove set keeps the independent raw frontier alive.
+        // All remaining premove sets use the completed-solution ceiling,
+        // avoiding the 144-way depth-34 explosion observed in the full fix.
+        let use_raw_premove_frontier = search_level >= 3 && pm_idx == 0;
 
         // Direct with premoves: effective = scramble + premoves
         {
@@ -4201,6 +4220,11 @@ fn solve_fmc_with_eo_depth(
                 // Use a tighter budget check: skip if premove_len + best possible pipeline >= best
                 let pm_len = pm_set.len();
 
+                let mut premove_search_limit = if use_raw_premove_frontier {
+                    raw_exploration_limit
+                } else {
+                    completed_best
+                };
                 let results = solve_fmc_single_axis(
                     &state,
                     tables,
@@ -4211,7 +4235,7 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     premove_p2_node_limit,
                     &mut p2_cache,
-                    &mut raw_exploration_limit,
+                    &mut premove_search_limit,
                     search_variant
                         .wrapping_add(1009)
                         .wrapping_add(pm_idx as u32 * 131)
@@ -4291,6 +4315,11 @@ fn solve_fmc_with_eo_depth(
                 let state = inverse_axis_states[axis as usize]
                     .apply_moves(&conjugated_premoves[axis as usize], &tables.move_data);
 
+                let mut premove_search_limit = if use_raw_premove_frontier {
+                    raw_exploration_limit
+                } else {
+                    completed_best
+                };
                 let results = solve_fmc_single_axis(
                     &state,
                     tables,
@@ -4301,7 +4330,7 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     premove_p2_node_limit,
                     &mut p2_cache,
-                    &mut raw_exploration_limit,
+                    &mut premove_search_limit,
                     search_variant
                         .wrapping_add(2003)
                         .wrapping_add(pm_idx as u32 * 131)
