@@ -6,14 +6,20 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fmc-extreme-independent-frontier-v2
+          fetch-depth: 0
+
+      - name: Run temporary pre-EO NISS gated experiment
+        run: bash tools/.fmc-pre-eo-niss-experiment.sh
 
       - name: Syntax checks
         run: |
