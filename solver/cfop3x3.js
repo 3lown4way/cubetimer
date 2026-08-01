@@ -4611,11 +4611,13 @@ function getStageDefinitions(options, ctx, profile, solveMode) {
       maxDepth: normalizeDepth(options.pllMaxDepth, profile.pllMaxDepth),
       searchMaxDepth: normalizeDepth(
         options.zbllSearchMaxDepth,
-        useZbLL ? 10 : profile.pllMaxDepth,
+        useZbLL ? 14 : profile.pllMaxDepth,
       ),
-      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbLL ? 180000 : 0),
-      // Pure ZB: ZBLL must match the case library; missing case fails fast.
-      disableSearchFallback: useZbLL,
+      nodeLimit: normalizeDepth(options.zbllNodeLimit, useZbLL ? 2500000 : 0),
+      // Pure ZB keeps the formula database as the primary path. If both the
+      // precompiled index and exhaustive formula validation miss, finish the
+      // already-oriented last layer with the stage-local face-turn search.
+      disableSearchFallback: false,
       moveIndices: ctx.noDMoveIndices,
       isSolved: isPLLSolved,
       mismatch(data) {
