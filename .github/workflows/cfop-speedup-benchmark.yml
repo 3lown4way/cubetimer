@@ -31,6 +31,7 @@ jobs:
           node --check benchmark-twophase-frontiers.mjs
           node --check benchmark-solver-versions.mjs
           node --check benchmark-roux-v2-1000.mjs
+          node --check benchmark-zb-reliability.mjs
           node --check benchmark-fmc-speed-identity.mjs
           node --check benchmark-fmc-insertion-speed-identity.mjs
 
@@ -66,6 +67,11 @@ jobs:
 
       - name: Run optimized 2-phase and ZB hotpaths
         run: node benchmark-hotpaths.mjs
+
+      - name: Verify Pure ZB reliability
+        env:
+          ZB_RELIABILITY_RUNS: '250'
+        run: node benchmark-zb-reliability.mjs
 
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
