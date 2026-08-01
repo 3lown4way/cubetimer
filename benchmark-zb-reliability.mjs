@@ -1,3 +1,4 @@
+// Deterministic single-path reliability gate for Pure ZB v2.
 import { performance } from "node:perf_hooks";
 import { cube3x3x3 } from "./vendor/cubing/puzzles/index.js";
 import { solve3x3StrictCfopFromPattern } from "./solver/cfop3x3.js";
