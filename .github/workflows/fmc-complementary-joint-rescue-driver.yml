@@ -1,0 +1,75 @@
+name: FMC complementary joint rescue driver
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: write
+
+jobs:
+  drive-existing-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      TARGET_BRANCH: agent/fmc-extreme-independent-frontier-v2
+      FMC_GENERALIZATION_FIXED_COUNT: 6
+      FMC_GENERALIZATION_COMPRESSION_COUNT: 3
+    steps:
+      - name: Check out target FMC branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure runner and execute existing gated steps
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ln -sfn "$PWD/solver" /tmp/solver
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import yaml
+
+          workflow_path = '.github/workflows/fmc-complementary-joint-rescue.yml'
+          workflow = yaml.safe_load(open(workflow_path))
+          steps = workflow['jobs']['implement-and-gate']['steps']
+          selected = [
+              'Capture baseline holdout',
+              'Capture baseline development results',
+              'Apply bounded complementary-frame joint DR plus P2 rescue',
+              'Test and rebuild WASM',
+              'Run patched development cases',
+              'Run patched holdout gate',
+              'Enforce quality and runtime gates',
+          ]
+          by_name = {step.get('name'): step for step in steps}
+          for name in selected:
+              run = by_name[name]['run']
+              print(f'\n===== {name} =====', flush=True)
+              subprocess.run(
+                  run,
+                  shell=True,
+                  executable='/bin/bash',
+                  check=True,
+                  env=os.environ.copy(),
+              )
+          PY
+
+      - name: Commit accepted production patch
+        run: |
+          rm -f \
+            .github/workflows/fmc-complementary-joint-rescue.yml \
+            .github/workflows/fmc-complementary-joint-rescue-driver.yml
+          git add \
+            solver-wasm/src/fmc_search.rs \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            .github/workflows/fmc-complementary-joint-rescue.yml \
+            .github/workflows/fmc-complementary-joint-rescue-driver.yml
+          git commit -m "Add bounded complementary-frame DR+P2 rescue"
+          git push origin HEAD:${TARGET_BRANCH}
