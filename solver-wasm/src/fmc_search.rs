@@ -114,6 +114,11 @@ const FMC_PRE_EO_NISS_DR_REVERSE_DEPTH: usize = 3;
 const FMC_PRE_EO_NISS_DR_FORWARD_DEPTH: usize = 5;
 const FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT: usize = 350_000;
 
+/// L3 Extreme retries one independent EO/premove frontier only when the
+/// primary portfolio still exceeds the human sub-20 target.
+const FMC_EXTREME_RETRY_TARGET: usize = 20;
+const FMC_EXTREME_RETRY_VARIANT_OFFSET: u32 = 148;
+
 /// Maximum number of synthetic leave-slice relocation plans retained.
 const FMC_SLICE_RELOCATION_LIMIT: usize = 64;
 
@@ -4490,6 +4495,15 @@ fn solve_fmc_with_eo_depth(
     }
 }
 
+fn fmc_result_best_move_count(result: &FmcResult) -> usize {
+    result
+        .candidates
+        .iter()
+        .map(|candidate| candidate.moves.len())
+        .min()
+        .unwrap_or(usize::MAX)
+}
+
 /// Run the normal depth-5 human FMC profile first. Only when it produces no
 /// candidate at all, retry the same pipeline with depth-6 EO coverage.
 pub fn solve_fmc(
@@ -4525,6 +4539,28 @@ pub fn solve_fmc(
         requested_eo_depth,
     );
     if primary.ok {
+        let primary_best = fmc_result_best_move_count(&primary);
+        if search_level >= 3 && primary_best > FMC_EXTREME_RETRY_TARGET {
+            let retry = solve_fmc_with_eo_depth(
+                scramble,
+                tables,
+                fmc_tables,
+                max_premove_sets,
+                force_rzp,
+                enable_multi_insertion,
+                enable_htr_skeletons,
+                enable_slice_insertion,
+                enable_multi_switch_niss,
+                enable_deep_multi_switch_niss,
+                search_level,
+                search_variant.wrapping_add(FMC_EXTREME_RETRY_VARIANT_OFFSET),
+                incumbent_move_count,
+                requested_eo_depth,
+            );
+            if retry.ok && fmc_result_best_move_count(&retry) < primary_best {
+                return retry;
+            }
+        }
         return primary;
     }
 
