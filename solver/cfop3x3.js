@@ -5353,8 +5353,10 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
     if (performanceCollector) {
       performanceCollector.attempts = attempts;
     }
-    // Library is comprehensive — state not in map means no formula applies
-    return null;
+    // Runtime-built libraries are exhaustive for their exact key function.
+    // The precompiled ZB index is an acceleration layer, not a correctness
+    // boundary: a missing or stale key must fall through to formula validation.
+    if (!library.staticIndex) return null;
   }
 
   for (let r = 0; r < FORMULA_ROTATIONS.length; r++) {
