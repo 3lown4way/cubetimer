@@ -48,6 +48,8 @@ jobs:
           grep -q 'globalThis.indexedDB' solver/rouxExactTableCacheV2.js
           grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
           grep -q 'if (!library.staticIndex) return null' solver/cfop3x3.js
+          grep -q 'formulaKey: "ZBLL_OLL_PLL_RESCUE"' solver/cfop3x3.js
+          grep -q 'disableSearchFallback: useZbLL' solver/cfop3x3.js
           grep -q 'solverVersion === "v2"' solver/cfop3x3.js
           grep -q 'import "./benchmark-copy-record.js"' benchmark/benchmark-fixed.js
 
