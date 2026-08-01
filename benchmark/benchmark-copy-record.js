@@ -12,46 +12,35 @@ const MODE_LABELS = {
   minmove: "minmove HTM",
 };
 
-function cleanText(value) {
-  return String(value || "").replace(/\r\n?/g, "\n").trim();
-}
-
-function cleanAlgorithm(value) {
-  return cleanText(value).replace(/\s+/g, " ");
-}
+const cleanText = (value) => String(value || "").replace(/\r\n?/g, "\n").trim();
+const cleanAlgorithm = (value) => cleanText(value).replace(/\s+/g, " ");
 
 export function countBenchmarkMoves(value) {
   const algorithm = cleanAlgorithm(value);
-  if (!algorithm || algorithm === "-") return 0;
-  return algorithm.split(" ").filter(Boolean).length;
-}
-
-function normalizeMoveCount(value, solution) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0
-    ? Math.floor(numeric)
-    : countBenchmarkMoves(solution);
-}
-
-function normalizeStage(stage) {
-  const name = cleanText(stage?.name) || "Stage";
-  const solution = cleanAlgorithm(stage?.solution);
-  return {
-    name,
-    solution,
-    note: cleanText(stage?.note),
-    moveCount: normalizeMoveCount(stage?.moveCount, solution),
-  };
-}
-
-function hasFinalStage(stages) {
-  return stages.some((stage) => /^(?:final(?:\s+solution)?|최종\s*해|solution)\b/i.test(stage.name));
+  return !algorithm || algorithm === "-" ? 0 : algorithm.split(" ").filter(Boolean).length;
 }
 
 function inferFailureStage(reason) {
   const normalized = cleanText(reason).toUpperCase();
   const known = ["ZBLL", "ZBLS", "F2L", "XCROSS", "CROSS", "PLL", "OLL", "LSE", "CMLL", "SB", "FB", "EO", "DR"];
   return known.find((stage) => normalized.startsWith(`${stage}_`) || normalized.includes(`\n${stage}_`)) || "";
+}
+
+function normalizeStage(stage) {
+  const solution = cleanAlgorithm(stage?.solution);
+  const numericCount = Number(stage?.moveCount);
+  return {
+    name: cleanText(stage?.name) || "Stage",
+    solution,
+    note: cleanText(stage?.note),
+    moveCount: Number.isFinite(numericCount) && numericCount >= 0
+      ? Math.floor(numericCount)
+      : countBenchmarkMoves(solution),
+  };
+}
+
+function hasFinalStage(stages) {
+  return stages.some((stage) => /^(?:final(?:\s+solution)?|최종\s*해|solution)\b/i.test(stage.name));
 }
 
 export function formatBenchmarkSolveRecord({
@@ -66,24 +55,16 @@ export function formatBenchmarkSolveRecord({
   if (!normalizedScramble) return "";
 
   const normalizedMode = cleanText(mode).toLowerCase();
-  const normalizedStages = stages
-    .map(normalizeStage)
-    .filter((stage) => stage.name && (stage.solution || stage.note || stage.moveCount === 0));
+  const normalizedStages = stages.map(normalizeStage).filter((stage) => stage.solution || stage.note);
   const normalizedFinal = cleanAlgorithm(finalSolution);
   const normalizedFailure = cleanText(failureReason);
   const lines = [`Scramble: ${normalizedScramble}`, ""];
 
   if (normalizedStages.length) {
     normalizedStages.forEach((stage) => {
-      if (stage.solution) {
-        lines.push(`${stage.name} (${stage.moveCount}회전): ${stage.solution}`);
-      } else if (stage.note) {
-        lines.push(`${stage.name}: ${stage.note}`);
-      } else {
-        lines.push(`${stage.name} (0회전): -`);
-      }
+      if (stage.solution) lines.push(`${stage.name} (${stage.moveCount}회전): ${stage.solution}`);
+      else lines.push(`${stage.name}: ${stage.note}`);
     });
-
     if (normalizedMode === "fmc" && normalizedFinal && !hasFinalStage(normalizedStages)) {
       lines.push(`Final Solution (${countBenchmarkMoves(normalizedFinal)}회전): ${normalizedFinal}`);
     }
@@ -123,11 +104,10 @@ function collectStages(body) {
   return Array.from(section.querySelectorAll(".stage-list > .stage-card:not(.method-stage-placeholder)"))
     .map((card) => {
       const solution = cleanAlgorithm(card.querySelector(".stage-solution")?.textContent);
-      const note = cleanText(card.querySelector(".stage-note, .stage-summary-text")?.textContent);
       return {
         name: cleanText(card.querySelector(".stage-card-header > strong")?.textContent) || "Stage",
         solution,
-        note,
+        note: cleanText(card.querySelector(".stage-note, .stage-summary-text")?.textContent),
         moveCount: countBenchmarkMoves(solution),
       };
     })
@@ -137,15 +117,14 @@ function collectStages(body) {
 function collectRecordFromDialog() {
   const body = document.getElementById(DETAIL_BODY_ID);
   const meta = document.getElementById(DETAIL_META_ID);
-  const scrambleSection = findSection(body, /스크램블/i);
-  const finalSection = findSection(body, /최종 해/i);
-  const failureSection = findSection(body, /실패|Fallback/i);
-  const failureReason = cleanText(failureSection?.querySelector("pre")?.textContent);
+  const scramble = findSection(body, /스크램블/i)?.querySelector("pre")?.textContent;
+  const finalSolution = findSection(body, /최종 해/i)?.querySelector("pre")?.textContent;
+  const failureReason = cleanText(findSection(body, /실패|Fallback/i)?.querySelector("pre")?.textContent);
   return {
-    scramble: cleanAlgorithm(scrambleSection?.querySelector("pre")?.textContent),
+    scramble: cleanAlgorithm(scramble),
     mode: detectMode(meta?.textContent),
     stages: collectStages(body),
-    finalSolution: cleanAlgorithm(finalSection?.querySelector("pre")?.textContent),
+    finalSolution: cleanAlgorithm(finalSolution),
     failureReason,
     failureStage: inferFailureStage(failureReason),
   };
@@ -159,10 +138,8 @@ async function writeClipboard(text) {
   } catch (_) {
     const textarea = document.createElement("textarea");
     textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "0";
+    textarea.readOnly = true;
+    textarea.style.cssText = "position:fixed;left:-9999px;top:0";
     document.body.appendChild(textarea);
     textarea.select();
     textarea.setSelectionRange(0, textarea.value.length);
@@ -173,12 +150,14 @@ async function writeClipboard(text) {
 }
 
 export function replaceBenchmarkUnitText(text) {
-  return String(text || "")
+  const source = String(text || "");
+  let output = source
     .replace(/FMC 목표 수/g, "FMC 목표 회전")
     .replace(/평균 해 길이/g, "평균 회전")
     .replace(/회전 수/g, "회전")
-    .replace(/(\d+(?:\.\d+)?)(\s*)수/g, "$1$2회전")
-    .replace(/^수$/, "회전");
+    .replace(/(\d+(?:\.\d+)?)(\s*)수/g, "$1$2회전");
+  if (output.trim() === "수") output = output.replace("수", "회전");
+  return output;
 }
 
 function normalizeVisibleUnits(root = document.body) {
@@ -206,9 +185,7 @@ async function handleCopyClick(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
 
-  const record = collectRecordFromDialog();
-  const text = formatBenchmarkSolveRecord(record);
-  const copied = await writeClipboard(text);
+  const copied = await writeClipboard(formatBenchmarkSolveRecord(collectRecordFromDialog()));
   button.dataset.copyFeedback = "true";
   button.textContent = copied ? "솔빙 기록 복사됨" : "복사 실패";
   window.setTimeout(() => {
