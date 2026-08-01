@@ -1,2 +1,10 @@
 import "./benchmark-enhanced.js";
 import "./benchmark-method-stages.js";
+
+if (!document.querySelector('link[data-benchmark-layout-fix]')) {
+  const layoutFixStylesheet = document.createElement("link");
+  layoutFixStylesheet.rel = "stylesheet";
+  layoutFixStylesheet.href = "./benchmark-layout-fix.css?v=20260801-1";
+  layoutFixStylesheet.dataset.benchmarkLayoutFix = "true";
+  document.head.appendChild(layoutFixStylesheet);
+}

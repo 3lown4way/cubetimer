@@ -1,0 +1,130 @@
+/* Prevent long solver source identifiers from collapsing adjacent columns on narrow screens. */
+.results-panel .table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.results-panel table {
+  width: 1120px;
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
+.results-panel th:nth-child(1),
+.results-panel td:nth-child(1) {
+  width: 60px;
+}
+
+.results-panel th:nth-child(2),
+.results-panel td:nth-child(2) {
+  width: 82px;
+}
+
+.results-panel th:nth-child(3),
+.results-panel td:nth-child(3) {
+  width: 104px;
+}
+
+.results-panel th:nth-child(4),
+.results-panel td:nth-child(4) {
+  width: 68px;
+}
+
+.results-panel th:nth-child(5),
+.results-panel td:nth-child(5) {
+  width: 256px;
+}
+
+.results-panel th:nth-child(6),
+.results-panel td:nth-child(6) {
+  width: 460px;
+}
+
+.results-panel th:nth-child(7),
+.results-panel td:nth-child(7) {
+  width: 90px;
+}
+
+.results-panel .source-cell {
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.results-panel .scramble-cell {
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  line-break: auto;
+}
+
+/* Keep detail cards from reproducing the same flex/min-content shrink issue. */
+.result-detail-card,
+.result-detail-body,
+.detail-section,
+.stage-list,
+.stage-card,
+.stage-card-header,
+.stage-card-header > strong,
+.stage-card-chips,
+.stage-solution,
+.detail-code {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stage-card-header > strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.stage-solution,
+.solution-detail,
+.scramble-detail {
+  display: block;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+@media (max-width: 680px) {
+  .results-panel {
+    overflow: hidden;
+  }
+
+  .results-panel table {
+    width: 1060px;
+    min-width: 1060px;
+  }
+
+  .results-panel th:nth-child(5),
+  .results-panel td:nth-child(5) {
+    width: 226px;
+  }
+
+  .results-panel th:nth-child(6),
+  .results-panel td:nth-child(6) {
+    width: 430px;
+  }
+
+  .stage-card-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .stage-card-chips {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
