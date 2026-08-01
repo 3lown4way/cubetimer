@@ -21,9 +21,21 @@ const profile = {
   enableMultiInsertion: true,
 };
 
+const cases = [
+  ...corpus.developmentCases,
+  {
+    id: "random-example-1",
+    scramble: "L2 D2 F R' F' U2 R B D2 L F U' F2 R2 U' B R B' U' B' L' U' B R' B",
+  },
+  {
+    id: "random-example-2",
+    scramble: "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2",
+  },
+];
+
 if (!(await buildFmcTablesWasm())) throw new Error("FMC_TABLE_BUILD_FAILED");
 const rows = [];
-for (const testCase of corpus.developmentCases) {
+for (const testCase of cases) {
   const started = performance.now();
   const result = await solveFmcWasm(testCase.scramble, profile);
   const elapsedMs = performance.now() - started;
@@ -35,6 +47,7 @@ for (const testCase of corpus.developmentCases) {
   rows.push({
     id: testCase.id,
     known: testCase.knownMoveCount,
+    scramble: testCase.scramble,
     found: Number(result.moveCount),
     elapsedMs: Math.round(elapsedMs),
     source: String(result.source || ""),
