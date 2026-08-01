@@ -1,0 +1,559 @@
+name: FMC complementary joint rescue
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - agent/fmc-extreme-independent-frontier-v2
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      TARGET_BRANCH: agent/fmc-extreme-independent-frontier-v2
+      FMC_GENERALIZATION_FIXED_COUNT: 6
+      FMC_GENERALIZATION_COMPRESSION_COUNT: 3
+    steps:
+      - name: Check out target FMC branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Capture baseline holdout
+        run: |
+          node tools/benchmark-fmc-generalization.mjs --out /tmp/fmc-base.json --debug-rows
+
+      - name: Capture baseline development results
+        run: |
+          cat > /tmp/fmc-dev-runner.mjs <<'NODE'
+          import fs from 'node:fs';
+          import { performance } from 'node:perf_hooks';
+          import { buildFmcTablesWasm, solveFmcWasm, verifyFmcSolutionWasm } from './solver/wasmSolver.js';
+          const output = process.argv[2];
+          const corpus = JSON.parse(fs.readFileSync('tools/fmc-generalization-corpus.json', 'utf8'));
+          const profile = {
+            maxPremoveSets: 0,
+            searchLevel: 3,
+            searchVariant: 7,
+            incumbentMoveCount: 34,
+            forceRzp: false,
+            enableCoverageFallback: true,
+            enableMultiSwitchNiss: true,
+            enableDeepMultiSwitchNiss: true,
+            enableHtrSkeletons: true,
+            enableSliceInsertion: true,
+            enableMultiInsertion: true,
+          };
+          if (!(await buildFmcTablesWasm())) throw new Error('FMC_TABLE_BUILD_FAILED');
+          const rows = [];
+          for (const testCase of corpus.developmentCases.slice(0, 3)) {
+            const started = performance.now();
+            const result = await solveFmcWasm(testCase.scramble, profile);
+            const elapsedMs = performance.now() - started;
+            if (!result?.ok || !result.solution) throw new Error(`SOLVE_FAILED:${testCase.id}`);
+            const verification = await verifyFmcSolutionWasm(testCase.scramble, result.solution);
+            if (!verification?.ok || verification.solved !== true) throw new Error(`INVALID:${testCase.id}`);
+            rows.push({ id: testCase.id, known: testCase.knownMoveCount, found: result.moveCount, elapsedMs, source: result.source, solution: result.solution });
+          }
+          fs.writeFileSync(output, JSON.stringify(rows, null, 2));
+          console.log(`DEV_RESULTS ${JSON.stringify(rows)}`);
+          NODE
+          node /tmp/fmc-dev-runner.mjs /tmp/fmc-dev-base.json
+
+      - name: Apply bounded complementary-frame joint DR plus P2 rescue
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('solver-wasm/src/fmc_search.rs')
+          text = path.read_text()
+
+          old_axis = '''/// Axis scramble maps in JS face convention.
+          const AXIS_SCRAMBLE_MAPS_JS: [[u8; 6]; 3] = [
+              [0, 1, 2, 3, 4, 5], // UD: identity
+              [5, 4, 2, 3, 0, 1], // FB: U→B, D→F, R→R, L→L, F→U, B→D
+              [2, 3, 1, 0, 4, 5], // RL: U→R, D→L, R→D, L→U, F→F, B→B
+          ];
+
+          /// Axis solution maps (inverse of scramble maps) in JS face convention.
+          const AXIS_SOLUTION_MAPS_JS: [[u8; 6]; 3] = [
+              [0, 1, 2, 3, 4, 5], // UD: identity
+              [4, 5, 2, 3, 1, 0], // FB: U→F, D→B, R→R, L→L, F→D, B→U
+              [3, 2, 0, 1, 4, 5], // RL: U→L, D→R, R→U, L→D, F→F, B→B
+          ];
+
+          const AXIS_NAMES: [&str; 3] = ["UD", "FB", "RL"];'''.replace('          ', '')
+          new_axis = '''const FMC_PRIMARY_AXIS_COUNT: usize = 3;
+          const FMC_FRAME_COUNT: usize = 6;
+          const FMC_COMPLEMENTARY_FRAME_START: usize = 3;
+
+          /// A DR axis has two valid EO-axis choices. The first three frames keep
+          /// the legacy search order; the complementary frames are reserved for
+          /// bounded Extreme multi-switch rescue.
+          const AXIS_SCRAMBLE_MAPS_JS: [[u8; 6]; FMC_FRAME_COUNT] = [
+              [0, 1, 2, 3, 4, 5],
+              [5, 4, 2, 3, 0, 1],
+              [2, 3, 1, 0, 4, 5],
+              [0, 1, 4, 5, 3, 2],
+              [2, 3, 4, 5, 0, 1],
+              [4, 5, 0, 1, 2, 3],
+          ];
+
+          const AXIS_SOLUTION_MAPS_JS: [[u8; 6]; FMC_FRAME_COUNT] = [
+              [0, 1, 2, 3, 4, 5],
+              [4, 5, 2, 3, 1, 0],
+              [3, 2, 0, 1, 4, 5],
+              [0, 1, 5, 4, 2, 3],
+              [4, 5, 0, 1, 2, 3],
+              [2, 3, 4, 5, 0, 1],
+          ];
+
+          const AXIS_NAMES: [&str; FMC_FRAME_COUNT] = [
+              "UD", "FB", "RL", "UD_EO_RL", "FB_EO_RL", "RL_EO_UD",
+          ];'''.replace('          ', '')
+          if old_axis not in text:
+              raise SystemExit('axis block anchor not found')
+          text = text.replace(old_axis, new_axis, 1)
+
+          constants_anchor = '''const FMC_MULTI_NISS_RESULT_LIMIT_PER_AXIS: usize = 4;
+
+          /// Maximum number of synthetic leave-slice relocation plans retained.'''.replace('          ', '')
+          constants_replacement = '''const FMC_MULTI_NISS_RESULT_LIMIT_PER_AXIS: usize = 4;
+
+          /// Complementary EO/DR frames are intentionally restricted to a
+          /// bounded inverse-side rescue. DR endpoints are ranked by the joint
+          /// DR + phase-2 lower bound instead of shortest DR length alone.
+          const FMC_COMPLEMENTARY_NISS_TARGET: usize = 20;
+          const FMC_COMPLEMENTARY_DR_MAX_DEPTH: u8 = 8;
+          const FMC_COMPLEMENTARY_DR_NODE_LIMIT: u64 = 500_000;
+          const FMC_COMPLEMENTARY_DR_ENDPOINT_LIMIT: usize = 32;
+          const FMC_COMPLEMENTARY_P2_NODE_LIMIT: u64 = 1_000_000;
+
+          /// Maximum number of synthetic leave-slice relocation plans retained.'''.replace('          ', '')
+          if constants_anchor not in text:
+              raise SystemExit('constant anchor not found')
+          text = text.replace(constants_anchor, constants_replacement, 1)
+
+          replacements = [
+              ('pub axis_scramble_move_map: [[u8; 18]; 3],',
+               'pub axis_scramble_move_map: [[u8; 18]; FMC_FRAME_COUNT],'),
+              ('pub axis_solution_move_map: [[u8; 18]; 3],',
+               'pub axis_solution_move_map: [[u8; 18]; FMC_FRAME_COUNT],'),
+              ('let mut axis_scramble_move_map = [[0u8; 18]; 3];\n    let mut axis_solution_move_map = [[0u8; 18]; 3];\n    for i in 0..3 {',
+               'let mut axis_scramble_move_map = [[0u8; 18]; FMC_FRAME_COUNT];\n    let mut axis_solution_move_map = [[0u8; 18]; FMC_FRAME_COUNT];\n    for i in 0..FMC_FRAME_COUNT {'),
+              ('/// 0=direct, 1=niss, 2=premove_direct, 3=premove_niss; 8..=11 are stage-boundary NISS.',
+               '/// 0=direct, 1=niss, 2=premove_direct, 3=premove_niss; 8..=12 are stage-boundary NISS.'),
+              ('.filter(|candidate| (8..=11).contains(&candidate.source_tag))',
+               '.filter(|candidate| (8..=12).contains(&candidate.source_tag))'),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'missing replacement anchor: {old[:80]}')
+              text = text.replace(old, new, 1)
+
+          helper_anchor = '''/// Switch to the inverse side at a stage boundary. If T = S·A is the state at
+          /// the boundary and Q solves T⁻¹, then A·Q⁻¹ solves S. Every flattened result is
+          /// independently replayed on S before it is admitted.'''.replace('          ', '')
+          helper = r'''
+          #[derive(Clone, Debug)]
+          struct FmcJointDrEndpoint {
+              state: CubeState,
+              moves: Vec<u8>,
+              p2_input: Phase2Input,
+              p2_lower_bound: u8,
+          }
+
+          /// Enumerate a bounded set of EO-preserving DR endpoints, then rank
+          /// them by DR length plus the exact phase-2 pruning lower bound. This
+          /// avoids committing to the canonical shortest-DR table chase when a
+          /// slightly different endpoint has a much shorter phase-2 finish.
+          fn solve_joint_dr_p2_continuation(
+              state: &CubeState,
+              tables: &TwophaseTables,
+              fmc_tables: &FmcTables,
+              p2_cache: &mut FmcP2Cache,
+              total_bound: usize,
+              search_variant: u32,
+          ) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+              if encode_eo(&state.eo) != 0 || total_bound == 0 {
+                  return None;
+              }
+
+              fn collect(
+                  state: CubeState,
+                  tables: &TwophaseTables,
+                  fmc_tables: &FmcTables,
+                  total_bound: usize,
+                  search_variant: u32,
+                  path: &mut Vec<u8>,
+                  last_face: u8,
+                  nodes: &mut u64,
+                  seen: &mut std::collections::HashMap<(FmcStateKey, u8), usize>,
+                  endpoints: &mut std::collections::HashMap<FmcStateKey, FmcJointDrEndpoint>,
+              ) {
+                  if *nodes >= FMC_COMPLEMENTARY_DR_NODE_LIMIT {
+                      return;
+                  }
+                  let depth = path.len();
+                  let co = encode_co(&state.co);
+                  let slice = encode_slice_from_ep(&state.ep);
+                  let dr_distance = fmc_tables.co_slice_dist[co * SLICE_SIZE + slice];
+                  if dr_distance == 255
+                      || depth.saturating_add(dr_distance as usize)
+                          > FMC_COMPLEMENTARY_DR_MAX_DEPTH as usize
+                      || depth >= total_bound
+                  {
+                      return;
+                  }
+
+                  let state_key = fmc_state_key(&state);
+                  let seen_key = (state_key, last_face);
+                  if seen.get(&seen_key).is_some_and(|&best_depth| best_depth <= depth) {
+                      return;
+                  }
+                  seen.insert(seen_key, depth);
+
+                  if co == 0 && slice == tables.solved_slice as usize {
+                      if let Some(p2_input) = build_p2_input(&state) {
+                          let p2_lower_bound = tables
+                              .phase2_cp_sep_joint
+                              .get(p2_input.cp_idx * FACTORIAL_4[4] + p2_input.sep_idx)
+                              .max(tables.phase2_ep.get(p2_input.ep_idx));
+                          if depth.saturating_add(p2_lower_bound as usize) <= total_bound {
+                              let endpoint = FmcJointDrEndpoint {
+                                  state,
+                                  moves: path.clone(),
+                                  p2_input,
+                                  p2_lower_bound,
+                              };
+                              endpoints
+                                  .entry(state_key)
+                                  .and_modify(|current| {
+                                      if (endpoint.moves.len(), endpoint.p2_lower_bound, &endpoint.moves)
+                                          < (current.moves.len(), current.p2_lower_bound, &current.moves)
+                                      {
+                                          *current = endpoint.clone();
+                                      }
+                                  })
+                                  .or_insert(endpoint);
+                          }
+                      }
+                  }
+
+                  if depth >= FMC_COMPLEMENTARY_DR_MAX_DEPTH as usize {
+                      return;
+                  }
+                  let allowed = &fmc_tables.dr_eo_allowed_by_last_face[last_face as usize];
+                  if allowed.is_empty() {
+                      return;
+                  }
+                  let rotation = (search_variant as usize * 5 + depth * 3) % allowed.len();
+                  for offset in 0..allowed.len() {
+                      if *nodes >= FMC_COMPLEMENTARY_DR_NODE_LIMIT {
+                          break;
+                      }
+                      let move_index = allowed[(offset + rotation) % allowed.len()];
+                      *nodes += 1;
+                      path.push(move_index);
+                      let next = state.apply_move(move_index as usize, &tables.move_data);
+                      let next_face = tables.move_data.move_face[move_index as usize];
+                      collect(
+                          next,
+                          tables,
+                          fmc_tables,
+                          total_bound,
+                          search_variant,
+                          path,
+                          next_face,
+                          nodes,
+                          seen,
+                          endpoints,
+                      );
+                      path.pop();
+                  }
+              }
+
+              let mut nodes = 0u64;
+              let mut seen = std::collections::HashMap::new();
+              let mut endpoint_map = std::collections::HashMap::new();
+              collect(
+                  *state,
+                  tables,
+                  fmc_tables,
+                  total_bound,
+                  search_variant,
+                  &mut Vec::with_capacity(FMC_COMPLEMENTARY_DR_MAX_DEPTH as usize),
+                  LAST_FACE_FREE,
+                  &mut nodes,
+                  &mut seen,
+                  &mut endpoint_map,
+              );
+
+              let mut endpoints: Vec<FmcJointDrEndpoint> = endpoint_map.into_values().collect();
+              endpoints.sort_by_key(|endpoint| {
+                  (
+                      endpoint.moves.len() + endpoint.p2_lower_bound as usize,
+                      endpoint.moves.len(),
+                      endpoint.p2_lower_bound,
+                      endpoint.moves.clone(),
+                  )
+              });
+              endpoints.truncate(FMC_COMPLEMENTARY_DR_ENDPOINT_LIMIT);
+
+              let mut best: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = None;
+              for endpoint in endpoints {
+                  let depth = endpoint.moves.len();
+                  let best_limit = best
+                      .as_ref()
+                      .map(|current| current.0.len().saturating_sub(1))
+                      .unwrap_or(total_bound);
+                  if depth + endpoint.p2_lower_bound as usize > best_limit {
+                      continue;
+                  }
+                  let p2_cap = best_limit
+                      .saturating_sub(depth)
+                      .min(FMC_MAX_P2_DEPTH as usize) as u8;
+                  let Some(p2_local) = p2_cache.solve(
+                      &endpoint.p2_input,
+                      tables,
+                      p2_cap,
+                      FMC_COMPLEMENTARY_P2_NODE_LIMIT,
+                  ) else {
+                      continue;
+                  };
+                  let p2_global: Vec<u8> = p2_local
+                      .iter()
+                      .map(|&local| tables.phase2_move_indices[local as usize])
+                      .collect();
+                  let mut full = endpoint.moves.clone();
+                  full.extend_from_slice(&p2_global);
+                  let full = simplify_moves(&full);
+                  if full.len() > total_bound
+                      || !endpoint
+                          .state
+                          .apply_moves(&p2_global, &tables.move_data)
+                          .is_solved()
+                      || !state.apply_moves(&full, &tables.move_data).is_solved()
+                  {
+                      continue;
+                  }
+                  let replace = best.as_ref().is_none_or(|current| {
+                      (full.len(), endpoint.moves.len(), full.clone())
+                          < (current.0.len(), current.1.len(), current.0.clone())
+                  });
+                  if replace {
+                      best = Some((full, endpoint.moves, p2_global));
+                  }
+              }
+              best
+          }
+
+          /// Search only the inverse side of complementary EO/DR frames and
+          /// only at an EO switch boundary. This preserves the legacy direct and
+          /// premove cost while recovering human NISS structures omitted by the
+          /// original three-frame representation.
+          fn solve_complementary_frame_niss_rescue_single_axis(
+              state: &CubeState,
+              tables: &TwophaseTables,
+              fmc_tables: &FmcTables,
+              max_eo_depth: u8,
+              p2_cache: &mut FmcP2Cache,
+              target_total: usize,
+              search_variant: u32,
+          ) -> Vec<FmcBoundaryNissResult> {
+              let boundaries = collect_multi_switch_niss_boundaries(
+                  state,
+                  tables,
+                  fmc_tables,
+                  max_eo_depth,
+                  target_total,
+                  false,
+                  false,
+              );
+              let mut output = Vec::new();
+              for boundary in boundaries.into_iter().filter(|boundary| boundary.stage_tag == 0) {
+                  if boundary.prefix_moves.is_empty() || boundary.prefix_moves.len() >= target_total {
+                      continue;
+                  }
+                  let boundary_state = state.apply_moves(&boundary.prefix_moves, &tables.move_data);
+                  let switched_state = invert_state(&boundary_state);
+                  let continuation_bound = target_total - boundary.prefix_moves.len();
+                  let Some((continuation, _, _)) = solve_joint_dr_p2_continuation(
+                      &switched_state,
+                      tables,
+                      fmc_tables,
+                      p2_cache,
+                      continuation_bound,
+                      search_variant,
+                  ) else {
+                      continue;
+                  };
+                  let inverse_continuation = invert_moves(&continuation);
+                  let mut flattened = boundary.prefix_moves.clone();
+                  flattened.extend_from_slice(&inverse_continuation);
+                  let flattened = simplify_moves(&flattened);
+                  if flattened.is_empty()
+                      || flattened.len() > target_total
+                      || !state.apply_moves(&flattened, &tables.move_data).is_solved()
+                  {
+                      continue;
+                  }
+                  output.push(FmcBoundaryNissResult {
+                      moves: flattened,
+                      eo_moves: boundary.eo_moves,
+                      dr_moves: Vec::new(),
+                      finish_moves: inverse_continuation,
+                      stage_tag: 2,
+                      rzp_used: false,
+                  });
+              }
+              output.sort_by_key(|candidate| (candidate.moves.len(), candidate.moves.clone()));
+              output.dedup_by(|left, right| left.moves == right.moves);
+              output.truncate(FMC_MULTI_NISS_RESULT_LIMIT_PER_AXIS);
+              output
+          }
+
+          '''.replace('          ', '') + helper_anchor
+          if helper_anchor not in text:
+              raise SystemExit('multi-switch helper anchor not found')
+          text = text.replace(helper_anchor, helper, 1)
+
+          phase3_anchor = '    // --- Phase 3: Premove sweep ---'
+          rescue = r'''    // --- Phase 2c: complementary-frame inverse EO rescue ---
+              // Full six-frame direct search doubled compression runtime. Restrict the
+              // missing frames to one bounded inverse-side EO switch pass at L3.
+              if enable_deep_multi_switch_niss && search_level >= 3 {
+                  let target_total = raw_exploration_limit.min(FMC_COMPLEMENTARY_NISS_TARGET);
+                  if target_total > 1 {
+                      for frame in FMC_COMPLEMENTARY_FRAME_START..FMC_FRAME_COUNT {
+                          let conjugated: Vec<u8> = inv_scramble_moves
+                              .iter()
+                              .map(|&move_index| {
+                                  fmc_tables.axis_scramble_move_map[frame][move_index as usize]
+                              })
+                              .collect();
+                          let state = CubeState::solved().apply_moves(&conjugated, &tables.move_data);
+                          let results = solve_complementary_frame_niss_rescue_single_axis(
+                              &state,
+                              tables,
+                              fmc_tables,
+                              max_eo_depth,
+                              &mut p2_cache,
+                              target_total,
+                              search_variant.wrapping_add(401 + frame as u32 * 29),
+                          );
+                          let cvt = |moves: &[u8]| -> Vec<u8> {
+                              moves
+                                  .iter()
+                                  .map(|&move_index| {
+                                      fmc_tables.axis_solution_move_map[frame][move_index as usize]
+                                  })
+                                  .collect()
+                          };
+                          for result in results {
+                              let effective_inverse_solution = cvt(&result.moves);
+                              let simplified = simplify_moves(&invert_moves(&effective_inverse_solution));
+                              if simplified.is_empty()
+                                  || simplified.len() > target_total
+                                  || !original_scramble_state
+                                      .apply_moves(&simplified, &tables.move_data)
+                                      .is_solved()
+                              {
+                                  continue;
+                              }
+                              all_candidates.push(FmcCandidate {
+                                  moves: simplified,
+                                  eo_len: result.eo_moves.len() as u8,
+                                  dr_len: 0,
+                                  p2_len: result.finish_moves.len() as u8,
+                                  eo_moves: cvt(&result.eo_moves),
+                                  dr_moves: Vec::new(),
+                                  finish_moves: cvt(&result.finish_moves),
+                                  axis: frame as u8,
+                                  source_tag: 12,
+                                  premove_moves: Vec::new(),
+                                  rzp_used: false,
+                                  skeleton_moves: Vec::new(),
+                                  insertion_moves: Vec::new(),
+                                  insertion_position: None,
+                                  skeleton_kind: None,
+                                  insertion_steps: Vec::new(),
+                              });
+                          }
+                          if all_candidates
+                              .iter()
+                              .any(|candidate| candidate.source_tag == 12 && candidate.moves.len() <= target_total)
+                          {
+                              break;
+                          }
+                      }
+                  }
+              }
+
+          '''.replace('              ', '') + phase3_anchor
+          if phase3_anchor not in text:
+              raise SystemExit('phase 3 anchor not found')
+          text = text.replace(phase3_anchor, rescue, 1)
+
+          path.write_text(text)
+          PY
+          rustfmt solver-wasm/src/fmc_search.rs
+          git diff --check
+
+      - name: Test and rebuild WASM
+        run: |
+          cargo test --release --manifest-path solver-wasm/Cargo.toml
+          if ! command -v wasm-pack >/dev/null 2>&1; then cargo install wasm-pack --locked; fi
+          cd solver-wasm
+          wasm-pack build --target web --out-dir ../public/solver-wasm
+
+      - name: Run patched development cases
+        run: |
+          node /tmp/fmc-dev-runner.mjs /tmp/fmc-dev-patch.json
+
+      - name: Run patched holdout gate
+        run: |
+          node tools/benchmark-fmc-generalization.mjs --out /tmp/fmc-patch.json --baseline /tmp/fmc-base.json --debug-rows
+
+      - name: Enforce quality and runtime gates
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const baseline = JSON.parse(fs.readFileSync('/tmp/fmc-dev-base.json', 'utf8'));
+          const patched = JSON.parse(fs.readFileSync('/tmp/fmc-dev-patch.json', 'utf8'));
+          const holdout = JSON.parse(fs.readFileSync('/tmp/fmc-patch.json', 'utf8'));
+          const byId = new Map(baseline.map((row) => [row.id, row]));
+          const wr16 = patched.find((row) => row.id === 'sebastiano-tronto-wr16-2019');
+          if (!wr16 || wr16.found > 20) {
+            throw new Error(`WR16_TARGET_NOT_REACHED:${JSON.stringify(wr16)}`);
+          }
+          for (const row of patched) {
+            const old = byId.get(row.id);
+            if (old && row.found > old.found) {
+              throw new Error(`DEVELOPMENT_REGRESSION:${row.id}:${old.found}->${row.found}`);
+            }
+          }
+          if (!holdout.gate?.passed) {
+            throw new Error(`HOLDOUT_GATE_FAILED:${JSON.stringify(holdout.gate)}:${JSON.stringify(holdout.comparison)}`);
+          }
+          console.log(`ACCEPTED WR16=${wr16.found} gate=${JSON.stringify(holdout.gate)} comparison=${JSON.stringify(holdout.comparison)}`);
+          NODE
+
+      - name: Commit accepted production patch
+        run: |
+          rm -f .github/workflows/fmc-complementary-joint-rescue.yml
+          git add solver-wasm/src/fmc_search.rs public/solver-wasm/solver_wasm_bg.wasm .github/workflows/fmc-complementary-joint-rescue.yml
+          git commit -m "Add bounded complementary-frame DR+P2 rescue"
+          git push origin HEAD:${TARGET_BRANCH}
