@@ -1725,7 +1725,7 @@ pub struct FmcCandidate {
     pub dr_moves: Vec<u8>,
     pub finish_moves: Vec<u8>,
     pub axis: u8,
-    /// 0=direct, 1=niss, 2=premove_direct, 3=premove_niss; 8..=11 are stage-boundary NISS; 12 is complementary-frame short-P2 MITM rescue.
+    /// 0=direct, 1=niss, 2=premove_direct, 3=premove_niss; 8..=11 are stage-boundary NISS; 12 is complementary-frame short-P2 MITM rescue; 13 is complementary-frame normal direct rescue.
     pub source_tag: u8,
     pub premove_moves: Vec<u8>,
     /// Whether this candidate used RZP for DR (vs direct solve)
@@ -3533,6 +3533,87 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    // --- Phase 2d: complementary-frame normal EO→DR→P2 rescue ---
+    // This is intentionally much narrower than a full six-frame replay: it is
+    // only active in deep Extreme while the current completed best exceeds 20.
+    let completed_best_before_complementary_normal = all_candidates
+        .iter()
+        .map(|candidate| candidate.moves.len())
+        .min()
+        .unwrap_or(usize::MAX);
+    if enable_deep_multi_switch_niss
+        && search_level >= 3
+        && completed_best_before_complementary_normal > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
+    {
+        let complementary_scramble_maps: [[u8; 18]; 3] = std::array::from_fn(|axis| {
+            build_move_conjugation(&COMPLEMENTARY_AXIS_SCRAMBLE_MAPS_JS[axis])
+        });
+        let complementary_solution_maps: [[u8; 18]; 3] = std::array::from_fn(|axis| {
+            build_move_conjugation(&COMPLEMENTARY_AXIS_SOLUTION_MAPS_JS[axis])
+        });
+
+        for axis in 0..3usize {
+            let conjugated_direct: Vec<u8> = scramble_moves
+                .iter()
+                .map(|&move_index| complementary_scramble_maps[axis][move_index as usize])
+                .collect();
+            let direct_state =
+                CubeState::solved().apply_moves(&conjugated_direct, &tables.move_data);
+            let mut rescue_limit = FMC_COMPLEMENTARY_MITM_TARGET_TOTAL + 1;
+            let results = solve_fmc_single_axis(
+                &direct_state,
+                tables,
+                fmc_tables,
+                max_eo_depth,
+                8,
+                FMC_MAX_DR_DEPTH,
+                FMC_MAX_P2_DEPTH,
+                2_000_000,
+                &mut p2_cache,
+                &mut rescue_limit,
+                0,
+                force_rzp,
+                false,
+            );
+
+            let convert = |moves: &[u8]| -> Vec<u8> {
+                moves
+                    .iter()
+                    .map(|&move_index| complementary_solution_maps[axis][move_index as usize])
+                    .collect()
+            };
+            for (moves, eo_moves, dr_moves, p2_moves, rzp_used, _, _) in results {
+                let simplified = simplify_moves(&convert(&moves));
+                if simplified.is_empty()
+                    || simplified.len() > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
+                    || !original_scramble_state
+                        .apply_moves(&simplified, &tables.move_data)
+                        .is_solved()
+                {
+                    continue;
+                }
+                all_candidates.push(FmcCandidate {
+                    moves: simplified,
+                    eo_len: eo_moves.len() as u8,
+                    dr_len: dr_moves.len() as u8,
+                    p2_len: p2_moves.len() as u8,
+                    eo_moves: convert(&eo_moves),
+                    dr_moves: convert(&dr_moves),
+                    finish_moves: convert(&p2_moves),
+                    axis: axis as u8,
+                    source_tag: 13,
+                    premove_moves: vec![],
+                    rzp_used,
+                    skeleton_moves: vec![],
+                    insertion_moves: vec![],
+                    insertion_position: None,
+                    skeleton_kind: None,
+                    insertion_steps: vec![],
+                });
+            }
+        }
+    }
+
     // --- Phase 3: Premove sweep ---
     let premove_sets = &*FMC_PREMOVE_SETS;
     let pm_limit = max_premove_sets.min(premove_sets.len());
@@ -3914,6 +3995,10 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
             "FMC_COMPLEMENTARY_MITM_INVERSE_EO_BOUNDARY_{}",
             AXIS_NAMES[candidate.axis as usize]
         ),
+        13 => format!(
+            "FMC_COMPLEMENTARY_NORMAL_{}",
+            AXIS_NAMES[candidate.axis as usize]
+        ),
         _ => "FMC_UNKNOWN".into(),
     };
     let source = if let Some(kind) = candidate.skeleton_kind {
@@ -4075,6 +4160,10 @@ pub fn skeleton_to_json(
         ),
         12 => format!(
             "FMC_COMPLEMENTARY_MITM_INVERSE_EO_BOUNDARY_{}",
+            AXIS_NAMES[skeleton.axis as usize]
+        ),
+        13 => format!(
+            "FMC_COMPLEMENTARY_NORMAL_{}",
             AXIS_NAMES[skeleton.axis as usize]
         ),
         _ => "FMC_UNKNOWN".into(),

@@ -6,20 +6,14 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/fmc-extreme-independent-frontier-v2
-          fetch-depth: 0
-
-      - name: Run temporary complementary normal rescue experiment
-        run: bash tools/.fmc-complementary-normal-experiment.sh
 
       - name: Syntax checks
         run: |
