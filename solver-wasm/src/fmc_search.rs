@@ -118,6 +118,10 @@ const FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT: usize = 350_000;
 /// primary portfolio still exceeds the human sub-20 target.
 const FMC_EXTREME_RETRY_TARGET: usize = 20;
 const FMC_EXTREME_RETRY_VARIANT_OFFSET: u32 = 148;
+/// Once a 20-move result is reached, spend one additional independent frontier
+/// on the stricter sub-20 objective. This is skipped for 19 moves or better.
+const FMC_EXTREME_SUB20_TARGET: usize = 19;
+const FMC_EXTREME_SUB20_VARIANT_OFFSET: u32 = 111;
 
 /// Maximum number of synthetic leave-slice relocation plans retained.
 const FMC_SLICE_RELOCATION_LIMIT: usize = 64;
@@ -4539,8 +4543,10 @@ pub fn solve_fmc(
         requested_eo_depth,
     );
     if primary.ok {
-        let primary_best = fmc_result_best_move_count(&primary);
-        if search_level >= 3 && primary_best > FMC_EXTREME_RETRY_TARGET {
+        let mut best_result = primary;
+        let mut best_count = fmc_result_best_move_count(&best_result);
+
+        if search_level >= 3 && best_count > FMC_EXTREME_RETRY_TARGET {
             let retry = solve_fmc_with_eo_depth(
                 scramble,
                 tables,
@@ -4557,11 +4563,37 @@ pub fn solve_fmc(
                 incumbent_move_count,
                 requested_eo_depth,
             );
-            if retry.ok && fmc_result_best_move_count(&retry) < primary_best {
-                return retry;
+            let retry_count = fmc_result_best_move_count(&retry);
+            if retry.ok && retry_count < best_count {
+                best_result = retry;
+                best_count = retry_count;
             }
         }
-        return primary;
+
+        if search_level >= 3 && best_count > FMC_EXTREME_SUB20_TARGET {
+            let sub20_retry = solve_fmc_with_eo_depth(
+                scramble,
+                tables,
+                fmc_tables,
+                max_premove_sets,
+                force_rzp,
+                enable_multi_insertion,
+                enable_htr_skeletons,
+                enable_slice_insertion,
+                enable_multi_switch_niss,
+                enable_deep_multi_switch_niss,
+                search_level,
+                search_variant.wrapping_add(FMC_EXTREME_SUB20_VARIANT_OFFSET),
+                incumbent_move_count,
+                requested_eo_depth,
+            );
+            let sub20_count = fmc_result_best_move_count(&sub20_retry);
+            if sub20_retry.ok && sub20_count < best_count {
+                best_result = sub20_retry;
+            }
+        }
+
+        return best_result;
     }
 
     let mut fallback = solve_fmc_with_eo_depth(
