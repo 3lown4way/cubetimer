@@ -1,5 +1,6 @@
 import "./benchmark-enhanced.js";
 import "./benchmark-method-stages.js";
+import "./benchmark-copy-record.js";
 
 if (!document.querySelector('link[data-benchmark-layout-fix]')) {
   const layoutFixStylesheet = document.createElement("link");
