@@ -3,25 +3,6 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 const scriptPath = fileURLToPath(import.meta.url);
-
-if (process.argv[2] !== '--child') {
-  const diagnostic = spawnSync(
-    'cargo',
-    ['run', '--release', '--manifest-path', 'solver-wasm/Cargo.toml', '--bin', 'wr16_diag'],
-    {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      timeout: 300000,
-      maxBuffer: 16 * 1024 * 1024,
-    },
-  );
-  if (diagnostic.stdout) process.stdout.write(diagnostic.stdout);
-  if (diagnostic.stderr) process.stderr.write(diagnostic.stderr);
-  if (diagnostic.status !== 0) {
-    throw new Error(`WR16 diagnostic failed with status ${diagnostic.status}`);
-  }
-}
-
 const scrambles = [
   "D2 B2 R2 U' R2 U B2 D2 L2 F2 U2 F' D' B L' U B' L' U' R'",
   "F2 D2 B2 F2 L2 D2 B2 U R2 U' L2 B U' F2 U' R' B2 D2 R' D",
