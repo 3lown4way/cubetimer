@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Run temporary sub-20 path diagnostic
+        run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin sub20_path_diag
+
       - name: Syntax checks
         run: |
           node --check main.js
