@@ -101,6 +101,19 @@ const FMC_COMPLEMENTARY_MITM_REVERSE_DR_DEPTH: usize = 5;
 const FMC_COMPLEMENTARY_MITM_FORWARD_DEPTH: usize = 6;
 const FMC_COMPLEMENTARY_MITM_FORWARD_NODE_LIMIT: usize = 600_000;
 
+/// Deep-Extreme pre-EO NISS rescue. It explores a short prefix on one side,
+/// switches before EO, then evaluates the opposite-side EO with a bounded
+/// joint DR + short-P2 meet-in-the-middle continuation.
+const FMC_PRE_EO_NISS_TARGET_TOTAL: usize = 20;
+const FMC_PRE_EO_NISS_PREFIX_DEPTH: usize = 3;
+const FMC_PRE_EO_NISS_SWITCH_EO_TOTAL: usize = 6;
+const FMC_PRE_EO_NISS_EO_LIMIT: usize = 8;
+const FMC_PRE_EO_NISS_FRONTIER_LIMIT: usize = 24;
+const FMC_PRE_EO_NISS_P2_REVERSE_DEPTH: usize = 3;
+const FMC_PRE_EO_NISS_DR_REVERSE_DEPTH: usize = 3;
+const FMC_PRE_EO_NISS_DR_FORWARD_DEPTH: usize = 5;
+const FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT: usize = 350_000;
+
 /// Maximum number of synthetic leave-slice relocation plans retained.
 const FMC_SLICE_RELOCATION_LIMIT: usize = 64;
 
@@ -761,6 +774,7 @@ pub struct FmcTables {
     /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
     htr_first_move: OnceCell<std::collections::HashMap<u128, u8>>,
     complementary_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcComplementaryTail>>,
+    pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcPreEoTail>>,
 }
 
 impl FmcTables {
@@ -882,6 +896,7 @@ pub fn build_fmc_tables(tables: &TwophaseTables) -> FmcTables {
         slice_relocation_plans,
         htr_first_move: OnceCell::new(),
         complementary_short_p2_tails: OnceCell::new(),
+        pre_eo_short_p2_tails: OnceCell::new(),
     }
 }
 
@@ -2003,6 +2018,427 @@ fn solve_multi_switch_niss_single_axis(
     let mut seen = std::collections::HashSet::new();
     output.retain(|candidate| seen.insert(candidate.moves.clone()));
     output.truncate(FMC_MULTI_NISS_RESULT_LIMIT_PER_AXIS);
+    output
+}
+
+
+#[derive(Clone, Copy, Debug)]
+struct FmcPreEoTail {
+    dr_moves: [u8; FMC_PRE_EO_NISS_DR_REVERSE_DEPTH],
+    dr_len: u8,
+    p2_moves: [u8; FMC_PRE_EO_NISS_P2_REVERSE_DEPTH],
+    p2_len: u8,
+}
+
+impl FmcPreEoTail {
+    fn solved() -> Self {
+        Self {
+            dr_moves: [255; FMC_PRE_EO_NISS_DR_REVERSE_DEPTH],
+            dr_len: 0,
+            p2_moves: [255; FMC_PRE_EO_NISS_P2_REVERSE_DEPTH],
+            p2_len: 0,
+        }
+    }
+
+    fn total_len(&self) -> usize {
+        self.dr_len as usize + self.p2_len as usize
+    }
+
+    fn dr_slice(&self) -> &[u8] {
+        &self.dr_moves[..self.dr_len as usize]
+    }
+
+    fn p2_slice(&self) -> &[u8] {
+        &self.p2_moves[..self.p2_len as usize]
+    }
+
+    fn prepend_dr(&self, move_index: u8) -> Option<Self> {
+        let old_len = self.dr_len as usize;
+        if old_len >= FMC_PRE_EO_NISS_DR_REVERSE_DEPTH {
+            return None;
+        }
+        let mut next = *self;
+        next.dr_moves = [255; FMC_PRE_EO_NISS_DR_REVERSE_DEPTH];
+        next.dr_moves[0] = move_index;
+        if old_len > 0 {
+            next.dr_moves[1..=old_len].copy_from_slice(&self.dr_moves[..old_len]);
+        }
+        next.dr_len += 1;
+        Some(next)
+    }
+
+    fn prepend_p2(&self, move_index: u8) -> Option<Self> {
+        let old_len = self.p2_len as usize;
+        if old_len >= FMC_PRE_EO_NISS_P2_REVERSE_DEPTH {
+            return None;
+        }
+        let mut next = *self;
+        next.p2_moves = [255; FMC_PRE_EO_NISS_P2_REVERSE_DEPTH];
+        next.p2_moves[0] = move_index;
+        if old_len > 0 {
+            next.p2_moves[1..=old_len].copy_from_slice(&self.p2_moves[..old_len]);
+        }
+        next.p2_len += 1;
+        Some(next)
+    }
+}
+
+fn pre_eo_tail_order(
+    tail: &FmcPreEoTail,
+) -> (
+    usize,
+    u8,
+    [u8; FMC_PRE_EO_NISS_DR_REVERSE_DEPTH],
+    u8,
+    [u8; FMC_PRE_EO_NISS_P2_REVERSE_DEPTH],
+) {
+    (
+        tail.total_len(),
+        tail.dr_len,
+        tail.dr_moves,
+        tail.p2_len,
+        tail.p2_moves,
+    )
+}
+
+fn retain_pre_eo_tail(
+    tails: &mut std::collections::HashMap<u128, FmcPreEoTail>,
+    state: &CubeState,
+    candidate: FmcPreEoTail,
+) -> bool {
+    let key = complementary_compact_state_key(state);
+    match tails.get(&key) {
+        None => {
+            tails.insert(key, candidate);
+            true
+        }
+        Some(current) if pre_eo_tail_order(&candidate) < pre_eo_tail_order(current) => {
+            tails.insert(key, candidate);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn build_pre_eo_short_p2_tails(
+    tables: &TwophaseTables,
+) -> std::collections::HashMap<u128, FmcPreEoTail> {
+    let solved = CubeState::solved();
+    let solved_tail = FmcPreEoTail::solved();
+    let mut tails = std::collections::HashMap::<u128, FmcPreEoTail>::new();
+    retain_pre_eo_tail(&mut tails, &solved, solved_tail);
+
+    let mut p2_frontier = vec![(solved, solved_tail)];
+    let mut dr_seeds = p2_frontier.clone();
+    for _ in 0..FMC_PRE_EO_NISS_P2_REVERSE_DEPTH {
+        let mut next = Vec::new();
+        for (state, tail) in p2_frontier {
+            for &global_move in &tables.phase2_move_indices {
+                let predecessor = state.apply_move(global_move as usize, &tables.move_data);
+                let Some(candidate) = tail.prepend_p2(MOVE_INVERSE[global_move as usize]) else {
+                    continue;
+                };
+                if retain_pre_eo_tail(&mut tails, &predecessor, candidate) {
+                    next.push((predecessor, candidate));
+                }
+            }
+        }
+        dr_seeds.extend(next.iter().copied());
+        p2_frontier = next;
+    }
+
+    let mut frontier = dr_seeds;
+    for _ in 0..FMC_PRE_EO_NISS_DR_REVERSE_DEPTH {
+        let mut next = Vec::new();
+        for (state, tail) in frontier {
+            for &move_index in &DR_EO_MOVE_INDICES {
+                let predecessor = state.apply_move(move_index as usize, &tables.move_data);
+                let Some(candidate) = tail.prepend_dr(MOVE_INVERSE[move_index as usize]) else {
+                    continue;
+                };
+                if retain_pre_eo_tail(&mut tails, &predecessor, candidate) {
+                    next.push((predecessor, candidate));
+                }
+            }
+        }
+        frontier = next;
+    }
+    tails
+}
+
+#[derive(Clone, Debug)]
+struct FmcPreEoBoundary {
+    prefix_moves: Vec<u8>,
+    eo_moves: Vec<u8>,
+    state_after_eo: CubeState,
+    dr_distance: u8,
+    lower_bound: usize,
+}
+
+fn collect_pre_eo_niss_frontier(
+    state: &CubeState,
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+    max_eo_depth: u8,
+) -> Vec<FmcPreEoBoundary> {
+    fn dfs(
+        state: CubeState,
+        path: &mut Vec<u8>,
+        last_face: u8,
+        tables: &TwophaseTables,
+        fmc_tables: &FmcTables,
+        max_eo_depth: u8,
+        output: &mut Vec<FmcPreEoBoundary>,
+    ) {
+        if !path.is_empty() {
+            let switched = invert_state(&state);
+            let eo_idx = encode_eo(&switched.eo);
+            let eo_min = fmc_tables.eo_dist[eo_idx] as usize;
+            let eo_cap = FMC_PRE_EO_NISS_SWITCH_EO_TOTAL
+                .saturating_sub(path.len())
+                .min(max_eo_depth as usize);
+            if eo_min <= eo_cap {
+                let eo_sequences = find_eo_sequences(
+                    eo_idx,
+                    tables,
+                    fmc_tables,
+                    eo_cap as u8,
+                    FMC_PRE_EO_NISS_EO_LIMIT,
+                    0,
+                );
+                for eo_moves in eo_sequences {
+                    let state_after_eo = switched.apply_moves(&eo_moves, &tables.move_data);
+                    let co = encode_co(&state_after_eo.co);
+                    let slice = encode_slice_from_ep(&state_after_eo.ep);
+                    let dr_distance = fmc_tables.co_slice_dist[co * SLICE_SIZE + slice];
+                    if dr_distance == 255 {
+                        continue;
+                    }
+                    let lower_bound = path.len() + eo_moves.len() + dr_distance as usize;
+                    if lower_bound <= FMC_PRE_EO_NISS_TARGET_TOTAL {
+                        output.push(FmcPreEoBoundary {
+                            prefix_moves: path.clone(),
+                            eo_moves,
+                            state_after_eo,
+                            dr_distance,
+                            lower_bound,
+                        });
+                    }
+                }
+            }
+        }
+
+        if path.len() >= FMC_PRE_EO_NISS_PREFIX_DEPTH {
+            return;
+        }
+        for &move_index in &tables.phase1_allowed_moves_by_last_face[last_face as usize] {
+            let face = tables.move_data.move_face[move_index as usize];
+            path.push(move_index);
+            let next = state.apply_move(move_index as usize, &tables.move_data);
+            dfs(next, path, face, tables, fmc_tables, max_eo_depth, output);
+            path.pop();
+        }
+    }
+
+    let mut output = Vec::new();
+    dfs(
+        *state,
+        &mut Vec::new(),
+        LAST_FACE_FREE,
+        tables,
+        fmc_tables,
+        max_eo_depth,
+        &mut output,
+    );
+    output.sort_by_key(|boundary| {
+        (
+            boundary.lower_bound,
+            boundary.prefix_moves.len() + boundary.eo_moves.len(),
+            boundary.dr_distance,
+            boundary.prefix_moves.clone(),
+            boundary.eo_moves.clone(),
+        )
+    });
+    let mut seen = std::collections::HashSet::new();
+    output.retain(|boundary| seen.insert(fmc_state_key(&boundary.state_after_eo)));
+    output.truncate(FMC_PRE_EO_NISS_FRONTIER_LIMIT);
+    output
+}
+
+fn solve_pre_eo_joint_mitm(
+    start: &CubeState,
+    last_face_before_dr: u8,
+    remaining_budget: usize,
+    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+    fmc_tables: &FmcTables,
+    tables: &TwophaseTables,
+) -> Option<(Vec<u8>, Vec<u8>)> {
+    #[derive(Clone)]
+    struct ForwardNode {
+        state: CubeState,
+        path: [u8; FMC_PRE_EO_NISS_DR_FORWARD_DEPTH],
+        len: u8,
+        last_face: u8,
+    }
+
+    let mut frontier = vec![ForwardNode {
+        state: *start,
+        path: [255; FMC_PRE_EO_NISS_DR_FORWARD_DEPTH],
+        len: 0,
+        last_face: last_face_before_dr,
+    }];
+    let mut seen = std::collections::HashMap::<(u128, u8), u8>::new();
+    seen.insert(
+        (complementary_compact_state_key(start), last_face_before_dr),
+        0,
+    );
+    let mut node_count = 1usize;
+    let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
+
+    for depth in 0..=FMC_PRE_EO_NISS_DR_FORWARD_DEPTH {
+        for node in &frontier {
+            if let Some(tail) = tails.get(&complementary_compact_state_key(&node.state)) {
+                let total = node.len as usize + tail.total_len();
+                if total <= remaining_budget {
+                    let mut dr_moves = node.path[..node.len as usize].to_vec();
+                    dr_moves.extend_from_slice(tail.dr_slice());
+                    let p2_moves = tail.p2_slice().to_vec();
+                    let solved = start
+                        .apply_moves(&dr_moves, &tables.move_data)
+                        .apply_moves(&p2_moves, &tables.move_data)
+                        .is_solved();
+                    if solved {
+                        let replace = best.as_ref().is_none_or(|(current_dr, current_p2)| {
+                            (dr_moves.len() + p2_moves.len(), dr_moves.clone(), p2_moves.clone())
+                                < (
+                                    current_dr.len() + current_p2.len(),
+                                    current_dr.clone(),
+                                    current_p2.clone(),
+                                )
+                        });
+                        if replace {
+                            best = Some((dr_moves, p2_moves));
+                        }
+                    }
+                }
+            }
+        }
+        if depth == FMC_PRE_EO_NISS_DR_FORWARD_DEPTH {
+            break;
+        }
+
+        let mut next_frontier = Vec::new();
+        for node in frontier {
+            let co = encode_co(&node.state.co);
+            let slice = encode_slice_from_ep(&node.state.ep);
+            let dr_distance = fmc_tables.co_slice_dist[co * SLICE_SIZE + slice] as usize;
+            let forward_left = FMC_PRE_EO_NISS_DR_FORWARD_DEPTH - depth;
+            if dr_distance == 255
+                || dr_distance > forward_left + FMC_PRE_EO_NISS_DR_REVERSE_DEPTH
+                || node.len as usize >= remaining_budget
+            {
+                continue;
+            }
+
+            let mut children = Vec::new();
+            for &move_index in &fmc_tables.dr_eo_allowed_by_last_face[node.last_face as usize] {
+                let next_state = node.state.apply_move(move_index as usize, &tables.move_data);
+                let key = complementary_compact_state_key(&next_state);
+                let next_co = encode_co(&next_state.co);
+                let next_slice = encode_slice_from_ep(&next_state.ep);
+                let distance = fmc_tables.co_slice_dist[next_co * SLICE_SIZE + next_slice];
+                children.push((!tails.contains_key(&key), distance, move_index, next_state, key));
+            }
+            children.sort_by_key(|(not_meet, distance, move_index, _, _)| {
+                (*not_meet, *distance, *move_index)
+            });
+
+            for (_, _, move_index, next_state, key) in children {
+                let face = tables.move_data.move_face[move_index as usize];
+                let next_depth = (depth + 1) as u8;
+                let seen_key = (key, face);
+                if seen
+                    .get(&seen_key)
+                    .is_some_and(|&previous| previous <= next_depth)
+                {
+                    continue;
+                }
+                seen.insert(seen_key, next_depth);
+                let mut path = node.path;
+                path[depth] = move_index;
+                next_frontier.push(ForwardNode {
+                    state: next_state,
+                    path,
+                    len: next_depth,
+                    last_face: face,
+                });
+                node_count += 1;
+                if node_count >= FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT {
+                    return best;
+                }
+            }
+        }
+        frontier = next_frontier;
+    }
+    best
+}
+
+#[derive(Clone, Debug)]
+struct FmcPreEoNissResult {
+    moves: Vec<u8>,
+    prefix_moves: Vec<u8>,
+    eo_moves: Vec<u8>,
+    dr_moves: Vec<u8>,
+    p2_moves: Vec<u8>,
+}
+
+fn solve_pre_eo_niss_single_axis(
+    state: &CubeState,
+    tables: &TwophaseTables,
+    fmc_tables: &FmcTables,
+    max_eo_depth: u8,
+    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+) -> Vec<FmcPreEoNissResult> {
+    let boundaries = collect_pre_eo_niss_frontier(state, tables, fmc_tables, max_eo_depth);
+    let mut output = Vec::new();
+    for boundary in boundaries {
+        let used = boundary.prefix_moves.len() + boundary.eo_moves.len();
+        let remaining = FMC_PRE_EO_NISS_TARGET_TOTAL.saturating_sub(used);
+        let last_face = last_face_of_moves(&boundary.eo_moves, tables);
+        let Some((dr_moves, p2_moves)) = solve_pre_eo_joint_mitm(
+            &boundary.state_after_eo,
+            last_face,
+            remaining,
+            tails,
+            fmc_tables,
+            tables,
+        ) else {
+            continue;
+        };
+        let mut continuation = boundary.eo_moves.clone();
+        continuation.extend_from_slice(&dr_moves);
+        continuation.extend_from_slice(&p2_moves);
+        let mut flattened = boundary.prefix_moves.clone();
+        flattened.extend_from_slice(&invert_moves(&continuation));
+        let flattened = simplify_moves(&flattened);
+        if flattened.is_empty()
+            || flattened.len() > FMC_PRE_EO_NISS_TARGET_TOTAL
+            || !state.apply_moves(&flattened, &tables.move_data).is_solved()
+        {
+            continue;
+        }
+        output.push(FmcPreEoNissResult {
+            moves: flattened,
+            prefix_moves: boundary.prefix_moves,
+            eo_moves: boundary.eo_moves,
+            dr_moves,
+            p2_moves,
+        });
+    }
+    output.sort_by_key(|result| (result.moves.len(), result.moves.clone()));
+    let mut seen = std::collections::HashSet::new();
+    output.retain(|result| seen.insert(result.moves.clone()));
+    output.truncate(4);
     output
 }
 
@@ -3614,6 +4050,134 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+
+    // --- Phase 2e: bounded pre-EO NISS switch rescue ---
+    let completed_best_before_pre_eo = all_candidates
+        .iter()
+        .map(|candidate| candidate.moves.len())
+        .min()
+        .unwrap_or(usize::MAX);
+    if enable_deep_multi_switch_niss
+        && search_level >= 3
+        && completed_best_before_pre_eo > FMC_PRE_EO_NISS_TARGET_TOTAL
+    {
+        let pre_eo_tails = fmc_tables
+            .pre_eo_short_p2_tails
+            .get_or_init(|| build_pre_eo_short_p2_tails(tables));
+        let mut accepted_inverse = false;
+
+        for axis in 0..3usize {
+            let results = solve_pre_eo_niss_single_axis(
+                &inverse_axis_states[axis],
+                tables,
+                fmc_tables,
+                max_eo_depth,
+                pre_eo_tails,
+            );
+            let convert = |moves: &[u8]| -> Vec<u8> {
+                moves
+                    .iter()
+                    .map(|&move_index| {
+                        fmc_tables.axis_solution_move_map[axis][move_index as usize]
+                    })
+                    .collect()
+            };
+            for result in results {
+                let effective_inverse_solution = convert(&result.moves);
+                let simplified = simplify_moves(&invert_moves(&effective_inverse_solution));
+                if simplified.is_empty()
+                    || simplified.len() > FMC_PRE_EO_NISS_TARGET_TOTAL
+                    || !original_scramble_state
+                        .apply_moves(&simplified, &tables.move_data)
+                        .is_solved()
+                {
+                    continue;
+                }
+                let mut eo_metadata = result.prefix_moves.clone();
+                eo_metadata.extend_from_slice(&result.eo_moves);
+                all_candidates.push(FmcCandidate {
+                    moves: simplified,
+                    eo_len: eo_metadata.len() as u8,
+                    dr_len: result.dr_moves.len() as u8,
+                    p2_len: result.p2_moves.len() as u8,
+                    eo_moves: convert(&eo_metadata),
+                    dr_moves: convert(&result.dr_moves),
+                    finish_moves: convert(&result.p2_moves),
+                    axis: axis as u8,
+                    source_tag: 14,
+                    premove_moves: vec![],
+                    rzp_used: false,
+                    skeleton_moves: vec![],
+                    insertion_moves: vec![],
+                    insertion_position: None,
+                    skeleton_kind: None,
+                    insertion_steps: vec![],
+                });
+                accepted_inverse = true;
+            }
+            if accepted_inverse {
+                break;
+            }
+        }
+
+        if !accepted_inverse {
+            for axis in 0..3usize {
+                let results = solve_pre_eo_niss_single_axis(
+                    &direct_axis_states[axis],
+                    tables,
+                    fmc_tables,
+                    max_eo_depth,
+                    pre_eo_tails,
+                );
+                let convert = |moves: &[u8]| -> Vec<u8> {
+                    moves
+                        .iter()
+                        .map(|&move_index| {
+                            fmc_tables.axis_solution_move_map[axis][move_index as usize]
+                        })
+                        .collect()
+                };
+                for result in results {
+                    let simplified = simplify_moves(&convert(&result.moves));
+                    if simplified.is_empty()
+                        || simplified.len() > FMC_PRE_EO_NISS_TARGET_TOTAL
+                        || !original_scramble_state
+                            .apply_moves(&simplified, &tables.move_data)
+                            .is_solved()
+                    {
+                        continue;
+                    }
+                    let mut eo_metadata = result.prefix_moves.clone();
+                    eo_metadata.extend_from_slice(&result.eo_moves);
+                    all_candidates.push(FmcCandidate {
+                        moves: simplified,
+                        eo_len: eo_metadata.len() as u8,
+                        dr_len: result.dr_moves.len() as u8,
+                        p2_len: result.p2_moves.len() as u8,
+                        eo_moves: convert(&eo_metadata),
+                        dr_moves: convert(&result.dr_moves),
+                        finish_moves: convert(&result.p2_moves),
+                        axis: axis as u8,
+                        source_tag: 15,
+                        premove_moves: vec![],
+                        rzp_used: false,
+                        skeleton_moves: vec![],
+                        insertion_moves: vec![],
+                        insertion_position: None,
+                        skeleton_kind: None,
+                        insertion_steps: vec![],
+                    });
+                }
+                if all_candidates
+                    .iter()
+                    .any(|candidate| matches!(candidate.source_tag, 14 | 15))
+                {
+                    break;
+                }
+            }
+        }
+    }
+
     // --- Phase 3: Premove sweep ---
     let premove_sets = &*FMC_PREMOVE_SETS;
     let pm_limit = max_premove_sets.min(premove_sets.len());
@@ -3997,6 +4561,14 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         ),
         13 => format!(
             "FMC_COMPLEMENTARY_NORMAL_{}",
+            AXIS_NAMES[candidate.axis as usize]
+        ),
+        14 => format!(
+            "FMC_PRE_EO_NISS_INVERSE_{}",
+            AXIS_NAMES[candidate.axis as usize]
+        ),
+        15 => format!(
+            "FMC_PRE_EO_NISS_DIRECT_{}",
             AXIS_NAMES[candidate.axis as usize]
         ),
         _ => "FMC_UNKNOWN".into(),
