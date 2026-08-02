@@ -24,6 +24,7 @@ jobs:
             exit 0
           fi
           python tools/apply-fmc-extreme-anytime-timeout.py
+          python tools/repair-fmc-extreme-anytime-patch.py
 
       - name: Validate source patch
         run: |
