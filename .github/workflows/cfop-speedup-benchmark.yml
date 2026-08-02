@@ -37,6 +37,8 @@ jobs:
           node --check benchmark-solver-versions.mjs
           node --check benchmark-roux-v2-1000.mjs
           node --check benchmark/fmcBenchmarkWorker.js
+          node --check benchmark/benchmark-enhanced.js
+          node --check benchmark/benchmark.js
           node --check benchmark/benchmark-copy-record.js
           node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
@@ -67,10 +69,21 @@ jobs:
           grep -q 'enableStyleFallback: false' benchmark/benchmark-enhanced.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark.js
           grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
-          grep -q 'id: "independent-frontier-v2-24"' solver/fmcExtremeProfile.js
+          grep -q 'id: "independent-frontier-v2-compression-first-unlimited"' solver/fmcExtremeProfile.js
+          grep -q 'defaultTimeBudgetMs: 0' solver/fmcExtremeProfile.js
           grep -q 'extremeVariantCount: 24' solver/fmcExtremeProfile.js
           grep -q 'maxPremoveSets: 180' solver/fmcExtremeProfile.js
+          grep -q 'extremeReservedCompressionPremoves: 24' solver/fmcExtremeProfile.js
+          grep -q 'continueBelowTarget: false' solver/fmcExtremeProfile.js
+          grep -q 'const variantOrder = \[reservedCompressionVariant, 0\]' solver/fmcSolver.js
+          grep -q 'unlimitedTimeBudget' solver/fmcSolver.js
+          grep -q 'internalBudgetUnlimited' solver/fmcSolver.js
           grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
+          grep -q 'requestedTimeBudgetMs === 0' benchmark/fmcBenchmarkWorker.js
+          grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark-enhanced.js
+          grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark.js
+          grep -q '목표 도달 또는 중지까지' benchmark/benchmark-enhanced.js
+          grep -q '목표 도달 또는 중지까지' benchmark/benchmark.js
           grep -q 'searchVariant' solver/wasmSolver.js
           grep -q 'search_variant' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_EXTREME_PROFILE_MISMATCH' benchmark/fmcBenchmarkWorker.js
@@ -109,7 +122,7 @@ jobs:
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
 
-      - name: Verify FMC Extreme site parity
+      - name: Verify FMC Extreme compression-first unlimited parity
         run: node benchmark-fmc-extreme-contract.mjs
 
       - name: Verify human FMC core pipeline

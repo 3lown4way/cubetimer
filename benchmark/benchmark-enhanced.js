@@ -15,6 +15,7 @@ const elements = {
   runCount: $("runCountInput"),
   warmupCount: $("warmupCountInput"),
   timeout: $("timeoutInput"),
+  timeoutUnit: $("timeoutUnit"),
   fmcQualityField: $("fmcQualityField"),
   fmcQuality: $("fmcQualitySelect"),
   fmcTargetField: $("fmcTargetField"),
@@ -124,10 +125,22 @@ function isFmc(mode = elements.mode.value) {
   return mode === "fmc";
 }
 
+function isUnlimitedExtreme(config = null) {
+  const mode = config?.mode ?? elements.mode.value;
+  const qualityMode = config?.fmcQualityMode ?? elements.fmcQuality.value;
+  return mode === "fmc" && qualityMode === "extreme";
+}
+
 function updateModeFields() {
   const visible = isFmc();
+  const unlimitedExtreme = visible && elements.fmcQuality.value === "extreme";
   elements.fmcQualityField.hidden = !visible;
   elements.fmcTargetField.hidden = !visible;
+  elements.timeout.hidden = unlimitedExtreme;
+  elements.timeout.disabled = unlimitedExtreme;
+  if (elements.timeoutUnit) {
+    elements.timeoutUnit.textContent = unlimitedExtreme ? "무제한 · 목표 도달 또는 중지까지" : "초";
+  }
 }
 
 function syncFmcDefaults() {
@@ -212,7 +225,9 @@ function buildPayload(config, scramble) {
   if (config.mode === "fmc") {
     payload.fmcQualityMode = config.fmcQualityMode;
     payload.fmcTargetMoveCount = config.fmcTargetMoveCount;
-    payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150);
+    payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)
+      ? 0
+      : Math.max(100, config.timeoutMs - 150);
   }
   return payload;
 }
@@ -302,12 +317,18 @@ async function solveOnce(config, scramble, label) {
     }
     if (running && !stopRequested) elements.progressDetail.textContent = `${label} · ${formatProgressEvent(progress)}`;
   });
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error("BENCHMARK_TIMEOUT")), config.timeoutMs);
-  });
+  const unlimitedExtreme = isUnlimitedExtreme(config);
+  const timeoutPromise = unlimitedExtreme
+    ? null
+    : new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error("BENCHMARK_TIMEOUT")), config.timeoutMs);
+      });
 
   try {
-    const result = await Promise.race([api.solve(buildPayload(config, scramble), onProgress), timeoutPromise]);
+    const solvePromise = api.solve(buildPayload(config, scramble), onProgress);
+    const result = unlimitedExtreme
+      ? await solvePromise
+      : await Promise.race([solvePromise, timeoutPromise]);
     const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
     const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });
     const fallbackRejected = !policyResult.ok;
@@ -364,7 +385,7 @@ async function solveOnce(config, scramble, label) {
       progressEvents,
     };
   } finally {
-    window.clearTimeout(timeoutId);
+    if (timeoutId) window.clearTimeout(timeoutId);
   }
 }
 
@@ -824,10 +845,13 @@ function exportCsv() {
 }
 
 elements.mode.addEventListener("change", updateModeFields);
-elements.fmcQuality.addEventListener("change", syncFmcDefaults);
+elements.fmcQuality.addEventListener("change", () => {
+  syncFmcDefaults();
+  updateModeFields();
+});
 elements.fmcTarget.addEventListener("change", () => {
   if (Number(elements.fmcTarget.value) < 20) elements.fmcQuality.value = "extreme";
-  if (elements.fmcQuality.value === "extreme" && Number(elements.timeout.value) < 105) elements.timeout.value = "120";
+  updateModeFields();
 });
 elements.run.addEventListener("click", () => void runBenchmark());
 elements.stop.addEventListener("click", stopBenchmark);

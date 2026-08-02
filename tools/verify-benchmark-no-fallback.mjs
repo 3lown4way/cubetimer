@@ -33,10 +33,11 @@ if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== 
 }
 
 for (const token of [
-  'id: "independent-frontier-v2-24"',
+  'id: "independent-frontier-v2-compression-first-unlimited"',
   "extremeVariantCount: 24",
   "maxPremoveSets: 180",
-  "extremeReservedCompressionPremoves: 48",
+  "extremeReservedCompressionPremoves: 24",
+  "defaultTimeBudgetMs: 0",
 ]) {
   if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
 }
@@ -44,6 +45,7 @@ for (const token of [
   'stage(`human-L${searchLevel}-V${variant}',
   "FMC_EXTREME_PROFILE.extremeVariantCount",
   "FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves",
+  "const variantOrder = [reservedCompressionVariant, 0]",
   "FMC_EXTREME_TARGET_NOT_REACHED",
   'type: "quality_stage_start"',
   'type: "quality_stage_done"',
@@ -79,7 +81,18 @@ for (const token of [
 ]) {
   if (!fmcWorker.includes(token)) throw new Error(`site-parity worker token missing: ${token}`);
 }
-if (!enhanced.includes('payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150)')) {
-  throw new Error("site per-run timeout is not propagated");
+for (const source of [enhanced, legacy]) {
+  if (!source.includes("payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)")) {
+    throw new Error("Extreme unlimited payload is missing");
+  }
+  if (!source.includes("const result = unlimitedExtreme")) {
+    throw new Error("Extreme still uses the external Promise.race timeout");
+  }
+  if (!source.includes("목표 도달 또는 중지까지")) {
+    throw new Error("Extreme unlimited UI indicator is missing");
+  }
+}
+if (!fmcWorker.includes("requestedTimeBudgetMs === 0") || !fmcSolver.includes("unlimitedTimeBudget")) {
+  throw new Error("Extreme unlimited sentinel is not preserved end-to-end");
 }
 console.log("benchmark no-fallback routing and FMC Extreme site parity verified");

@@ -33,10 +33,12 @@ const api = {
     if (!scramble) return { ok: false, reason: "NO_SCRAMBLE" };
 
     const qualityMode = normalizeQualityMode(payload.fmcQualityMode);
-    const timeBudgetMs = Number.isFinite(Number(payload.fmcTimeBudgetMs))
-      ? Math.max(100, Math.floor(Number(payload.fmcTimeBudgetMs)))
-      : qualityMode === "extreme"
-        ? 90000
+    const requestedTimeBudgetMs = Number(payload.fmcTimeBudgetMs);
+    const timeBudgetMs = qualityMode === "extreme" &&
+      (!Number.isFinite(requestedTimeBudgetMs) || requestedTimeBudgetMs === 0)
+      ? 0
+      : Number.isFinite(requestedTimeBudgetMs)
+        ? Math.max(100, Math.floor(requestedTimeBudgetMs))
         : 8000;
     const targetMoveCount = Number.isFinite(Number(payload.fmcTargetMoveCount))
       ? Math.max(1, Math.floor(Number(payload.fmcTargetMoveCount)))
