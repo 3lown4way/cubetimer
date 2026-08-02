@@ -1,3 +1,5 @@
+import { FMC_EXTREME_PROFILE } from "../solver/fmcExtremeProfile.js";
+
 const FALLBACK_MARKER = /(?:FALLBACK|RETRY|EXTERNAL_CUBING_SEARCH)/i;
 
 function normalizeAlgorithm(value) {
@@ -72,6 +74,9 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
       return reject("FMC_QUALITY_MODE_DOWNGRADE_REJECTED");
     }
     if (requestedQuality === "extreme") {
+      if (String(result?.extremeProfileId || "") !== FMC_EXTREME_PROFILE.id) {
+        return reject("FMC_EXTREME_PROFILE_MISMATCH");
+      }
       const target = Number.isFinite(Number(config?.fmcTargetMoveCount))
         ? Number(config.fmcTargetMoveCount)
         : 20;

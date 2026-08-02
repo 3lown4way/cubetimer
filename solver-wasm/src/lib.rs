@@ -622,24 +622,21 @@ struct FmcOptionsJson {
     enable_multi_switch_niss: bool,
     #[serde(rename = "enableDeepMultiSwitchNiss", default)]
     enable_deep_multi_switch_niss: bool,
-    #[serde(rename = "maxEoDepth", default = "default_fmc_max_eo_depth")]
-    max_eo_depth: u8,
-    #[serde(rename = "timeBudgetMs", default = "default_fmc_time_budget_ms")]
-    time_budget_ms: u32,
-    #[serde(rename = "targetMoveCount", default = "default_fmc_target_move_count")]
-    target_move_count: usize,
+    #[serde(rename = "searchLevel", default)]
+    search_level: u8,
+    #[serde(rename = "searchVariant", default)]
+    search_variant: u32,
+    #[serde(
+        rename = "incumbentMoveCount",
+        default = "default_fmc_incumbent_move_count"
+    )]
+    incumbent_move_count: usize,
+}
+fn default_fmc_incumbent_move_count() -> usize {
+    40
 }
 fn default_max_premove_sets() -> usize {
     120
-}
-fn default_fmc_max_eo_depth() -> u8 {
-    5
-}
-fn default_fmc_time_budget_ms() -> u32 {
-    8_000
-}
-fn default_fmc_target_move_count() -> usize {
-    24
 }
 
 #[wasm_bindgen]
@@ -673,24 +670,13 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
         options.enable_deep_multi_switch_niss,
-        options.max_eo_depth,
-        options.time_budget_ms,
-        options.target_move_count,
+        options.search_level,
+        options.search_variant,
+        options.incumbent_move_count,
     );
 
     if !result.ok {
-        return serde_json::json!({
-            "ok": false,
-            "reason": if result.timed_out { "FMC_TIME_BUDGET_EXHAUSTED" } else { "FMC_NO_SOLUTION" },
-            "timedOut": result.timed_out,
-            "elapsedMs": result.elapsed_ms,
-            "processedAxisCalls": result.processed_axis_calls,
-            "processedPremoveSets": result.processed_premove_sets,
-            "targetMoveCount": result.target_move_count,
-            "targetReached": result.target_reached,
-            "budgetCheckpoints": result.budget_checkpoints,
-        })
-        .to_string();
+        return serde_json::json!({"ok": false, "reason": "FMC_NO_SOLUTION"}).to_string();
     }
 
     let candidates_json: Vec<serde_json::Value> = result
@@ -698,13 +684,11 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         .iter()
         .map(|c| candidate_to_json(c, tables))
         .collect();
-
     let skeletons_json: Vec<serde_json::Value> = result
         .skeletons
         .iter()
         .map(|s| skeleton_to_json(s, tables))
         .collect();
-
     let best = &result.candidates[0];
     let best_solution = minmove_core::solution_string_from_path(&best.moves, &tables.move_data);
 
@@ -718,15 +702,10 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
+        "multiInsertionTransitionCount": result.multi_insertion_transition_count,
+        "multiInsertionPairCount": result.multi_insertion_pair_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
-        "timedOut": result.timed_out,
-        "elapsedMs": result.elapsed_ms,
-        "processedAxisCalls": result.processed_axis_calls,
-        "processedPremoveSets": result.processed_premove_sets,
-        "targetMoveCount": result.target_move_count,
-        "targetReached": result.target_reached,
-        "budgetCheckpoints": result.budget_checkpoints,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| (4..=7).contains(&candidate.source_tag)).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| (4..=7).contains(&skeleton.source_tag)).count(),
     })

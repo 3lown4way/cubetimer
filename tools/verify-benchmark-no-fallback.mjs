@@ -6,6 +6,7 @@ const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.
 const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
 const fmcWorker = fs.readFileSync(new URL("../benchmark/fmcBenchmarkWorker.js", import.meta.url), "utf8");
 const fmcSolver = fs.readFileSync(new URL("../solver/fmcSolver.js", import.meta.url), "utf8");
+const profile = fs.readFileSync(new URL("../solver/fmcExtremeProfile.js", import.meta.url), "utf8");
 const wasmSolver = fs.readFileSync(new URL("../solver/wasmSolver.js", import.meta.url), "utf8");
 const rustFmc = fs.readFileSync(new URL("../solver-wasm/src/fmc_search.rs", import.meta.url), "utf8");
 const rustApi = fs.readFileSync(new URL("../solver-wasm/src/lib.rs", import.meta.url), "utf8");
@@ -30,55 +31,55 @@ if ((worker.match(/enableRecovery: !benchmarkNoFallback,/g) || []).length !== 2)
 if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== false")) {
   throw new Error("Roux v1 does not honor recovery disable flag");
 }
-console.log("benchmark no-fallback routing verified");
 
 for (const token of [
-  'stage("extreme-target-unbounded"',
-  'const internalBudgetUnlimited = qualityMode === "extreme"',
-  'timeBudgetMs: internalBudgetUnlimited ? 0 : stageBudgetMs',
-  'internalBudgetUnlimited',
-  'targetMoveCount',
-  'processedAxisCalls',
-  'processedPremoveSets',
-  'FMC_EXTREME_TARGET_NOT_REACHED',
+  'id: "independent-frontier-v2-24"',
+  "extremeVariantCount: 24",
+  "maxPremoveSets: 180",
+  "extremeReservedCompressionPremoves: 48",
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`FMC unlimited-Extreme token missing: ${token}`);
+  if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
 }
-if (!enhanced.includes('payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150)')) {
-  throw new Error("enhanced benchmark outer worker timeout is not propagated");
+for (const token of [
+  'stage(`human-L${searchLevel}-V${variant}',
+  "FMC_EXTREME_PROFILE.extremeVariantCount",
+  "FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves",
+  "FMC_EXTREME_TARGET_NOT_REACHED",
+  'type: "quality_stage_start"',
+  'type: "quality_stage_done"',
+]) {
+  if (!fmcSolver.includes(token)) throw new Error(`independent-frontier-v2 token missing: ${token}`);
 }
-if (
-  enhanced.includes('const budget = config.fmcQualityMode === "extreme" ? 90000 : 8000') ||
-  enhanced.includes('Math.min(budget, Math.max(100, config.timeoutMs - 100))') ||
-  enhanced.includes('if (Number(elements.timeout.value) < 105) elements.timeout.value = "120"')
-) {
-  throw new Error("Extreme still has an independent fixed timeout");
+if (fmcSolver.includes('stage("extreme-target-unbounded"')) {
+  throw new Error("site still uses the simplified one-pass Extreme implementation");
 }
-for (const token of ["timeBudgetMs", "targetMoveCount", "maxEoDepth"]) {
+for (const token of ["searchLevel", "searchVariant", "incumbentMoveCount"]) {
   if (!wasmSolver.includes(token) || !rustApi.includes(token)) {
-    throw new Error(`WASM option propagation missing: ${token}`);
+    throw new Error(`advanced WASM frontier option missing: ${token}`);
   }
 }
 for (const token of [
-  "FmcSearchBudget",
-  "time_budget_ms == 0",
-  "f64::INFINITY",
-  "budget.should_stop",
-  "processed_premove_sets",
-  "timed_out",
+  "raw_exploration_limit",
+  "search_variant",
+  "multi_insertion_transition_count",
+  "FMC_EXTREME_SUB20_TARGET",
 ]) {
-  if (!rustFmc.includes(token)) throw new Error(`Rust unlimited-budget token missing: ${token}`);
+  if (!rustFmc.includes(token)) throw new Error(`advanced Rust frontier token missing: ${token}`);
 }
-for (const source of [wasmSolver, rustFmc]) {
+for (const source of [fmcSolver, wasmSolver, rustFmc, rustApi]) {
   if (source.includes("FMC_TWOPHASE_FALLBACK") || source.includes("eo_fallback_used")) {
     throw new Error("FMC fallback architecture remains");
   }
 }
 for (const token of [
-  'requireTargetReached: qualityMode === "extreme"',
-  'FMC_QUALITY_MODE_DOWNGRADE_REJECTED',
-  'FMC_EXTREME_TARGET_NOT_REACHED',
+  "buildFmcExtremeOptions",
+  "FMC_EXTREME_PROFILE",
+  "FMC_EXTREME_PROFILE_MISMATCH",
+  "FMC_EXTREME_TARGET_NOT_REACHED",
 ]) {
-  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker guard missing: ${token}`);
+  if (!fmcWorker.includes(token)) throw new Error(`site-parity worker token missing: ${token}`);
 }
-console.log("FMC Extreme unlimited internal budget contract verified");
+if (!enhanced.includes('payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150)')) {
+  throw new Error("site per-run timeout is not propagated");
+}
+console.log("benchmark no-fallback routing and FMC Extreme site parity verified");
