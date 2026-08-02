@@ -37,9 +37,12 @@ jobs:
           for path in [
               Path('tools/.benchmark-no-fallback-trigger'),
               Path('tools/.benchmark-no-fallback-pr-trigger'),
+              Path('tools/.benchmark-no-fallback-retry'),
           ]:
               if path.exists(): path.unlink()
           PY
+          git checkout origin/fix/benchmark-no-fallback -- .github/workflows/cfop-speedup-benchmark.yml
+          git checkout origin/fix/benchmark-no-fallback -- .github/workflows/apply-benchmark-no-fallback.yml
 
       - name: Validate generated patch
         run: |
