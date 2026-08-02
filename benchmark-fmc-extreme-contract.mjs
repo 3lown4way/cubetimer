@@ -4,15 +4,14 @@ import { solveWithFMCSearch } from "./solver/fmcSolver.js";
 import { buildFmcTablesWasm } from "./solver/wasmSolver.js";
 import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "./solver/fmcExtremeProfile.js";
 
-const scramble = "R2 U' F2 L2 D B2 R' D2 F U2 L' U B' R2 F2 D' L2 U' R F' U2";
+const scramble = "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2";
 const siteOptions = buildFmcExtremeOptions({ timeBudgetMs: 1000, targetMoveCount: 20 });
 
-assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v2-24");
+assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v2-compression-first-24");
 assert.equal(siteOptions.extremeVariantCount, 24);
 assert.equal(siteOptions.maxPremoveSets, 180);
-assert.equal(siteOptions.extremeReservedCompressionPremoves, 48);
-assert.equal(siteOptions.continueBelowTarget, true);
-assert.equal(siteOptions.enableInsertions, true);
+assert.equal(siteOptions.extremeReservedCompressionPremoves, 24);
+assert.equal(siteOptions.continueBelowTarget, false);
 assert.equal(siteOptions.enableCoverageFallback, false);
 assert.equal(siteOptions.allowCfopFallback, false);
 assert.equal(siteOptions.premoveAllowCfopFallback, false);
@@ -25,13 +24,18 @@ const diagnostics = result?.performanceDiagnostics || {};
 const stages = diagnostics.wasmStages || [];
 
 assert.equal(result?.extremeProfileId || diagnostics.extremeProfileId, FMC_EXTREME_PROFILE.id);
-assert.ok(stages.length >= 1, "site-parity Extreme did not execute a frontier");
-assert.equal(stages[0]?.name, "human-L1-V0");
+assert.ok(stages.length >= 1, "compression-first Extreme executed no frontier");
+assert.equal(stages[0]?.name, "human-L3-V7-reserved");
+assert.equal(stages[0]?.maxPremoveSets, 24);
+assert.equal(stages[0]?.multiInsertion, true);
+assert.equal(stages[0]?.htr, true);
+assert.equal(stages[0]?.sliceInsertion, true);
 assert.equal(stages.some((stage) => /baseline|sweet/i.test(stage.name)), false);
 assert.equal(result?.qualityDowngraded, false);
 if (result?.ok) {
   assert.equal(result.qualityTargetReached, true);
   assert.ok(result.moveCount <= 20);
+  assert.equal(stages.length, 1, "target reached but Extreme continued into expansion stages");
 } else {
   assert.equal(result?.reason, "FMC_EXTREME_TARGET_NOT_REACHED");
   assert.ok(Number(result?.bestCandidate?.moveCount) > 20);
@@ -39,10 +43,9 @@ if (result?.ok) {
 
 console.log(JSON.stringify({
   profile: FMC_EXTREME_PROFILE.id,
-  configuredVariantCount: siteOptions.extremeVariantCount,
   elapsedMs,
   ok: result?.ok === true,
   reason: result?.reason || "",
   moveCount: result?.moveCount ?? result?.bestCandidate?.moveCount ?? null,
-  executedVariants: stages.map((stage) => stage.name),
+  stages: stages.map((stage) => ({ name: stage.name, maxPremoveSets: stage.maxPremoveSets, moveCount: stage.moveCount })),
 }));

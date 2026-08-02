@@ -1471,7 +1471,7 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
           Math.min(requestedPremoveSets, Math.floor(options.extremeReservedCompressionPremoves)),
         )
       : Math.min(requestedPremoveSets, FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves);
-    const variantOrder = [0, reservedCompressionVariant];
+    const variantOrder = [reservedCompressionVariant, 0];
     for (let variant = 1; variant < requestedVariants; variant += 1) {
       if (!variantOrder.includes(variant)) variantOrder.push(variant);
     }
@@ -1479,8 +1479,8 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
     const stages = [];
     for (const variant of variantOrder) {
       const reservedCompression = variant === reservedCompressionVariant;
-      // Reserve multi-insertion immediately after one fast L1 scout. Repeated
-      // L2 searches can no longer consume the entire short Extreme budget.
+      // Reproduce the validated compression benchmark first: L3-V7 with
+      // 24 premove sets. Only expand to scout and wider variants on target miss.
       const searchLevel = reservedCompression ? 3 : variant < 2 ? 1 : variant < 7 ? 2 : 3;
       const premoveCap = reservedCompression
         ? reservedCompressionPremoves

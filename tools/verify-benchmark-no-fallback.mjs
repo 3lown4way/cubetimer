@@ -33,10 +33,10 @@ if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== 
 }
 
 for (const token of [
-  'id: "independent-frontier-v2-24"',
+  'id: "independent-frontier-v2-compression-first-24"',
   "extremeVariantCount: 24",
   "maxPremoveSets: 180",
-  "extremeReservedCompressionPremoves: 48",
+  "extremeReservedCompressionPremoves: 24",
 ]) {
   if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
 }
@@ -44,6 +44,7 @@ for (const token of [
   'stage(`human-L${searchLevel}-V${variant}',
   "FMC_EXTREME_PROFILE.extremeVariantCount",
   "FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves",
+  "const variantOrder = [reservedCompressionVariant, 0]",
   "FMC_EXTREME_TARGET_NOT_REACHED",
   'type: "quality_stage_start"',
   'type: "quality_stage_done"',
