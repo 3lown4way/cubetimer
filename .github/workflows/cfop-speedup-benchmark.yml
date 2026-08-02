@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply viewpoint optimizer
-        run: python tools/apply-human-viewpoint-cfop.py
+        run: |
+          python tools/repair-human-viewpoint-integrator.py
+          python tools/apply-human-viewpoint-cfop.py
 
       - name: Validate human viewpoint behavior
         run: |
