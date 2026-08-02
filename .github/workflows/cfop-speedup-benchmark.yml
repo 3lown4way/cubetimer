@@ -1,4 +1,4 @@
-name: Apply FMC Extreme no-downgrade fix
+name: Solver hotpath benchmark
 
 on:
   pull_request:
@@ -6,56 +6,102 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch_fmc_extreme:
+  benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
 
-      - name: Apply source patch
+      - name: Syntax checks
         run: |
-          if [ ! -f tools/apply-fmc-extreme-no-downgrade.py ]; then
-            echo "Patch already applied"
-            exit 0
-          fi
-          python tools/apply-fmc-extreme-no-downgrade.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path("tools/verify-benchmark-no-fallback.mjs")
-          text = path.read_text()
-          start = text.index("const extremeBlock =")
-          end = text.index("if (extremeBlock.includes", start)
-          replacement = '''const extremeStart = fmcSolver.indexOf('if (qualityMode === "extreme")');
-          const sweetSpotStart = fmcSolver.indexOf('stage("baseline"', extremeStart);
-          const extremeBlock = fmcSolver.slice(extremeStart, sweetSpotStart);
-          '''
-          path.write_text(text[:start] + replacement + text[end:])
-          PY
-
-      - name: Validate source patch
-        run: |
+          node --check main.js
+          node --check solver/solverWorker.js
+          node --check solver/cfop3x3.js
           node --check solver/fmcSolver.js
+          node --check solver/zbllCaseIndex.js
+          node --check solver/roux3x3.js
+          node --check solver/rouxExactTableCacheV2.js
+          node --check solver/rouxExactTablesV2.js
+          node --check solver/roux3x3v2.js
+          node --check tools/verify-zbls-case-coverage.mjs
+          node --check tools/verify-roux-v2-indexeddb-cache.mjs
+          node --check tools/verify-roux-v2.mjs
+          node --check tools/verify-benchmark-no-fallback.mjs
+          node --check benchmark-hotpaths.mjs
+          node --check benchmark-twophase-frontiers.mjs
+          node --check benchmark-solver-versions.mjs
+          node --check benchmark-roux-v2-1000.mjs
           node --check benchmark/fmcBenchmarkWorker.js
-          node --check benchmark/benchmark-enhanced.js
+          node --check benchmark/benchmark-copy-record.js
+          node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
           node --check benchmark/benchmark-no-fallback-policy.test.mjs
-          node --check tools/verify-benchmark-no-fallback.mjs
+          node --check benchmark-fmc-speed-identity.mjs
+          node --check benchmark-fmc-insertion-speed-identity.mjs
+
+      - name: Static routing assertions
+        run: |
+          grep -q 'id="solverVersionSelect"' index.html
+          grep -q 'solverVersion,' main.js
+          grep -q 'TWOPHASE_333_V1_MAX_FRONTIERS = 12' solver/solverWorker.js
+          grep -q 'TWOPHASE_333_V2_MAX_FRONTIERS = 2' solver/solverWorker.js
+          grep -q 'import("./roux3x3v2.js")' solver/solverWorker.js
+          grep -q 'import("./rouxExactTableCacheV2.js")' solver/rouxExactTablesV2.js
+          grep -q 'globalThis.indexedDB' solver/rouxExactTableCacheV2.js
+          grep -q 'import("./zbllCaseIndex.js")' solver/cfop3x3.js
+          grep -q 'solverVersion === "v2"' solver/cfop3x3.js
+          grep -q 'import "./benchmark-copy-record.js"' benchmark/benchmark-fixed.js
+          grep -q 'benchmarkNoFallback: true' benchmark/benchmark-enhanced.js
+          grep -q 'benchmarkNoFallback: true' benchmark/benchmark.js
+          grep -q 'enableStyleFallback: false' benchmark/benchmark-enhanced.js
+          grep -q 'enableStyleFallback: false' benchmark/benchmark.js
+          grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
+          grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
+          grep -q 'FMC_QUALITY_MODE_DOWNGRADE_REJECTED' benchmark/fmcBenchmarkWorker.js
+
+      - name: Verify benchmark copy record formatting
+        run: node benchmark/benchmark-copy-record.test.mjs
+
+      - name: Verify benchmark no-fallback policy
+        run: |
           node benchmark/benchmark-no-fallback-policy.test.mjs
           node tools/verify-benchmark-no-fallback.mjs
 
-      - name: Commit source patch
-        run: |
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No source changes"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Keep FMC Extreme on its own quality ladder"
-          git push origin HEAD:${{ github.head_ref }}
+      - name: Verify generated ZBLL index
+        run: node tools/generate-zbll-case-index.mjs --check
+
+      - name: Verify complete ZBLS case coverage
+        run: node tools/verify-zbls-case-coverage.mjs
+
+      - name: Verify Roux v2 IndexedDB cache
+        run: node tools/verify-roux-v2-indexeddb-cache.mjs
+
+      - name: Verify exact Roux v2 coverage
+        run: node tools/verify-roux-v2.mjs
+
+      - name: Compare solver v1 and v2
+        run: node benchmark-solver-versions.mjs
+
+      - name: Run CFOP regression benchmark
+        run: node benchmark-cfop-10.mjs
+
+      - name: Run optimized 2-phase and ZB hotpaths
+        run: node benchmark-hotpaths.mjs
+
+      - name: Compare two-phase frontier counts
+        run: node benchmark-twophase-frontiers.mjs
+
+      - name: Verify human FMC core pipeline
+        env:
+          FMC_SPEED_RUNS: '4'
+          FMC_SPEED_PREMOVE_SETS: '20'
+          FMC_SPEED_INSERTION_RUNS: '2'
+        run: node benchmark-fmc-speed-identity.mjs
+
+      - name: Verify human FMC insertion pipeline
+        env:
+          FMC_INSERTION_REPEATS: '1'
+        run: node benchmark-fmc-insertion-speed-identity.mjs
