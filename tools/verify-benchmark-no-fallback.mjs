@@ -34,15 +34,15 @@ console.log("benchmark no-fallback routing verified");
 
 for (const token of [
   'stage("extreme-wide-seed"',
+  'maxPremoveSets: capPremoves(32)',
   'stage("extreme-deep-eo-dr"',
   'stage("extreme-htr-insertion"',
   'stage("extreme-full-human-portfolio"',
-  'FMC_EXTREME_TARGET_NOT_REACHED',
-  'const requireTargetReached = options.requireTargetReached === true || qualityMode === "extreme"',
+  'const requireTargetReached = options.requireTargetReached === true;',
   'type: "quality_stage_start"',
   'type: "quality_stage_done"',
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`FMC Extreme contract missing: ${token}`);
+  if (!fmcSolver.includes(token)) throw new Error(`FMC Extreme anytime contract missing: ${token}`);
 }
 const extremeStart = fmcSolver.indexOf('if (qualityMode === "extreme")');
 const sweetSpotStart = fmcSolver.indexOf('stage("baseline"', extremeStart);
@@ -50,11 +50,24 @@ const extremeBlock = fmcSolver.slice(extremeStart, sweetSpotStart);
 if (extremeBlock.includes('stage("baseline"') || extremeBlock.includes('stage("eo-multi-switch"')) {
   throw new Error("Extreme still enters the Sweet Spot quality ladder");
 }
-for (const token of [
-  'requireTargetReached: qualityMode === "extreme"',
-  'FMC_QUALITY_MODE_DOWNGRADE_REJECTED',
-  'FMC_EXTREME_TARGET_NOT_REACHED',
-]) {
-  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker guard missing: ${token}`);
+for (const source of [fmcSolver, fmcWorker]) {
+  if (source.includes("FMC_EXTREME_TARGET_NOT_REACHED")) {
+    throw new Error("Extreme target miss is still treated as solver failure");
+  }
 }
-console.log("FMC Extreme no-downgrade contract verified");
+for (const token of [
+  'buildFmcTablesWasm',
+  'Math.max(100, Math.floor(Number(payload.fmcTimeBudgetMs)))',
+  'FMC_QUALITY_MODE_DOWNGRADE_REJECTED',
+]) {
+  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker anytime guard missing: ${token}`);
+}
+if (fmcWorker.includes('requireTargetReached: qualityMode === "extreme"')) {
+  throw new Error("FMC worker still hard-requires the Extreme target");
+}
+for (const source of [enhanced, legacy]) {
+  if (!source.includes('config.timeoutMs - 100')) {
+    throw new Error("short FMC timeout budget is not reserved correctly");
+  }
+}
+console.log("FMC Extreme anytime timeout contract verified");

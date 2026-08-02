@@ -145,8 +145,8 @@ function buildSolvePayload(config, scramble) {
     payload.fmcQualityMode = config.fmcQualityMode;
     payload.fmcTargetMoveCount = config.fmcTargetMoveCount;
     payload.fmcTimeBudgetMs = Math.max(
-      1000,
-      Math.min(defaultBudget, Math.max(1000, config.timeoutMs - 2500)),
+      100,
+      Math.min(defaultBudget, Math.max(100, config.timeoutMs - 100)),
     );
   }
 

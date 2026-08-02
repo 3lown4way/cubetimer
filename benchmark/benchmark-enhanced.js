@@ -214,7 +214,7 @@ function buildPayload(config, scramble) {
     const budget = config.fmcQualityMode === "extreme" ? 90000 : 8000;
     payload.fmcQualityMode = config.fmcQualityMode;
     payload.fmcTargetMoveCount = config.fmcTargetMoveCount;
-    payload.fmcTimeBudgetMs = Math.max(1000, Math.min(budget, config.timeoutMs - 2500));
+    payload.fmcTimeBudgetMs = Math.max(100, Math.min(budget, Math.max(100, config.timeoutMs - 100)));
   }
   return payload;
 }

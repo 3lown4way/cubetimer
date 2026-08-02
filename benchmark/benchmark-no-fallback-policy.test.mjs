@@ -42,8 +42,8 @@ assert.equal(enforceBenchmarkNoFallback({
 }).reason, "FMC_QUALITY_MODE_DOWNGRADE_REJECTED");
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", qualityTargetReached: false, moveCount: 22 },
-}).reason, "FMC_EXTREME_TARGET_NOT_REACHED");
+  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", qualityTargetReached: false, qualityDowngraded: false, moveCount: 22 },
+}).ok, true);
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
   result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
