@@ -1,0 +1,47 @@
+name: Run missing ZBLL diagnostics
+
+on:
+  push:
+    branches:
+      - fix/zb-pipeline-reliability-v2
+    paths:
+      - tools/apply-zb-failure-diagnostics.mjs
+      - benchmark-zb-missing-zbll-debug.mjs
+      - .github/workflows/run-zb-missing-zbll-debug.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply diagnostics patch
+        run: node tools/apply-zb-failure-diagnostics.mjs
+
+      - name: Validate syntax
+        run: |
+          node --check solver/cfop3x3.js
+          node --check benchmark-zb-missing-zbll-debug.mjs
+
+      - name: Analyze the three missing ZBLL states
+        run: node benchmark-zb-missing-zbll-debug.mjs
+
+      - name: Commit diagnostics and report
+        run: |
+          rm -f tools/apply-zb-failure-diagnostics.mjs
+          rm -f .github/workflows/run-zb-missing-zbll-debug.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/cfop3x3.js benchmark-zb-missing-zbll-debug.mjs benchmark-results/zb-missing-zbll-debug.json tools/apply-zb-failure-diagnostics.mjs .github/workflows/run-zb-missing-zbll-debug.yml
+          git commit -m "Diagnose remaining Pure ZB ZBLL coverage gaps"
+          git push origin HEAD:fix/zb-pipeline-reliability-v2
