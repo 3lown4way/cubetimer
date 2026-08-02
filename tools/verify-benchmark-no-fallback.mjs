@@ -4,6 +4,8 @@ const enhanced = fs.readFileSync(new URL("../benchmark/benchmark-enhanced.js", i
 const legacy = fs.readFileSync(new URL("../benchmark/benchmark.js", import.meta.url), "utf8");
 const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
 const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
+const fmcWorker = fs.readFileSync(new URL("../benchmark/fmcBenchmarkWorker.js", import.meta.url), "utf8");
+const fmcSolver = fs.readFileSync(new URL("../solver/fmcSolver.js", import.meta.url), "utf8");
 
 for (const source of [enhanced, legacy]) {
   if (!source.includes("benchmarkNoFallback: true")) throw new Error("benchmark no-fallback payload missing");
@@ -29,3 +31,30 @@ for (const stage of ["FB", "SB", "CMLL", "LSE"]) {
   if (!roux.includes(`reason: \`${stage}_`)) throw new Error(`Roux ${stage} direct failure missing`);
 }
 console.log("benchmark no-fallback routing verified");
+
+for (const token of [
+  'stage("extreme-wide-seed"',
+  'stage("extreme-deep-eo-dr"',
+  'stage("extreme-htr-insertion"',
+  'stage("extreme-full-human-portfolio"',
+  'FMC_EXTREME_TARGET_NOT_REACHED',
+  'const requireTargetReached = options.requireTargetReached === true || qualityMode === "extreme"',
+  'type: "quality_stage_start"',
+  'type: "quality_stage_done"',
+]) {
+  if (!fmcSolver.includes(token)) throw new Error(`FMC Extreme contract missing: ${token}`);
+}
+const extremeStart = fmcSolver.indexOf('if (qualityMode === "extreme")');
+const sweetSpotStart = fmcSolver.indexOf('stage("baseline"', extremeStart);
+const extremeBlock = fmcSolver.slice(extremeStart, sweetSpotStart);
+if (extremeBlock.includes('stage("baseline"') || extremeBlock.includes('stage("eo-multi-switch"')) {
+  throw new Error("Extreme still enters the Sweet Spot quality ladder");
+}
+for (const token of [
+  'requireTargetReached: qualityMode === "extreme"',
+  'FMC_QUALITY_MODE_DOWNGRADE_REJECTED',
+  'FMC_EXTREME_TARGET_NOT_REACHED',
+]) {
+  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker guard missing: ${token}`);
+}
+console.log("FMC Extreme no-downgrade contract verified");

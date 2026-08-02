@@ -51,6 +51,7 @@ const api = {
       verifyLimit: qualityMode === "extreme" ? 32 : 18,
       enableInsertions: true,
       enableCoverageFallback: false,
+      requireTargetReached: qualityMode === "extreme",
       crossColors: normalizeCrossColorList(payload.crossColor),
     });
 
@@ -58,6 +59,34 @@ const api = {
       return {
         ok: false,
         reason: "UNEXPECTED_FMC_TWOPHASE_FALLBACK",
+        rejectedResult: result,
+      };
+    }
+    if (result?.ok && result.qualityMode !== qualityMode) {
+      return {
+        ok: false,
+        reason: "FMC_QUALITY_MODE_DOWNGRADE_REJECTED",
+        requestedQualityMode: qualityMode,
+        actualQualityMode: result.qualityMode || "unknown",
+        rejectedResult: result,
+      };
+    }
+    if (result?.ok && result.qualityDowngraded === true) {
+      return {
+        ok: false,
+        reason: "FMC_QUALITY_MODE_DOWNGRADE_REJECTED",
+        rejectedResult: result,
+      };
+    }
+    if (
+      qualityMode === "extreme" &&
+      result?.ok &&
+      (result.qualityTargetReached !== true || Number(result.moveCount) > targetMoveCount)
+    ) {
+      return {
+        ok: false,
+        reason: "FMC_EXTREME_TARGET_NOT_REACHED",
+        requestedTarget: targetMoveCount,
         rejectedResult: result,
       };
     }

@@ -1377,20 +1377,27 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
 
   if (qualityMode === "extreme") {
     return [
-      stage("baseline", { maxPremoveSets: capPremoves(40) }),
-      stage("eo-multi-switch", {
+      stage("extreme-wide-seed", {
         maxPremoveSets: capPremoves(80),
         enableMultiSwitchNiss: true,
       }),
-      stage("deep-eo-dr", {
+      stage("extreme-deep-eo-dr", {
         maxPremoveSets: capPremoves(120),
+        enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
       }),
-      stage("full-human-portfolio", {
+      stage("extreme-htr-insertion", {
+        maxPremoveSets: capPremoves(160),
+        enableHtrSkeletons: true,
+        enableSliceInsertion: true,
+        enableDeepMultiSwitchNiss: true,
+      }),
+      stage("extreme-full-human-portfolio", {
         maxPremoveSets: requestedPremoveSets,
         enableMultiInsertion: true,
         enableHtrSkeletons: true,
         enableSliceInsertion: true,
+        enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
       }),
     ];
@@ -1418,6 +1425,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   const targetMoveCount = Number.isFinite(options.targetMoveCount)
     ? Math.max(1, Math.floor(options.targetMoveCount))
     : qualityPreset.targetMoveCount;
+  // Extreme is a strict quality contract: it may fail, but it may not downgrade
+  // to a Sweet Spot-level result above the requested target.
+  const requireTargetReached = options.requireTargetReached === true || qualityMode === "extreme";
   const sweepBudgetMs = Number.isFinite(options.sweepBudgetMs)
     ? Math.max(500, Math.floor(options.sweepBudgetMs))
     : Math.max(1500, Math.min(8000, Math.floor(timeBudgetMs * 0.35)));
@@ -1493,6 +1503,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     solver: "fmc",
     qualityMode,
     targetMoveCount,
+    requireTargetReached,
+    qualityDowngraded: false,
     totalBudgetMs: timeBudgetMs,
     wasmStages: [],
     sweepBudgetMs,
@@ -1616,8 +1628,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   };
 
   // === WASM FMC quality scheduler ===
-  // Start with the cheapest human pipeline. More expensive stages run only while
-  // the current incumbent is above the selected quality target.
+  // Each mode runs only its own quality ladder. Extreme never enters the
+  // Sweet Spot baseline and may fail rather than downgrade quality.
   let wasmFmcDone = false;
   try {
     const wasmFmcStartedAt = Date.now();
@@ -1631,7 +1643,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
 
         const qualityStage = wasmStages[stageIndex];
         notify({
-          type: "fallback_start",
+          type: "quality_stage_start",
           stageName: `FMC ${qualityStage.name}`,
           reason: Number.isFinite(bestMoveCount) ? `${bestMoveCount}T > ${targetMoveCount}T` : qualityMode,
         });
@@ -1702,7 +1714,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           }
         }
 
-        notify({ type: "fallback_done", stageName: `FMC ${qualityStage.name}` });
+        notify({ type: "quality_stage_done", stageName: `FMC ${qualityStage.name}` });
       }
     }
   } catch (err) {
@@ -1777,7 +1789,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         if (typeof onProgress === "function") {
           try {
             void onProgress({
-              type: "fallback_start",
+              type: "insertion_start",
               stageName: `FMC Insertion ${i + 1}/${insertionTargets.length}`,
               reason: `${target.moveCount}T`,
             });
@@ -1855,7 +1867,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         if (typeof onProgress === "function") {
           try {
             void onProgress({
-              type: "fallback_done",
+              type: "insertion_done",
               stageName: `FMC Insertion ${i + 1}/${insertionTargets.length}`,
             });
           } catch (_) {}
@@ -1896,6 +1908,33 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     incrementCounter(diagnostics.sourceCounts.ranked, rankedCandidates[i]?.source || "UNKNOWN");
   }
   const best = rankedCandidates[0];
+  if (requireTargetReached && best.moveCount > targetMoveCount) {
+    diagnostics.selectedCandidate = {
+      source: best?.source || null,
+      innerSource: best?.innerSource || null,
+      moveCount: Number.isFinite(best?.moveCount) ? best.moveCount : null,
+      usesCfop: best?.usesCfop === true,
+      rejectedForTarget: true,
+    };
+    return {
+      ok: false,
+      reason: qualityMode === "extreme"
+        ? "FMC_EXTREME_TARGET_NOT_REACHED"
+        : "FMC_QUALITY_TARGET_NOT_REACHED",
+      moveCount: best.moveCount,
+      bestCandidate: {
+        solution: best.solution,
+        moveCount: best.moveCount,
+        source: best.source,
+      },
+      qualityMode,
+      qualityTarget: targetMoveCount,
+      qualityTargetReached: false,
+      qualityDowngraded: false,
+      attempts,
+      performanceDiagnostics: finalizeDiagnostics(),
+    };
+  }
   diagnostics.selectedCandidate = {
     source: best?.source || null,
     innerSource: best?.innerSource || null,
@@ -1931,6 +1970,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     qualityMode,
     qualityTarget: targetMoveCount,
     qualityTargetReached: best.moveCount <= targetMoveCount,
+    qualityDowngraded: false,
     attempts,
     stages: fmcStages,
     parts,

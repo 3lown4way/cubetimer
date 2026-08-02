@@ -274,6 +274,10 @@ function formatProgressEvent(progress) {
     return `depth ${progress.bound ?? "?"}${nodes}`;
   }
   if (progress.type === "exact_search_start") return `exact search ${progress.lowerBound ?? "?"}→${progress.upperBoundLength ?? "?"}`;
+  if (progress.type === "quality_stage_start") return `${name || "FMC Extreme"} 탐색`;
+  if (progress.type === "quality_stage_done") return `${name || "FMC Extreme"} 완료`;
+  if (progress.type === "insertion_start") return `${name || "FMC Insertion"} 탐색`;
+  if (progress.type === "insertion_done") return `${name || "FMC Insertion"} 완료`;
   if (progress.type === "optimality_proven") return `최적성 증명 · ${progress.moveCount ?? "?"}수`;
   if (progress.type === "fallback_start") {
     if (name.startsWith("FMC Insertion")) return name.replace(/^FMC /, "");
