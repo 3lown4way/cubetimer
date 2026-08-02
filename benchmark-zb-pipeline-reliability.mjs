@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { cube3x3x3 } from "./vendor/cubing/puzzles/index.js";
 import { solve3x3StrictCfopFromPattern } from "./solver/cfop3x3.js";
 
-const RUNS = Math.max(1, Number.parseInt(process.env.ZB_PIPELINE_RUNS || "100", 10) || 100);
+const RUNS = Math.max(1, Number.parseInt(process.env.ZB_PIPELINE_RUNS || "250", 10) || 250);
 const kpuzzle = await cube3x3x3.kpuzzle();
 const solved = kpuzzle.defaultPattern();
 let rngState = 0x7a6b5c4d;
@@ -109,10 +109,19 @@ for (let index = 0; index < RUNS; index += 1) {
           attemptsCount: f2l.attemptsCount,
           candidateScanCount: f2l.candidateScanCount,
           compactFallbackUsed: f2l.compactFallbackUsed,
+          beamDepthProgression: f2l.beamDepthProgression || [],
         }
       : null,
     zblsRescan: zbls?.metrics?.caseLibraryRescanUsed === true,
     zbllRescan: zbll?.metrics?.caseLibraryRescanUsed === true,
+    failureCapture: ok
+      ? null
+      : {
+          stages: Array.isArray(result?.stages) ? result.stages : [],
+          partialSolution: result?.partialSolution || "",
+          failureState: result?.failureState || null,
+          stageDiagnostics,
+        },
   });
 
   if ((index + 1) % 10 === 0 || index + 1 === RUNS) {
@@ -148,7 +157,7 @@ const summary = {
 
 fs.mkdirSync("benchmark-results", { recursive: true });
 fs.writeFileSync(
-  "benchmark-results/zb-pipeline-reliability.json",
+  "benchmark-results/zb-pipeline-reliability-250.json",
   `${JSON.stringify(summary, null, 2)}\n`,
 );
 console.log(JSON.stringify(summary, null, 2));
