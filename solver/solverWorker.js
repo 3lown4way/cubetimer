@@ -6,7 +6,7 @@ let fmcSolverModulePromise = null;
 let externalSolverModulePromise = null;
 let profileSupportModulesPromise = null;
 let wasmSolverModulePromise = null;
-const FMC_333_TIMEOUT_MS = 120000;
+const FMC_333_TIMEOUT_MS = 660000;
 const STRICT_CFOP_TIMEOUT_MS = 10000;
 const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;
 const ROUX_333_TIMEOUT_MS = 45000;
@@ -1378,6 +1378,7 @@ const api = {
     let fmcQualityMode = "sweetSpot";
     let fmcTargetMoveCount = null;
     let fmcTimeBudgetMs = null;
+    let fmcContinueBelowTarget = true;
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
       scramble = arg1.scramble;
       eventId = arg1.eventId;
@@ -1417,6 +1418,9 @@ const api = {
       }
       if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {
         fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));
+      }
+      if (typeof arg1.fmcContinueBelowTarget === "boolean") {
+        fmcContinueBelowTarget = arg1.fmcContinueBelowTarget;
       }
     } else {
       scramble = arg1;
@@ -1517,7 +1521,7 @@ const api = {
           const effectiveFmcTimeBudgetMs = Number.isFinite(fmcTimeBudgetMs)
             ? fmcTimeBudgetMs
             : isExtremeFmc
-              ? 90000
+              ? 300000
               : 8000;
           const effectiveFmcTargetMoveCount = Number.isFinite(fmcTargetMoveCount)
             ? fmcTargetMoveCount
@@ -1534,6 +1538,7 @@ const api = {
               preferNonCfop: true,
               verifyLimit: isExtremeFmc ? 32 : 18,
               enableInsertions: true,
+              continueBelowTarget: isExtremeFmc && fmcContinueBelowTarget,
               crossColors: normalizeCrossColorList(crossColor),
             }),
             Math.min(FMC_333_TIMEOUT_MS, effectiveFmcTimeBudgetMs + 15000),

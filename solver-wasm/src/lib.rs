@@ -622,6 +622,18 @@ struct FmcOptionsJson {
     enable_multi_switch_niss: bool,
     #[serde(rename = "enableDeepMultiSwitchNiss", default)]
     enable_deep_multi_switch_niss: bool,
+    #[serde(rename = "searchLevel", default)]
+    search_level: u8,
+    #[serde(rename = "searchVariant", default)]
+    search_variant: u32,
+    #[serde(
+        rename = "incumbentMoveCount",
+        default = "default_fmc_incumbent_move_count"
+    )]
+    incumbent_move_count: usize,
+}
+fn default_fmc_incumbent_move_count() -> usize {
+    40
 }
 fn default_max_premove_sets() -> usize {
     120
@@ -658,6 +670,9 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
         options.enable_deep_multi_switch_niss,
+        options.search_level,
+        options.search_variant,
+        options.incumbent_move_count,
     );
 
     if !result.ok {
@@ -689,6 +704,8 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "insertionCandidateCount": result.insertion_candidate_count,
         "mixedInsertionCandidateCount": result.mixed_insertion_candidate_count,
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
+        "multiInsertionTransitionCount": result.multi_insertion_transition_count,
+        "multiInsertionPairCount": result.multi_insertion_pair_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
         "eoFallbackUsed": result.eo_fallback_used,
