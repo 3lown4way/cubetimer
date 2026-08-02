@@ -1,4 +1,5 @@
 const STORAGE_KEY = "cubeTimerSolverBenchmarkLastRun";
+const STORAGE_HOOK_MARKER = Symbol.for("cubeTimer.benchmarkTimingStorageHook");
 
 function readStoredRun() {
   try {
@@ -180,25 +181,60 @@ function updateOpenDetail(run) {
   upsertTimingItem(overview, "overhead", "전송·벤치", formatMs(timing.overheadMs), wallItem);
 }
 
-let refreshScheduled = false;
-function scheduleRefresh() {
-  if (refreshScheduled) return;
-  refreshScheduled = true;
-  requestAnimationFrame(() => {
-    refreshScheduled = false;
-    if (!document.querySelector("#resultsBody tr.result-row")) return;
-    const run = readStoredRun();
-    if (!run) return;
+let refreshing = false;
+function refreshFromStorage() {
+  if (refreshing || !document.querySelector("#resultsBody tr.result-row")) return;
+  const run = readStoredRun();
+  if (!run) return;
+  refreshing = true;
+  try {
     updateSummary(run);
     updateRows(run);
     updateOpenDetail(run);
-  });
+  } finally {
+    refreshing = false;
+  }
 }
 
-const observer = new MutationObserver(scheduleRefresh);
-observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-window.addEventListener("storage", scheduleRefresh);
-window.addEventListener("beforeunload", () => observer.disconnect());
+function installStorageHook() {
+  try {
+    const prototype = Object.getPrototypeOf(localStorage);
+    if (!prototype || prototype[STORAGE_HOOK_MARKER]) return true;
+    const nativeSetItem = prototype.setItem;
+    if (typeof nativeSetItem !== "function") return false;
+    Object.defineProperty(prototype, STORAGE_HOOK_MARKER, {
+      configurable: false,
+      enumerable: false,
+      value: nativeSetItem,
+      writable: false,
+    });
+    prototype.setItem = function benchmarkTimingSetItem(key, value) {
+      const result = Reflect.apply(nativeSetItem, this, [key, value]);
+      if (this === localStorage && String(key) === STORAGE_KEY) refreshFromStorage();
+      return result;
+    };
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+const storageHookInstalled = installStorageHook();
+const fallbackResultsObserver = storageHookInstalled
+  ? null
+  : new MutationObserver(refreshFromStorage);
+if (fallbackResultsObserver) {
+  const resultsBody = document.getElementById("resultsBody");
+  if (resultsBody) fallbackResultsObserver.observe(resultsBody, { childList: true });
+}
+const detailObserver = new MutationObserver(refreshFromStorage);
+const detailBody = document.getElementById("resultDetailBody");
+if (detailBody) detailObserver.observe(detailBody, { childList: true });
+window.addEventListener("storage", refreshFromStorage);
+window.addEventListener("beforeunload", () => {
+  fallbackResultsObserver?.disconnect();
+  detailObserver.disconnect();
+});
 
 function csvEscape(value) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -242,4 +278,4 @@ function exportTimingCsv(event) {
 }
 
 document.getElementById("exportBtn")?.addEventListener("click", exportTimingCsv, true);
-window.setTimeout(scheduleRefresh, 0);
+window.setTimeout(refreshFromStorage, 0);
