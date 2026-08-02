@@ -125,6 +125,21 @@ function makeTimingItem(label, value, key) {
   return item;
 }
 
+function upsertTimingItem(overview, key, label, value, afterNode) {
+  let item = overview.querySelector(`[data-benchmark-timing="${key}"]`);
+  if (!item) {
+    item = makeTimingItem(label, value, key);
+    overview.insertBefore(item, afterNode?.nextSibling || null);
+  } else {
+    setText(item.querySelector("span"), label);
+    setText(item.querySelector("strong"), value);
+    if (item.previousElementSibling !== afterNode) {
+      overview.insertBefore(item, afterNode?.nextSibling || null);
+    }
+  }
+  return item;
+}
+
 function updateOpenDetail(run) {
   const dialog = document.getElementById("resultDetailDialog");
   if (!dialog?.open) return;
@@ -139,15 +154,8 @@ function updateOpenDetail(run) {
   const firstItem = overview.firstElementChild;
   setText(firstItem.querySelector("span"), "솔버 시간");
   setText(firstItem.querySelector("strong"), formatMs(timing.solverMs));
-  overview.querySelectorAll("[data-benchmark-timing]").forEach((node) => node.remove());
-  overview.insertBefore(
-    makeTimingItem("전체 시간", formatMs(timing.wallMs), "wall"),
-    firstItem.nextSibling,
-  );
-  overview.insertBefore(
-    makeTimingItem("전송·벤치", formatMs(timing.overheadMs), "overhead"),
-    firstItem.nextSibling?.nextSibling || null,
-  );
+  const wallItem = upsertTimingItem(overview, "wall", "전체 시간", formatMs(timing.wallMs), firstItem);
+  upsertTimingItem(overview, "overhead", "전송·벤치", formatMs(timing.overheadMs), wallItem);
 }
 
 let refreshScheduled = false;
