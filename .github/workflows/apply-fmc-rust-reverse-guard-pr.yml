@@ -1,0 +1,53 @@
+name: Patch and rebuild FMC reverse guard
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-test:
+    if: github.head_ref == 'fix/fmc-reverse-scramble-cancellation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply Rust and JS guard patch
+        run: python tools/apply-fmc-rust-reverse-guard.py
+
+      - name: Format and test Rust
+        run: |
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo test --manifest-path solver-wasm/Cargo.toml
+
+      - name: Install wasm-pack
+        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
+      - name: Rebuild browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --target web --out-dir ../public/solver-wasm
+
+      - name: Validate JavaScript contracts
+        run: |
+          node --check solver/fmcSolver.js
+          node benchmark-fmc-reverse-scramble-guard.mjs
+          node benchmark-fmc-extreme-anytime-plan.mjs
+          node tools/verify-benchmark-no-fallback.mjs
+
+      - name: Commit source and generated WASM
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Filter reverse-scramble candidates inside FMC WASM"
+          git push origin HEAD:${{ github.head_ref }}
