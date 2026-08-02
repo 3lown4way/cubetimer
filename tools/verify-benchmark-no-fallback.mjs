@@ -33,7 +33,7 @@ if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== 
 }
 
 for (const token of [
-  'id: "independent-frontier-v2-compression-first-unlimited"',
+  'id: "independent-frontier-v3-anytime-widening"',
   "extremeVariantCount: 24",
   "maxPremoveSets: 180",
   "extremeReservedCompressionPremoves: 24",
@@ -42,15 +42,17 @@ for (const token of [
   if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
 }
 for (const token of [
-  'stage(`human-L${searchLevel}-V${variant}',
+  'stage(`human-L${searchLevel}${roundSuffix}-V${searchVariant}',
   "FMC_EXTREME_PROFILE.extremeVariantCount",
   "FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves",
   "const variantOrder = [reservedCompressionVariant, 0]",
+  "extremeMaxRounds",
+  'type: "quality_round_start"',
   "FMC_EXTREME_TARGET_NOT_REACHED",
   'type: "quality_stage_start"',
   'type: "quality_stage_done"',
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`independent-frontier-v2 token missing: ${token}`);
+  if (!fmcSolver.includes(token)) throw new Error(`independent-frontier-v3 token missing: ${token}`);
 }
 if (fmcSolver.includes('stage("extreme-target-unbounded"')) {
   throw new Error("site still uses the simplified one-pass Extreme implementation");
@@ -91,8 +93,11 @@ for (const source of [enhanced, legacy]) {
   if (!source.includes("목표 도달 또는 중지까지")) {
     throw new Error("Extreme unlimited UI indicator is missing");
   }
+  if (!source.includes('progress.type === "quality_round_start"')) {
+    throw new Error("Extreme anytime round progress is missing");
+  }
 }
 if (!fmcWorker.includes("requestedTimeBudgetMs === 0") || !fmcSolver.includes("unlimitedTimeBudget")) {
   throw new Error("Extreme unlimited sentinel is not preserved end-to-end");
 }
-console.log("benchmark no-fallback routing and FMC Extreme site parity verified");
+console.log("benchmark no-fallback routing and FMC Extreme anytime site parity verified");
