@@ -1981,12 +1981,21 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         const solveStartedAt = Date.now();
         const wasmResult = await solveFmcWasm(scramble, stageOptions);
         const stageElapsedMs = Date.now() - solveStartedAt;
+        const wasmReverseRejectedCount = Number.isFinite(wasmResult?.reverseScrambleRejectedCount)
+          ? Math.max(0, Math.floor(wasmResult.reverseScrambleRejectedCount))
+          : 0;
+        if (wasmReverseRejectedCount > 0) {
+          diagnostics.candidateCounts.reverseRejected += wasmReverseRejectedCount;
+          diagnostics.sourceCounts.reverseRejected.WASM_INTERNAL =
+            (diagnostics.sourceCounts.reverseRejected.WASM_INTERNAL || 0) + wasmReverseRejectedCount;
+        }
         diagnostics.wasmStages.push({
           name: qualityStage.name,
           elapsedMs: stageElapsedMs,
           ok: wasmResult?.ok === true,
           moveCount: Number.isFinite(wasmResult?.moveCount) ? wasmResult.moveCount : null,
           candidateCount: Array.isArray(wasmResult?.candidates) ? wasmResult.candidates.length : 0,
+          reverseRejectedCount: wasmReverseRejectedCount,
           maxPremoveSets: stageOptions.maxPremoveSets,
           multiSwitch: stageOptions.enableMultiSwitchNiss === true,
           deepMultiSwitch: stageOptions.enableDeepMultiSwitchNiss === true,
