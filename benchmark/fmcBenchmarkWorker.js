@@ -1,5 +1,6 @@
 import { expose } from "../vendor/comlink/index.js";
 import { solveWithFMCSearch } from "../solver/fmcSolver.js";
+import { buildFmcTablesWasm } from "../solver/wasmSolver.js";
 
 function normalizeCrossColorList(crossColor) {
   const normalized = String(crossColor || "D").toUpperCase();
@@ -22,7 +23,8 @@ function normalizeQualityMode(value) {
 
 const api = {
   async ping() {
-    return { ok: true, worker: "FMC_BENCHMARK_HUMAN_ONLY" };
+    const warmed = await buildFmcTablesWasm();
+    return { ok: warmed === true, worker: "FMC_BENCHMARK_HUMAN_ONLY", warmed: warmed === true };
   },
 
   async solve(payload = {}, onProgress) {
@@ -31,7 +33,7 @@ const api = {
 
     const qualityMode = normalizeQualityMode(payload.fmcQualityMode);
     const timeBudgetMs = Number.isFinite(Number(payload.fmcTimeBudgetMs))
-      ? Math.max(1000, Math.floor(Number(payload.fmcTimeBudgetMs)))
+      ? Math.max(100, Math.floor(Number(payload.fmcTimeBudgetMs)))
       : qualityMode === "extreme"
         ? 90000
         : 8000;
@@ -51,7 +53,6 @@ const api = {
       verifyLimit: qualityMode === "extreme" ? 32 : 18,
       enableInsertions: true,
       enableCoverageFallback: false,
-      requireTargetReached: qualityMode === "extreme",
       crossColors: normalizeCrossColorList(payload.crossColor),
     });
 
@@ -75,18 +76,6 @@ const api = {
       return {
         ok: false,
         reason: "FMC_QUALITY_MODE_DOWNGRADE_REJECTED",
-        rejectedResult: result,
-      };
-    }
-    if (
-      qualityMode === "extreme" &&
-      result?.ok &&
-      (result.qualityTargetReached !== true || Number(result.moveCount) > targetMoveCount)
-    ) {
-      return {
-        ok: false,
-        reason: "FMC_EXTREME_TARGET_NOT_REACHED",
-        requestedTarget: targetMoveCount,
         rejectedResult: result,
       };
     }

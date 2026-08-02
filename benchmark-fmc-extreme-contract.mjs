@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
+import { performance } from "node:perf_hooks";
 import { solveWithFMCSearch } from "./solver/fmcSolver.js";
+import { buildFmcTablesWasm } from "./solver/wasmSolver.js";
 
 const scramble = "R2 U' F2 L2 D B2 R' D2 F U2 L' U B' R2 F2 D' L2 U' R F' U2";
 const progressEvents = [];
+assert.equal(await buildFmcTablesWasm(), true);
 
+const startedAt = performance.now();
 const result = await solveWithFMCSearch(
   scramble,
   (progress) => progressEvents.push(progress),
   {
     qualityMode: "extreme",
-    timeBudgetMs: 8000,
+    timeBudgetMs: 900,
     targetMoveCount: 20,
     maxPremoveSets: 80,
     allowCfopFallback: false,
@@ -18,18 +22,16 @@ const result = await solveWithFMCSearch(
     preferNonCfop: true,
     verifyLimit: 16,
     enableInsertions: true,
-    requireTargetReached: true,
   },
 );
+const elapsedMs = performance.now() - startedAt;
 
-assert.equal(result?.qualityMode || result?.performanceDiagnostics?.qualityMode, "extreme");
-assert.notEqual(result?.qualityDowngraded, true);
-if (result?.ok) {
-  assert.equal(result.qualityTargetReached, true);
-  assert.ok(result.moveCount <= 20, `Extreme returned ${result.moveCount} moves as success`);
-} else if (Number.isFinite(result?.moveCount) && result.moveCount > 20) {
-  assert.equal(result.reason, "FMC_EXTREME_TARGET_NOT_REACHED");
-}
+assert.equal(result?.ok, true, `Extreme failed under short budget: ${result?.reason || "unknown"}`);
+assert.equal(result.qualityMode, "extreme");
+assert.notEqual(result.qualityDowngraded, true);
+assert.ok(Number.isFinite(result.moveCount));
+assert.equal(result.qualityTargetReached, result.moveCount <= 20);
+assert.ok(elapsedMs < 1000, `900 ms Extreme budget overran to ${elapsedMs.toFixed(1)} ms`);
 
 const wasmStages = result?.performanceDiagnostics?.wasmStages || [];
 assert.ok(wasmStages.length > 0, "Extreme did not execute its quality ladder");
@@ -43,8 +45,9 @@ assert.equal(
 assert.ok(progressEvents.some((event) => event?.type === "quality_stage_start"));
 
 console.log(JSON.stringify({
-  ok: result?.ok === true,
-  reason: result?.reason || "",
-  moveCount: result?.moveCount ?? null,
+  ok: result.ok,
+  moveCount: result.moveCount,
+  qualityTargetReached: result.qualityTargetReached,
+  elapsedMs,
   stages: wasmStages.map((stage) => stage.name),
 }));

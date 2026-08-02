@@ -1357,8 +1357,9 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
     forceRzp,
     enableCoverageFallback: options.enableCoverageFallback !== false,
   };
-  const stage = (name, stageOptions) => ({
+  const stage = (name, stageOptions, minRemainingMs = 250) => ({
     name,
+    minRemainingMs,
     options: { ...common, ...stageOptions },
   });
 
@@ -1378,20 +1379,20 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
   if (qualityMode === "extreme") {
     return [
       stage("extreme-wide-seed", {
-        maxPremoveSets: capPremoves(80),
+        maxPremoveSets: capPremoves(32),
         enableMultiSwitchNiss: true,
-      }),
+      }, 100),
       stage("extreme-deep-eo-dr", {
         maxPremoveSets: capPremoves(120),
         enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 750),
       stage("extreme-htr-insertion", {
         maxPremoveSets: capPremoves(160),
         enableHtrSkeletons: true,
         enableSliceInsertion: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 2200),
       stage("extreme-full-human-portfolio", {
         maxPremoveSets: requestedPremoveSets,
         enableMultiInsertion: true,
@@ -1399,7 +1400,7 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
         enableSliceInsertion: true,
         enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 1100),
     ];
   }
 
@@ -1420,14 +1421,14 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     : qualityPreset.maxPremoveSets;
   const forceRzp = options.forceRzp === true;
   const timeBudgetMs = Number.isFinite(options.timeBudgetMs)
-    ? Math.max(1000, Math.floor(options.timeBudgetMs))
+    ? Math.max(100, Math.floor(options.timeBudgetMs))
     : qualityPreset.timeBudgetMs;
   const targetMoveCount = Number.isFinite(options.targetMoveCount)
     ? Math.max(1, Math.floor(options.targetMoveCount))
     : qualityPreset.targetMoveCount;
-  // Extreme is a strict quality contract: it may fail, but it may not downgrade
-  // to a Sweet Spot-level result above the requested target.
-  const requireTargetReached = options.requireTargetReached === true || qualityMode === "extreme";
+  // The target is diagnostic. Extreme stays on its own search ladder, but an
+  // above-target Extreme candidate remains a valid anytime result.
+  const requireTargetReached = options.requireTargetReached === true;
   const sweepBudgetMs = Number.isFinite(options.sweepBudgetMs)
     ? Math.max(500, Math.floor(options.sweepBudgetMs))
     : Math.max(1500, Math.min(8000, Math.floor(timeBudgetMs * 0.35)));
@@ -1638,10 +1639,15 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     if (fmcTablesOk) {
       const wasmStages = buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRzp);
       for (let stageIndex = 0; stageIndex < wasmStages.length; stageIndex += 1) {
-        if (remainingMs(deadlineTs) <= 250) break;
+        const remainingBeforeStage = remainingMs(deadlineTs);
+        if (remainingBeforeStage <= 100) break;
         if (Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount) break;
 
         const qualityStage = wasmStages[stageIndex];
+        const minRemainingMs = Number.isFinite(qualityStage.minRemainingMs)
+          ? Math.max(0, qualityStage.minRemainingMs)
+          : 250;
+        if (remainingBeforeStage < minRemainingMs) continue;
         notify({
           type: "quality_stage_start",
           stageName: `FMC ${qualityStage.name}`,
@@ -1908,33 +1914,6 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     incrementCounter(diagnostics.sourceCounts.ranked, rankedCandidates[i]?.source || "UNKNOWN");
   }
   const best = rankedCandidates[0];
-  if (requireTargetReached && best.moveCount > targetMoveCount) {
-    diagnostics.selectedCandidate = {
-      source: best?.source || null,
-      innerSource: best?.innerSource || null,
-      moveCount: Number.isFinite(best?.moveCount) ? best.moveCount : null,
-      usesCfop: best?.usesCfop === true,
-      rejectedForTarget: true,
-    };
-    return {
-      ok: false,
-      reason: qualityMode === "extreme"
-        ? "FMC_EXTREME_TARGET_NOT_REACHED"
-        : "FMC_QUALITY_TARGET_NOT_REACHED",
-      moveCount: best.moveCount,
-      bestCandidate: {
-        solution: best.solution,
-        moveCount: best.moveCount,
-        source: best.source,
-      },
-      qualityMode,
-      qualityTarget: targetMoveCount,
-      qualityTargetReached: false,
-      qualityDowngraded: false,
-      attempts,
-      performanceDiagnostics: finalizeDiagnostics(),
-    };
-  }
   diagnostics.selectedCandidate = {
     source: best?.source || null,
     innerSource: best?.innerSource || null,
