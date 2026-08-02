@@ -1,0 +1,40 @@
+name: Apply FMC reverse-scramble guard on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/fmc-reverse-scramble-cancellation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: python tools/apply-fmc-reverse-scramble-guard.py
+
+      - name: Validate patch
+        run: |
+          node --check solver/fmcSolver.js
+          node benchmark-fmc-reverse-scramble-guard.mjs
+          node benchmark-fmc-extreme-anytime-plan.mjs
+
+      - name: Commit patched source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Reject trivial inverse-scramble FMC candidates"
+          git push origin HEAD:${{ github.head_ref }}
