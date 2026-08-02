@@ -22,7 +22,9 @@ jobs:
         run: git fetch origin agent/fmc-extreme-independent-frontier-v2
 
       - name: Apply site-parity integration
-        run: python tools/apply-fmc-extreme-site-parity.py
+        run: |
+          python tools/apply-fmc-extreme-site-parity.py
+          python tools/repair-fmc-extreme-site-parity-tests.py
 
       - name: Format and compile Rust
         run: |
