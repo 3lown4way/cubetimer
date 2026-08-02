@@ -65,5 +65,20 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
   if (mode === "minmove" && result?.optimalityProven !== true) {
     return reject("MINMOVE_UNPROVEN_RESULT_REJECTED");
   }
+  if (mode === "fmc") {
+    const requestedQuality = String(config?.fmcQualityMode || "sweetSpot").trim().toLowerCase();
+    const actualQuality = String(result?.qualityMode || "").trim().toLowerCase();
+    if (!actualQuality || actualQuality !== requestedQuality || result?.qualityDowngraded === true) {
+      return reject("FMC_QUALITY_MODE_DOWNGRADE_REJECTED");
+    }
+    if (requestedQuality === "extreme") {
+      const target = Number.isFinite(Number(config?.fmcTargetMoveCount))
+        ? Number(config.fmcTargetMoveCount)
+        : 20;
+      if (result?.qualityTargetReached !== true || !Number.isFinite(Number(result?.moveCount)) || Number(result.moveCount) > target) {
+        return reject("FMC_EXTREME_TARGET_NOT_REACHED");
+      }
+    }
+  }
   return { ok: true, reason: "", source: "" };
 }
