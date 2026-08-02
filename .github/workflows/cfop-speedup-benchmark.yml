@@ -21,6 +21,7 @@ jobs:
       - name: Apply metric-count fix
         run: |
           python tools/apply-rotation-free-counts.py
+          python tools/repair-all-rotation-counts.py
           python tools/repair-rotation-count-contract.py
 
       - name: Validate metric counts
