@@ -29,7 +29,7 @@ export function reconstructFmcRawMoves(parts) {
     }))
     .filter((entry) => entry.moves.length);
 
-  if (!skeletonMoves.length || !insertions.length) {
+  if (!skeletonMoves.length) {
     return { rawMoves: [], skeletonMoves, insertions };
   }
 
@@ -202,9 +202,9 @@ function renderCurrentCancellation() {
   const parts = Array.isArray(entry.parts) && entry.parts.length
     ? entry.parts
     : Array.isArray(entry.stages) ? entry.stages : [];
-  const { rawMoves, insertions } = reconstructFmcRawMoves(parts);
+  const { rawMoves } = reconstructFmcRawMoves(parts);
   const finalMoves = splitMoves(entry.solution);
-  if (!rawMoves.length || !finalMoves.length || !insertions.length) return;
+  if (!rawMoves.length || !finalMoves.length) return;
 
   const diff = diffMoves(rawMoves, finalMoves);
   const hunks = buildCancellationHunks(diff.operations);
@@ -219,7 +219,7 @@ function renderCurrentCancellation() {
   section.appendChild(createElement(
     "p",
     "fmc-cancellation-summary",
-    `삽입 직후 ${rawMoves.length}수 → 최종 ${finalMoves.length}수 (${saving > 0 ? `-${saving}` : saving}수). 삭제 ${removedCount}개, 결합·치환 생성 ${addedCount}개.`,
+    `Cancellation 전 ${rawMoves.length}수 → 최종 ${finalMoves.length}수 (${saving > 0 ? `-${saving}` : saving}수). 삭제 ${removedCount}개, 결합·치환 생성 ${addedCount}개.`,
   ));
 
   const legend = createElement("div", "fmc-cancellation-legend");
@@ -229,7 +229,7 @@ function renderCurrentCancellation() {
     legend.appendChild(item);
   });
   section.appendChild(legend);
-  section.appendChild(renderMoveSequence("삽입 직후", rawMoves, diff.rawStatus));
+  section.appendChild(renderMoveSequence("Cancellation 전", rawMoves, diff.rawStatus));
   section.appendChild(renderMoveSequence("최종 해", finalMoves, diff.finalStatus));
 
   if (hunks.length) {
