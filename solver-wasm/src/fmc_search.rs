@@ -730,6 +730,7 @@ struct EoSearchCtx<'a> {
     path: Vec<u8>,
     solutions: Vec<Vec<u8>>,
     limit: usize,
+    variant: u32,
 }
 
 impl<'a> EoSearchCtx<'a> {
@@ -748,7 +749,21 @@ impl<'a> EoSearchCtx<'a> {
         }
 
         let mut min_next = 255u8;
-        for &m in &self.tables.phase1_allowed_moves_by_last_face[last_face as usize] {
+        let allowed = &self.tables.phase1_allowed_moves_by_last_face[last_face as usize];
+        let allowed_len = allowed.len();
+        let rotation = if allowed_len == 0 {
+            0
+        } else {
+            ((self.variant / 2) as usize) % allowed_len
+        };
+        for offset in 0..allowed_len {
+            let forward_index = (offset + rotation) % allowed_len;
+            let index = if self.variant & 1 == 0 {
+                forward_index
+            } else {
+                allowed_len - 1 - forward_index
+            };
+            let m = allowed[index];
             if self.solutions.len() >= self.limit {
                 return 255;
             }
@@ -771,6 +786,7 @@ fn find_eo_sequences(
     fmc_tables: &FmcTables,
     max_depth: u8,
     limit: usize,
+    variant: u32,
 ) -> Vec<Vec<u8>> {
     if eo_idx == 0 {
         return vec![vec![]]; // already solved
@@ -786,18 +802,49 @@ fn find_eo_sequences(
         eo_dist: &fmc_tables.eo_dist,
         path: Vec::with_capacity(max_depth as usize),
         solutions: Vec::new(),
-        limit,
+        // Collect a wider deterministic pool, then assign different residue
+        // buckets to search variants. This makes additional Extreme time cover
+        // new EO branches instead of replaying the same shortest prefix set.
+        limit: limit.saturating_mul(4).max(limit),
+        variant,
     };
 
     for d in min_depth..=max_depth {
-        if ctx.solutions.len() >= limit {
+        if ctx.solutions.len() >= ctx.limit {
             break;
         }
         ctx.path.clear();
         ctx.dfs(eo_idx, 0, d, LAST_FACE_FREE);
     }
 
-    ctx.solutions
+    let mut solutions = ctx.solutions;
+    solutions.sort_by_key(|moves| (moves.len(), moves.clone()));
+    solutions.dedup();
+    if variant == 0 {
+        solutions.truncate(limit);
+        return solutions;
+    }
+
+    // Non-zero variants deliberately evaluate a disjoint slice of the wider
+    // EO pool. Do not refill from the complete pool: doing that made every
+    // variant converge back to the same candidate set.
+    const VARIANT_BUCKETS: usize = 4;
+    let bucket = variant as usize % VARIANT_BUCKETS;
+    let mut selected: Vec<Vec<u8>> = solutions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, moves)| (index % VARIANT_BUCKETS == bucket).then_some(moves.clone()))
+        .take(limit)
+        .collect();
+
+    // Very small EO pools can leave a residue bucket empty. In that case retain
+    // one rotated candidate so the variant stays productive without recreating
+    // the entire baseline set.
+    if selected.is_empty() && !solutions.is_empty() {
+        let rotation = (variant as usize * 17) % solutions.len();
+        selected.push(solutions[rotation].clone());
+    }
+    selected
 }
 
 // --- DR Solving (first-move table chase) ---
@@ -1297,6 +1344,9 @@ struct AxisSkeletonPrefix {
     eo_len: u8,
     dr_len: u8,
     p2_len: u8,
+    eo_moves: Vec<u8>,
+    dr_moves: Vec<u8>,
+    finish_moves: Vec<u8>,
 }
 
 fn classify_insertion_leftover(state: &CubeState) -> Option<(FmcSkeletonKind, Vec<u8>)> {
@@ -1362,6 +1412,9 @@ fn collect_axis_skeleton_prefixes(
                     eo_len: eo_moves.len() as u8,
                     dr_len: dr_moves.len() as u8,
                     p2_len: p2_len as u8,
+                    eo_moves: eo_moves.to_vec(),
+                    dr_moves: dr_moves.to_vec(),
+                    finish_moves: p2_moves[..p2_len].to_vec(),
                 });
             }
         }
@@ -1514,6 +1567,8 @@ pub struct FmcCandidate {
     pub premove_moves: Vec<u8>,
     /// Whether this candidate used RZP for DR (vs direct solve)
     pub rzp_used: bool,
+    /// Skeleton before insertion and cancellation, when applicable.
+    pub skeleton_moves: Vec<u8>,
     /// Exact algorithm inserted into a 3-cycle skeleton, when applicable.
     pub insertion_moves: Vec<u8>,
     pub insertion_position: Option<u8>,
@@ -1529,6 +1584,9 @@ pub struct FmcSkeletonCandidate {
     pub eo_len: u8,
     pub dr_len: u8,
     pub p2_len: u8,
+    pub eo_moves: Vec<u8>,
+    pub dr_moves: Vec<u8>,
+    pub finish_moves: Vec<u8>,
     pub axis: u8,
     pub source_tag: u8,
     pub premove_moves: Vec<u8>,
@@ -1638,6 +1696,7 @@ fn collect_multi_switch_niss_boundaries(
         fmc_tables,
         max_eo_depth,
         FMC_MULTI_NISS_BOUNDARY_EO_LIMIT,
+        0,
     );
     let mut best_eo = None;
     let mut best_dr = None;
@@ -1739,6 +1798,7 @@ fn solve_multi_switch_niss_single_axis(
             FMC_MULTI_NISS_CONTINUATION_P2_NODE_LIMIT,
             p2_cache,
             &mut continuation_best,
+            0,
             force_rzp,
             false,
         );
@@ -1796,6 +1856,7 @@ fn solve_fmc_single_axis(
     p2_node_limit: u64,
     p2_cache: &mut FmcP2Cache,
     current_best: &mut usize,
+    search_variant: u32,
     force_rzp: bool,
     enable_htr_skeletons: bool,
 ) -> Vec<(
@@ -1810,7 +1871,14 @@ fn solve_fmc_single_axis(
     let mut results = Vec::new();
 
     let eo_idx = encode_eo(&state.eo);
-    let eo_seqs = find_eo_sequences(eo_idx, tables, fmc_tables, max_eo_depth, eo_limit);
+    let eo_seqs = find_eo_sequences(
+        eo_idx,
+        tables,
+        fmc_tables,
+        max_eo_depth,
+        eo_limit,
+        search_variant,
+    );
 
     for eo_seq in &eo_seqs {
         if eo_seq.len() >= *current_best {
@@ -1939,6 +2007,9 @@ fn build_skeleton_candidate(
     moves: Vec<u8>,
     tables: &TwophaseTables,
     prefix: &AxisSkeletonPrefix,
+    eo_moves: Vec<u8>,
+    dr_moves: Vec<u8>,
+    finish_moves: Vec<u8>,
     axis: u8,
     source_tag: u8,
     premove_moves: &[u8],
@@ -1957,6 +2028,9 @@ fn build_skeleton_candidate(
         eo_len: prefix.eo_len,
         dr_len: prefix.dr_len,
         p2_len: prefix.p2_len,
+        eo_moves,
+        dr_moves,
+        finish_moves,
         axis,
         source_tag,
         premove_moves: premove_moves.to_vec(),
@@ -1964,7 +2038,10 @@ fn build_skeleton_candidate(
     })
 }
 
-fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcSkeletonCandidate> {
+fn finalize_skeleton_beam(
+    mut candidates: Vec<FmcSkeletonCandidate>,
+    beam_limit: usize,
+) -> Vec<FmcSkeletonCandidate> {
     candidates.sort_by_key(|candidate| {
         (
             candidate.moves.len(),
@@ -2013,7 +2090,7 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
 
     for quota in 1..=FMC_SKELETON_PER_BUCKET {
         for (index, candidate) in candidates.iter().enumerate() {
-            if selected.len() >= FMC_SKELETON_BEAM_LIMIT {
+            if selected.len() >= beam_limit {
                 break;
             }
             if selected_keys.contains(&index) {
@@ -2030,9 +2107,9 @@ fn finalize_skeleton_beam(mut candidates: Vec<FmcSkeletonCandidate>) -> Vec<FmcS
         }
     }
 
-    if selected.len() < FMC_SKELETON_BEAM_LIMIT {
+    if selected.len() < beam_limit {
         for (index, candidate) in candidates.into_iter().enumerate() {
-            if selected.len() >= FMC_SKELETON_BEAM_LIMIT {
+            if selected.len() >= beam_limit {
                 break;
             }
             if selected_keys.insert(index) {
@@ -2119,6 +2196,9 @@ fn synthesize_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2163,6 +2243,9 @@ fn synthesize_multi_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2207,6 +2290,9 @@ fn synthesize_slice_relocation_skeletons(
                 eo_len: candidate.eo_len,
                 dr_len: candidate.dr_len,
                 p2_len: candidate.p2_len,
+                eo_moves: candidate.eo_moves.clone(),
+                dr_moves: candidate.dr_moves.clone(),
+                finish_moves: candidate.finish_moves.clone(),
                 axis: candidate.axis,
                 source_tag: candidate.source_tag,
                 premove_moves: candidate.premove_moves.clone(),
@@ -2295,23 +2381,20 @@ fn best_single_insertion(
         moves: insertion_moves.clone(),
         position: insertion_position.min(u8::MAX as usize) as u8,
     });
-    let finish_moves = insertion_steps
-        .iter()
-        .flat_map(|step| step.moves.iter().copied())
-        .collect();
 
     Some(FmcCandidate {
         moves,
         eo_len: skeleton.eo_len,
         dr_len: skeleton.dr_len,
         p2_len: skeleton.p2_len,
-        eo_moves: vec![],
-        dr_moves: vec![],
-        finish_moves,
+        eo_moves: skeleton.eo_moves.clone(),
+        dr_moves: skeleton.dr_moves.clone(),
+        finish_moves: skeleton.finish_moves.clone(),
         axis: skeleton.axis,
         source_tag: skeleton.source_tag,
         premove_moves: skeleton.premove_moves.clone(),
         rzp_used: skeleton.rzp_used,
+        skeleton_moves: skeleton.moves.clone(),
         insertion_moves: insertion_steps[0].moves.clone(),
         insertion_position: Some(insertion_steps[0].position),
         skeleton_kind: Some(origin_kind),
@@ -2362,23 +2445,20 @@ fn best_slice_insertion(
         moves: insertion_moves.clone(),
         position: insertion_position.min(u8::MAX as usize) as u8,
     });
-    let finish_moves = insertion_steps
-        .iter()
-        .flat_map(|step| step.moves.iter().copied())
-        .collect();
 
     Some(FmcCandidate {
         moves,
         eo_len: skeleton.eo_len,
         dr_len: skeleton.dr_len,
         p2_len: skeleton.p2_len,
-        eo_moves: vec![],
-        dr_moves: vec![],
-        finish_moves,
+        eo_moves: skeleton.eo_moves.clone(),
+        dr_moves: skeleton.dr_moves.clone(),
+        finish_moves: skeleton.finish_moves.clone(),
         axis: skeleton.axis,
         source_tag: skeleton.source_tag,
         premove_moves: skeleton.premove_moves.clone(),
         rzp_used: skeleton.rzp_used,
+        skeleton_moves: skeleton.moves.clone(),
         insertion_moves: insertion_steps[0].moves.clone(),
         insertion_position: Some(insertion_steps[0].position),
         skeleton_kind: Some(origin_kind),
@@ -2496,6 +2576,9 @@ fn optimize_multi_skeleton_insertions(
                     eo_len: skeleton.eo_len,
                     dr_len: skeleton.dr_len,
                     p2_len: skeleton.p2_len,
+                    eo_moves: skeleton.eo_moves.clone(),
+                    dr_moves: skeleton.dr_moves.clone(),
+                    finish_moves: skeleton.finish_moves.clone(),
                     axis: skeleton.axis,
                     source_tag: skeleton.source_tag,
                     premove_moves: skeleton.premove_moves.clone(),
@@ -2586,6 +2669,9 @@ fn solve_fmc_with_eo_depth(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    search_level: u8,
+    search_variant: u32,
+    incumbent_move_count: usize,
     max_eo_depth: u8,
 ) -> FmcResult {
     // Parse scramble
@@ -2606,11 +2692,19 @@ fn solve_fmc_with_eo_depth(
         }
     };
 
+    let search_level = search_level.min(3) as usize;
+    let direct_eo_limit = [FMC_EO_LIMIT, 12, 24, 48][search_level];
+    let premove_eo_limit = [FMC_PM_EO_LIMIT, 6, 12, 24][search_level];
+    let p2_node_limit = [FMC_P2_NODE_LIMIT, 8_000_000, 24_000_000, 64_000_000][search_level];
+    let premove_p2_node_limit =
+        [FMC_PM_P2_NODE_LIMIT, 2_000_000, 8_000_000, 20_000_000][search_level];
+    let skeleton_beam_limit = [FMC_SKELETON_BEAM_LIMIT, 48, 96, 160][search_level];
+
     let mut all_candidates: Vec<FmcCandidate> = Vec::new();
     let mut all_skeletons: Vec<FmcSkeletonCandidate> = Vec::new();
     let original_scramble_state =
         CubeState::solved().apply_moves(&scramble_moves, &tables.move_data);
-    let mut best_count = 40usize;
+    let mut best_count = incumbent_move_count.clamp(1, 40);
     let mut p2_cache = FmcP2Cache::default();
 
     // Build each axis base state once. Premove variants append only their 1-2
@@ -2632,12 +2726,13 @@ fn solve_fmc_with_eo_depth(
             tables,
             fmc_tables,
             max_eo_depth,
-            FMC_EO_LIMIT,
+            direct_eo_limit,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
-            FMC_P2_NODE_LIMIT,
+            p2_node_limit,
             &mut p2_cache,
             &mut best_count,
+            search_variant.wrapping_add(axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
         );
@@ -2667,6 +2762,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag,
                     premove_moves: vec![],
                     rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2681,6 +2777,9 @@ fn solve_fmc_with_eo_depth(
                     original_prefix,
                     tables,
                     &prefix,
+                    cvt(&prefix.eo_moves),
+                    cvt(&prefix.dr_moves),
+                    cvt(&prefix.finish_moves),
                     axis,
                     source_tag,
                     &[],
@@ -2709,12 +2808,13 @@ fn solve_fmc_with_eo_depth(
             tables,
             fmc_tables,
             max_eo_depth,
-            FMC_EO_LIMIT,
+            direct_eo_limit,
             FMC_MAX_DR_DEPTH,
             FMC_MAX_P2_DEPTH,
-            FMC_P2_NODE_LIMIT,
+            p2_node_limit,
             &mut p2_cache,
             &mut best_count,
+            search_variant.wrapping_add(101 + axis as u32 * 17),
             force_rzp,
             enable_htr_skeletons,
         );
@@ -2747,6 +2847,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag,
                     premove_moves: vec![],
                     rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2761,6 +2862,9 @@ fn solve_fmc_with_eo_depth(
                     inverse_prefix,
                     tables,
                     &prefix,
+                    cvt(&prefix.eo_moves),
+                    cvt(&prefix.dr_moves),
+                    cvt(&prefix.finish_moves),
                     axis,
                     source_tag,
                     &[],
@@ -2816,6 +2920,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag: if result.stage_tag == 0 { 8 } else { 9 },
                     premove_moves: vec![],
                     rzp_used: result.rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2859,6 +2964,7 @@ fn solve_fmc_with_eo_depth(
                     source_tag: if result.stage_tag == 0 { 10 } else { 11 },
                     premove_moves: vec![],
                     rzp_used: result.rzp_used,
+                    skeleton_moves: vec![],
                     insertion_moves: vec![],
                     insertion_position: None,
                     skeleton_kind: None,
@@ -2873,7 +2979,12 @@ fn solve_fmc_with_eo_depth(
     let pm_limit = max_premove_sets.min(premove_sets.len());
 
     for pm_idx in 0..pm_limit {
-        let premove = &premove_sets[pm_idx];
+        let premove_index = if premove_sets.is_empty() {
+            0
+        } else {
+            ((search_variant as usize * 37) + pm_idx * 53) % premove_sets.len()
+        };
+        let premove = &premove_sets[premove_index];
         let pm_set = &premove.moves;
         let conjugated_premoves = &premove.axis_moves;
 
@@ -2891,12 +3002,16 @@ fn solve_fmc_with_eo_depth(
                     tables,
                     fmc_tables,
                     max_eo_depth,
-                    FMC_PM_EO_LIMIT,
+                    premove_eo_limit,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
-                    FMC_PM_P2_NODE_LIMIT,
+                    premove_p2_node_limit,
                     &mut p2_cache,
                     &mut best_count,
+                    search_variant
+                        .wrapping_add(1009)
+                        .wrapping_add(pm_idx as u32 * 131)
+                        .wrapping_add(axis as u32 * 17),
                     force_rzp,
                     enable_htr_skeletons,
                 );
@@ -2936,6 +3051,7 @@ fn solve_fmc_with_eo_depth(
                             source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
+                            skeleton_moves: vec![],
                             insertion_moves: vec![],
                             insertion_position: None,
                             skeleton_kind: None,
@@ -2951,6 +3067,9 @@ fn solve_fmc_with_eo_depth(
                             full_prefix,
                             tables,
                             &prefix,
+                            cvt(&prefix.eo_moves),
+                            cvt(&prefix.dr_moves),
+                            cvt(&prefix.finish_moves),
                             axis,
                             source_tag,
                             pm_set,
@@ -2974,12 +3093,16 @@ fn solve_fmc_with_eo_depth(
                     tables,
                     fmc_tables,
                     max_eo_depth,
-                    FMC_PM_EO_LIMIT,
+                    premove_eo_limit,
                     FMC_MAX_DR_DEPTH,
                     FMC_MAX_P2_DEPTH,
-                    FMC_PM_P2_NODE_LIMIT,
+                    premove_p2_node_limit,
                     &mut p2_cache,
                     &mut best_count,
+                    search_variant
+                        .wrapping_add(2003)
+                        .wrapping_add(pm_idx as u32 * 131)
+                        .wrapping_add(axis as u32 * 17),
                     force_rzp,
                     enable_htr_skeletons,
                 );
@@ -3020,6 +3143,7 @@ fn solve_fmc_with_eo_depth(
                             source_tag,
                             premove_moves: pm_set.clone(),
                             rzp_used,
+                            skeleton_moves: vec![],
                             insertion_moves: vec![],
                             insertion_position: None,
                             skeleton_kind: None,
@@ -3035,6 +3159,9 @@ fn solve_fmc_with_eo_depth(
                             full_prefix,
                             tables,
                             &prefix,
+                            cvt(&prefix.eo_moves),
+                            cvt(&prefix.dr_moves),
+                            cvt(&prefix.finish_moves),
                             axis,
                             source_tag,
                             pm_set,
@@ -3068,7 +3195,7 @@ fn solve_fmc_with_eo_depth(
     } else {
         all_skeletons.retain(|skeleton| skeleton.kind.is_single_insertion());
     }
-    let skeletons = finalize_skeleton_beam(all_skeletons);
+    let skeletons = finalize_skeleton_beam(all_skeletons, skeleton_beam_limit);
 
     let inserted_candidates =
         optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
@@ -3139,7 +3266,11 @@ pub fn solve_fmc(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    search_level: u8,
+    search_variant: u32,
+    incumbent_move_count: usize,
 ) -> FmcResult {
+    let requested_eo_depth = FMC_MAX_EO_DEPTH.saturating_add(search_level.min(3));
     let primary = solve_fmc_with_eo_depth(
         scramble,
         tables,
@@ -3151,7 +3282,10 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH,
+        search_level,
+        search_variant,
+        incumbent_move_count,
+        requested_eo_depth,
     );
     if primary.ok {
         return primary;
@@ -3168,7 +3302,10 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH.saturating_add(1),
+        search_level,
+        search_variant,
+        incumbent_move_count,
+        requested_eo_depth.saturating_add(1),
     );
     fallback.eo_fallback_used = fallback.ok;
     fallback
@@ -3243,6 +3380,18 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         .iter()
         .map(|&m| tables.move_data.move_names[m as usize].as_str())
         .collect();
+    let skeleton_solution = if candidate.skeleton_moves.is_empty() {
+        String::new()
+    } else {
+        solution_string_from_path(&candidate.skeleton_moves, &tables.move_data)
+    };
+    let raw_insertion_move_count = candidate.skeleton_moves.len()
+        + candidate
+            .insertion_steps
+            .iter()
+            .map(|step| step.moves.len())
+            .sum::<usize>();
+    let cancellation_count = raw_insertion_move_count.saturating_sub(candidate.moves.len());
 
     let mut value = serde_json::json!({
         "ok": true,
@@ -3286,6 +3435,22 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
             .collect();
         let object = value.as_object_mut().unwrap();
         object.insert("baseSource".into(), serde_json::json!(base_source));
+        object.insert(
+            "skeletonSolution".into(),
+            serde_json::json!(skeleton_solution),
+        );
+        object.insert(
+            "skeletonMoveCount".into(),
+            serde_json::json!(candidate.skeleton_moves.len()),
+        );
+        object.insert(
+            "rawInsertionMoveCount".into(),
+            serde_json::json!(raw_insertion_move_count),
+        );
+        object.insert(
+            "cancellationCount".into(),
+            serde_json::json!(cancellation_count),
+        );
         object.insert("skeletonKind".into(), serde_json::json!(kind.as_str()));
         object.insert("insertionPosition".into(), serde_json::json!(position));
         object.insert("insertionMoves".into(), serde_json::json!(insertion_moves));
@@ -3359,6 +3524,21 @@ pub fn skeleton_to_json(
         ),
     };
     let estimated_insertion_cost = skeleton.kind.estimated_insertion_cost();
+    let eo_moves: Vec<&str> = skeleton
+        .eo_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let dr_moves: Vec<&str> = skeleton
+        .dr_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
+    let finish_moves: Vec<&str> = skeleton
+        .finish_moves
+        .iter()
+        .map(|&m| tables.move_data.move_names[m as usize].as_str())
+        .collect();
 
     serde_json::json!({
         "kind": skeleton.kind.as_str(),
@@ -3372,6 +3552,9 @@ pub fn skeleton_to_json(
         "eoLength": skeleton.eo_len,
         "drLength": skeleton.dr_len,
         "p2PrefixLength": skeleton.p2_len,
+        "eoMoves": eo_moves,
+        "drMoves": dr_moves,
+        "finishMoves": finish_moves,
         "axisName": AXIS_NAMES[skeleton.axis as usize],
         "source": source,
         "premoves": premove_str,

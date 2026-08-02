@@ -495,6 +495,15 @@ export async function solveFmcWasm(scramble, options = {}) {
       enableSliceInsertion: options.enableSliceInsertion === true,
       enableMultiSwitchNiss: options.enableMultiSwitchNiss === true,
       enableDeepMultiSwitchNiss: options.enableDeepMultiSwitchNiss === true,
+      searchLevel: Number.isFinite(Number(options.searchLevel))
+        ? Math.max(0, Math.floor(Number(options.searchLevel)))
+        : 0,
+      searchVariant: Number.isFinite(Number(options.searchVariant))
+        ? Math.max(0, Math.floor(Number(options.searchVariant)))
+        : 0,
+      incumbentMoveCount: Number.isFinite(Number(options.incumbentMoveCount))
+        ? Math.max(1, Math.floor(Number(options.incumbentMoveCount)))
+        : 40,
     });
     const raw = api.solveFmcWasm(scramble, optionsJson);
     if (!raw) return null;
