@@ -37,6 +37,7 @@ jobs:
           node --check benchmark-solver-versions.mjs
           node --check benchmark-roux-v2-1000.mjs
           node --check benchmark-color-neutral-contract.mjs
+          node --check benchmark-rotation-count-contract.mjs
           node --check benchmark/fmcBenchmarkWorker.js
           node --check benchmark/benchmark-enhanced.js
           node --check benchmark/benchmark.js
@@ -66,12 +67,16 @@ jobs:
           grep -q 'solverVersion === "v2"' solver/cfop3x3.js
           grep -q 'const colorNeutralCandidates = \[\];' solver/cfop3x3.js
           grep -q 'CN_PROBE_TOTAL_BUDGET_MS = 700' solver/cfop3x3.js
+          grep -q 'CUBE_ROTATION_RE' solver/cfop3x3.js
+          grep -q 'countMetricMoves' solver/cfop3x3.js
           ! grep -q 'bestProbe.ok && bestProbe.moveCount <= 6' solver/cfop3x3.js
           grep -q 'ROUX_COLOR_SEQUENCE = Object.freeze' solver/roux3x3.js
           grep -q 'compareRouxFbColorProbe' solver/roux3x3.js
+          grep -q 'CUBE_ROTATION_RE' solver/roux3x3.js
           grep -q 'ROUX_COLOR_SEQUENCE = Object.freeze' solver/roux3x3v2.js
           grep -q 'compareRouxColorResults' solver/roux3x3v2.js
           grep -q 'colorNeutralSelectionMetric: "coreMoveCount"' solver/roux3x3v2.js
+          grep -q 'CUBE_ROTATION_RE' solver/roux3x3v2.js
           ! grep -q 'rawCrossColor === "CN".*?"D"' solver/roux3x3.js
           ! grep -q 'rawCrossColor === "CN".*?"D"' solver/roux3x3v2.js
           grep -q 'import "./benchmark-copy-record.js"' benchmark/benchmark-fixed.js
@@ -123,6 +128,9 @@ jobs:
 
       - name: Verify true color-neutral selection
         run: node benchmark-color-neutral-contract.mjs
+
+      - name: Verify cube rotations are count-free
+        run: node benchmark-rotation-count-contract.mjs
 
       - name: Compare solver v1 and v2
         run: node benchmark-solver-versions.mjs

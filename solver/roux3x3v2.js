@@ -50,6 +50,13 @@ const ROTATION_INVERSE = Object.freeze({
   y2: "y2",
 });
 const ROUX_COLOR_SEQUENCE = Object.freeze(["D", "U", "F", "B", "R", "L"]);
+const CUBE_ROTATION_RE = /^[xyz](?:2'?|')?$/i;
+
+function countMetricMoves(moves) {
+  return (Array.isArray(moves) ? moves : String(moves || "").trim().split(/\s+/).filter(Boolean))
+    .filter((token) => !CUBE_ROTATION_RE.test(String(token || "").trim()))
+    .length;
+}
 
 function isRouxColorNeutral(value) {
   const normalized = String(value || "D").toUpperCase();
@@ -358,7 +365,7 @@ function stageRecord(name, moves, elapsedMs) {
   return Object.freeze({
     name,
     solution: moves.join(" ") || "(skip)",
-    moveCount: moves.length,
+    moveCount: countMetricMoves(moves),
     elapsedMs,
   });
 }
@@ -541,6 +548,7 @@ export async function solve3x3RouxV2FromPattern(pattern, options = {}) {
   stages.push(stageRecord("LSE", lseResult.moves, performance.now() - stageStartedAt));
 
   const coreMoves = simplifyMoves(allMoves);
+  const coreMoveCount = countMetricMoves(coreMoves);
   const inverseRotation = preRotation ? ROTATION_INVERSE[preRotation] || "" : "";
   const unsimplifiedMoves = [
     ...(preRotation ? preRotation.split(/\s+/).filter(Boolean) : []),
@@ -566,8 +574,8 @@ export async function solve3x3RouxV2FromPattern(pattern, options = {}) {
   return {
     ok: true,
     solution: finalMoves.join(" "),
-    moveCount: finalMoves.length,
-    coreMoveCount: coreMoves.length,
+    moveCount: coreMoveCount,
+    coreMoveCount,
     selectedCrossColor: colorKey,
     stages,
     source: "INTERNAL_3X3_ROUX_V2",
