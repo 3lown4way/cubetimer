@@ -47,9 +47,8 @@ jobs:
           node tools/verify-benchmark-no-fallback.mjs
           node benchmark-fmc-extreme-contract.mjs
 
-      - name: Restore full CI and commit generated WASM
+      - name: Commit generated source and WASM
         run: |
-          cp tools/cfop-speedup-benchmark.final.yml .github/workflows/cfop-speedup-benchmark.yml
           rm -f tools/apply-fmc-extreme-unlimited.py tools/cfop-speedup-benchmark.final.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
