@@ -245,13 +245,56 @@ function invertAlg(algText) {
   return joinMoves(invertMoves(splitMoves(algText)));
 }
 
+const FMC_CANONICAL_AXIS_FACES = Object.freeze([
+  Object.freeze(["U", "D"]),
+  Object.freeze(["R", "L"]),
+  Object.freeze(["F", "B"]),
+]);
+
+function parseCanonicalOuterMove(move) {
+  const parsed = parseMove(move);
+  const face = String(parsed?.face || "").toUpperCase();
+  if (!parsed || !Object.prototype.hasOwnProperty.call(FACE_AXIS, face)) return null;
+  return { face, amount: parsed.amount };
+}
+
 function canonicalizeAlg(algText) {
-  return joinMoves(simplifyMoves(splitMoves(algText)));
+  const moves = simplifyMoves(splitMoves(algText));
+  const canonical = [];
+  let index = 0;
+  while (index < moves.length) {
+    const first = parseCanonicalOuterMove(moves[index]);
+    if (!first) {
+      canonical.push(moves[index]);
+      index += 1;
+      continue;
+    }
+
+    const axis = FACE_AXIS[first.face];
+    const amounts = new Map();
+    while (index < moves.length) {
+      const parsed = parseCanonicalOuterMove(moves[index]);
+      if (!parsed || FACE_AXIS[parsed.face] !== axis) break;
+      amounts.set(parsed.face, ((amounts.get(parsed.face) || 0) + parsed.amount) % 4);
+      index += 1;
+    }
+
+    for (const face of FMC_CANONICAL_AXIS_FACES[axis]) {
+      const formatted = formatMove(face, amounts.get(face) || 0);
+      if (formatted) canonical.push(formatted);
+    }
+  }
+  return joinMoves(canonical);
 }
 
 function isReverseScrambleSolution(solutionText, reverseScrambleCanonical) {
   if (!solutionText || !reverseScrambleCanonical) return false;
   return canonicalizeAlg(solutionText) === reverseScrambleCanonical;
+}
+
+export function isTrivialReverseScrambleSolution(scrambleText, solutionText) {
+  const reverseScrambleCanonical = canonicalizeAlg(invertAlg(scrambleText));
+  return isReverseScrambleSolution(solutionText, reverseScrambleCanonical);
 }
 
 function orbitStateKey(orbit) {
@@ -1677,6 +1720,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     },
     candidateCounts: {
       beforeVerification: 0,
+      reverseRejected: 0,
       verified: 0,
       reverseAware: 0,
       ranked: 0,
@@ -1684,6 +1728,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     },
     sourceCounts: {
       generated: {},
+      reverseRejected: {},
       verified: {},
       reverseAware: {},
       ranked: {},
@@ -1703,7 +1748,9 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   };
   const finalizeDiagnostics = () => ({
     ...diagnostics,
-    qualityTargetReached: Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount,
+    qualityTargetReached:
+      Number.isFinite(diagnostics.selectedCandidate?.moveCount) &&
+      diagnostics.selectedCandidate.moveCount <= targetMoveCount,
     sessionCacheStats: fmcSessionCache.summarize(),
     insertionCacheSize: moduleInsertionReplacementCache.size,
     totalElapsedMs: Math.max(1, Date.now() - startedAt),
@@ -1751,12 +1798,31 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     }
   };
 
+  const reverseRejectedSolutions = new Set();
+  const rejectReverseCandidate = (candidate) => {
+    if (
+      !candidate?.solution ||
+      !isReverseScrambleSolution(candidate.solution, reverseScrambleCanonical)
+    ) {
+      return false;
+    }
+    if (!reverseRejectedSolutions.has(candidate.solution)) {
+      reverseRejectedSolutions.add(candidate.solution);
+      diagnostics.candidateCounts.reverseRejected += 1;
+      incrementCounter(
+        diagnostics.sourceCounts.reverseRejected,
+        candidate.source || "UNKNOWN",
+      );
+    }
+    return true;
+  };
   const trackCandidate = (candidate) => {
-    if (!candidate) return;
+    if (!candidate || rejectReverseCandidate(candidate)) return false;
     pushRankedUniqueCandidate(candidates, candidate, qualityMode === "extreme" ? 384 : Infinity);
     if (candidate.moveCount < bestMoveCount) {
       bestMoveCount = candidate.moveCount;
     }
+    return true;
   };
   const anytimeInsertionAttempted = new Set();
   const tryExtremeAnytimeInsertion = async () => {
@@ -1816,7 +1882,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       if (!(await verifyCandidate(null, candidate, { cache: verificationCache, scrambleString: scramble }))) {
         continue;
       }
-      trackCandidate(candidate);
+      if (!trackCandidate(candidate)) continue;
       diagnostics.phaseRuns.insertion.successes += 1;
       if (
         !Number.isFinite(diagnostics.phaseRuns.insertion.bestMoveCount) ||
@@ -1836,8 +1902,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       const item = portfolioCandidates[i];
       const itemMoves = Array.isArray(item.moves) ? item.moves : splitMoves(item.solution);
       const candidate = createCandidate(source, buildStrategy(item), transformMoves(itemMoves));
-      if (!candidate) continue;
-      trackCandidate(candidate);
+      if (!candidate || !trackCandidate(candidate)) continue;
       created.push(candidate);
     }
     return created;
@@ -1916,12 +1981,21 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         const solveStartedAt = Date.now();
         const wasmResult = await solveFmcWasm(scramble, stageOptions);
         const stageElapsedMs = Date.now() - solveStartedAt;
+        const wasmReverseRejectedCount = Number.isFinite(wasmResult?.reverseScrambleRejectedCount)
+          ? Math.max(0, Math.floor(wasmResult.reverseScrambleRejectedCount))
+          : 0;
+        if (wasmReverseRejectedCount > 0) {
+          diagnostics.candidateCounts.reverseRejected += wasmReverseRejectedCount;
+          diagnostics.sourceCounts.reverseRejected.WASM_INTERNAL =
+            (diagnostics.sourceCounts.reverseRejected.WASM_INTERNAL || 0) + wasmReverseRejectedCount;
+        }
         diagnostics.wasmStages.push({
           name: qualityStage.name,
           elapsedMs: stageElapsedMs,
           ok: wasmResult?.ok === true,
           moveCount: Number.isFinite(wasmResult?.moveCount) ? wasmResult.moveCount : null,
           candidateCount: Array.isArray(wasmResult?.candidates) ? wasmResult.candidates.length : 0,
+          reverseRejectedCount: wasmReverseRejectedCount,
           maxPremoveSets: stageOptions.maxPremoveSets,
           multiSwitch: stageOptions.enableMultiSwitchNiss === true,
           deepMultiSwitch: stageOptions.enableDeepMultiSwitchNiss === true,
@@ -1988,9 +2062,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
               },
               wcMoves,
             );
-            if (candidate) {
+            if (candidate && trackCandidate(candidate)) {
               stageCreatedCandidates.push(candidate);
-              trackCandidate(candidate);
               if (qualityMode === "extreme") {
                 const stageBucketKey = qualityStage.options.bucketName || qualityStage.name;
                 const stageBucket = extremeStageCandidateBuckets.get(stageBucketKey) || [];
@@ -2000,14 +2073,19 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
             }
           }
           wasmFmcDone = true;
-          diagnostics.phaseRuns.direct.successes += 1;
-          if (
-            Number.isFinite(wasmResult.moveCount) &&
-            (!Number.isFinite(diagnostics.phaseRuns.direct.bestMoveCount) ||
-              wasmResult.moveCount < diagnostics.phaseRuns.direct.bestMoveCount)
-          ) {
-            diagnostics.phaseRuns.direct.bestMoveCount = wasmResult.moveCount;
-            diagnostics.phaseRuns.direct.bestSource = qualityStage.name;
+          if (stageCreatedCandidates.length) {
+            diagnostics.phaseRuns.direct.successes += 1;
+            const stageBestCandidate = stageCreatedCandidates
+              .slice()
+              .sort(compareFmcCandidatePriority)[0];
+            if (
+              Number.isFinite(stageBestCandidate?.moveCount) &&
+              (!Number.isFinite(diagnostics.phaseRuns.direct.bestMoveCount) ||
+                stageBestCandidate.moveCount < diagnostics.phaseRuns.direct.bestMoveCount)
+            ) {
+              diagnostics.phaseRuns.direct.bestMoveCount = stageBestCandidate.moveCount;
+              diagnostics.phaseRuns.direct.bestSource = qualityStage.name;
+            }
           }
         }
 
@@ -2028,7 +2106,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
             });
             drFlipWindowCount += flipResult.windowsTested;
             for (const flipCandidate of flipResult.candidates) {
-              trackCandidate(flipCandidate);
+              if (!trackCandidate(flipCandidate)) continue;
               drFlipCandidateCount += 1;
               if (qualityMode === "extreme") {
                 const stageBucketKey = qualityStage.options.bucketName || qualityStage.name;
@@ -2126,6 +2204,13 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     }
   }
   diagnostics.phaseTimingsMs.verification += Math.max(0, Date.now() - verificationStartedAt);
+  diagnostics.candidateCounts.verified = validCandidates.length;
+  diagnostics.moveCountDistribution.verified = buildMoveCountDistribution(validCandidates);
+  diagnostics.topCandidates.verified = snapshotTopCandidates(validCandidates);
+  diagnostics.sourceCounts.verified = {};
+  for (let i = 0; i < validCandidates.length; i += 1) {
+    incrementCounter(diagnostics.sourceCounts.verified, validCandidates[i]?.source || "UNKNOWN");
+  }
   if (!validCandidates.length) {
     return {
       ok: false,
@@ -2202,6 +2287,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           );
           if (
             insertionCandidate &&
+            !rejectReverseCandidate(insertionCandidate) &&
             (await verifyCandidate(null, insertionCandidate, { cache: verificationCache, scrambleString: scramble }))
           ) {
             if (!validCandidates.some((existing) => existing.solution === insertionCandidate.solution)) {

@@ -1364,6 +1364,60 @@ fn simplify_pass(input: &[u8]) -> Vec<u8> {
     result
 }
 
+const FMC_CANONICAL_AXIS_FACES: [[u8; 2]; 3] = [[0, 3], [1, 4], [2, 5]];
+
+fn move_axis_from_face(face: u8) -> usize {
+    match face {
+        0 | 3 => 0,
+        1 | 4 => 1,
+        2 | 5 => 2,
+        _ => unreachable!(),
+    }
+}
+
+fn canonicalize_commuting_axis_blocks(input: &[u8]) -> Vec<u8> {
+    let moves = simplify_moves(input);
+    let mut canonical = Vec::with_capacity(moves.len());
+    let mut index = 0usize;
+    while index < moves.len() {
+        let first_face = moves[index] / 3;
+        let axis = move_axis_from_face(first_face);
+        let mut amounts = [0u8; 6];
+        while index < moves.len() {
+            let move_index = moves[index];
+            let face = move_index / 3;
+            if move_axis_from_face(face) != axis {
+                break;
+            }
+            let amount = TURN_AMOUNTS[(move_index % 3) as usize];
+            amounts[face as usize] = (amounts[face as usize] + amount) & 3;
+            index += 1;
+        }
+        for &face in &FMC_CANONICAL_AXIS_FACES[axis] {
+            let amount = amounts[face as usize];
+            if amount != 0 {
+                canonical.push(face * 3 + turn_to_suffix(amount));
+            }
+        }
+    }
+    canonical
+}
+
+fn is_trivial_reverse_solution(solution: &[u8], reverse_scramble_canonical: &[u8]) -> bool {
+    canonicalize_commuting_axis_blocks(solution) == reverse_scramble_canonical
+}
+
+fn retain_nontrivial_reverse_candidates(
+    candidates: &mut Vec<FmcCandidate>,
+    reverse_scramble_canonical: &[u8],
+) -> usize {
+    let before = candidates.len();
+    candidates.retain(|candidate| {
+        !is_trivial_reverse_solution(&candidate.moves, reverse_scramble_canonical)
+    });
+    before.saturating_sub(candidates.len())
+}
+
 // --- State Inversion ---
 
 fn invert_state(state: &CubeState) -> CubeState {
@@ -1790,6 +1844,7 @@ pub struct FmcResult {
     pub multi_insertion_pair_count: usize,
     pub slice_insertion_candidate_count: usize,
     pub multi_switch_niss_candidate_count: usize,
+    pub reverse_scramble_rejected_count: usize,
 }
 
 #[derive(Default)]
@@ -1999,9 +2054,6 @@ fn solve_multi_switch_niss_single_axis(
             }
             if !state.apply_moves(&flattened, &tables.move_data).is_solved() {
                 continue;
-            }
-            if flattened.len() < *current_best {
-                *current_best = flattened.len();
             }
             output.push(FmcBoundaryNissResult {
                 moves: flattened,
@@ -3599,6 +3651,7 @@ fn solve_fmc_with_eo_depth(
                 multi_insertion_pair_count: 0,
                 slice_insertion_candidate_count: 0,
                 multi_switch_niss_candidate_count: 0,
+                reverse_scramble_rejected_count: 0,
             }
         }
     };
@@ -3615,6 +3668,9 @@ fn solve_fmc_with_eo_depth(
     let mut all_skeletons: Vec<FmcSkeletonCandidate> = Vec::new();
     let original_scramble_state =
         CubeState::solved().apply_moves(&scramble_moves, &tables.move_data);
+    let reverse_scramble_canonical =
+        canonicalize_commuting_axis_blocks(&invert_moves(&scramble_moves));
+    let mut reverse_scramble_rejected_count = 0usize;
     // Independent from the best completed solution: Extreme can retain
     // 28-34 move raw skeletons after finding a 20-21 move result.
     let mut raw_exploration_limit = incumbent_move_count.clamp(1, 40);
@@ -3787,6 +3843,9 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+
     // Completed-solution pruning is separate from the raw skeleton frontier.
     // Multi-switch can tighten this completed ceiling, but must never shrink
     // the 28/31/34-move budget reserved for selected skeleton exploration.
@@ -3825,6 +3884,11 @@ fn solve_fmc_with_eo_depth(
                 {
                     continue;
                 }
+                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                    reverse_scramble_rejected_count += 1;
+                    continue;
+                }
+                completed_best = completed_best.min(simplified.len());
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
                     eo_len: result.eo_moves.len() as u8,
@@ -3866,6 +3930,11 @@ fn solve_fmc_with_eo_depth(
                 {
                     continue;
                 }
+                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                    reverse_scramble_rejected_count += 1;
+                    continue;
+                }
+                completed_best = completed_best.min(simplified.len());
                 all_candidates.push(FmcCandidate {
                     moves: simplified,
                     eo_len: result.eo_moves.len() as u8,
@@ -3887,6 +3956,9 @@ fn solve_fmc_with_eo_depth(
             }
         }
     }
+
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     // --- Phase 2c: complementary-frame short-P2 MITM rescue ---
     let completed_best_before_complementary = all_candidates
@@ -3993,6 +4065,9 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+
     // --- Phase 2d: complementary-frame normal EO→DR→P2 rescue ---
     // This is intentionally much narrower than a full six-frame replay: it is
     // only active in deep Extreme while the current completed best exceeds 20.
@@ -4074,6 +4149,9 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+
     // --- Phase 2e: bounded pre-EO NISS switch rescue ---
     let completed_best_before_pre_eo = all_candidates
         .iter()
@@ -4112,6 +4190,10 @@ fn solve_fmc_with_eo_depth(
                         .apply_moves(&simplified, &tables.move_data)
                         .is_solved()
                 {
+                    continue;
+                }
+                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                    reverse_scramble_rejected_count += 1;
                     continue;
                 }
                 let mut eo_metadata = result.prefix_moves.clone();
@@ -4168,6 +4250,10 @@ fn solve_fmc_with_eo_depth(
                     {
                         continue;
                     }
+                    if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                        reverse_scramble_rejected_count += 1;
+                        continue;
+                    }
                     let mut eo_metadata = result.prefix_moves.clone();
                     eo_metadata.extend_from_slice(&result.eo_moves);
                     all_candidates.push(FmcCandidate {
@@ -4198,6 +4284,9 @@ fn solve_fmc_with_eo_depth(
             }
         }
     }
+
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     completed_best = all_candidates
         .iter()
@@ -4418,6 +4507,9 @@ fn solve_fmc_with_eo_depth(
         }
     }
 
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+
     let multi_switch_niss_candidate_count = all_candidates
         .iter()
         .filter(|candidate| (8..=11).contains(&candidate.source_tag))
@@ -4440,8 +4532,10 @@ fn solve_fmc_with_eo_depth(
     }
     let skeletons = finalize_skeleton_beam(all_skeletons, skeleton_beam_limit);
 
-    let inserted_candidates =
+    let mut inserted_candidates =
         optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
+    reverse_scramble_rejected_count +=
+        retain_nontrivial_reverse_candidates(&mut inserted_candidates, &reverse_scramble_canonical);
     let single_best = all_candidates
         .iter()
         .chain(inserted_candidates.iter())
@@ -4457,6 +4551,10 @@ fn solve_fmc_with_eo_depth(
     } else {
         (Vec::new(), 0, 0)
     };
+    reverse_scramble_rejected_count += retain_nontrivial_reverse_candidates(
+        &mut multi_inserted_candidates,
+        &reverse_scramble_canonical,
+    );
     multi_inserted_candidates.retain(|candidate| candidate.moves.len() <= single_best);
 
     let mixed_insertion_candidate_count = inserted_candidates
@@ -4498,6 +4596,7 @@ fn solve_fmc_with_eo_depth(
         multi_insertion_pair_count,
         slice_insertion_candidate_count,
         multi_switch_niss_candidate_count,
+        reverse_scramble_rejected_count,
     }
 }
 
@@ -4996,5 +5095,23 @@ mod skeleton_tests {
         oriented.cp[2] = 0;
         oriented.co[0] = 1;
         assert_eq!(classify_insertion_leftover(&oriented), None);
+    }
+
+    #[test]
+    fn recognizes_reverse_scramble_notation_under_axis_commutation() {
+        let reverse = vec![3, 10, 1, 4]; // R D' U' R'
+        let reverse_canonical = canonicalize_commuting_axis_blocks(&reverse);
+        assert!(is_trivial_reverse_solution(
+            &[3, 1, 10, 4], // R U' D' R'
+            &reverse_canonical,
+        ));
+        assert_eq!(
+            canonicalize_commuting_axis_blocks(&[4, 0, 9, 1]), // R' U D U'
+            canonicalize_commuting_axis_blocks(&[4, 9]),       // R' D
+        );
+        assert!(!is_trivial_reverse_solution(
+            &[3, 1, 11, 4], // R U' D2 R'
+            &reverse_canonical,
+        ));
     }
 }

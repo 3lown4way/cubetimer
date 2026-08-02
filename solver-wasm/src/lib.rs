@@ -676,7 +676,12 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
     );
 
     if !result.ok {
-        return serde_json::json!({"ok": false, "reason": "FMC_NO_SOLUTION"}).to_string();
+        return serde_json::json!({
+            "ok": false,
+            "reason": "FMC_NO_SOLUTION",
+            "reverseScrambleRejectedCount": result.reverse_scramble_rejected_count,
+        })
+        .to_string();
     }
 
     let candidates_json: Vec<serde_json::Value> = result
@@ -706,6 +711,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "multiInsertionPairCount": result.multi_insertion_pair_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
+        "reverseScrambleRejectedCount": result.reverse_scramble_rejected_count,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| (4..=7).contains(&candidate.source_tag)).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| (4..=7).contains(&skeleton.source_tag)).count(),
     })
