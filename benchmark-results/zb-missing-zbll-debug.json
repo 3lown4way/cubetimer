@@ -1,0 +1,1032 @@
+{
+  "generatedAt": "2026-08-02T15:02:15.504Z",
+  "rows": [
+    {
+      "index": 1,
+      "scramble": "R B' R2 U2 F' R2 B2 L' B' L' F R' D2 L' U' F L2 B2 U F' L",
+      "resultSummary": {
+        "ok": true,
+        "reason": null,
+        "stage": null,
+        "nodes": 44334,
+        "stages": [
+          {
+            "name": "XCross (Yellow | DF DR DB DL)",
+            "solution": "U R F2 L' F' R' L B'",
+            "moveCount": 8,
+            "depth": 8,
+            "nodes": 1769,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 1,
+              "backFaceMovesAfter": 1,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 1,
+              "backFaceQuarterTurnsAfter": 1,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 3.41,
+              "executionPenaltyAfter": 3.41
+            }
+          },
+          {
+            "name": "F2L 2",
+            "solution": "U2 R2 U2 R U R' U R2",
+            "moveCount": 8,
+            "depth": 8,
+            "nodes": 42560,
+            "humanViewpoint": {
+              "moves": [
+                "U2",
+                "R2",
+                "U2",
+                "R",
+                "U",
+                "R'",
+                "U",
+                "R2"
+              ],
+              "changed": false,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0,
+              "executionPenaltyAfter": 0
+            }
+          },
+          {
+            "name": "F2L 3",
+            "solution": "U2 L' U' L U L' U' L",
+            "moveCount": 8,
+            "depth": 8,
+            "humanViewpoint": {
+              "moves": [
+                "U2",
+                "L'",
+                "U'",
+                "L",
+                "U",
+                "L'",
+                "U'",
+                "L"
+              ],
+              "changed": false,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.64,
+              "executionPenaltyAfter": 0.64
+            }
+          },
+          {
+            "name": "ZBLS",
+            "solution": "y2 U2 R U R2 r U' M U2 r U' r' y2",
+            "moveCount": 11,
+            "depth": 11,
+            "nodes": 1,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.7,
+              "executionPenaltyAfter": 2.7
+            }
+          },
+          {
+            "name": "ZBLL",
+            "solution": "U2 R U R' U' R U R2 D' R U2 R' D R2 U2 R' U2",
+            "moveCount": 17,
+            "depth": 17,
+            "nodes": 4,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0,
+              "executionPenaltyAfter": 0
+            }
+          }
+        ],
+        "partialSolution": "",
+        "stageDiagnostics": [
+          {
+            "stageIndex": 0,
+            "stageName": "XCross",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 1769,
+            "bound": 8,
+            "elapsedMs": 9,
+            "moveCount": 8,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 1,
+              "backFaceMovesAfter": 1,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 1,
+              "backFaceQuarterTurnsAfter": 1,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 3.41,
+              "executionPenaltyAfter": 3.41
+            },
+            "method": null,
+            "metrics": null
+          },
+          {
+            "stageIndex": 1,
+            "stageName": "F2L",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 42560,
+            "bound": 16,
+            "elapsedMs": 111,
+            "moveCount": 16,
+            "humanViewpoint": {
+              "segments": 2,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.64,
+              "executionPenaltyAfter": 0.64
+            },
+            "method": "formula_beam",
+            "metrics": {
+              "finalMethod": "formula_beam",
+              "beamSucceeded": true,
+              "beamTermination": "SOLVED_IN_BEAM",
+              "stageWallTime": 110,
+              "perPairTime": [
+                0,
+                21,
+                34
+              ],
+              "attemptsCount": 42560,
+              "beamAttempts": 42560,
+              "candidateScanCount": 81055,
+              "fallbackFrequency": 0,
+              "nonCompactPathCount": 0,
+              "lazyPatternMaterializations": 0,
+              "compactFallbackUsed": false,
+              "finalNodes": 42560,
+              "finalBound": 16,
+              "compactFallbackNodes": 0,
+              "compactFallbackReason": null,
+              "beamDepthProgression": [
+                {
+                  "formulaDepth": 1,
+                  "inputBeamSize": 1,
+                  "expandedNodeCount": 1,
+                  "collectedCandidateCount": 14,
+                  "uniqueNextStateCount": 14,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 8672,
+                  "scanDelta": 15465
+                },
+                {
+                  "formulaDepth": 2,
+                  "inputBeamSize": 8,
+                  "expandedNodeCount": 4,
+                  "collectedCandidateCount": 56,
+                  "uniqueNextStateCount": 40,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 33888,
+                  "scanDelta": 65590
+                }
+              ],
+              "compactPathUsed": false,
+              "compactTranspositionHits": 0,
+              "compactPairOrder": [],
+              "cacheRates": {
+                "metrics": {
+                  "hits": 35385,
+                  "misses": 2371,
+                  "total": 37756,
+                  "hitRate": 0.9372020341137832
+                },
+                "stylePenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "transitionPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "downstreamPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                }
+              }
+            }
+          },
+          {
+            "stageIndex": 2,
+            "stageName": "ZBLS",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 1,
+            "bound": 13,
+            "elapsedMs": 10,
+            "moveCount": 11,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.7,
+              "executionPenaltyAfter": 2.7
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 9,
+              "attempts": 1,
+              "candidateCount": 1,
+              "libraryCacheHit": true,
+              "cacheSize": 1,
+              "singleStageLibraryCacheHits": 0,
+              "singleStageLibraryCacheMisses": 1,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          },
+          {
+            "stageIndex": 3,
+            "stageName": "ZBLL",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 4,
+            "bound": 17,
+            "elapsedMs": 25,
+            "moveCount": 17,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0,
+              "executionPenaltyAfter": 0
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 24,
+              "attempts": 1,
+              "candidateCount": 4,
+              "libraryCacheHit": true,
+              "cacheSize": 2,
+              "singleStageLibraryCacheHits": 0,
+              "singleStageLibraryCacheMisses": 1,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          }
+        ],
+        "zbXCrossProbe": {
+          "attempted": true,
+          "ok": true,
+          "reason": "OK",
+          "nodes": 1769,
+          "bound": 8,
+          "elapsedMs": 43,
+          "selectedTargetPairs": 1
+        }
+      },
+      "failureState": null,
+      "keyCheck": {
+        "recordedKey": null,
+        "derivedKey": null,
+        "equal": true
+      },
+      "preconditions": null,
+      "exhaustiveFormulaScan": null
+    },
+    {
+      "index": 2,
+      "scramble": "F R2 D' B R2 F' D' L' F' U' F' L' F2 R U2 L2 F' R' B' D2 R2",
+      "resultSummary": {
+        "ok": true,
+        "reason": null,
+        "stage": null,
+        "nodes": 29221,
+        "stages": [
+          {
+            "name": "XCross (Yellow | DF DR DB DL)",
+            "solution": "R U F D' R' F2 D2 F' R'",
+            "moveCount": 9,
+            "depth": 9,
+            "nodes": 24308,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.15,
+              "executionPenaltyAfter": 0.15
+            }
+          },
+          {
+            "name": "F2L 2",
+            "solution": "y U R' U' R2 U2 R' y'",
+            "moveCount": 6,
+            "depth": 6,
+            "nodes": 4908,
+            "humanViewpoint": {
+              "moves": [
+                "y",
+                "U",
+                "R'",
+                "U'",
+                "R2",
+                "U2",
+                "R'",
+                "y'"
+              ],
+              "changed": true,
+              "backFaceMovesBefore": 3,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 4,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 2,
+              "viewpointRotationsAdded": 2,
+              "executionPenaltyBefore": 8.35,
+              "executionPenaltyAfter": 1.8
+            }
+          },
+          {
+            "name": "F2L 3",
+            "solution": "U F2 U' F U F2 U' F L U L' F'",
+            "moveCount": 12,
+            "depth": 12,
+            "humanViewpoint": {
+              "moves": [
+                "U",
+                "F2",
+                "U'",
+                "F",
+                "U",
+                "F2",
+                "U'",
+                "F",
+                "L",
+                "U",
+                "L'",
+                "F'"
+              ],
+              "changed": false,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.56,
+              "executionPenaltyAfter": 0.56
+            }
+          },
+          {
+            "name": "ZBLS",
+            "solution": "y2 U2 R U2 R2 F R F' y2",
+            "moveCount": 7,
+            "depth": 7,
+            "nodes": 1,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.8200000000000003,
+              "executionPenaltyAfter": 2.8200000000000003
+            }
+          },
+          {
+            "name": "ZBLL",
+            "solution": "U' R2 D' R U R' D R U R U' R' U R U R' U R U2",
+            "moveCount": 19,
+            "depth": 19,
+            "nodes": 4,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0,
+              "executionPenaltyAfter": 0
+            }
+          }
+        ],
+        "partialSolution": "",
+        "stageDiagnostics": [
+          {
+            "stageIndex": 0,
+            "stageName": "XCross",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 24308,
+            "bound": 9,
+            "elapsedMs": 76,
+            "moveCount": 9,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.15,
+              "executionPenaltyAfter": 0.15
+            },
+            "method": null,
+            "metrics": null
+          },
+          {
+            "stageIndex": 1,
+            "stageName": "F2L",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 4908,
+            "bound": 18,
+            "elapsedMs": 101,
+            "moveCount": 18,
+            "humanViewpoint": {
+              "segments": 2,
+              "segmentsChanged": 1,
+              "backFaceMovesBefore": 3,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 3,
+              "backFaceQuarterTurnsBefore": 4,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 2,
+              "executionPenaltyBefore": 8.91,
+              "executionPenaltyAfter": 2.3600000000000003
+            },
+            "method": "compact_ida",
+            "metrics": {
+              "finalMethod": "compact_ida",
+              "beamSucceeded": false,
+              "beamTermination": "DEADLINE",
+              "stageWallTime": 100,
+              "perPairTime": [
+                0,
+                4,
+                30
+              ],
+              "attemptsCount": 59200,
+              "beamAttempts": 59200,
+              "candidateScanCount": 109027,
+              "fallbackFrequency": 1,
+              "nonCompactPathCount": 0,
+              "lazyPatternMaterializations": 0,
+              "compactFallbackUsed": true,
+              "finalNodes": 4908,
+              "finalBound": 18,
+              "compactFallbackNodes": 4908,
+              "compactFallbackReason": null,
+              "beamDepthProgression": [
+                {
+                  "formulaDepth": 1,
+                  "inputBeamSize": 1,
+                  "expandedNodeCount": 1,
+                  "collectedCandidateCount": 14,
+                  "uniqueNextStateCount": 14,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 8672,
+                  "scanDelta": 15466
+                },
+                {
+                  "formulaDepth": 2,
+                  "inputBeamSize": 8,
+                  "expandedNodeCount": 6,
+                  "collectedCandidateCount": 84,
+                  "uniqueNextStateCount": 70,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 50528,
+                  "scanDelta": 93561
+                }
+              ],
+              "compactPathUsed": true,
+              "compactTranspositionHits": 0,
+              "compactPairOrder": [],
+              "cacheRates": {
+                "metrics": {
+                  "hits": 49025,
+                  "misses": 3244,
+                  "total": 52269,
+                  "hitRate": 0.9379364441638447
+                },
+                "stylePenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "transitionPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "downstreamPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                }
+              }
+            }
+          },
+          {
+            "stageIndex": 2,
+            "stageName": "ZBLS",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 1,
+            "bound": 10,
+            "elapsedMs": 1,
+            "moveCount": 7,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.8200000000000003,
+              "executionPenaltyAfter": 2.8200000000000003
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 1,
+              "attempts": 1,
+              "candidateCount": 1,
+              "libraryCacheHit": true,
+              "cacheSize": 2,
+              "singleStageLibraryCacheHits": 1,
+              "singleStageLibraryCacheMisses": 0,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          },
+          {
+            "stageIndex": 3,
+            "stageName": "ZBLL",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 4,
+            "bound": 19,
+            "elapsedMs": 1,
+            "moveCount": 19,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0,
+              "executionPenaltyAfter": 0
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 1,
+              "attempts": 1,
+              "candidateCount": 4,
+              "libraryCacheHit": true,
+              "cacheSize": 2,
+              "singleStageLibraryCacheHits": 1,
+              "singleStageLibraryCacheMisses": 0,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          }
+        ],
+        "zbXCrossProbe": {
+          "attempted": true,
+          "ok": true,
+          "reason": "OK",
+          "nodes": 24308,
+          "bound": 9,
+          "elapsedMs": 84,
+          "selectedTargetPairs": 1
+        }
+      },
+      "failureState": null,
+      "keyCheck": {
+        "recordedKey": null,
+        "derivedKey": null,
+        "equal": true
+      },
+      "preconditions": null,
+      "exhaustiveFormulaScan": null
+    },
+    {
+      "index": 3,
+      "scramble": "F L2 D' R' F' U B' D2 R2 B' R' U2 B2 L' B2 D' R' D R2 B2 U2",
+      "resultSummary": {
+        "ok": true,
+        "reason": null,
+        "stage": null,
+        "nodes": 9258,
+        "stages": [
+          {
+            "name": "XCross (Yellow | DF DR DB DL)",
+            "solution": "R' F D L F' R2 D' F",
+            "moveCount": 8,
+            "depth": 8,
+            "nodes": 5179,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.34,
+              "executionPenaltyAfter": 0.34
+            }
+          },
+          {
+            "name": "F2L 2",
+            "solution": "y U L2 U L' U' L2 F2 U2 R' U2 F2 y'",
+            "moveCount": 11,
+            "depth": 11,
+            "nodes": 4074,
+            "humanViewpoint": {
+              "moves": [
+                "y",
+                "U",
+                "L2",
+                "U",
+                "L'",
+                "U'",
+                "L2",
+                "F2",
+                "U2",
+                "R'",
+                "U2",
+                "F2",
+                "y'"
+              ],
+              "changed": true,
+              "backFaceMovesBefore": 1,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 1,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 2,
+              "viewpointRotationsAdded": 2,
+              "executionPenaltyBefore": 3.12,
+              "executionPenaltyAfter": 2.18
+            }
+          },
+          {
+            "name": "F2L 3",
+            "solution": "y R U R U R' y'",
+            "moveCount": 5,
+            "depth": 5,
+            "humanViewpoint": {
+              "moves": [
+                "y",
+                "R",
+                "U",
+                "R",
+                "U",
+                "R'",
+                "y'"
+              ],
+              "changed": true,
+              "backFaceMovesBefore": 3,
+              "backFaceMovesAfter": 0,
+              "backFaceQuarterTurnsBefore": 3,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsBefore": 0,
+              "viewpointRotationsAfter": 2,
+              "viewpointRotationsAdded": 2,
+              "executionPenaltyBefore": 9,
+              "executionPenaltyAfter": 1.8
+            }
+          },
+          {
+            "name": "ZBLS",
+            "solution": "y2 U R U' R' y2",
+            "moveCount": 4,
+            "depth": 4,
+            "nodes": 1,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.7,
+              "executionPenaltyAfter": 2.7
+            }
+          },
+          {
+            "name": "ZBLL",
+            "solution": "U' F R U R' U' R U R' U' F' U' R' F' U' F U R U'",
+            "moveCount": 19,
+            "depth": 19,
+            "nodes": 4,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.24,
+              "executionPenaltyAfter": 0.24
+            }
+          }
+        ],
+        "partialSolution": "",
+        "stageDiagnostics": [
+          {
+            "stageIndex": 0,
+            "stageName": "XCross",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 5179,
+            "bound": 8,
+            "elapsedMs": 15,
+            "moveCount": 8,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.34,
+              "executionPenaltyAfter": 0.34
+            },
+            "method": null,
+            "metrics": null
+          },
+          {
+            "stageIndex": 1,
+            "stageName": "F2L",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 4074,
+            "bound": 16,
+            "elapsedMs": 100,
+            "moveCount": 16,
+            "humanViewpoint": {
+              "segments": 2,
+              "segmentsChanged": 2,
+              "backFaceMovesBefore": 4,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 4,
+              "backFaceQuarterTurnsBefore": 4,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 4,
+              "executionPenaltyBefore": 12.120000000000001,
+              "executionPenaltyAfter": 3.9800000000000004
+            },
+            "method": "compact_ida",
+            "metrics": {
+              "finalMethod": "compact_ida",
+              "beamSucceeded": false,
+              "beamTermination": "DEADLINE",
+              "stageWallTime": 99,
+              "perPairTime": [
+                0,
+                7
+              ],
+              "attemptsCount": 75072,
+              "beamAttempts": 75072,
+              "candidateScanCount": 138489,
+              "fallbackFrequency": 1,
+              "nonCompactPathCount": 0,
+              "lazyPatternMaterializations": 0,
+              "compactFallbackUsed": true,
+              "finalNodes": 4074,
+              "finalBound": 16,
+              "compactFallbackNodes": 4074,
+              "compactFallbackReason": null,
+              "beamDepthProgression": [
+                {
+                  "formulaDepth": 1,
+                  "inputBeamSize": 1,
+                  "expandedNodeCount": 1,
+                  "collectedCandidateCount": 14,
+                  "uniqueNextStateCount": 14,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 8672,
+                  "scanDelta": 15467
+                },
+                {
+                  "formulaDepth": 2,
+                  "inputBeamSize": 8,
+                  "expandedNodeCount": 8,
+                  "collectedCandidateCount": 112,
+                  "uniqueNextStateCount": 98,
+                  "outputBeamSize": 8,
+                  "attemptDelta": 66400,
+                  "scanDelta": 123022
+                }
+              ],
+              "compactPathUsed": true,
+              "compactTranspositionHits": 0,
+              "compactPairOrder": [],
+              "cacheRates": {
+                "metrics": {
+                  "hits": 61782,
+                  "misses": 4074,
+                  "total": 65856,
+                  "hitRate": 0.9381377551020408
+                },
+                "stylePenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "transitionPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                },
+                "downstreamPenalty": {
+                  "hits": 0,
+                  "misses": 0,
+                  "total": 0,
+                  "hitRate": null
+                }
+              }
+            }
+          },
+          {
+            "stageIndex": 2,
+            "stageName": "ZBLS",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 1,
+            "bound": 6,
+            "elapsedMs": 1,
+            "moveCount": 4,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 2.7,
+              "executionPenaltyAfter": 2.7
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 1,
+              "attempts": 1,
+              "candidateCount": 1,
+              "libraryCacheHit": true,
+              "cacheSize": 2,
+              "singleStageLibraryCacheHits": 1,
+              "singleStageLibraryCacheMisses": 0,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          },
+          {
+            "stageIndex": 3,
+            "stageName": "ZBLL",
+            "ok": true,
+            "reason": "OK",
+            "nodes": 4,
+            "bound": 19,
+            "elapsedMs": 1,
+            "moveCount": 19,
+            "humanViewpoint": {
+              "segments": 1,
+              "segmentsChanged": 0,
+              "backFaceMovesBefore": 0,
+              "backFaceMovesAfter": 0,
+              "backFaceMovesAvoided": 0,
+              "backFaceQuarterTurnsBefore": 0,
+              "backFaceQuarterTurnsAfter": 0,
+              "viewpointRotationsAdded": 0,
+              "executionPenaltyBefore": 0.24,
+              "executionPenaltyAfter": 0.24
+            },
+            "method": null,
+            "metrics": {
+              "lookupElapsedMs": 1,
+              "attempts": 1,
+              "candidateCount": 4,
+              "libraryCacheHit": true,
+              "cacheSize": 2,
+              "singleStageLibraryCacheHits": 1,
+              "singleStageLibraryCacheMisses": 0,
+              "singleStageLibraryBuilds": 0,
+              "singleStageLibraryBuildMs": 0,
+              "singleStageLibraryLastBuildMs": 0,
+              "libraryRebuiltDuringStage": false,
+              "caseLibraryRescanUsed": false
+            }
+          }
+        ],
+        "zbXCrossProbe": {
+          "attempted": true,
+          "ok": true,
+          "reason": "OK",
+          "nodes": 5179,
+          "bound": 8,
+          "elapsedMs": 25,
+          "selectedTargetPairs": 1
+        }
+      },
+      "failureState": null,
+      "keyCheck": {
+        "recordedKey": null,
+        "derivedKey": null,
+        "equal": true
+      },
+      "preconditions": null,
+      "exhaustiveFormulaScan": null
+    }
+  ]
+}

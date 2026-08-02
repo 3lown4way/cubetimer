@@ -7594,6 +7594,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     };
     const probeStage = getStageDefinitions(probeOptions, ctx, modeProfile, solveMode)[0];
     const probeResult = solveStage(pattern, probeStage, ctx);
+    const probeElapsedMs = Math.max(1, Date.now() - probeStartedAt);
     const selectedTargetPairs = probeResult?.ok ? 1 : 0;
     const childResult = await solve3x3StrictCfopFromPattern(pattern, {
       ...options,
@@ -7610,7 +7611,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           reason: probeResult?.ok ? "OK" : probeResult?.reason || "XCROSS_NOT_FOUND",
           nodes: Number(probeResult?.nodes || 0),
           bound: Number.isFinite(probeResult?.bound) ? probeResult.bound : null,
-          elapsedMs: Math.max(1, Date.now() - probeStartedAt),
+          elapsedMs: probeElapsedMs,
           selectedTargetPairs,
         },
       });
@@ -7729,6 +7730,23 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         reason: result.reason || `${stage.name.toUpperCase()}_FAILED`,
         stage: stage.name,
         nodes: totalNodes,
+        stages: solvedStages.map((entry) => ({ ...entry })),
+        partialSolution: joinMoves(allMoves),
+        failureState:
+          solveMode === "zb"
+            ? {
+                stageName: stage.name,
+                key: typeof stage.key === "function" ? stage.key(stageStartPattern.patternData) : null,
+                corners: {
+                  pieces: Array.from(stageStartPattern.patternData.CORNERS.pieces),
+                  orientation: Array.from(stageStartPattern.patternData.CORNERS.orientation),
+                },
+                edges: {
+                  pieces: Array.from(stageStartPattern.patternData.EDGES.pieces),
+                  orientation: Array.from(stageStartPattern.patternData.EDGES.orientation),
+                },
+              }
+            : null,
         stageDiagnostics,
       });
     }
