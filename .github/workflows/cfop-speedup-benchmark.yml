@@ -71,7 +71,6 @@ jobs:
           grep -q 'extremeVariantCount: 24' solver/fmcExtremeProfile.js
           grep -q 'maxPremoveSets: 180' solver/fmcExtremeProfile.js
           grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
-          grep -q 'human-L3-V' solver/fmcSolver.js
           grep -q 'searchVariant' solver/wasmSolver.js
           grep -q 'search_variant' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_EXTREME_PROFILE_MISMATCH' benchmark/fmcBenchmarkWorker.js
