@@ -1,0 +1,48 @@
+name: Run Pure ZB 250 capture benchmark
+
+on:
+  push:
+    branches:
+      - fix/zb-pipeline-reliability-v2
+    paths:
+      - benchmark-zb-pipeline-reliability.mjs
+      - .github/workflows/run-zb-pipeline-250.yml
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate syntax
+        run: node --check benchmark-zb-pipeline-reliability.mjs
+
+      - name: Run deterministic 250-case Pure ZB capture benchmark
+        id: benchmark
+        continue-on-error: true
+        env:
+          ZB_PIPELINE_RUNS: "250"
+        run: node benchmark-zb-pipeline-reliability.mjs
+
+      - name: Preserve report and remove temporary workflow
+        run: |
+          rm -f .github/workflows/run-zb-pipeline-250.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmark-results/zb-pipeline-reliability-250.json .github/workflows/run-zb-pipeline-250.yml
+          git commit -m "Capture 250-case Pure ZB reliability states"
+          git push origin HEAD:fix/zb-pipeline-reliability-v2
+
+      - name: Enforce benchmark result
+        if: steps.benchmark.outcome != 'success'
+        run: exit 1
