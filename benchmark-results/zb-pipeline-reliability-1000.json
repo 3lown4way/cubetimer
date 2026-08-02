@@ -1,0 +1,21 @@
+{
+  "runs": 1000,
+  "successes": 1000,
+  "failures": 0,
+  "successRate": 1,
+  "invalidSolutions": 0,
+  "xcrossSelected": 976,
+  "xcrossRejected": 24,
+  "xcrossSelectionRate": 0.976,
+  "beamSuccesses": 957,
+  "compactFallbacks": 43,
+  "zblsRescans": 0,
+  "zbllRescans": 0,
+  "reasonCounts": {},
+  "timingMs": {
+    "median": 131,
+    "p95": 440,
+    "max": 2899
+  },
+  "failureDetails": []
+}
