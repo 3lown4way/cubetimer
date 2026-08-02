@@ -120,10 +120,16 @@ struct FmcSearchBudget {
 impl FmcSearchBudget {
     fn new(time_budget_ms: u32, target_move_count: usize) -> Self {
         let started_ms = fmc_now_ms();
-        let duration_ms = time_budget_ms.max(50) as f64;
+        // A zero budget is the explicit Extreme sentinel: no internal wall-clock
+        // deadline. The outer worker timeout remains able to terminate WASM.
+        let deadline_ms = if time_budget_ms == 0 {
+            f64::INFINITY
+        } else {
+            started_ms + time_budget_ms.max(50) as f64
+        };
         Self {
             started_ms,
-            deadline_ms: started_ms + duration_ms,
+            deadline_ms,
             target_move_count: target_move_count.max(1),
             timed_out: false,
             checkpoints: 0,

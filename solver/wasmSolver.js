@@ -399,7 +399,7 @@ export async function solveFmcWasm(scramble, options = {}) {
       enableMultiSwitchNiss: options.enableMultiSwitchNiss === true,
       enableDeepMultiSwitchNiss: options.enableDeepMultiSwitchNiss === true,
       maxEoDepth: Number.isFinite(options.maxEoDepth) ? Math.max(5, Math.min(7, Math.floor(options.maxEoDepth))) : 5,
-      timeBudgetMs: Number.isFinite(options.timeBudgetMs) ? Math.max(50, Math.floor(options.timeBudgetMs)) : 8000,
+      timeBudgetMs: Number.isFinite(options.timeBudgetMs) ? Math.max(0, Math.floor(options.timeBudgetMs)) : 8000,
       targetMoveCount: Number.isFinite(options.targetMoveCount) ? Math.max(1, Math.floor(options.targetMoveCount)) : 24,
     });
     const raw = api.solveFmcWasm(scramble, optionsJson);

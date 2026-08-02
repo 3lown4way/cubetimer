@@ -33,17 +33,19 @@ if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== 
 console.log("benchmark no-fallback routing verified");
 
 for (const token of [
-  'stage("extreme-target-deadline"',
-  'timeBudgetMs: stageBudgetMs',
+  'stage("extreme-target-unbounded"',
+  'const internalBudgetUnlimited = qualityMode === "extreme"',
+  'timeBudgetMs: internalBudgetUnlimited ? 0 : stageBudgetMs',
+  'internalBudgetUnlimited',
   'targetMoveCount',
   'processedAxisCalls',
   'processedPremoveSets',
   'FMC_EXTREME_TARGET_NOT_REACHED',
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`FMC real-deadline token missing: ${token}`);
+  if (!fmcSolver.includes(token)) throw new Error(`FMC unlimited-Extreme token missing: ${token}`);
 }
 if (!enhanced.includes('payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150)')) {
-  throw new Error("enhanced benchmark timeout is not the FMC budget");
+  throw new Error("enhanced benchmark outer worker timeout is not propagated");
 }
 if (
   enhanced.includes('const budget = config.fmcQualityMode === "extreme" ? 90000 : 8000') ||
@@ -54,11 +56,18 @@ if (
 }
 for (const token of ["timeBudgetMs", "targetMoveCount", "maxEoDepth"]) {
   if (!wasmSolver.includes(token) || !rustApi.includes(token)) {
-    throw new Error(`WASM deadline propagation missing: ${token}`);
+    throw new Error(`WASM option propagation missing: ${token}`);
   }
 }
-for (const token of ["FmcSearchBudget", "budget.should_stop", "processed_premove_sets", "timed_out"]) {
-  if (!rustFmc.includes(token)) throw new Error(`Rust deadline checkpoint missing: ${token}`);
+for (const token of [
+  "FmcSearchBudget",
+  "time_budget_ms == 0",
+  "f64::INFINITY",
+  "budget.should_stop",
+  "processed_premove_sets",
+  "timed_out",
+]) {
+  if (!rustFmc.includes(token)) throw new Error(`Rust unlimited-budget token missing: ${token}`);
 }
 for (const source of [wasmSolver, rustFmc]) {
   if (source.includes("FMC_TWOPHASE_FALLBACK") || source.includes("eo_fallback_used")) {
@@ -72,4 +81,4 @@ for (const token of [
 ]) {
   if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker guard missing: ${token}`);
 }
-console.log("FMC Extreme real deadline contract verified");
+console.log("FMC Extreme unlimited internal budget contract verified");

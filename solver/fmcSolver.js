@@ -1378,7 +1378,7 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
 
   if (qualityMode === "extreme") {
     return [
-      stage("extreme-target-deadline", {
+      stage("extreme-target-unbounded", {
         maxPremoveSets: requestedPremoveSets,
         maxEoDepth: 6,
         enableMultiInsertion: true,
@@ -1641,9 +1641,12 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
         });
 
         const stageBudgetMs = Math.max(50, remainingBeforeStage - 75);
+        const internalBudgetUnlimited = qualityMode === "extreme";
         const stageOptions = {
           ...qualityStage.options,
-          timeBudgetMs: stageBudgetMs,
+          // Extreme is intentionally unbounded inside WASM. The benchmark
+          // worker's per-run timeout is the only wall-clock limit.
+          timeBudgetMs: internalBudgetUnlimited ? 0 : stageBudgetMs,
           targetMoveCount,
         };
         const solveStartedAt = Date.now();
@@ -1656,7 +1659,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           moveCount: Number.isFinite(wasmResult?.moveCount) ? wasmResult.moveCount : null,
           candidateCount: Array.isArray(wasmResult?.candidates) ? wasmResult.candidates.length : 0,
           maxPremoveSets: stageOptions.maxPremoveSets,
-          budgetMs: stageBudgetMs,
+          budgetMs: internalBudgetUnlimited ? null : stageBudgetMs,
+          internalBudgetUnlimited,
           wasmElapsedMs: Number.isFinite(wasmResult?.elapsedMs) ? wasmResult.elapsedMs : null,
           timedOut: wasmResult?.timedOut === true,
           processedAxisCalls: Number.isFinite(wasmResult?.processedAxisCalls) ? wasmResult.processedAxisCalls : 0,
