@@ -17,8 +17,12 @@ assert.equal(round1.length, 24);
 assert.equal(round2.length, 24);
 assert.ok(round1.every((stage) => stage.options.searchLevel === 3));
 assert.ok(round1.every((stage) => stage.options.maxPremoveSets === 180));
+assert.ok(round1.every((stage) => stage.options.rawExplorationLimit === 36));
+assert.ok(round1.every((stage) => stage.options.reservedCompression === false));
 assert.ok(round2.every((stage) => stage.options.searchLevel === 3));
 assert.ok(round2.every((stage) => stage.options.maxPremoveSets === 180));
+assert.ok(round2.every((stage) => stage.options.rawExplorationLimit === 36));
+assert.ok(round2.every((stage) => stage.options.reservedCompression === false));
 assert.ok(round1.every((stage) => stage.name.includes("-R1-")));
 assert.ok(round2.every((stage) => stage.name.includes("-R2-")));
 
