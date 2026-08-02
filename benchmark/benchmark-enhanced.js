@@ -1,6 +1,7 @@
 import { randomScrambleForEvent } from "cubing/scramble";
 import { proxy, wrap } from "comlink";
 import { enforceBenchmarkNoFallback } from "./benchmark-no-fallback-policy.js";
+import { normalizeCfopProgressEvent } from "../solver/progressEvents.js";
 
 const STORAGE_KEY = "cubeTimerSolverBenchmarkLastRun";
 const MAX_RESULTS = 500;
@@ -295,6 +296,8 @@ function formatProgressEvent(progress) {
   if (progress.type === "quality_stage_done") return `${name || "FMC Extreme"} 완료`;
   if (progress.type === "insertion_start") return `${name || "FMC Insertion"} 탐색`;
   if (progress.type === "insertion_done") return `${name || "FMC Insertion"} 완료`;
+  if (progress.type === "probe_start") return `probe: ${name || "시작"}`;
+  if (progress.type === "probe_done") return `${name || "probe"} 완료`;
   if (progress.type === "optimality_proven") return `최적성 증명 · ${progress.moveCount ?? "?"}수`;
   if (progress.type === "fallback_start") {
     if (name.startsWith("FMC Insertion")) return name.replace(/^FMC /, "");
@@ -315,11 +318,18 @@ async function solveOnce(config, scramble, label) {
   const progressEvents = [];
   let timeoutId = 0;
   const onProgress = proxy((progress) => {
+    const normalizedProgress = normalizeCfopProgressEvent(progress, config.mode);
     const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
     if (progressEvents.length < MAX_PROGRESS_EVENTS) {
-      progressEvents.push({ ...safeClone(progress), elapsedMs, message: formatProgressEvent(progress) });
+      progressEvents.push({
+        ...safeClone(normalizedProgress),
+        elapsedMs,
+        message: formatProgressEvent(normalizedProgress),
+      });
     }
-    if (running && !stopRequested) elements.progressDetail.textContent = `${label} · ${formatProgressEvent(progress)}`;
+    if (running && !stopRequested) {
+      elements.progressDetail.textContent = `${label} · ${formatProgressEvent(normalizedProgress)}`;
+    }
   });
   const unlimitedExtreme = isUnlimitedExtreme(config);
   const timeoutPromise = unlimitedExtreme
