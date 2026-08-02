@@ -100,10 +100,31 @@ function updateSummary(run) {
   }
 }
 
+function applySolverTimeSort(run, entryByIndex, rows) {
+  if (run.sortState?.key !== "elapsedMs" || rows.length < 2) return;
+  const direction = run.sortState.direction === "desc" ? -1 : 1;
+  const desiredRows = [...rows].sort((left, right) => {
+    const leftEntry = entryByIndex.get(Number(left.dataset.entryIndex));
+    const rightEntry = entryByIndex.get(Number(right.dataset.entryIndex));
+    const leftMs = timingForEntry(leftEntry).solverMs;
+    const rightMs = timingForEntry(rightEntry).solverMs;
+    const leftMissing = !Number.isFinite(leftMs);
+    const rightMissing = !Number.isFinite(rightMs);
+    if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+    const timeOrder = leftMissing ? 0 : (leftMs - rightMs) * direction;
+    return timeOrder || Number(left.dataset.entryIndex) - Number(right.dataset.entryIndex);
+  });
+  const alreadyOrdered = rows.every((row, index) => row === desiredRows[index]);
+  if (alreadyOrdered) return;
+  const body = document.getElementById("resultsBody");
+  desiredRows.forEach((row) => body?.appendChild(row));
+}
+
 function updateRows(run) {
-  const entries = new Map(run.results.map((entry) => [Number(entry.index), entry]));
-  document.querySelectorAll("#resultsBody tr.result-row").forEach((row) => {
-    const entry = entries.get(Number(row.dataset.entryIndex));
+  const entryByIndex = new Map(run.results.map((entry) => [Number(entry.index), entry]));
+  const rows = Array.from(document.querySelectorAll("#resultsBody tr.result-row"));
+  rows.forEach((row) => {
+    const entry = entryByIndex.get(Number(row.dataset.entryIndex));
     const timeCell = row.children[2];
     if (!entry || !timeCell) return;
     const timing = timingForEntry(entry);
@@ -112,6 +133,7 @@ function updateRows(run) {
     if (timeCell.title !== title) timeCell.title = title;
     timeCell.dataset.timingSource = timing.source;
   });
+  applySolverTimeSort(run, entryByIndex, rows);
 }
 
 function makeTimingItem(label, value, key) {
@@ -164,6 +186,7 @@ function scheduleRefresh() {
   refreshScheduled = true;
   requestAnimationFrame(() => {
     refreshScheduled = false;
+    if (!document.querySelector("#resultsBody tr.result-row")) return;
     const run = readStoredRun();
     if (!run) return;
     updateSummary(run);
