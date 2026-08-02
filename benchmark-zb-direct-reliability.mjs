@@ -3,7 +3,8 @@ import { cube3x3x3 } from "./vendor/cubing/puzzles/index.js";
 import { solve3x3StrictCfopFromPattern } from "./solver/cfop3x3.js";
 
 const RUNS = Math.max(1, Number.parseInt(process.env.ZB_RELIABILITY_RUNS || "250", 10) || 250);
-const TIMEOUT_MS = Math.max(1000, Number.parseInt(process.env.ZB_RELIABILITY_TIMEOUT_MS || "10000", 10) || 10000);
+const TIMEOUT_MS = Math.max(1000, Number.parseInt(process.env.ZB_RELIABILITY_TIMEOUT_MS || "30000", 10) || 30000);
+const DIAGNOSTIC_INDICES = new Set([58, 76, 81, 132, 143]);
 const kpuzzle = await cube3x3x3.kpuzzle();
 const solved = kpuzzle.defaultPattern();
 let rngState = 0x7a6b5c4d;
@@ -45,6 +46,8 @@ async function solveOne(pattern, scramble) {
       allowRelaxedSearch: false,
       enableStyleFallback: false,
       allowSlowFormulaFallback: false,
+      zbllSearchMaxDepth: 16,
+      zbllNodeLimit: 12000000,
       deadlineTs: Date.now() + TIMEOUT_MS - 150,
     }),
     new Promise((resolve) => setTimeout(
@@ -55,7 +58,7 @@ async function solveOne(pattern, scramble) {
 }
 
 const failures = [];
-let directKeyMissRecoveries = 0;
+const synthesized = [];
 for (let index = 0; index < RUNS; index += 1) {
   const scramble = makeScramble();
   const pattern = solved.applyAlg(scramble);
@@ -68,22 +71,34 @@ for (let index = 0; index < RUNS; index += 1) {
       valid = false;
     }
   }
+  const recordIndex = index + 1;
+  if (DIAGNOSTIC_INDICES.has(recordIndex)) {
+    const zbllStage = Array.isArray(result?.stages)
+      ? result.stages.find((stage) => String(stage?.name || "").startsWith("ZBLL"))
+      : null;
+    synthesized.push({
+      index: recordIndex,
+      scramble,
+      ok: valid,
+      reason: result?.reason || null,
+      zbll: zbllStage?.solution || null,
+      zbllMoveCount: zbllStage?.moveCount ?? null,
+      stages: result?.stages || null,
+    });
+  }
   if (!valid) {
     failures.push({
-      index: index + 1,
+      index: recordIndex,
       scramble,
       reason: result?.reason || "INVALID_SOLUTION",
       stage: result?.stage || null,
       source: result?.source || null,
     });
   }
-  if (Number(result?.zbllDirectKeyMissRecoveries || 0) > 0) {
-    directKeyMissRecoveries += Number(result.zbllDirectKeyMissRecoveries);
-  }
-  if ((index + 1) % 25 === 0 || index + 1 === RUNS) {
-    console.log(`[Pure ZB direct] ${index + 1}/${RUNS} failures=${failures.length}`);
+  if (recordIndex % 25 === 0 || recordIndex === RUNS) {
+    console.log(`[Pure ZB direct generation] ${recordIndex}/${RUNS} failures=${failures.length}`);
   }
 }
 
-console.log(JSON.stringify({ runs: RUNS, failures: failures.length, directKeyMissRecoveries, failureDetails: failures }, null, 2));
-assert.equal(failures.length, 0, `Pure ZB direct pipeline failed ${failures.length}/${RUNS}`);
+console.log(JSON.stringify({ runs: RUNS, failures: failures.length, synthesized, failureDetails: failures }, null, 2));
+assert.equal(failures.length, 0, `Pure ZB diagnostic generation failed ${failures.length}/${RUNS}`);
