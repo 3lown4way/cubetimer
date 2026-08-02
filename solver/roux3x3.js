@@ -710,7 +710,8 @@ export async function solve3x3RouxFromPattern(pattern, options = {}) {
 
 async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
   const deadlineTs = options.deadlineTs || Date.now() + 60000;
-  const stageDeadlineMs = 6000; // Max time per Roux stage before fallback
+  const stageDeadlineMs = 6000; // Max time per Roux stage search widening
+  const allowCrossMethodRecovery = options.enableRecovery !== false;
 
   const { getDefaultPattern } = await import('./context.js');
   await ensurePruneTables(getDefaultPattern);
@@ -744,6 +745,9 @@ async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
     }
   }
   if (!fbResult || !fbResult.ok) {
+    if (!allowCrossMethodRecovery) {
+      return { ok: false, reason: `FB_${fbResult?.reason || "NOT_FOUND"}`, stage: "FB", stages, nodes: totalNodes + (fbResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };
+    }
     console.log("[Roux] FB beam failed, using phase solver fallback...");
     return await phaseSolverFallback(pattern, deadlineTs);
   }
@@ -784,6 +788,9 @@ async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
   }
   
   if (!sbResult || !sbResult.ok) {
+    if (!allowCrossMethodRecovery) {
+      return { ok: false, reason: `SB_${sbResult?.reason || "NOT_FOUND"}`, stage: "SB", stages, nodes: totalNodes + (sbResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };
+    }
     console.log("[Roux] SB beam failed, using phase solver fallback...");
     return await phaseSolverFallback(pattern, deadlineTs);
   }
@@ -810,6 +817,9 @@ async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
     14, 15000, cmllDeadline, scoreCMLL, "CMLL"
   );
   if (!cmllResult.ok) {
+    if (!allowCrossMethodRecovery) {
+      return { ok: false, reason: `CMLL_${cmllResult?.reason || "NOT_FOUND"}`, stage: "CMLL", stages, nodes: totalNodes + (cmllResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };
+    }
     console.log(`[Roux] CMLL failed (${cmllResult.reason}), using phase solver fallback...`);
     return await phaseSolverFallback(pattern, deadlineTs);
   }
@@ -835,6 +845,9 @@ async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
     );
   }
   if (!lseResult.ok) {
+    if (!allowCrossMethodRecovery) {
+      return { ok: false, reason: `LSE_${lseResult?.reason || "NOT_FOUND"}`, stage: "LSE", stages, nodes: totalNodes + (lseResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };
+    }
     console.log("[Roux] LSE failed, using phase solver fallback...");
     return await phaseSolverFallback(pattern, deadlineTs);
   }

@@ -428,7 +428,8 @@ async function solveWithInternal3x3Phase(scramble, options = {}) {
   return solve3x3InternalPhase(pattern, options);
 }
 
-async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion = "v2") {
+async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion = "v2", options = {}) {
+  const noFallback = options.noFallback === true;
   const maxFrontiers = getTwophaseFrontierLimit(solverVersion);
   const inverseSolution = invertAlgorithmString(scramble);
   const inverseLength = inverseSolution ? countAlgorithmMoves(inverseSolution) : 0;
@@ -481,7 +482,11 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
     }
   }
 
-  if (!phaseResult?.ok) {
+  if (!phaseResult?.ok && noFallback) {
+    phaseResult = { ok: false, reason: "TWOPHASE_WASM_FAILED_NO_FALLBACK" };
+  }
+
+  if (!phaseResult?.ok && !noFallback) {
     phaseResult = await withTimeout(
       solveWithInternal3x3Phase(scramble, {
         ...INTERNAL_PHASE_FALLBACK_OPTIONS,
@@ -508,6 +513,9 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
   }
 
   const solution = String(phaseResult.solution || "").trim();
+  if (noFallback && inverseSolution && solution === inverseSolution) {
+    return { ok: false, reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED", source: phaseSource };
+  }
   if (!(await verify3x3Solution(scramble, solution))) {
     return { ok: false, reason: "TWOPHASE_FINAL_STATE_NOT_SOLVED" };
   }
@@ -1378,6 +1386,7 @@ const api = {
     let fmcQualityMode = "sweetSpot";
     let fmcTargetMoveCount = null;
     let fmcTimeBudgetMs = null;
+    let benchmarkNoFallback = false;
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
       scramble = arg1.scramble;
       eventId = arg1.eventId;
@@ -1418,6 +1427,7 @@ const api = {
       if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {
         fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));
       }
+      benchmarkNoFallback = arg1.benchmarkNoFallback === true;
     } else {
       scramble = arg1;
       eventId = arg2;
@@ -1453,10 +1463,19 @@ const api = {
     }
     startBackgroundWarmups();
     if (normalizedEventId === "333" && mode === "twophase") {
-      return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion);
+      return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion, { noFallback: benchmarkNoFallback });
     }
     if (normalizedEventId === "333" && mode === "minmove") {
-      return await solveWithInternal3x3Minmove(scramble, onProgress);
+      const minmoveResult = await solveWithInternal3x3Minmove(scramble, onProgress);
+      if (benchmarkNoFallback && minmoveResult?.ok && (
+        minmoveResult.optimalityProven !== true
+        || minmoveResult.fallbackReason
+        || /FALLBACK|RETRY/i.test(String(minmoveResult.source || ""))
+        || /fallback|retry/i.test(String(minmoveResult.proofSource || ""))
+      )) {
+        return { ok: false, reason: "MINMOVE_FALLBACK_RESULT_REJECTED", source: "REJECTED_MINMOVE_FALLBACK" };
+      }
+      return minmoveResult;
     }
     const profileAwareCfop =
     mode === "zb" ||
@@ -1492,7 +1511,7 @@ const api = {
     const hasTransitionOptIn = Boolean(f2lTransitionProfile);
     const hasDownstreamOptIn = enableOllPllPrediction !== false && Boolean(f2lDownstreamProfile);
     const allowWasm3x3FastPath =
-      mode === "strict" && !hasStyleOptIn && !hasTransitionOptIn && !hasDownstreamOptIn;
+      !benchmarkNoFallback && mode === "strict" && !hasStyleOptIn && !hasTransitionOptIn && !hasDownstreamOptIn;
 
     // 222 uses in-repo solver implementation.
     try {
@@ -1567,7 +1586,7 @@ const api = {
               const fastResult = await solveRoux(pattern, {
                 crossColor,
                 deadlineTs: fastDeadlineTs,
-                enableRecovery: true,
+                enableRecovery: !benchmarkNoFallback,
                 onStageUpdate(progress) {
                   if (typeof onProgress === "function") {
                     try {
@@ -1580,7 +1599,7 @@ const api = {
               return solveRoux(pattern, {
                 crossColor,
                 deadlineTs: hardDeadlineTs,
-                enableRecovery: true,
+                enableRecovery: !benchmarkNoFallback,
                 onStageUpdate(progress) {
                   if (typeof onProgress === "function") {
                     try {
@@ -1604,7 +1623,7 @@ const api = {
             void onProgress({ type: "queue", eventId: "333" });
           } catch (_) {}
         }
-        const strictResult = await solveWithInternal3x3StrictRetries(scramble, onProgress, {
+        const strictOptions = {
           crossColor,
           mode,
           solverVersion,
@@ -1612,14 +1631,24 @@ const api = {
           transitionProfileSolver,
           styleProfile,
           f2lTransitionProfile,
-          enableStyleFallback,
+          enableStyleFallback: benchmarkNoFallback ? false : enableStyleFallback,
+          allowRelaxedSearch: benchmarkNoFallback ? false : undefined,
           f2lDownstreamProfile,
           llFamilyCalibration,
           enableOllPllPrediction,
           ollPllPredictionWeight,
-        });
+        };
+        const strictResult = benchmarkNoFallback
+          ? await withTimeout(
+              solveWithInternal3x3StrictCfop(scramble, onProgress, {
+                ...strictOptions,
+                deadlineTs: Date.now() + Math.max(250, STRICT_CFOP_TIMEOUT_MS - 120),
+              }),
+              STRICT_CFOP_TIMEOUT_MS,
+            ).catch(() => ({ ok: false, reason: "INTERNAL_3X3_CFOP_TIMEOUT" }))
+          : await solveWithInternal3x3StrictRetries(scramble, onProgress, strictOptions);
 
-        if (mode === "zb") {
+        if (benchmarkNoFallback || mode === "zb") {
           return strictResult;
         }
 
