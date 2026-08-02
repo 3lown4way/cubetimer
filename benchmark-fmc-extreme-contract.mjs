@@ -31,6 +31,7 @@ assert.equal(result.qualityMode, "extreme");
 assert.notEqual(result.qualityDowngraded, true);
 assert.ok(Number.isFinite(result.moveCount));
 assert.equal(result.qualityTargetReached, result.moveCount <= 20);
+assert.ok(elapsedMs < 1000, `900 ms Extreme budget overran to ${elapsedMs.toFixed(1)} ms`);
 
 const wasmStages = result?.performanceDiagnostics?.wasmStages || [];
 assert.ok(wasmStages.length > 0, "Extreme did not execute its quality ladder");

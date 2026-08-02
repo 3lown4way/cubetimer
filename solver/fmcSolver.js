@@ -1357,8 +1357,9 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
     forceRzp,
     enableCoverageFallback: options.enableCoverageFallback !== false,
   };
-  const stage = (name, stageOptions) => ({
+  const stage = (name, stageOptions, minRemainingMs = 250) => ({
     name,
+    minRemainingMs,
     options: { ...common, ...stageOptions },
   });
 
@@ -1380,18 +1381,18 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
       stage("extreme-wide-seed", {
         maxPremoveSets: capPremoves(32),
         enableMultiSwitchNiss: true,
-      }),
+      }, 100),
       stage("extreme-deep-eo-dr", {
         maxPremoveSets: capPremoves(120),
         enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 750),
       stage("extreme-htr-insertion", {
         maxPremoveSets: capPremoves(160),
         enableHtrSkeletons: true,
         enableSliceInsertion: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 2200),
       stage("extreme-full-human-portfolio", {
         maxPremoveSets: requestedPremoveSets,
         enableMultiInsertion: true,
@@ -1399,7 +1400,7 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
         enableSliceInsertion: true,
         enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
-      }),
+      }, 1100),
     ];
   }
 
@@ -1420,7 +1421,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     : qualityPreset.maxPremoveSets;
   const forceRzp = options.forceRzp === true;
   const timeBudgetMs = Number.isFinite(options.timeBudgetMs)
-    ? Math.max(1000, Math.floor(options.timeBudgetMs))
+    ? Math.max(100, Math.floor(options.timeBudgetMs))
     : qualityPreset.timeBudgetMs;
   const targetMoveCount = Number.isFinite(options.targetMoveCount)
     ? Math.max(1, Math.floor(options.targetMoveCount))
@@ -1638,10 +1639,15 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     if (fmcTablesOk) {
       const wasmStages = buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRzp);
       for (let stageIndex = 0; stageIndex < wasmStages.length; stageIndex += 1) {
-        if (remainingMs(deadlineTs) <= 250) break;
+        const remainingBeforeStage = remainingMs(deadlineTs);
+        if (remainingBeforeStage <= 100) break;
         if (Number.isFinite(bestMoveCount) && bestMoveCount <= targetMoveCount) break;
 
         const qualityStage = wasmStages[stageIndex];
+        const minRemainingMs = Number.isFinite(qualityStage.minRemainingMs)
+          ? Math.max(0, qualityStage.minRemainingMs)
+          : 250;
+        if (remainingBeforeStage < minRemainingMs) continue;
         notify({
           type: "quality_stage_start",
           stageName: `FMC ${qualityStage.name}`,

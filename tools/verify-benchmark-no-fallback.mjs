@@ -35,6 +35,12 @@ console.log("benchmark no-fallback routing verified");
 for (const token of [
   'stage("extreme-wide-seed"',
   'maxPremoveSets: capPremoves(32)',
+  '}, 100)',
+  '}, 750)',
+  '}, 2200)',
+  '}, 1100)',
+  'Math.max(100, Math.floor(options.timeBudgetMs))',
+  'remainingBeforeStage < minRemainingMs',
   'stage("extreme-deep-eo-dr"',
   'stage("extreme-htr-insertion"',
   'stage("extreme-full-human-portfolio"',
