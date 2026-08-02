@@ -53,6 +53,7 @@ const api = {
       verifyLimit: qualityMode === "extreme" ? 32 : 18,
       enableInsertions: true,
       enableCoverageFallback: false,
+      requireTargetReached: qualityMode === "extreme",
       crossColors: normalizeCrossColorList(payload.crossColor),
     });
 
@@ -76,6 +77,18 @@ const api = {
       return {
         ok: false,
         reason: "FMC_QUALITY_MODE_DOWNGRADE_REJECTED",
+        rejectedResult: result,
+      };
+    }
+    if (
+      qualityMode === "extreme" &&
+      result?.ok &&
+      (result.qualityTargetReached !== true || Number(result.moveCount) > targetMoveCount)
+    ) {
+      return {
+        ok: false,
+        reason: "FMC_EXTREME_TARGET_NOT_REACHED",
+        requestedTarget: targetMoveCount,
         rejectedResult: result,
       };
     }

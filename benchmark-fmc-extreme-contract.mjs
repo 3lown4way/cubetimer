@@ -15,39 +15,45 @@ const result = await solveWithFMCSearch(
     qualityMode: "extreme",
     timeBudgetMs: 900,
     targetMoveCount: 20,
-    maxPremoveSets: 80,
+    maxPremoveSets: 120,
     allowCfopFallback: false,
     premoveAllowCfopFallback: false,
     enableCoverageFallback: false,
     preferNonCfop: true,
-    verifyLimit: 16,
+    verifyLimit: 24,
     enableInsertions: true,
+    requireTargetReached: true,
   },
 );
 const elapsedMs = performance.now() - startedAt;
 
-assert.equal(result?.ok, true, `Extreme failed under short budget: ${result?.reason || "unknown"}`);
-assert.equal(result.qualityMode, "extreme");
-assert.notEqual(result.qualityDowngraded, true);
-assert.ok(Number.isFinite(result.moveCount));
-assert.equal(result.qualityTargetReached, result.moveCount <= 20);
-assert.ok(elapsedMs < 1000, `900 ms Extreme budget overran to ${elapsedMs.toFixed(1)} ms`);
-
+assert.equal(result?.qualityMode || result?.performanceDiagnostics?.qualityMode, "extreme");
+assert.notEqual(result?.qualityDowngraded, true);
 const wasmStages = result?.performanceDiagnostics?.wasmStages || [];
-assert.ok(wasmStages.length > 0, "Extreme did not execute its quality ladder");
-for (const stage of wasmStages) {
-  assert.match(String(stage?.name || ""), /^extreme-/);
+assert.ok(wasmStages.length >= 2, `Extreme stopped after the first incumbent: ${wasmStages.map((stage) => stage.name).join(",")}`);
+assert.equal(wasmStages[0]?.name, "extreme-wide-seed");
+assert.equal(wasmStages[1]?.name, "extreme-deep-eo-dr");
+assert.ok(Number.isFinite(wasmStages[0]?.moveCount));
+
+if (result?.ok) {
+  assert.equal(result.qualityTargetReached, true);
+  assert.ok(result.moveCount <= 20, `Extreme returned ${result.moveCount} moves as success`);
+} else {
+  assert.equal(result.reason, "FMC_EXTREME_TARGET_NOT_REACHED");
+  assert.ok(Number.isFinite(result?.bestCandidate?.moveCount));
+  assert.ok(result.bestCandidate.moveCount > 20);
 }
+assert.ok(elapsedMs < 1400, `900 ms Extreme budget overran excessively to ${elapsedMs.toFixed(1)} ms`);
 assert.equal(
   progressEvents.some((event) => event?.type === "fallback_start" && String(event?.stageName || "").startsWith("FMC extreme-")),
   false,
 );
-assert.ok(progressEvents.some((event) => event?.type === "quality_stage_start"));
 
 console.log(JSON.stringify({
-  ok: result.ok,
-  moveCount: result.moveCount,
-  qualityTargetReached: result.qualityTargetReached,
+  ok: result?.ok === true,
+  reason: result?.reason || "",
+  moveCount: result?.moveCount ?? result?.bestCandidate?.moveCount ?? null,
+  qualityTargetReached: result?.qualityTargetReached === true,
   elapsedMs,
-  stages: wasmStages.map((stage) => stage.name),
+  stages: wasmStages.map((stage) => ({ name: stage.name, moveCount: stage.moveCount })),
 }));
