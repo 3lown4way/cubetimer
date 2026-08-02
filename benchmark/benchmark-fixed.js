@@ -1,4 +1,3 @@
-import "./benchmark-worker-timing-shim.js";
 import "./benchmark-enhanced.js";
 import "./benchmark-method-stages.js";
 import "./benchmark-copy-record.js";
