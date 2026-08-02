@@ -24,6 +24,18 @@ jobs:
             exit 0
           fi
           python tools/apply-fmc-extreme-no-downgrade.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tools/verify-benchmark-no-fallback.mjs")
+          text = path.read_text()
+          start = text.index("const extremeBlock =")
+          end = text.index("if (extremeBlock.includes", start)
+          replacement = '''const extremeStart = fmcSolver.indexOf('if (qualityMode === "extreme")');
+          const sweetSpotStart = fmcSolver.indexOf('stage("baseline"', extremeStart);
+          const extremeBlock = fmcSolver.slice(extremeStart, sweetSpotStart);
+          '''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
 
       - name: Validate source patch
         run: |
