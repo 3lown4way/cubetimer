@@ -97,6 +97,74 @@ const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
 /// Avoid accepting an HTR detour that is materially longer than the normal P2 tail.
 const FMC_HTR_TAIL_SLACK: usize = 2;
 
+#[cfg(target_arch = "wasm32")]
+fn fmc_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn fmc_now_ms() -> f64 {
+    static START: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
+    START.elapsed().as_secs_f64() * 1000.0
+}
+
+#[derive(Clone, Debug)]
+struct FmcSearchBudget {
+    started_ms: f64,
+    deadline_ms: f64,
+    target_move_count: usize,
+    timed_out: bool,
+    checkpoints: u64,
+}
+
+impl FmcSearchBudget {
+    fn new(time_budget_ms: u32, target_move_count: usize) -> Self {
+        let started_ms = fmc_now_ms();
+        // A zero budget is the explicit Extreme sentinel: no internal wall-clock
+        // deadline. The outer worker timeout remains able to terminate WASM.
+        let deadline_ms = if time_budget_ms == 0 {
+            f64::INFINITY
+        } else {
+            started_ms + time_budget_ms.max(50) as f64
+        };
+        Self {
+            started_ms,
+            deadline_ms,
+            target_move_count: target_move_count.max(1),
+            timed_out: false,
+            checkpoints: 0,
+        }
+    }
+
+    fn remaining_ms(&self) -> f64 {
+        (self.deadline_ms - fmc_now_ms()).max(0.0)
+    }
+
+    fn should_stop(&mut self, best_move_count: usize) -> bool {
+        self.checkpoints = self.checkpoints.saturating_add(1);
+        if best_move_count <= self.target_move_count {
+            return true;
+        }
+        if self.remaining_ms() <= 0.0 {
+            self.timed_out = true;
+            return true;
+        }
+        false
+    }
+
+    fn mark_timeout_if_expired(&mut self) {
+        if self.remaining_ms() <= 0.0 {
+            self.timed_out = true;
+        }
+    }
+
+    fn elapsed_ms(&self) -> u32 {
+        (fmc_now_ms() - self.started_ms)
+            .max(0.0)
+            .min(u32::MAX as f64) as u32
+    }
+}
+
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
 // Move convention: U=0,R=1,F=2,D=3,L=4,B=5
@@ -1545,7 +1613,13 @@ pub struct FmcResult {
     pub multi_insertion_candidate_count: usize,
     pub slice_insertion_candidate_count: usize,
     pub multi_switch_niss_candidate_count: usize,
-    pub eo_fallback_used: bool,
+    pub timed_out: bool,
+    pub elapsed_ms: u32,
+    pub processed_axis_calls: usize,
+    pub processed_premove_sets: usize,
+    pub target_move_count: usize,
+    pub target_reached: bool,
+    pub budget_checkpoints: u64,
 }
 
 #[derive(Default)]
@@ -2586,8 +2660,14 @@ fn solve_fmc_with_eo_depth(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    time_budget_ms: u32,
+    target_move_count: usize,
     max_eo_depth: u8,
 ) -> FmcResult {
+    let mut budget = FmcSearchBudget::new(time_budget_ms, target_move_count);
+    let mut processed_axis_calls = 0usize;
+    let mut processed_premove_sets = 0usize;
+
     // Parse scramble
     let scramble_moves = match parse_scramble(scramble, &tables.move_data) {
         Ok(m) => m,
@@ -2601,7 +2681,13 @@ fn solve_fmc_with_eo_depth(
                 multi_insertion_candidate_count: 0,
                 slice_insertion_candidate_count: 0,
                 multi_switch_niss_candidate_count: 0,
-                eo_fallback_used: false,
+                timed_out: false,
+                elapsed_ms: budget.elapsed_ms(),
+                processed_axis_calls,
+                processed_premove_sets,
+                target_move_count: target_move_count.max(1),
+                target_reached: false,
+                budget_checkpoints: budget.checkpoints,
             }
         }
     };
@@ -2624,7 +2710,11 @@ fn solve_fmc_with_eo_depth(
     });
 
     // --- Phase 1: Direct solve across 3 axes ---
-    for axis in 0..3u8 {
+    'direct_axes: for axis in 0..3u8 {
+        if budget.should_stop(best_count) {
+            break 'direct_axes;
+        }
+        processed_axis_calls += 1;
         let state = direct_axis_states[axis as usize];
 
         let results = solve_fmc_single_axis(
@@ -2639,7 +2729,7 @@ fn solve_fmc_with_eo_depth(
             &mut p2_cache,
             &mut best_count,
             force_rzp,
-            enable_htr_skeletons,
+            enable_htr_skeletons && budget.remaining_ms() >= 1500.0,
         );
 
         for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, htr_used, skeleton_prefixes) in
@@ -2701,7 +2791,11 @@ fn solve_fmc_with_eo_depth(
             .collect();
         CubeState::solved().apply_moves(&conjugated, &tables.move_data)
     });
-    for axis in 0..3u8 {
+    'inverse_axes: for axis in 0..3u8 {
+        if budget.should_stop(best_count) {
+            break 'inverse_axes;
+        }
+        processed_axis_calls += 1;
         let state = inverse_axis_states[axis as usize];
 
         let results = solve_fmc_single_axis(
@@ -2716,7 +2810,7 @@ fn solve_fmc_with_eo_depth(
             &mut p2_cache,
             &mut best_count,
             force_rzp,
-            enable_htr_skeletons,
+            enable_htr_skeletons && budget.remaining_ms() >= 1500.0,
         );
 
         for (moves_in_axis_frame, eo_raw, dr_raw, p2_raw, rzp_used, htr_used, skeleton_prefixes) in
@@ -2774,7 +2868,11 @@ fn solve_fmc_with_eo_depth(
 
     // --- Phase 2b: stage-boundary multi-switch NISS ---
     if enable_multi_switch_niss || enable_deep_multi_switch_niss {
-        for axis in 0..3u8 {
+        'multi_switch_axes: for axis in 0..3u8 {
+            if budget.should_stop(best_count) {
+                break 'multi_switch_axes;
+            }
+            processed_axis_calls += 1;
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
                     .map(|&m| fmc_tables.axis_solution_move_map[axis as usize][m as usize])
@@ -2823,6 +2921,10 @@ fn solve_fmc_with_eo_depth(
                 });
             }
 
+            if budget.should_stop(best_count) {
+                break 'multi_switch_axes;
+            }
+            processed_axis_calls += 1;
             let inverse_results = solve_multi_switch_niss_single_axis(
                 &inverse_axis_states[axis as usize],
                 tables,
@@ -2872,7 +2974,11 @@ fn solve_fmc_with_eo_depth(
     let premove_sets = &*FMC_PREMOVE_SETS;
     let pm_limit = max_premove_sets.min(premove_sets.len());
 
-    for pm_idx in 0..pm_limit {
+    'premove_sets: for pm_idx in 0..pm_limit {
+        if budget.should_stop(best_count) {
+            break 'premove_sets;
+        }
+        processed_premove_sets = pm_idx + 1;
         let premove = &premove_sets[pm_idx];
         let pm_set = &premove.moves;
         let conjugated_premoves = &premove.axis_moves;
@@ -2880,11 +2986,16 @@ fn solve_fmc_with_eo_depth(
         // Direct with premoves: effective = scramble + premoves
         {
             for axis in 0..3u8 {
+                if budget.should_stop(best_count) {
+                    break 'premove_sets;
+                }
+                processed_axis_calls += 1;
                 let state = direct_axis_states[axis as usize]
                     .apply_moves(&conjugated_premoves[axis as usize], &tables.move_data);
 
                 // Use a tighter budget check: skip if premove_len + best possible pipeline >= best
                 let pm_len = pm_set.len();
+                let mut premove_inner_best = best_count.saturating_add(pm_len);
 
                 let results = solve_fmc_single_axis(
                     &state,
@@ -2896,9 +3007,9 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     FMC_PM_P2_NODE_LIMIT,
                     &mut p2_cache,
-                    &mut best_count,
+                    &mut premove_inner_best,
                     force_rzp,
-                    enable_htr_skeletons,
+                    enable_htr_skeletons && budget.remaining_ms() >= 1500.0,
                 );
 
                 for (
@@ -2966,9 +3077,14 @@ fn solve_fmc_with_eo_depth(
         // NISS with premoves: effective = inv_scramble + premoves
         {
             for axis in 0..3u8 {
+                if budget.should_stop(best_count) {
+                    break 'premove_sets;
+                }
+                processed_axis_calls += 1;
                 let state = inverse_axis_states[axis as usize]
                     .apply_moves(&conjugated_premoves[axis as usize], &tables.move_data);
 
+                let mut premove_inner_best = best_count.saturating_add(pm_set.len());
                 let results = solve_fmc_single_axis(
                     &state,
                     tables,
@@ -2979,9 +3095,9 @@ fn solve_fmc_with_eo_depth(
                     FMC_MAX_P2_DEPTH,
                     FMC_PM_P2_NODE_LIMIT,
                     &mut p2_cache,
-                    &mut best_count,
+                    &mut premove_inner_best,
                     force_rzp,
-                    enable_htr_skeletons,
+                    enable_htr_skeletons && budget.remaining_ms() >= 1500.0,
                 );
 
                 for (
@@ -3053,15 +3169,21 @@ fn solve_fmc_with_eo_depth(
         .filter(|candidate| (8..=11).contains(&candidate.source_tag))
         .count();
 
-    let relocation_skeletons = synthesize_relocation_skeletons(&all_candidates, tables, fmc_tables);
+    let insertion_budget_available =
+        !budget.should_stop(best_count) && budget.remaining_ms() >= 250.0;
+    let relocation_skeletons = if insertion_budget_available {
+        synthesize_relocation_skeletons(&all_candidates, tables, fmc_tables)
+    } else {
+        Vec::new()
+    };
     all_skeletons.extend(relocation_skeletons);
-    if enable_slice_insertion {
+    if enable_slice_insertion && insertion_budget_available {
         let slice_skeletons = synthesize_slice_relocation_skeletons(&all_candidates, fmc_tables);
         all_skeletons.extend(slice_skeletons);
     } else {
         all_skeletons.retain(|skeleton| skeleton.kind != FmcSkeletonKind::Slice);
     }
-    if enable_multi_insertion {
+    if enable_multi_insertion && insertion_budget_available {
         let multi_relocation_skeletons =
             synthesize_multi_relocation_skeletons(&all_candidates, fmc_tables);
         all_skeletons.extend(multi_relocation_skeletons);
@@ -3070,15 +3192,21 @@ fn solve_fmc_with_eo_depth(
     }
     let skeletons = finalize_skeleton_beam(all_skeletons);
 
-    let inserted_candidates =
-        optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
+    let inserted_candidates = if insertion_budget_available && budget.remaining_ms() >= 120.0 {
+        optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables)
+    } else {
+        Vec::new()
+    };
     let single_best = all_candidates
         .iter()
         .chain(inserted_candidates.iter())
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    let mut multi_inserted_candidates = if enable_multi_insertion {
+    let mut multi_inserted_candidates = if enable_multi_insertion
+        && insertion_budget_available
+        && budget.remaining_ms() >= 1200.0
+    {
         optimize_multi_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables)
     } else {
         Vec::new()
@@ -3113,6 +3241,13 @@ fn solve_fmc_with_eo_depth(
     all_candidates.retain(|candidate| seen.insert(candidate.moves.clone()));
     all_candidates.truncate(10);
 
+    let target_reached = all_candidates
+        .first()
+        .is_some_and(|candidate| candidate.moves.len() <= target_move_count.max(1));
+    if !target_reached {
+        budget.mark_timeout_if_expired();
+    }
+
     FmcResult {
         ok: !all_candidates.is_empty(),
         candidates: all_candidates,
@@ -3122,12 +3257,18 @@ fn solve_fmc_with_eo_depth(
         multi_insertion_candidate_count,
         slice_insertion_candidate_count,
         multi_switch_niss_candidate_count,
-        eo_fallback_used: false,
+        timed_out: budget.timed_out,
+        elapsed_ms: budget.elapsed_ms(),
+        processed_axis_calls,
+        processed_premove_sets,
+        target_move_count: target_move_count.max(1),
+        target_reached,
+        budget_checkpoints: budget.checkpoints,
     }
 }
 
-/// Run the normal depth-5 human FMC profile first. Only when it produces no
-/// candidate at all, retry the same pipeline with depth-6 EO coverage.
+/// Run one direct human-style FMC search profile. EO depth is selected up front;
+/// there is no retry or alternate-method fallback after failure.
 pub fn solve_fmc(
     scramble: &str,
     tables: &TwophaseTables,
@@ -3139,8 +3280,11 @@ pub fn solve_fmc(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    max_eo_depth: u8,
+    time_budget_ms: u32,
+    target_move_count: usize,
 ) -> FmcResult {
-    let primary = solve_fmc_with_eo_depth(
+    solve_fmc_with_eo_depth(
         scramble,
         tables,
         fmc_tables,
@@ -3151,27 +3295,12 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH,
-    );
-    if primary.ok {
-        return primary;
-    }
-
-    let mut fallback = solve_fmc_with_eo_depth(
-        scramble,
-        tables,
-        fmc_tables,
-        max_premove_sets,
-        force_rzp,
-        enable_multi_insertion,
-        enable_htr_skeletons,
-        enable_slice_insertion,
-        enable_multi_switch_niss,
-        enable_deep_multi_switch_niss,
-        FMC_MAX_EO_DEPTH.saturating_add(1),
-    );
-    fallback.eo_fallback_used = fallback.ok;
-    fallback
+        time_budget_ms,
+        target_move_count,
+        max_eo_depth
+            .max(FMC_MAX_EO_DEPTH)
+            .min(FMC_MAX_EO_DEPTH.saturating_add(2)),
+    )
 }
 
 /// Convert FmcCandidate to a JSON-friendly representation.

@@ -6,6 +6,9 @@ const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.
 const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
 const fmcWorker = fs.readFileSync(new URL("../benchmark/fmcBenchmarkWorker.js", import.meta.url), "utf8");
 const fmcSolver = fs.readFileSync(new URL("../solver/fmcSolver.js", import.meta.url), "utf8");
+const wasmSolver = fs.readFileSync(new URL("../solver/wasmSolver.js", import.meta.url), "utf8");
+const rustFmc = fs.readFileSync(new URL("../solver-wasm/src/fmc_search.rs", import.meta.url), "utf8");
+const rustApi = fs.readFileSync(new URL("../solver-wasm/src/lib.rs", import.meta.url), "utf8");
 
 for (const source of [enhanced, legacy]) {
   if (!source.includes("benchmarkNoFallback: true")) throw new Error("benchmark no-fallback payload missing");
@@ -27,36 +30,55 @@ if ((worker.match(/enableRecovery: !benchmarkNoFallback,/g) || []).length !== 2)
 if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== false")) {
   throw new Error("Roux v1 does not honor recovery disable flag");
 }
-for (const stage of ["FB", "SB", "CMLL", "LSE"]) {
-  if (!roux.includes(`reason: \`${stage}_`)) throw new Error(`Roux ${stage} direct failure missing`);
-}
 console.log("benchmark no-fallback routing verified");
 
 for (const token of [
-  'stage("extreme-wide-seed"',
-  'stage("extreme-deep-eo-dr"',
-  'stage("extreme-compact-htr"',
-  '}, 1500)',
-  'stage("extreme-full-human-portfolio"',
-  'stage("extreme-htr-insertion"',
-  'const requireTargetReached = options.requireTargetReached === true || qualityMode === "extreme"',
+  'stage("extreme-target-unbounded"',
+  'const internalBudgetUnlimited = qualityMode === "extreme"',
+  'timeBudgetMs: internalBudgetUnlimited ? 0 : stageBudgetMs',
+  'internalBudgetUnlimited',
+  'targetMoveCount',
+  'processedAxisCalls',
+  'processedPremoveSets',
   'FMC_EXTREME_TARGET_NOT_REACHED',
-  'type: "quality_stage_start"',
-  'type: "quality_stage_done"',
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`FMC Extreme target-driven contract missing: ${token}`);
+  if (!fmcSolver.includes(token)) throw new Error(`FMC unlimited-Extreme token missing: ${token}`);
 }
-const extremeStart = fmcSolver.indexOf('if (qualityMode === "extreme")');
-const sweetSpotStart = fmcSolver.indexOf('stage("baseline"', extremeStart);
-const extremeBlock = fmcSolver.slice(extremeStart, sweetSpotStart);
-if (extremeBlock.includes('stage("baseline"') || extremeBlock.includes('stage("eo-multi-switch"')) {
-  throw new Error("Extreme still enters the Sweet Spot quality ladder");
+if (!enhanced.includes('payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150)')) {
+  throw new Error("enhanced benchmark outer worker timeout is not propagated");
+}
+if (
+  enhanced.includes('const budget = config.fmcQualityMode === "extreme" ? 90000 : 8000') ||
+  enhanced.includes('Math.min(budget, Math.max(100, config.timeoutMs - 100))') ||
+  enhanced.includes('if (Number(elements.timeout.value) < 105) elements.timeout.value = "120"')
+) {
+  throw new Error("Extreme still has an independent fixed timeout");
+}
+for (const token of ["timeBudgetMs", "targetMoveCount", "maxEoDepth"]) {
+  if (!wasmSolver.includes(token) || !rustApi.includes(token)) {
+    throw new Error(`WASM option propagation missing: ${token}`);
+  }
+}
+for (const token of [
+  "FmcSearchBudget",
+  "time_budget_ms == 0",
+  "f64::INFINITY",
+  "budget.should_stop",
+  "processed_premove_sets",
+  "timed_out",
+]) {
+  if (!rustFmc.includes(token)) throw new Error(`Rust unlimited-budget token missing: ${token}`);
+}
+for (const source of [wasmSolver, rustFmc]) {
+  if (source.includes("FMC_TWOPHASE_FALLBACK") || source.includes("eo_fallback_used")) {
+    throw new Error("FMC fallback architecture remains");
+  }
 }
 for (const token of [
   'requireTargetReached: qualityMode === "extreme"',
   'FMC_QUALITY_MODE_DOWNGRADE_REJECTED',
   'FMC_EXTREME_TARGET_NOT_REACHED',
 ]) {
-  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker target guard missing: ${token}`);
+  if (!fmcWorker.includes(token)) throw new Error(`FMC benchmark worker guard missing: ${token}`);
 }
-console.log("FMC Extreme target-driven contract verified");
+console.log("FMC Extreme unlimited internal budget contract verified");

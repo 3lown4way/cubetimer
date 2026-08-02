@@ -1355,7 +1355,7 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
   const capPremoves = (limit) => Math.min(requestedPremoveSets, limit);
   const common = {
     forceRzp,
-    enableCoverageFallback: options.enableCoverageFallback !== false,
+    enableCoverageFallback: false,
   };
   const stage = (name, stageOptions, minRemainingMs = 250) => ({
     name,
@@ -1378,40 +1378,15 @@ function buildFmcWasmQualityStages(qualityMode, options, maxPremoveSets, forceRz
 
   if (qualityMode === "extreme") {
     return [
-      stage("extreme-wide-seed", {
-        maxPremoveSets: capPremoves(32),
-        enableMultiSwitchNiss: true,
-      }, 100),
-      // A 21–22 move incumbent must not terminate Extreme. Continue into the
-      // deeper EO/DR portfolio whenever a short-budget run still has time.
-      stage("extreme-deep-eo-dr", {
-        maxPremoveSets: capPremoves(120),
-        enableMultiSwitchNiss: true,
-        enableDeepMultiSwitchNiss: true,
-      }, 250),
-      // Compact HTR/insertion pass gives sub-second runs a distinct improvement
-      // attempt instead of returning immediately after the first 22-move seed.
-      stage("extreme-compact-htr", {
-        maxPremoveSets: capPremoves(24),
-        enableHtrSkeletons: true,
-        enableSliceInsertion: true,
-        enableDeepMultiSwitchNiss: true,
-      }, 1500),
-      stage("extreme-full-human-portfolio", {
+      stage("extreme-target-unbounded", {
         maxPremoveSets: requestedPremoveSets,
+        maxEoDepth: 6,
         enableMultiInsertion: true,
         enableHtrSkeletons: true,
         enableSliceInsertion: true,
         enableMultiSwitchNiss: true,
         enableDeepMultiSwitchNiss: true,
-      }, 500),
-      stage("extreme-htr-insertion", {
-        maxPremoveSets: capPremoves(160),
-        enableMultiInsertion: true,
-        enableHtrSkeletons: true,
-        enableSliceInsertion: true,
-        enableDeepMultiSwitchNiss: true,
-      }, 1200),
+      }, 100),
     ];
   }
 
@@ -1665,8 +1640,17 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           reason: Number.isFinite(bestMoveCount) ? `${bestMoveCount}T > ${targetMoveCount}T` : qualityMode,
         });
 
+        const stageBudgetMs = Math.max(50, remainingBeforeStage - 75);
+        const internalBudgetUnlimited = qualityMode === "extreme";
+        const stageOptions = {
+          ...qualityStage.options,
+          // Extreme is intentionally unbounded inside WASM. The benchmark
+          // worker's per-run timeout is the only wall-clock limit.
+          timeBudgetMs: internalBudgetUnlimited ? 0 : stageBudgetMs,
+          targetMoveCount,
+        };
         const solveStartedAt = Date.now();
-        const wasmResult = await solveFmcWasm(scramble, qualityStage.options);
+        const wasmResult = await solveFmcWasm(scramble, stageOptions);
         const stageElapsedMs = Date.now() - solveStartedAt;
         diagnostics.wasmStages.push({
           name: qualityStage.name,
@@ -1674,12 +1658,20 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
           ok: wasmResult?.ok === true,
           moveCount: Number.isFinite(wasmResult?.moveCount) ? wasmResult.moveCount : null,
           candidateCount: Array.isArray(wasmResult?.candidates) ? wasmResult.candidates.length : 0,
-          maxPremoveSets: qualityStage.options.maxPremoveSets,
-          multiSwitch: qualityStage.options.enableMultiSwitchNiss === true,
-          deepMultiSwitch: qualityStage.options.enableDeepMultiSwitchNiss === true,
-          htr: qualityStage.options.enableHtrSkeletons === true,
-          sliceInsertion: qualityStage.options.enableSliceInsertion === true,
-          multiInsertion: qualityStage.options.enableMultiInsertion === true,
+          maxPremoveSets: stageOptions.maxPremoveSets,
+          budgetMs: internalBudgetUnlimited ? null : stageBudgetMs,
+          internalBudgetUnlimited,
+          wasmElapsedMs: Number.isFinite(wasmResult?.elapsedMs) ? wasmResult.elapsedMs : null,
+          timedOut: wasmResult?.timedOut === true,
+          processedAxisCalls: Number.isFinite(wasmResult?.processedAxisCalls) ? wasmResult.processedAxisCalls : 0,
+          processedPremoveSets: Number.isFinite(wasmResult?.processedPremoveSets) ? wasmResult.processedPremoveSets : 0,
+          budgetCheckpoints: Number.isFinite(wasmResult?.budgetCheckpoints) ? wasmResult.budgetCheckpoints : 0,
+          targetReached: wasmResult?.targetReached === true,
+          multiSwitch: stageOptions.enableMultiSwitchNiss === true,
+          deepMultiSwitch: stageOptions.enableDeepMultiSwitchNiss === true,
+          htr: stageOptions.enableHtrSkeletons === true,
+          sliceInsertion: stageOptions.enableSliceInsertion === true,
+          multiInsertion: stageOptions.enableMultiInsertion === true,
         });
         diagnostics.phaseTimingsMs.direct += stageElapsedMs;
         diagnostics.phaseRuns.direct.calls += 1;
