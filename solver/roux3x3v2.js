@@ -49,6 +49,21 @@ const ROTATION_INVERSE = Object.freeze({
   "y'": "y",
   y2: "y2",
 });
+const ROUX_COLOR_SEQUENCE = Object.freeze(["D", "U", "F", "B", "R", "L"]);
+
+function isRouxColorNeutral(value) {
+  const normalized = String(value || "D").toUpperCase();
+  return normalized === "CN" || normalized === "COLOR_NEUTRAL"
+    || normalized === "COLOR-NEUTRAL" || normalized === "AUTO";
+}
+
+function compareRouxColorResults(a, b) {
+  if (a.ok !== b.ok) return a.ok ? -1 : 1;
+  if (a.coreMoveCount !== b.coreMoveCount) return a.coreMoveCount - b.coreMoveCount;
+  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount;
+  if (a.elapsedMs !== b.elapsedMs) return a.elapsedMs - b.elapsedMs;
+  return ROUX_COLOR_SEQUENCE.indexOf(a.color) - ROUX_COLOR_SEQUENCE.indexOf(b.color);
+}
 
 let cmllIndexPromise = null;
 
@@ -358,9 +373,56 @@ export async function solve3x3RouxV2FromPattern(pattern, options = {}) {
   ]);
 
   const rawCrossColor = String(options.crossColor || "D").toUpperCase();
-  const colorKey = rawCrossColor === "CN" || rawCrossColor === "COLOR_NEUTRAL"
-    ? "D"
-    : rawCrossColor;
+  if (isRouxColorNeutral(rawCrossColor) && !options.__colorNeutralApplied) {
+    const colorNeutralCandidates = [];
+    let bestResult = null;
+    let bestDiagnostic = null;
+    for (const color of ROUX_COLOR_SEQUENCE) {
+      const candidateResult = await solve3x3RouxV2FromPattern(pattern, {
+        ...options,
+        crossColor: color,
+        __colorNeutralApplied: true,
+      });
+      const diagnostic = {
+        color,
+        ok: candidateResult?.ok === true,
+        coreMoveCount: Number.isFinite(candidateResult?.coreMoveCount)
+          ? candidateResult.coreMoveCount
+          : Number.MAX_SAFE_INTEGER,
+        moveCount: Number.isFinite(candidateResult?.moveCount)
+          ? candidateResult.moveCount
+          : Number.MAX_SAFE_INTEGER,
+        elapsedMs: Number.isFinite(candidateResult?.elapsedMs)
+          ? candidateResult.elapsedMs
+          : Number.MAX_SAFE_INTEGER,
+        reason: String(candidateResult?.reason || ""),
+      };
+      colorNeutralCandidates.push(diagnostic);
+      if (!bestDiagnostic || compareRouxColorResults(diagnostic, bestDiagnostic) < 0) {
+        bestDiagnostic = diagnostic;
+        bestResult = candidateResult;
+      }
+    }
+    if (bestResult?.ok && bestDiagnostic?.ok) {
+      return {
+        ...bestResult,
+        selectedCrossColor: bestDiagnostic.color,
+        colorNeutralCandidates,
+        colorNeutralSelectionMetric: "coreMoveCount",
+      };
+    }
+    return {
+      ok: false,
+      reason: "ROUX_COLOR_NEUTRAL_NO_SOLUTION",
+      source: "INTERNAL_3X3_ROUX_V2",
+      solverVersion: "v2",
+      selectedCrossColor: bestDiagnostic?.color || null,
+      colorNeutralCandidates,
+    };
+  }
+  const colorKey = Object.prototype.hasOwnProperty.call(ROUX_FACE_ROTATION, rawCrossColor)
+    ? rawCrossColor
+    : "D";
   const preRotation = ROUX_FACE_ROTATION[colorKey] ?? "";
   const workingPattern = preRotation
     ? transformPatternForRouxFace(pattern, solvedPattern, preRotation)
@@ -478,6 +540,7 @@ export async function solve3x3RouxV2FromPattern(pattern, options = {}) {
   allMoves.push(...lseResult.moves);
   stages.push(stageRecord("LSE", lseResult.moves, performance.now() - stageStartedAt));
 
+  const coreMoves = simplifyMoves(allMoves);
   const inverseRotation = preRotation ? ROTATION_INVERSE[preRotation] || "" : "";
   const unsimplifiedMoves = [
     ...(preRotation ? preRotation.split(/\s+/).filter(Boolean) : []),
@@ -504,6 +567,8 @@ export async function solve3x3RouxV2FromPattern(pattern, options = {}) {
     ok: true,
     solution: finalMoves.join(" "),
     moveCount: finalMoves.length,
+    coreMoveCount: coreMoves.length,
+    selectedCrossColor: colorKey,
     stages,
     source: "INTERNAL_3X3_ROUX_V2",
     solverVersion: "v2",

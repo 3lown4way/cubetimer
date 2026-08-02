@@ -651,6 +651,20 @@ const ROTATION_INVERSE = {
   "z": "z'", "z'": "z", "z2": "z2",
   "y": "y'", "y'": "y", "y2": "y2",
 };
+const ROUX_COLOR_SEQUENCE = Object.freeze(["D", "U", "F", "B", "R", "L"]);
+
+function isRouxColorNeutral(value) {
+  const normalized = String(value || "D").toUpperCase();
+  return normalized === "CN" || normalized === "COLOR_NEUTRAL"
+    || normalized === "COLOR-NEUTRAL" || normalized === "AUTO";
+}
+
+function compareRouxFbColorProbe(a, b) {
+  if (a.ok !== b.ok) return a.ok ? -1 : 1;
+  if (a.fbMoveCount !== b.fbMoveCount) return a.fbMoveCount - b.fbMoveCount;
+  if (a.nodes !== b.nodes) return a.nodes - b.nodes;
+  return ROUX_COLOR_SEQUENCE.indexOf(a.color) - ROUX_COLOR_SEQUENCE.indexOf(b.color);
+}
 
 // Conjugation: R^{-1} * P * R — transforms the pattern into the rotated reference frame
 // so the standard DL 1x2x3 FB solver targets the selected face.
@@ -677,22 +691,52 @@ export async function solve3x3RouxFromPattern(pattern, options = {}) {
   await ensurePruneTables(getDefaultPattern);
   const solvedPattern = await getDefaultPattern("333");
 
-  // Apply a rotation (via conjugation) so the selected cross color face is treated as D.
   const rawCrossColor = String(options.crossColor || "D").toUpperCase();
-  const colorKey =
-    rawCrossColor === "CN" || rawCrossColor === "COLOR_NEUTRAL" ? "D" : rawCrossColor;
-  const preRotation = ROUX_FACE_ROTATION[colorKey] ?? "";
+  if (isRouxColorNeutral(rawCrossColor) && !options.__colorNeutralApplied) {
+    const colorNeutralCandidates = [];
+    let bestProbe = null;
+    for (const color of ROUX_COLOR_SEQUENCE) {
+      const rotation = ROUX_FACE_ROTATION[color] || "";
+      const transformed = rotation
+        ? transformPatternForRouxFace(pattern, solvedPattern, rotation)
+        : pattern;
+      let probe = null;
+      if (transformed) probe = fbIDASearch(transformed, pruneTables);
+      const diagnostic = {
+        color,
+        ok: probe?.ok === true,
+        fbMoveCount: probe?.ok && Array.isArray(probe.moves)
+          ? probe.moves.length
+          : Number.MAX_SAFE_INTEGER,
+        nodes: Number.isFinite(probe?.nodes) ? probe.nodes : Number.MAX_SAFE_INTEGER,
+      };
+      colorNeutralCandidates.push(diagnostic);
+      if (!bestProbe || compareRouxFbColorProbe(diagnostic, bestProbe) < 0) bestProbe = diagnostic;
+    }
+    const selectedCrossColor = bestProbe?.ok ? bestProbe.color : "D";
+    const selectedResult = await solve3x3RouxFromPattern(pattern, {
+      ...options,
+      crossColor: selectedCrossColor,
+      __colorNeutralApplied: true,
+    });
+    return selectedResult && typeof selectedResult === "object"
+      ? { ...selectedResult, selectedCrossColor, colorNeutralCandidates }
+      : selectedResult;
+  }
 
+  const colorKey = Object.prototype.hasOwnProperty.call(ROUX_FACE_ROTATION, rawCrossColor)
+    ? rawCrossColor
+    : "D";
+  const preRotation = ROUX_FACE_ROTATION[colorKey] ?? "";
   const workingPattern = preRotation
     ? transformPatternForRouxFace(pattern, solvedPattern, preRotation)
     : pattern;
 
   if (!workingPattern) {
-    return { ok: false, reason: "CROSS_COLOR_TRANSFORM_FAILED", source: "INTERNAL_3X3_ROUX" };
+    return { ok: false, reason: "CROSS_COLOR_TRANSFORM_FAILED", source: "INTERNAL_3X3_ROUX", selectedCrossColor: colorKey };
   }
 
   const result = await _solveRouxFromPattern(workingPattern, options, solvedPattern);
-
   if (result?.ok && preRotation) {
     const invRotation = ROTATION_INVERSE[preRotation] || "";
     const rotMoves = preRotation.split(" ").filter(Boolean);
@@ -703,9 +747,12 @@ export async function solve3x3RouxFromPattern(pattern, options = {}) {
       ...result,
       solution: combined.join(" "),
       moveCount: combined.length,
+      selectedCrossColor: colorKey,
     };
   }
-  return result;
+  return result && typeof result === "object"
+    ? { ...result, selectedCrossColor: colorKey }
+    : result;
 }
 
 async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {

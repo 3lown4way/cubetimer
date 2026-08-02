@@ -131,9 +131,9 @@ const CROSS_COLOR_LABELS = {
 const CROSS_COLOR_SEQUENCE = ["D", "U", "F", "B", "R", "L"];
 // Per-color budget for CN cross probe; keeps total probe time bounded regardless of IDA* depth.
 // 40ms is sufficient for ≤7-move crosses (compact IDA* typically <5ms).
-const CN_CROSS_PROBE_BUDGET_MS = 40;
+const CN_CROSS_PROBE_BUDGET_MS = 80;
 // Hard cap on total CN probe time across all 6 colors.
-const CN_PROBE_TOTAL_BUDGET_MS = 300;
+const CN_PROBE_TOTAL_BUDGET_MS = 700;
 const CROSS_EDGE_TARGETS = {
   D: ["DF", "DR", "DB", "DL"],
   U: ["UF", "UR", "UB", "UL"],
@@ -7094,6 +7094,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     const probeStages = getStageDefinitions(options, ctx, modeProfile, solveMode);
     const crossProbeStage = probeStages[0];
     let bestProbe = null;
+    const colorNeutralCandidates = [];
     // Compute per-color deadline; guarantees all 6 probes finish quickly.
     const overallDeadline = Number.isFinite(options.deadlineTs) && options.deadlineTs > 0 ? options.deadlineTs : 0;
     // Hard cap: total probe time across all 6 colors must not exceed CN_PROBE_TOTAL_BUDGET_MS.
@@ -7179,11 +7180,19 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         }
       }
 
+      const colorDiagnostic = bestColorProbe || {
+        color: candidateColor,
+        ok: false,
+        stageRank: 0,
+        moveCount: Number.MAX_SAFE_INTEGER,
+        bound: Number.MAX_SAFE_INTEGER,
+        nodes: Number.MAX_SAFE_INTEGER,
+        compositeScore: Number.MAX_SAFE_INTEGER,
+      };
+      colorNeutralCandidates.push({ ...colorDiagnostic });
       if (bestColorProbe && (!bestProbe || compareCrossProbeResults(bestColorProbe, bestProbe) < 0)) {
         bestProbe = bestColorProbe;
       }
-      // Early exit: a short cross (≤6 moves) is good enough — no need to probe remaining colors.
-      if (bestProbe && bestProbe.ok && bestProbe.moveCount <= 6) break;
     }
 
     const selectedCrossColor = bestProbe?.color || "D";
@@ -7207,6 +7216,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           typeof colorNeutralResult.selectedCrossColor === "string"
             ? colorNeutralResult.selectedCrossColor
             : selectedCrossColor,
+        colorNeutralCandidates,
       });
     }
     return withPerformance(colorNeutralResult);
