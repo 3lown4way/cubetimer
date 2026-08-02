@@ -1,0 +1,59 @@
+name: Integrate and verify complete ZBLL coverage
+
+on:
+  push:
+    branches:
+      - fix/zb-pipeline-reliability-v2
+    paths:
+      - tools/apply-zbll-supplement-integration.mjs
+      - tools/verify-zbll-complete-coverage.mjs
+      - .github/workflows/apply-and-verify-zbll-supplement.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply solver integration
+        run: node tools/apply-zbll-supplement-integration.mjs
+
+      - name: Validate syntax
+        run: |
+          node --check solver/cfop3x3.js
+          node --check solver/zbllSupplementalCases.js
+          node --check tools/verify-zbll-complete-coverage.mjs
+
+      - name: Verify all legal ZBLL states
+        run: node tools/verify-zbll-complete-coverage.mjs
+
+      - name: Run deterministic 250-case Pure ZB benchmark
+        id: benchmark
+        continue-on-error: true
+        env:
+          ZB_PIPELINE_RUNS: "250"
+        run: node benchmark-zb-pipeline-reliability.mjs
+
+      - name: Commit integrated solver and latest benchmark
+        run: |
+          rm -f tools/apply-zbll-supplement-integration.mjs
+          rm -f .github/workflows/apply-and-verify-zbll-supplement.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/cfop3x3.js benchmark-results/zb-pipeline-reliability-250.json tools/apply-zbll-supplement-integration.mjs .github/workflows/apply-and-verify-zbll-supplement.yml
+          git commit -m "Integrate complete exact-state ZBLL coverage"
+          git push origin HEAD:fix/zb-pipeline-reliability-v2
+
+      - name: Enforce Pure ZB benchmark
+        if: steps.benchmark.outcome != 'success'
+        run: exit 1
