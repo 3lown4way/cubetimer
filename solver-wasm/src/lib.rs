@@ -622,9 +622,24 @@ struct FmcOptionsJson {
     enable_multi_switch_niss: bool,
     #[serde(rename = "enableDeepMultiSwitchNiss", default)]
     enable_deep_multi_switch_niss: bool,
+    #[serde(rename = "maxEoDepth", default = "default_fmc_max_eo_depth")]
+    max_eo_depth: u8,
+    #[serde(rename = "timeBudgetMs", default = "default_fmc_time_budget_ms")]
+    time_budget_ms: u32,
+    #[serde(rename = "targetMoveCount", default = "default_fmc_target_move_count")]
+    target_move_count: usize,
 }
 fn default_max_premove_sets() -> usize {
     120
+}
+fn default_fmc_max_eo_depth() -> u8 {
+    5
+}
+fn default_fmc_time_budget_ms() -> u32 {
+    8_000
+}
+fn default_fmc_target_move_count() -> usize {
+    24
 }
 
 #[wasm_bindgen]
@@ -658,10 +673,24 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
         options.enable_deep_multi_switch_niss,
+        options.max_eo_depth,
+        options.time_budget_ms,
+        options.target_move_count,
     );
 
     if !result.ok {
-        return serde_json::json!({"ok": false, "reason": "FMC_NO_SOLUTION"}).to_string();
+        return serde_json::json!({
+            "ok": false,
+            "reason": if result.timed_out { "FMC_TIME_BUDGET_EXHAUSTED" } else { "FMC_NO_SOLUTION" },
+            "timedOut": result.timed_out,
+            "elapsedMs": result.elapsed_ms,
+            "processedAxisCalls": result.processed_axis_calls,
+            "processedPremoveSets": result.processed_premove_sets,
+            "targetMoveCount": result.target_move_count,
+            "targetReached": result.target_reached,
+            "budgetCheckpoints": result.budget_checkpoints,
+        })
+        .to_string();
     }
 
     let candidates_json: Vec<serde_json::Value> = result
@@ -691,7 +720,13 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         "multiInsertionCandidateCount": result.multi_insertion_candidate_count,
         "sliceInsertionCandidateCount": result.slice_insertion_candidate_count,
         "multiSwitchNissCandidateCount": result.multi_switch_niss_candidate_count,
-        "eoFallbackUsed": result.eo_fallback_used,
+        "timedOut": result.timed_out,
+        "elapsedMs": result.elapsed_ms,
+        "processedAxisCalls": result.processed_axis_calls,
+        "processedPremoveSets": result.processed_premove_sets,
+        "targetMoveCount": result.target_move_count,
+        "targetReached": result.target_reached,
+        "budgetCheckpoints": result.budget_checkpoints,
         "htrCandidateCount": result.candidates.iter().filter(|candidate| (4..=7).contains(&candidate.source_tag)).count(),
         "htrSkeletonCount": result.skeletons.iter().filter(|skeleton| (4..=7).contains(&skeleton.source_tag)).count(),
     })

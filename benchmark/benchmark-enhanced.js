@@ -136,7 +136,6 @@ function syncFmcDefaults() {
     return;
   }
   if (Number(elements.fmcTarget.value) > 20) elements.fmcTarget.value = "20";
-  if (Number(elements.timeout.value) < 105) elements.timeout.value = "120";
 }
 
 function readCustomScrambles() {
@@ -211,10 +210,9 @@ function buildPayload(config, scramble) {
     ollPllPredictionWeight: 0.35,
   };
   if (config.mode === "fmc") {
-    const budget = config.fmcQualityMode === "extreme" ? 90000 : 8000;
     payload.fmcQualityMode = config.fmcQualityMode;
     payload.fmcTargetMoveCount = config.fmcTargetMoveCount;
-    payload.fmcTimeBudgetMs = Math.max(100, Math.min(budget, Math.max(100, config.timeoutMs - 100)));
+    payload.fmcTimeBudgetMs = Math.max(100, config.timeoutMs - 150);
   }
   return payload;
 }
