@@ -1,4 +1,4 @@
-name: Validate direct ZBLL key-miss recovery
+name: Generate missing direct ZBLL cases
 
 on:
   pull_request:
@@ -6,19 +6,18 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  validate_zbll:
+  generate_zbll:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-          fetch-depth: 0
 
-      - name: Apply direct ZBLL repair
+      - name: Apply diagnostic ZBLL generator
         run: python tools/apply-zbll-direct-key-miss-fix.py
 
       - name: Validate syntax and generated index
@@ -27,17 +26,8 @@ jobs:
           node --check benchmark-zb-direct-reliability.mjs
           node tools/generate-zbll-case-index.mjs --check
 
-      - name: Run 250-case direct Pure ZB reliability
+      - name: Generate missing direct ZBLL algorithms
         env:
           ZB_RELIABILITY_RUNS: '250'
-          ZB_RELIABILITY_TIMEOUT_MS: '10000'
+          ZB_RELIABILITY_TIMEOUT_MS: '30000'
         run: node benchmark-zb-direct-reliability.mjs
-
-      - name: Commit validated source
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/cfop3x3.js benchmark-zb-direct-reliability.mjs
-          git rm -f tools/apply-zbll-direct-key-miss-fix.py
-          git commit -m "Recover direct ZBLL formulas on case-key misses"
-          git push origin HEAD:${{ github.head_ref }}
