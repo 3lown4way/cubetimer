@@ -1,0 +1,37 @@
+name: Extract Pure ZB failure cases
+
+on:
+  push:
+    branches:
+      - fix/zb-pipeline-reliability-v2
+    paths:
+      - tools/extract-zb-failure-cases.mjs
+      - .github/workflows/extract-zb-failures.yml
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Extract compact failure cases
+        run: node tools/extract-zb-failure-cases.mjs
+
+      - name: Commit compact report and remove temporary workflow
+        run: |
+          rm -f tools/extract-zb-failure-cases.mjs
+          rm -f .github/workflows/extract-zb-failures.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmark-results/zb-failure-cases-compact.json tools/extract-zb-failure-cases.mjs .github/workflows/extract-zb-failures.yml
+          git commit -m "Record compact Pure ZB failure cases"
+          git push origin HEAD:fix/zb-pipeline-reliability-v2
