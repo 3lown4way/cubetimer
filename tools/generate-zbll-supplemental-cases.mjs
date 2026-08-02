@@ -160,7 +160,6 @@ const report = {
       ? moveCounts.reduce((sum, value) => sum + value, 0) / moveCounts.length
       : 0,
   },
-  supplementalCases: supplemental.map(([key, algorithm]) => ({ key, algorithm })),
 };
 fs.mkdirSync("benchmark-results", { recursive: true });
 fs.writeFileSync(

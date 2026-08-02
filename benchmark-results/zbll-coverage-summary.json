@@ -1,0 +1,17 @@
+{
+  "legalStates": 7776,
+  "requiredStates": 7775,
+  "baseIndexCaseCount": 7901,
+  "baseIndexCandidateCount": 34217,
+  "baseCovered": 7453,
+  "uncoveredCountBeforeSupplement": 322,
+  "invalidIndexedStates": 112,
+  "supplementalCount": 322,
+  "supplementalMoveCount": {
+    "min": 1,
+    "max": 19,
+    "average": 16.419254658385093
+  },
+  "finalCoveredStates": 7775,
+  "finalUncoveredCount": 0
+}
