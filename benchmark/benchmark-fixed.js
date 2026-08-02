@@ -1,3 +1,4 @@
+import "./benchmark-twophase-reliability.js?v=20260803-0834";
 import "./benchmark-enhanced.js";
 import "./benchmark-method-stages.js";
 import "./benchmark-copy-record.js";
