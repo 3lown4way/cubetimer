@@ -9,9 +9,21 @@ const cases = [
     expected: true,
   },
   {
-    name: "opposite-face commuting notation",
+    name: "UD opposite-face commuting notation",
     scramble: "R U D R'",
     solution: "R U' D' R'",
+    expected: true,
+  },
+  {
+    name: "RL opposite-face commuting notation",
+    scramble: "U R L U'",
+    solution: "U R' L' U'",
+    expected: true,
+  },
+  {
+    name: "FB opposite-face commuting notation",
+    scramble: "R F B R'",
+    solution: "R F' B' R'",
     expected: true,
   },
   {
