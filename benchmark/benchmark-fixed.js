@@ -1,7 +1,7 @@
 import "./benchmark-enhanced.js";
 import "./benchmark-method-stages.js";
 import "./benchmark-copy-record.js";
-import "./benchmark-fmc-cancellation-view.js";
+import "./benchmark-fmc-cancellation-view.js?v=20260803-0810";
 
 if (!document.querySelector('link[data-benchmark-layout-fix]')) {
   const layoutFixStylesheet = document.createElement("link");
