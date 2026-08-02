@@ -1,5 +1,6 @@
 import { randomScrambleForEvent } from "cubing/scramble";
 import { proxy, wrap } from "comlink";
+import { enforceBenchmarkNoFallback } from "./benchmark-no-fallback-policy.js";
 
 const STORAGE_KEY = "cubeTimerSolverBenchmarkLastRun";
 const MAX_STORED_RESULTS = 500;
@@ -132,7 +133,9 @@ function buildSolvePayload(config, scramble) {
     mode: config.mode,
     solverVersion: config.solverVersion,
     f2lMethod: "legacy",
-    enableStyleFallback: true,
+    benchmarkNoFallback: true,
+    allowRelaxedSearch: false,
+    enableStyleFallback: false,
     enableOllPllPrediction: true,
     ollPllPredictionWeight: 0.35,
   };
@@ -211,6 +214,7 @@ async function solveOnce(config, scramble, label) {
       timeoutPromise,
     ]);
     const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
+    const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });
     const solution = String(result?.solution || "").trim();
     const moveCount = Number.isFinite(result?.moveCount)
       ? Number(result.moveCount)
@@ -218,11 +222,13 @@ async function solveOnce(config, scramble, label) {
         ? solution.split(/\s+/).filter(Boolean).length
         : null;
     return {
-      ok: result?.ok === true,
+      ok: result?.ok === true && policyResult.ok,
       elapsedMs,
       moveCount: Number.isFinite(moveCount) ? moveCount : null,
-      source: String(result?.source || result?.proofSource || ""),
-      reason: result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"),
+      source: policyResult.ok ? String(result?.source || result?.proofSource || "") : policyResult.source,
+      reason: policyResult.ok
+        ? (result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"))
+        : policyResult.reason,
       solution,
     };
   } catch (error) {

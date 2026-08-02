@@ -1,5 +1,6 @@
 import { randomScrambleForEvent } from "cubing/scramble";
 import { proxy, wrap } from "comlink";
+import { enforceBenchmarkNoFallback } from "./benchmark-no-fallback-policy.js";
 
 const STORAGE_KEY = "cubeTimerSolverBenchmarkLastRun";
 const MAX_RESULTS = 500;
@@ -203,7 +204,9 @@ function buildPayload(config, scramble) {
     mode: config.mode,
     solverVersion: config.solverVersion,
     f2lMethod: "legacy",
-    enableStyleFallback: true,
+    benchmarkNoFallback: true,
+    allowRelaxedSearch: false,
+    enableStyleFallback: false,
     enableOllPllPrediction: true,
     ollPllPredictionWeight: 0.35,
   };
@@ -284,12 +287,6 @@ function formatProgressEvent(progress) {
   return `${prefix}${name || progress.type || "탐색 중"}`;
 }
 
-function rejectFmcFallback(result, config) {
-  if (config.mode !== "fmc") return false;
-  const source = String(result?.source || "");
-  return source === "FMC_TWOPHASE_FALLBACK" || result?.fallbackUsed === true || result?.fallbackSource === "TWOPHASE";
-}
-
 async function solveOnce(config, scramble, label) {
   const kind = workerKind(config.mode);
   const api = await ensureWorker(config.mode);
@@ -310,16 +307,17 @@ async function solveOnce(config, scramble, label) {
   try {
     const result = await Promise.race([api.solve(buildPayload(config, scramble), onProgress), timeoutPromise]);
     const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
-    const fallbackRejected = rejectFmcFallback(result, config);
+    const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });
+    const fallbackRejected = !policyResult.ok;
     const solution = String(result?.solution || "").trim();
     const moveCount = Number.isFinite(result?.moveCount) ? Number(result.moveCount) : solution ? countMoves(solution) : null;
     return {
       ok: result?.ok === true && !fallbackRejected,
       elapsedMs,
       moveCount: Number.isFinite(moveCount) ? moveCount : null,
-      source: fallbackRejected ? "REJECTED_TWOPHASE_FALLBACK" : String(result?.source || result?.proofSource || ""),
+      source: fallbackRejected ? policyResult.source : String(result?.source || result?.proofSource || ""),
       reason: fallbackRejected
-        ? "NON_HUMAN_FMC_FALLBACK_REJECTED"
+        ? policyResult.reason
         : result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"),
       solution,
       solutionDisplay: String(result?.solutionDisplay || ""),
