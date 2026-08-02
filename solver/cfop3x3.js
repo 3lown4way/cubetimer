@@ -139,6 +139,203 @@ function countMetricMoves(moves) {
   }
   return count;
 }
+
+const HUMAN_VIEWPOINT_FACE_RING = Object.freeze(["F", "R", "B", "L"]);
+const HUMAN_VIEWPOINT_ROTATIONS = Object.freeze([
+  Object.freeze({ token: "y", turns: 1 }),
+  Object.freeze({ token: "y2", turns: 2 }),
+  Object.freeze({ token: "y'", turns: 3 }),
+]);
+const HUMAN_VIEWPOINT_MOVE_RE = /^([URFDLBurfdlb])([wW]?)(2'?|')?$/;
+
+function getHumanViewpointMoveMetrics(moves) {
+  const tokens = Array.isArray(moves) ? moves : splitMoves(moves);
+  let backFaceMoves = 0;
+  let backFaceQuarterTurns = 0;
+  let viewpointRotations = 0;
+  let executionPenalty = 0;
+  let previousWasBack = false;
+  for (const rawToken of tokens) {
+    const token = String(rawToken || "").trim();
+    if (!token) continue;
+    if (CUBE_ROTATION_RE.test(token)) {
+      viewpointRotations += 1;
+      executionPenalty += token.includes("2") ? 1.35 : 0.9;
+      previousWasBack = false;
+      continue;
+    }
+    const match = HUMAN_VIEWPOINT_MOVE_RE.exec(token);
+    if (!match) {
+      previousWasBack = false;
+      continue;
+    }
+    const face = match[1].toUpperCase();
+    const suffix = match[3] || "";
+    const isHalfTurn = suffix.includes("2");
+    if (face === "B") {
+      backFaceMoves += 1;
+      backFaceQuarterTurns += isHalfTurn ? 2 : 1;
+      executionPenalty += isHalfTurn ? 2.35 : 3.0;
+      if (previousWasBack) executionPenalty += 0.45;
+      previousWasBack = true;
+      continue;
+    }
+    previousWasBack = false;
+    if (face === "L") executionPenalty += isHalfTurn ? 0.08 : 0.16;
+    else if (face === "F") executionPenalty += isHalfTurn ? 0.03 : 0.06;
+  }
+  return {
+    backFaceMoves,
+    backFaceQuarterTurns,
+    viewpointRotations,
+    executionPenalty,
+  };
+}
+
+function mapMoveForYViewpoint(token, turns, direction) {
+  const normalized = String(token || "").trim();
+  if (!normalized || CUBE_ROTATION_RE.test(normalized)) return null;
+  const match = HUMAN_VIEWPOINT_MOVE_RE.exec(normalized);
+  if (!match) return null;
+  const rawFace = match[1];
+  const upperFace = rawFace.toUpperCase();
+  if (upperFace === "U" || upperFace === "D") return normalized;
+  const index = HUMAN_VIEWPOINT_FACE_RING.indexOf(upperFace);
+  if (index < 0) return null;
+  const mappedIndex = (index + direction * turns + 16) % 4;
+  const mappedUpper = HUMAN_VIEWPOINT_FACE_RING[mappedIndex];
+  const mappedFace = rawFace === rawFace.toLowerCase() ? mappedUpper.toLowerCase() : mappedUpper;
+  return `${mappedFace}${match[2]}${match[3] || ""}`;
+}
+
+function buildEquivalentYViewpointMoves(moves, rotation, turns, direction) {
+  const mapped = [];
+  for (const token of moves) {
+    const transformed = mapMoveForYViewpoint(token, turns, direction);
+    if (!transformed) return null;
+    mapped.push(transformed);
+  }
+  return simplifyMoves([rotation, ...mapped, invertRotation(rotation)]);
+}
+
+function arePatternsIdentical(a, b) {
+  if (!a || !b) return false;
+  if (typeof a.isIdentical === "function") {
+    try {
+      return a.isIdentical(b);
+    } catch (_) {
+      return false;
+    }
+  }
+  return false;
+}
+
+function chooseHumanViewpointMoves(startPattern, moves, options = {}) {
+  const originalMoves = simplifyMoves(Array.isArray(moves) ? moves : splitMoves(moves));
+  const originalMetrics = getHumanViewpointMoveMetrics(originalMoves);
+  const baseResult = {
+    moves: originalMoves,
+    changed: false,
+    backFaceMovesBefore: originalMetrics.backFaceMoves,
+    backFaceMovesAfter: originalMetrics.backFaceMoves,
+    backFaceQuarterTurnsBefore: originalMetrics.backFaceQuarterTurns,
+    backFaceQuarterTurnsAfter: originalMetrics.backFaceQuarterTurns,
+    viewpointRotationsBefore: originalMetrics.viewpointRotations,
+    viewpointRotationsAfter: originalMetrics.viewpointRotations,
+    viewpointRotationsAdded: 0,
+    executionPenaltyBefore: originalMetrics.executionPenalty,
+    executionPenaltyAfter: originalMetrics.executionPenalty,
+  };
+  if (options.enableHumanViewpoint === false || !startPattern || originalMoves.length === 0) {
+    return baseResult;
+  }
+  if (originalMetrics.backFaceMoves === 0) return baseResult;
+
+  const targetPattern = tryApplyMoves(startPattern, originalMoves);
+  if (!targetPattern) return baseResult;
+
+  let bestMoves = originalMoves;
+  let bestMetrics = originalMetrics;
+  for (const rotation of HUMAN_VIEWPOINT_ROTATIONS) {
+    for (const direction of [1, -1]) {
+      const candidateMoves = buildEquivalentYViewpointMoves(
+        originalMoves,
+        rotation.token,
+        rotation.turns,
+        direction,
+      );
+      if (!candidateMoves || candidateMoves.length === 0) continue;
+      if (countMetricMoves(candidateMoves) !== countMetricMoves(originalMoves)) continue;
+      const candidatePattern = tryApplyMoves(startPattern, candidateMoves);
+      if (!arePatternsIdentical(candidatePattern, targetPattern)) continue;
+      const candidateMetrics = getHumanViewpointMoveMetrics(candidateMoves);
+      const scoreImproved = candidateMetrics.executionPenalty < bestMetrics.executionPenalty - 0.2;
+      const scoreTied = Math.abs(candidateMetrics.executionPenalty - bestMetrics.executionPenalty) <= 0.2;
+      const backFaceImproved = candidateMetrics.backFaceMoves < bestMetrics.backFaceMoves;
+      const rotationTieBreak =
+        candidateMetrics.backFaceMoves === bestMetrics.backFaceMoves &&
+        candidateMetrics.viewpointRotations < bestMetrics.viewpointRotations;
+      if (scoreImproved || (scoreTied && (backFaceImproved || rotationTieBreak))) {
+        bestMoves = candidateMoves;
+        bestMetrics = candidateMetrics;
+      }
+    }
+  }
+
+  const changed = joinMoves(bestMoves) !== joinMoves(originalMoves);
+  return {
+    moves: bestMoves,
+    changed,
+    backFaceMovesBefore: originalMetrics.backFaceMoves,
+    backFaceMovesAfter: bestMetrics.backFaceMoves,
+    backFaceQuarterTurnsBefore: originalMetrics.backFaceQuarterTurns,
+    backFaceQuarterTurnsAfter: bestMetrics.backFaceQuarterTurns,
+    viewpointRotationsBefore: originalMetrics.viewpointRotations,
+    viewpointRotationsAfter: bestMetrics.viewpointRotations,
+    viewpointRotationsAdded: Math.max(
+      0,
+      bestMetrics.viewpointRotations - originalMetrics.viewpointRotations,
+    ),
+    executionPenaltyBefore: originalMetrics.executionPenalty,
+    executionPenaltyAfter: bestMetrics.executionPenalty,
+  };
+}
+
+function combineHumanViewpointDiagnostics(entries) {
+  const diagnostics = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  if (!diagnostics.length) return null;
+  return diagnostics.reduce(
+    (summary, entry) => {
+      summary.segments += 1;
+      if (entry.changed) summary.segmentsChanged += 1;
+      summary.backFaceMovesBefore += Number(entry.backFaceMovesBefore || 0);
+      summary.backFaceMovesAfter += Number(entry.backFaceMovesAfter || 0);
+      summary.backFaceQuarterTurnsBefore += Number(entry.backFaceQuarterTurnsBefore || 0);
+      summary.backFaceQuarterTurnsAfter += Number(entry.backFaceQuarterTurnsAfter || 0);
+      summary.viewpointRotationsAdded += Number(entry.viewpointRotationsAdded || 0);
+      summary.executionPenaltyBefore += Number(entry.executionPenaltyBefore || 0);
+      summary.executionPenaltyAfter += Number(entry.executionPenaltyAfter || 0);
+      summary.backFaceMovesAvoided = summary.backFaceMovesBefore - summary.backFaceMovesAfter;
+      return summary;
+    },
+    {
+      segments: 0,
+      segmentsChanged: 0,
+      backFaceMovesBefore: 0,
+      backFaceMovesAfter: 0,
+      backFaceMovesAvoided: 0,
+      backFaceQuarterTurnsBefore: 0,
+      backFaceQuarterTurnsAfter: 0,
+      viewpointRotationsAdded: 0,
+      executionPenaltyBefore: 0,
+      executionPenaltyAfter: 0,
+    },
+  );
+}
+
+export function humanizeCfopViewpointMoves(startPattern, moves, options = {}) {
+  return chooseHumanViewpointMoves(startPattern, moves, options);
+}
 // Per-color budget for CN cross probe; keeps total probe time bounded regardless of IDA* depth.
 // 40ms is sufficient for ≤7-move crosses (compact IDA* typically <5ms).
 const CN_CROSS_PROBE_BUDGET_MS = 80;
@@ -7453,7 +7650,44 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     }
 
     const internalMoves = Array.isArray(result.moves) ? result.moves.slice() : [];
-    const outputMoves = simplifyMoves(internalMoves);
+    let outputMoves = simplifyMoves(internalMoves);
+    let humanizedPairSegments = null;
+    let humanViewpointDiagnostics = null;
+    if (stage.name === "F2L") {
+      const rawPairSegments = splitF2LMovesIntoPairs(stageStartPattern, internalMoves, ctx);
+      const segmentedMoveCount = rawPairSegments.reduce(
+        (sum, segment) => sum + (Array.isArray(segment.moves) ? segment.moves.length : 0),
+        0,
+      );
+      if (rawPairSegments.length && segmentedMoveCount === internalMoves.length) {
+        let segmentPattern = stageStartPattern;
+        const segmentDiagnostics = [];
+        humanizedPairSegments = rawPairSegments.map((segment) => {
+          const originalSegmentMoves = simplifyMoves(segment.moves);
+          const choice = chooseHumanViewpointMoves(segmentPattern, originalSegmentMoves, options);
+          const nextPattern = tryApplyMoves(segmentPattern, choice.moves);
+          if (nextPattern) segmentPattern = nextPattern;
+          segmentDiagnostics.push(choice);
+          return {
+            ...segment,
+            moves: choice.moves,
+            humanViewpoint: choice,
+          };
+        });
+        outputMoves = simplifyMoves(
+          humanizedPairSegments.flatMap((segment) => segment.moves),
+        );
+        humanViewpointDiagnostics = combineHumanViewpointDiagnostics(segmentDiagnostics);
+      } else {
+        const choice = chooseHumanViewpointMoves(stageStartPattern, outputMoves, options);
+        outputMoves = choice.moves;
+        humanViewpointDiagnostics = combineHumanViewpointDiagnostics([choice]);
+      }
+    } else {
+      const choice = chooseHumanViewpointMoves(stageStartPattern, outputMoves, options);
+      outputMoves = choice.moves;
+      humanViewpointDiagnostics = combineHumanViewpointDiagnostics([choice]);
+    }
     const moveText = joinMoves(outputMoves);
     const solvedStageDisplayName = resolveSolvedStageDisplayName(stage, stageStartPattern, result, ctx);
     const solvedStageLabel = stage.isCrossLike
@@ -7461,7 +7695,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       : solvedStageDisplayName;
     const stageEntries = [];
     if (stage.name === "F2L") {
-      const pairSegments = splitF2LMovesIntoPairs(stageStartPattern, internalMoves, ctx);
+      const pairSegments = humanizedPairSegments || splitF2LMovesIntoPairs(stageStartPattern, internalMoves, ctx);
       if (pairSegments.length) {
         pairSegments.forEach((segment, index) => {
           const segmentMoves = simplifyMoves(segment.moves);
@@ -7475,6 +7709,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
             moveCount: countMetricMoves(segmentMoves),
             depth: countMetricMoves(segmentMoves),
             nodes: index === 0 ? result.nodes : undefined,
+            humanViewpoint: segment.humanViewpoint || null,
           });
         });
       } else if (outputMoves.length || stage.omitIfNoMoves !== true || stage.includeWhenEmpty === true) {
@@ -7484,6 +7719,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           moveCount: countMetricMoves(outputMoves),
           depth: countMetricMoves(outputMoves),
           nodes: result.nodes,
+          humanViewpoint: humanViewpointDiagnostics,
         });
       }
     } else if (outputMoves.length || stage.omitIfNoMoves !== true || stage.includeWhenEmpty === true) {
@@ -7493,6 +7729,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         moveCount: countMetricMoves(outputMoves),
         depth: countMetricMoves(outputMoves),
         nodes: result.nodes,
+        humanViewpoint: humanViewpointDiagnostics,
       });
     }
     solvedStages.push(...stageEntries);
@@ -7506,6 +7743,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       bound: result.bound,
       elapsedMs: Math.max(1, Date.now() - stageStartedAt),
       moveCount: countMetricMoves(outputMoves),
+      humanViewpoint: humanViewpointDiagnostics,
       method: result.method || null,
       metrics:
         stage.name === "F2L"
