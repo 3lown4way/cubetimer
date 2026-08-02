@@ -61,6 +61,7 @@ jobs:
           grep -q 'enableStyleFallback: false' benchmark/benchmark.js
           grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
           grep -q 'remainingBeforeStage < minRemainingMs' solver/fmcSolver.js
+          grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
           grep -q 'FMC_QUALITY_MODE_DOWNGRADE_REJECTED' benchmark/fmcBenchmarkWorker.js
 
       - name: Verify benchmark copy record formatting
@@ -95,7 +96,7 @@ jobs:
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
 
-      - name: Verify FMC Extreme quality contract
+      - name: Verify FMC Extreme target-driven contract
         run: node benchmark-fmc-extreme-contract.mjs
 
       - name: Verify human FMC core pipeline
