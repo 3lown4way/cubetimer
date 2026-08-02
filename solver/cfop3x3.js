@@ -3,6 +3,7 @@ import { MOVE_NAMES } from "./moves.js";
 import { SCDB_CFOP_ALGS } from "./scdbCfopAlgs.js";
 import { ZB_FORMULAS } from "./zbDataset.js";
 import { ZBLS_SUPPLEMENTAL_CASES } from "./zblsSupplementalCases.js";
+import { ZBLL_SUPPLEMENTAL_CASES } from "./zbllSupplementalCases.js";
 import { SV_FORMULAS, WV_FORMULAS, SV_BL_FORMULAS, WV_BL_FORMULAS } from "./svWvDataset.js";
 
 const FACE_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
@@ -381,6 +382,18 @@ const ZBLS_SUPPLEMENTAL_CASE_MAP = new Map(
       normalizedText: text,
       moves: Object.freeze(splitMoves(text)),
       formulaKey: "ZBLS",
+      supplemental: true,
+    }),
+  ]),
+);
+const ZBLL_SUPPLEMENTAL_CASE_MAP = new Map(
+  ZBLL_SUPPLEMENTAL_CASES.map(([caseKey, text]) => [
+    caseKey,
+    Object.freeze({
+      text,
+      normalizedText: text,
+      moves: Object.freeze(splitMoves(text)),
+      formulaKey: "ZBLL",
       supplemental: true,
     }),
   ]),
@@ -5544,11 +5557,17 @@ function solveWithFormulaDbSingleStage(startPattern, stage, ctx) {
           return allowedFormulaKeySet.has(cand.formulaKey);
         })
       : rawCandidates;
-    const zblsSupplement = formulaNamespace === "LL:ZBLS"
-      ? ZBLS_SUPPLEMENTAL_CASE_MAP.get(startKey)
-      : null;
-    const candidates = zblsSupplement
-      ? [zblsSupplement, ...(Array.isArray(filteredCandidates) ? filteredCandidates : [])]
+    const supplementalCandidates = [];
+    if (formulaNamespace === "LL:ZBLS") {
+      const zblsSupplement = ZBLS_SUPPLEMENTAL_CASE_MAP.get(startKey);
+      if (zblsSupplement) supplementalCandidates.push(zblsSupplement);
+    }
+    if (formulaNamespace === "LL:ZBLL_PLL") {
+      const zbllSupplement = ZBLL_SUPPLEMENTAL_CASE_MAP.get(startKey);
+      if (zbllSupplement) supplementalCandidates.push(zbllSupplement);
+    }
+    const candidates = supplementalCandidates.length
+      ? supplementalCandidates.concat(Array.isArray(filteredCandidates) ? filteredCandidates : [])
       : filteredCandidates;
     if (performanceCollector) {
       performanceCollector.candidateCount = Array.isArray(candidates) ? candidates.length : 0;
