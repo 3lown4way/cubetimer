@@ -1,0 +1,111 @@
+{
+  "runs": 100,
+  "successes": 97,
+  "failures": 3,
+  "successRate": 0.97,
+  "invalidSolutions": 0,
+  "xcrossSelected": 99,
+  "xcrossRejected": 1,
+  "xcrossSelectionRate": 0.99,
+  "beamSuccesses": 69,
+  "compactFallbacks": 31,
+  "zblsRescans": 0,
+  "zbllRescans": 6,
+  "reasonCounts": {
+    "ZBLL_NOT_FOUND": 3
+  },
+  "timingMs": {
+    "median": 191,
+    "p95": 1086,
+    "max": 1714
+  },
+  "failureDetails": [
+    {
+      "index": 75,
+      "scramble": "U' L F R F2 D F' U F R' U' B R B U' R' F2 L' F2 U F'",
+      "ok": false,
+      "reason": "ZBLL_NOT_FOUND",
+      "stage": "ZBLL",
+      "moveCount": null,
+      "elapsedMs": 1518,
+      "crossStage": "XCross",
+      "xcrossProbe": {
+        "attempted": true,
+        "ok": true,
+        "reason": "OK",
+        "nodes": 7101,
+        "bound": 8,
+        "elapsedMs": 1517,
+        "selectedTargetPairs": 1
+      },
+      "f2l": {
+        "finalMethod": "formula_beam",
+        "beamSucceeded": true,
+        "beamTermination": "SOLVED_IN_BEAM",
+        "attemptsCount": 104064,
+        "candidateScanCount": 194630,
+        "compactFallbackUsed": false
+      },
+      "zblsRescan": false,
+      "zbllRescan": true
+    },
+    {
+      "index": 77,
+      "scramble": "B D R U2 R' U2 R' U' L2 D B L' B L D2 B' D2 L' D B2 R'",
+      "ok": false,
+      "reason": "ZBLL_NOT_FOUND",
+      "stage": "ZBLL",
+      "moveCount": null,
+      "elapsedMs": 1467,
+      "crossStage": "XCross",
+      "xcrossProbe": {
+        "attempted": true,
+        "ok": true,
+        "reason": "OK",
+        "nodes": 2161,
+        "bound": 8,
+        "elapsedMs": 1467,
+        "selectedTargetPairs": 1
+      },
+      "f2l": {
+        "finalMethod": "formula_beam",
+        "beamSucceeded": true,
+        "beamTermination": "SOLVED_IN_BEAM",
+        "attemptsCount": 78048,
+        "candidateScanCount": 143710,
+        "compactFallbackUsed": false
+      },
+      "zblsRescan": false,
+      "zbllRescan": true
+    },
+    {
+      "index": 82,
+      "scramble": "L B U F2 R U2 F U B' L2 U' R B2 L2 B' R F2 D L2 U R'",
+      "ok": false,
+      "reason": "ZBLL_NOT_FOUND",
+      "stage": "ZBLL",
+      "moveCount": null,
+      "elapsedMs": 1515,
+      "crossStage": "XCross",
+      "xcrossProbe": {
+        "attempted": true,
+        "ok": true,
+        "reason": "OK",
+        "nodes": 6308,
+        "bound": 8,
+        "elapsedMs": 1515,
+        "selectedTargetPairs": 1
+      },
+      "f2l": {
+        "finalMethod": "compact_ida",
+        "beamSucceeded": false,
+        "beamTermination": "DEADLINE",
+        "attemptsCount": 104064,
+        "candidateScanCount": 196035,
+        "compactFallbackUsed": true
+      },
+      "zblsRescan": false,
+      "zbllRescan": true
+    }
+  ]
+}
