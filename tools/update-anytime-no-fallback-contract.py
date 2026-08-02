@@ -1,7 +1,9 @@
 from pathlib import Path
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
+def replace_if_needed(text: str, old: str, new: str, label: str) -> str:
+    if new in text:
+        return text
     if old not in text:
         raise SystemExit(f"missing replacement target: {label}")
     return text.replace(old, new, 1)
@@ -19,22 +21,31 @@ round_block = '''  if (progress.type === "quality_round_start") {
   }
 '''
 if 'progress.type === "quality_round_start"' not in legacy:
-    legacy = replace_once(legacy, round_anchor, round_block + round_anchor, "legacy round progress")
+    if round_anchor not in legacy:
+        raise SystemExit("missing legacy round-progress anchor")
+    legacy = legacy.replace(round_anchor, round_block + round_anchor, 1)
 legacy_path.write_text(legacy)
 
 
 # Update the static no-fallback/site-parity verifier to the v3 anytime profile.
 path = Path("tools/verify-benchmark-no-fallback.mjs")
 text = path.read_text()
-replacements = {
-    'id: "independent-frontier-v2-compression-first-unlimited"': 'id: "independent-frontier-v3-anytime-widening"',
-    'stage(`human-L${searchLevel}-V${variant}': 'stage(`human-L${searchLevel}${roundSuffix}-V${searchVariant}',
-    'independent-frontier-v2 token missing': 'independent-frontier-v3 token missing',
-}
-for old, new in replacements.items():
-    if old not in text:
-        raise SystemExit(f"missing contract token: {old}")
-    text = text.replace(old, new)
+text = replace_if_needed(
+    text,
+    'id: "independent-frontier-v2-compression-first-unlimited"',
+    'id: "independent-frontier-v3-anytime-widening"',
+    "Extreme profile id",
+)
+text = replace_if_needed(
+    text,
+    'stage(`human-L${searchLevel}-V${variant}',
+    'stage(`human-L${searchLevel}${roundSuffix}-V${searchVariant}',
+    "Extreme stage template",
+)
+text = text.replace(
+    'independent-frontier-v2 token missing',
+    'independent-frontier-v3 token missing',
+)
 
 anchor = '  "FMC_EXTREME_TARGET_NOT_REACHED",\n'
 if '  "extremeMaxRounds",\n' not in text:
@@ -55,7 +66,9 @@ progress_check = '''  if (!source.includes('progress.type === "quality_round_sta
   }
 '''
 if progress_check not in text:
-    text = replace_once(text, site_anchor, site_anchor + progress_check, "site round progress contract")
+    if site_anchor not in text:
+        raise SystemExit("missing site round-progress anchor")
+    text = text.replace(site_anchor, site_anchor + progress_check, 1)
 
 text = text.replace(
     'benchmark no-fallback routing and FMC Extreme site parity verified',
