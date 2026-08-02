@@ -1,0 +1,343 @@
+name: Apply benchmark no-fallback patch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-benchmark-no-fallback.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch benchmark policy
+        run: |
+          git checkout -B fix/benchmark-no-fallback
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing replacement target in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          policy = r'''const FALLBACK_MARKER = /(?:FALLBACK|RETRY|EXTERNAL_CUBING_SEARCH)/i;
+
+          function normalizeAlgorithm(value) {
+            return String(value || "").trim().split(/\s+/).filter(Boolean).join(" ");
+          }
+
+          function invertMove(token) {
+            const move = String(token || "").trim();
+            if (!/^[URFDLB](?:2'|2|')?$/.test(move)) return "";
+            if (move.endsWith("2") || move.endsWith("2'")) return `${move[0]}2`;
+            return move.endsWith("'") ? move.slice(0, -1) : `${move}'`;
+          }
+
+          export function invertBenchmarkScramble(scramble) {
+            const moves = normalizeAlgorithm(scramble).split(" ").filter(Boolean);
+            if (!moves.length) return "";
+            const inverse = [];
+            for (let index = moves.length - 1; index >= 0; index -= 1) {
+              const move = invertMove(moves[index]);
+              if (!move) return "";
+              inverse.push(move);
+            }
+            return inverse.join(" ");
+          }
+
+          function reject(reason) {
+            return { ok: false, reason, source: `REJECTED_${reason}` };
+          }
+
+          export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result = {} } = {}) {
+            if (result?.ok !== true) return { ok: true, reason: "", source: "" };
+
+            const source = String(result?.source || result?.proofSource || "");
+            const proofSource = String(result?.proofSource || "");
+            const metadata = [
+              source,
+              proofSource,
+              result?.fallbackFrom,
+              result?.fallbackSource,
+              result?.fallbackReason,
+            ].filter(Boolean).join(" ");
+
+            if (
+              result?.fallbackUsed === true
+              || result?.usedFallback === true
+              || FALLBACK_MARKER.test(metadata)
+            ) return reject("BENCHMARK_FALLBACK_FORBIDDEN");
+
+            const mode = String(config?.mode || "").toLowerCase();
+            if ((mode === "strict" || mode === "zb") && !/^INTERNAL_3X3_CFOP/.test(source)) {
+              return reject("BENCHMARK_METHOD_SOURCE_MISMATCH");
+            }
+            if (mode === "roux" && !/^INTERNAL_3X3_ROUX/.test(source)) {
+              return reject("BENCHMARK_METHOD_SOURCE_MISMATCH");
+            }
+            if (mode === "twophase") {
+              if (!/^WASM_3X3_TWOPHASE/.test(source)) {
+                return reject("BENCHMARK_METHOD_SOURCE_MISMATCH");
+              }
+              const inverse = invertBenchmarkScramble(scramble);
+              if (inverse && normalizeAlgorithm(result?.solution) === inverse) {
+                return reject("TWOPHASE_TRIVIAL_INVERSE_REJECTED");
+              }
+            }
+            if (mode === "minmove" && result?.optimalityProven !== true) {
+              return reject("MINMOVE_UNPROVEN_RESULT_REJECTED");
+            }
+            return { ok: true, reason: "", source: "" };
+          }
+          '''
+          Path('benchmark/benchmark-no-fallback-policy.js').write_text(policy.strip() + '\n')
+
+          tests = r'''import assert from "node:assert/strict";
+          import {
+            enforceBenchmarkNoFallback,
+            invertBenchmarkScramble,
+          } from "./benchmark-no-fallback-policy.js";
+
+          assert.equal(invertBenchmarkScramble("R U2 F'"), "F U2 R'");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "strict" },
+            result: { ok: true, source: "INTERNAL_3X3_CFOP", solution: "R" },
+          }).ok, true);
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "strict" },
+            result: { ok: true, source: "WASM_3X3", solution: "R" },
+          }).reason, "BENCHMARK_METHOD_SOURCE_MISMATCH");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "roux" },
+            result: { ok: true, source: "INTERNAL_3X3_PHASE_FALLBACK", solution: "R" },
+          }).reason, "BENCHMARK_FALLBACK_FORBIDDEN");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "twophase" },
+            scramble: "R U2 F'",
+            result: { ok: true, source: "WASM_3X3_TWOPHASE", solution: "F U2 R'" },
+          }).reason, "TWOPHASE_TRIVIAL_INVERSE_REJECTED");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "twophase" },
+            scramble: "R U2 F'",
+            result: { ok: true, source: "INTERNAL_3X3_TWOPHASE", solution: "R U R'" },
+          }).reason, "BENCHMARK_METHOD_SOURCE_MISMATCH");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "minmove" },
+            result: { ok: true, source: "MINMOVE_333_WASM", optimalityProven: false },
+          }).reason, "MINMOVE_UNPROVEN_RESULT_REJECTED");
+          assert.equal(enforceBenchmarkNoFallback({
+            config: { mode: "minmove" },
+            result: { ok: true, source: "MINMOVE_333_WASM", proofSource: "exact_search", optimalityProven: true },
+          }).ok, true);
+
+          console.log("benchmark no-fallback policy verified");
+          '''
+          Path('benchmark/benchmark-no-fallback-policy.test.mjs').write_text(tests.strip() + '\n')
+
+          enhanced = Path('benchmark/benchmark-enhanced.js')
+          text = enhanced.read_text()
+          text = text.replace(
+              'import { proxy, wrap } from "comlink";\n',
+              'import { proxy, wrap } from "comlink";\nimport { enforceBenchmarkNoFallback } from "./benchmark-no-fallback-policy.js";\n',
+              1,
+          )
+          text = text.replace(
+              '    f2lMethod: "legacy",\n    enableStyleFallback: true,\n    enableOllPllPrediction: true,',
+              '    f2lMethod: "legacy",\n    benchmarkNoFallback: true,\n    allowRelaxedSearch: false,\n    enableStyleFallback: false,\n    enableOllPllPrediction: true,',
+              1,
+          )
+          text = text.replace(
+              '''function rejectFmcFallback(result, config) {\n  if (config.mode !== "fmc") return false;\n  const source = String(result?.source || "");\n  return source === "FMC_TWOPHASE_FALLBACK" || result?.fallbackUsed === true || result?.fallbackSource === "TWOPHASE";\n}\n\n''',
+              '',
+              1,
+          )
+          text = text.replace(
+              '    const fallbackRejected = rejectFmcFallback(result, config);\n',
+              '    const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });\n    const fallbackRejected = !policyResult.ok;\n',
+              1,
+          )
+          text = text.replace(
+              '      source: fallbackRejected ? "REJECTED_TWOPHASE_FALLBACK" : String(result?.source || result?.proofSource || ""),\n      reason: fallbackRejected\n        ? "NON_HUMAN_FMC_FALLBACK_REJECTED"\n        : result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"),',
+              '      source: fallbackRejected ? policyResult.source : String(result?.source || result?.proofSource || ""),\n      reason: fallbackRejected\n        ? policyResult.reason\n        : result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"),',
+              1,
+          )
+          enhanced.write_text(text)
+
+          legacy = Path('benchmark/benchmark.js')
+          text = legacy.read_text()
+          text = text.replace(
+              'import { proxy, wrap } from "comlink";\n',
+              'import { proxy, wrap } from "comlink";\nimport { enforceBenchmarkNoFallback } from "./benchmark-no-fallback-policy.js";\n',
+              1,
+          )
+          text = text.replace(
+              '    f2lMethod: "legacy",\n    enableStyleFallback: true,\n    enableOllPllPrediction: true,',
+              '    f2lMethod: "legacy",\n    benchmarkNoFallback: true,\n    allowRelaxedSearch: false,\n    enableStyleFallback: false,\n    enableOllPllPrediction: true,',
+              1,
+          )
+          text = text.replace(
+              '    const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));\n    const solution = String(result?.solution || "").trim();',
+              '    const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));\n    const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });\n    const solution = String(result?.solution || "").trim();',
+              1,
+          )
+          text = text.replace(
+              '      ok: result?.ok === true,\n      elapsedMs,\n      moveCount: Number.isFinite(moveCount) ? moveCount : null,\n      source: String(result?.source || result?.proofSource || ""),\n      reason: result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"),',
+              '      ok: result?.ok === true && policyResult.ok,\n      elapsedMs,\n      moveCount: Number.isFinite(moveCount) ? moveCount : null,\n      source: policyResult.ok ? String(result?.source || result?.proofSource || "") : policyResult.source,\n      reason: policyResult.ok\n        ? (result?.ok === true ? "" : String(result?.reason || "UNKNOWN_FAILURE"))\n        : policyResult.reason,',
+              1,
+          )
+          legacy.write_text(text)
+
+          worker = Path('solver/solverWorker.js')
+          text = worker.read_text()
+          text = text.replace(
+              'async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion = "v2") {',
+              'async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion = "v2", options = {}) {\n  const noFallback = options.noFallback === true;',
+              1,
+          )
+          text = text.replace(
+              '  if (!phaseResult?.ok) {\n    phaseResult = await withTimeout(',
+              '  if (!phaseResult?.ok && noFallback) {\n    phaseResult = { ok: false, reason: "TWOPHASE_WASM_FAILED_NO_FALLBACK" };\n  }\n\n  if (!phaseResult?.ok && !noFallback) {\n    phaseResult = await withTimeout(',
+              1,
+          )
+          text = text.replace(
+              '  const solution = String(phaseResult.solution || "").trim();\n  if (!(await verify3x3Solution(scramble, solution))) {',
+              '  const solution = String(phaseResult.solution || "").trim();\n  if (noFallback && inverseSolution && solution === inverseSolution) {\n    return { ok: false, reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED", source: phaseSource };\n  }\n  if (!(await verify3x3Solution(scramble, solution))) {',
+              1,
+          )
+          text = text.replace(
+              '    let fmcTimeBudgetMs = null;\n',
+              '    let fmcTimeBudgetMs = null;\n    let benchmarkNoFallback = false;\n',
+              1,
+          )
+          text = text.replace(
+              '      if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {\n        fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));\n      }',
+              '      if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {\n        fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));\n      }\n      benchmarkNoFallback = arg1.benchmarkNoFallback === true;',
+              1,
+          )
+          text = text.replace(
+              '      return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion);',
+              '      return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion, { noFallback: benchmarkNoFallback });',
+              1,
+          )
+          text = text.replace(
+              '    if (normalizedEventId === "333" && mode === "minmove") {\n      return await solveWithInternal3x3Minmove(scramble, onProgress);\n    }',
+              '    if (normalizedEventId === "333" && mode === "minmove") {\n      const minmoveResult = await solveWithInternal3x3Minmove(scramble, onProgress);\n      if (benchmarkNoFallback && minmoveResult?.ok && (\n        minmoveResult.optimalityProven !== true\n        || minmoveResult.fallbackReason\n        || /FALLBACK|RETRY/i.test(String(minmoveResult.source || ""))\n        || /fallback|retry/i.test(String(minmoveResult.proofSource || ""))\n      )) {\n        return { ok: false, reason: "MINMOVE_FALLBACK_RESULT_REJECTED", source: "REJECTED_MINMOVE_FALLBACK" };\n      }\n      return minmoveResult;\n    }',
+              1,
+          )
+          text = text.replace(
+              '    const allowWasm3x3FastPath =\n      mode === "strict" && !hasStyleOptIn && !hasTransitionOptIn && !hasDownstreamOptIn;',
+              '    const allowWasm3x3FastPath =\n      !benchmarkNoFallback && mode === "strict" && !hasStyleOptIn && !hasTransitionOptIn && !hasDownstreamOptIn;',
+              1,
+          )
+          if text.count('enableRecovery: true,') != 2:
+              raise SystemExit(f"expected two Roux recovery flags, found {text.count('enableRecovery: true,')}")
+          text = text.replace('enableRecovery: true,', 'enableRecovery: !benchmarkNoFallback,')
+          old_strict = '''        const strictResult = await solveWithInternal3x3StrictRetries(scramble, onProgress, {\n          crossColor,\n          mode,\n          solverVersion,\n          f2lMethod,\n          transitionProfileSolver,\n          styleProfile,\n          f2lTransitionProfile,\n          enableStyleFallback,\n          f2lDownstreamProfile,\n          llFamilyCalibration,\n          enableOllPllPrediction,\n          ollPllPredictionWeight,\n        });\n\n        if (mode === "zb") {\n          return strictResult;\n        }'''
+          new_strict = '''        const strictOptions = {\n          crossColor,\n          mode,\n          solverVersion,\n          f2lMethod,\n          transitionProfileSolver,\n          styleProfile,\n          f2lTransitionProfile,\n          enableStyleFallback: benchmarkNoFallback ? false : enableStyleFallback,\n          allowRelaxedSearch: benchmarkNoFallback ? false : undefined,\n          f2lDownstreamProfile,\n          llFamilyCalibration,\n          enableOllPllPrediction,\n          ollPllPredictionWeight,\n        };\n        const strictResult = benchmarkNoFallback\n          ? await withTimeout(\n              solveWithInternal3x3StrictCfop(scramble, onProgress, {\n                ...strictOptions,\n                deadlineTs: Date.now() + Math.max(250, STRICT_CFOP_TIMEOUT_MS - 120),\n              }),\n              STRICT_CFOP_TIMEOUT_MS,\n            ).catch(() => ({ ok: false, reason: "INTERNAL_3X3_CFOP_TIMEOUT" }))\n          : await solveWithInternal3x3StrictRetries(scramble, onProgress, strictOptions);\n\n        if (benchmarkNoFallback || mode === "zb") {\n          return strictResult;\n        }'''
+          if old_strict not in text:
+              raise SystemExit('strict routing block not found')
+          text = text.replace(old_strict, new_strict, 1)
+          worker.write_text(text)
+
+          roux = Path('solver/roux3x3.js')
+          text = roux.read_text()
+          text = text.replace(
+              '  const stageDeadlineMs = 6000; // Max time per Roux stage before fallback\n',
+              '  const stageDeadlineMs = 6000; // Max time per Roux stage search widening\n  const allowCrossMethodRecovery = options.enableRecovery !== false;\n',
+              1,
+          )
+          replacements = {
+              '    console.log("[Roux] FB beam failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);':
+              '    if (!allowCrossMethodRecovery) {\n      return { ok: false, reason: `FB_${fbResult?.reason || "NOT_FOUND"}`, stage: "FB", stages, nodes: totalNodes + (fbResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };\n    }\n    console.log("[Roux] FB beam failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);',
+              '    console.log("[Roux] SB beam failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);':
+              '    if (!allowCrossMethodRecovery) {\n      return { ok: false, reason: `SB_${sbResult?.reason || "NOT_FOUND"}`, stage: "SB", stages, nodes: totalNodes + (sbResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };\n    }\n    console.log("[Roux] SB beam failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);',
+              '    console.log(`[Roux] CMLL failed (${cmllResult.reason}), using phase solver fallback...`);\n    return await phaseSolverFallback(pattern, deadlineTs);':
+              '    if (!allowCrossMethodRecovery) {\n      return { ok: false, reason: `CMLL_${cmllResult?.reason || "NOT_FOUND"}`, stage: "CMLL", stages, nodes: totalNodes + (cmllResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };\n    }\n    console.log(`[Roux] CMLL failed (${cmllResult.reason}), using phase solver fallback...`);\n    return await phaseSolverFallback(pattern, deadlineTs);',
+              '    console.log("[Roux] LSE failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);':
+              '    if (!allowCrossMethodRecovery) {\n      return { ok: false, reason: `LSE_${lseResult?.reason || "NOT_FOUND"}`, stage: "LSE", stages, nodes: totalNodes + (lseResult?.nodes || 0), source: "INTERNAL_3X3_ROUX" };\n    }\n    console.log("[Roux] LSE failed, using phase solver fallback...");\n    return await phaseSolverFallback(pattern, deadlineTs);',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"missing Roux target: {old[:70]}")
+              text = text.replace(old, new, 1)
+          roux.write_text(text)
+
+          verifier = r'''import fs from "node:fs";
+
+          const enhanced = fs.readFileSync(new URL("../benchmark/benchmark-enhanced.js", import.meta.url), "utf8");
+          const legacy = fs.readFileSync(new URL("../benchmark/benchmark.js", import.meta.url), "utf8");
+          const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
+          const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
+
+          for (const source of [enhanced, legacy]) {
+            if (!source.includes("benchmarkNoFallback: true")) throw new Error("benchmark no-fallback payload missing");
+            if (!source.includes("enableStyleFallback: false")) throw new Error("benchmark style fallback still enabled");
+            if (!source.includes("enforceBenchmarkNoFallback")) throw new Error("benchmark result policy missing");
+          }
+          for (const token of [
+            "TWOPHASE_WASM_FAILED_NO_FALLBACK",
+            "TWOPHASE_TRIVIAL_INVERSE_REJECTED",
+            "MINMOVE_FALLBACK_RESULT_REJECTED",
+            "!benchmarkNoFallback && mode === \"strict\"",
+            "benchmarkNoFallback || mode === \"zb\"",
+          ]) {
+            if (!worker.includes(token)) throw new Error(`worker no-fallback token missing: ${token}`);
+          }
+          if ((worker.match(/enableRecovery: !benchmarkNoFallback,/g) || []).length !== 2) {
+            throw new Error("Roux benchmark recovery is not disabled on both attempts");
+          }
+          if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== false")) {
+            throw new Error("Roux v1 does not honor recovery disable flag");
+          }
+          for (const stage of ["FB", "SB", "CMLL", "LSE"]) {
+            if (!roux.includes(`reason: \`${stage}_`)) throw new Error(`Roux ${stage} direct failure missing`);
+          }
+          console.log("benchmark no-fallback routing verified");
+          '''
+          Path('tools/verify-benchmark-no-fallback.mjs').write_text(verifier.strip() + '\n')
+
+          ci = Path('.github/workflows/cfop-speedup-benchmark.yml')
+          text = ci.read_text()
+          text = text.replace(
+              '          node --check benchmark/benchmark-copy-record.test.mjs\n',
+              '          node --check benchmark/benchmark-copy-record.test.mjs\n          node --check benchmark/benchmark-no-fallback-policy.js\n          node --check benchmark/benchmark-no-fallback-policy.test.mjs\n          node --check tools/verify-benchmark-no-fallback.mjs\n',
+              1,
+          )
+          text = text.replace(
+              '      - name: Verify benchmark copy record formatting\n        run: node benchmark/benchmark-copy-record.test.mjs\n',
+              '      - name: Verify benchmark copy record formatting\n        run: node benchmark/benchmark-copy-record.test.mjs\n\n      - name: Verify benchmark no-fallback policy\n        run: |\n          node benchmark/benchmark-no-fallback-policy.test.mjs\n          node tools/verify-benchmark-no-fallback.mjs\n',
+              1,
+          )
+          ci.write_text(text)
+
+          temp = Path('.github/workflows/apply-benchmark-no-fallback.yml')
+          if temp.exists(): temp.unlink()
+          PY
+
+      - name: Validate patch
+        run: |
+          node --check solver/solverWorker.js
+          node --check solver/roux3x3.js
+          node --check benchmark/benchmark-enhanced.js
+          node --check benchmark/benchmark.js
+          node benchmark/benchmark-no-fallback-policy.test.mjs
+          node tools/verify-benchmark-no-fallback.mjs
+
+      - name: Commit branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Forbid fallback results in every benchmark"
+          git push --force origin HEAD:fix/benchmark-no-fallback
