@@ -39,6 +39,7 @@ jobs:
           node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
           node --check benchmark/benchmark-no-fallback-policy.test.mjs
+          node --check benchmark-fmc-extreme-contract.mjs
           node --check benchmark-fmc-speed-identity.mjs
           node --check benchmark-fmc-insertion-speed-identity.mjs
 
@@ -93,6 +94,9 @@ jobs:
 
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
+
+      - name: Verify FMC Extreme quality contract
+        run: node benchmark-fmc-extreme-contract.mjs
 
       - name: Verify human FMC core pipeline
         env:
