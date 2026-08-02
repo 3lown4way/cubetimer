@@ -22,9 +22,11 @@ jobs:
         run: |
           python tools/repair-fmc-real-deadline-patcher.py
           python tools/repair-fmc-real-deadline-verifier.py
+          python tools/repair-fmc-premove-incumbent.py
           python tools/apply-fmc-real-deadline.py
           rm -f tools/repair-fmc-real-deadline-patcher.py
           rm -f tools/repair-fmc-real-deadline-verifier.py
+          rm -f tools/repair-fmc-premove-incumbent.py
 
       - name: Format and compile Rust
         run: |
