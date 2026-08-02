@@ -1,6 +1,7 @@
 import { expose } from "../vendor/comlink/index.js";
 import { solveWithFMCSearch } from "../solver/fmcSolver.js";
 import { buildFmcTablesWasm } from "../solver/wasmSolver.js";
+import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "../solver/fmcExtremeProfile.js";
 
 function normalizeCrossColorList(crossColor) {
   const normalized = String(crossColor || "D").toUpperCase();
@@ -43,20 +44,37 @@ const api = {
         ? 20
         : 24;
 
-    const result = await solveWithFMCSearch(scramble, onProgress, {
-      qualityMode,
-      timeBudgetMs,
-      targetMoveCount,
-      allowCfopFallback: false,
-      premoveAllowCfopFallback: false,
-      preferNonCfop: true,
-      verifyLimit: qualityMode === "extreme" ? 32 : 18,
-      enableInsertions: true,
-      enableCoverageFallback: false,
-      requireTargetReached: qualityMode === "extreme",
-      crossColors: normalizeCrossColorList(payload.crossColor),
-    });
+    const solveOptions = qualityMode === "extreme"
+      ? buildFmcExtremeOptions({
+          timeBudgetMs,
+          targetMoveCount,
+          crossColors: normalizeCrossColorList(payload.crossColor),
+        })
+      : {
+          qualityMode,
+          timeBudgetMs,
+          targetMoveCount,
+          allowCfopFallback: false,
+          premoveAllowCfopFallback: false,
+          preferNonCfop: true,
+          verifyLimit: 18,
+          enableInsertions: true,
+          enableCoverageFallback: false,
+          requireTargetReached: false,
+          crossColors: normalizeCrossColorList(payload.crossColor),
+        };
+    const result = await solveWithFMCSearch(scramble, onProgress, solveOptions);
 
+    const actualExtremeProfile = result?.extremeProfileId || result?.performanceDiagnostics?.extremeProfileId || "";
+    if (qualityMode === "extreme" && actualExtremeProfile && actualExtremeProfile !== FMC_EXTREME_PROFILE.id) {
+      return {
+        ok: false,
+        reason: "FMC_EXTREME_PROFILE_MISMATCH",
+        expectedProfile: FMC_EXTREME_PROFILE.id,
+        actualProfile: actualExtremeProfile,
+        rejectedResult: result,
+      };
+    }
     if (result?.source === "FMC_TWOPHASE_FALLBACK") {
       return {
         ok: false,

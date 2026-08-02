@@ -284,9 +284,6 @@ export function warm_twophase_333() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_81fc77679af83bc6: function(arg0, arg1) {
-            throw new Error(getStringFromWasm0(arg0, arg1));
-        },
         __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -300,10 +297,6 @@ function __wbg_get_imports() {
         },
         __wbg_new_227d7c05414eb861: function() {
             const ret = new Error();
-            return ret;
-        },
-        __wbg_now_88621c9c9a4f3ffc: function() {
-            const ret = Date.now();
             return ret;
         },
         __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {

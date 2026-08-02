@@ -398,9 +398,11 @@ export async function solveFmcWasm(scramble, options = {}) {
       enableSliceInsertion: options.enableSliceInsertion === true,
       enableMultiSwitchNiss: options.enableMultiSwitchNiss === true,
       enableDeepMultiSwitchNiss: options.enableDeepMultiSwitchNiss === true,
-      maxEoDepth: Number.isFinite(options.maxEoDepth) ? Math.max(5, Math.min(7, Math.floor(options.maxEoDepth))) : 5,
-      timeBudgetMs: Number.isFinite(options.timeBudgetMs) ? Math.max(0, Math.floor(options.timeBudgetMs)) : 8000,
-      targetMoveCount: Number.isFinite(options.targetMoveCount) ? Math.max(1, Math.floor(options.targetMoveCount)) : 24,
+      searchLevel: Number.isFinite(options.searchLevel) ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
+      searchVariant: Number.isFinite(options.searchVariant) ? Math.max(0, Math.floor(options.searchVariant)) : 0,
+      incumbentMoveCount: Number.isFinite(options.incumbentMoveCount)
+        ? Math.max(1, Math.min(40, Math.floor(options.incumbentMoveCount)))
+        : 40,
     });
     const raw = api.solveFmcWasm(scramble, optionsJson);
     if (!raw) return null;
