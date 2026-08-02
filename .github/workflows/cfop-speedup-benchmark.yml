@@ -19,12 +19,13 @@ jobs:
 
       - name: Apply source patch
         run: |
-          if [ ! -f tools/apply-fmc-extreme-anytime-timeout.py ]; then
-            echo "Patch already applied"
-            exit 0
+          if [ -f tools/apply-fmc-extreme-anytime-timeout.py ]; then
+            python tools/apply-fmc-extreme-anytime-timeout.py
+            python tools/repair-fmc-extreme-anytime-patch.py
           fi
-          python tools/apply-fmc-extreme-anytime-timeout.py
-          python tools/repair-fmc-extreme-anytime-patch.py
+          if [ -f tools/apply-fmc-extreme-stage-budget.py ]; then
+            python tools/apply-fmc-extreme-stage-budget.py
+          fi
 
       - name: Validate source patch
         run: |
@@ -49,5 +50,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Return best Extreme result under short timeouts"
+          git commit -m "Respect short Extreme time budgets"
           git push origin HEAD:${{ github.head_ref }}
