@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply anytime frontier migration
-        run: python tools/apply-fmc-extreme-anytime-v3.py
+        run: |
+          python tools/strip-anytime-migration-workflow.py
+          python tools/apply-fmc-extreme-anytime-v3.py
 
       - name: Validate scheduler and contracts
         run: |
