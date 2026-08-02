@@ -1,0 +1,58 @@
+name: Regenerate ZB index and validate 1000 cases
+
+on:
+  push:
+    branches:
+      - fix/zb-pipeline-reliability-v2
+    paths:
+      - .github/workflows/verify-zb-1000-and-index.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Regenerate static ZB case index
+        run: node tools/generate-zbll-case-index.mjs
+
+      - name: Verify complete ZBLL coverage
+        run: node tools/verify-zbll-complete-coverage.mjs
+
+      - name: Preserve 250-case report
+        run: cp benchmark-results/zb-pipeline-reliability-250.json /tmp/zb-pipeline-reliability-250.json
+
+      - name: Run deterministic 1000-case Pure ZB benchmark
+        id: benchmark
+        continue-on-error: true
+        env:
+          ZB_PIPELINE_RUNS: "1000"
+        run: node benchmark-zb-pipeline-reliability.mjs
+
+      - name: Store 1000-case report separately
+        run: |
+          mv benchmark-results/zb-pipeline-reliability-250.json benchmark-results/zb-pipeline-reliability-1000.json
+          cp /tmp/zb-pipeline-reliability-250.json benchmark-results/zb-pipeline-reliability-250.json
+
+      - name: Commit static index and 1000-case report
+        run: |
+          rm -f .github/workflows/verify-zb-1000-and-index.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/zbllCaseIndex.js benchmark-results/zb-pipeline-reliability-1000.json .github/workflows/verify-zb-1000-and-index.yml
+          git commit -m "Validate Pure ZB across 1000 deterministic cases"
+          git push origin HEAD:fix/zb-pipeline-reliability-v2
+
+      - name: Enforce 1000-case benchmark
+        if: steps.benchmark.outcome != 'success'
+        run: exit 1
