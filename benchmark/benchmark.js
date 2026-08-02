@@ -196,6 +196,10 @@ function formatProgressMessage(progress) {
     const nodes = Number.isFinite(progress.nodes) ? ` · ${progress.nodes.toLocaleString()} nodes` : "";
     return `depth ${progress.bound ?? "?"}${nodes}`;
   }
+  if (progress.type === "quality_round_start") {
+    const best = Number.isFinite(progress.bestMoveCount) ? ` · 현재 ${progress.bestMoveCount}수` : "";
+    return `${stageName || "FMC Extreme 다음 라운드"}${best}`;
+  }
   if (progress.type === "fallback_start") return `fallback ${stageName || "시작"}`;
   if (progress.type === "exact_search_start") return `exact search ${progress.lowerBound ?? "?"}→${progress.upperBoundLength ?? "?"}`;
   if (progress.type === "stage_done") return `${prefix}${stageName || "stage"} 완료`;

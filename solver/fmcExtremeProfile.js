@@ -1,5 +1,5 @@
 export const FMC_EXTREME_PROFILE = Object.freeze({
-  id: "independent-frontier-v2-compression-first-unlimited",
+  id: "independent-frontier-v3-anytime-widening",
   targetMoveCount: 20,
   defaultTimeBudgetMs: 0,
   maxPremoveSets: 180,

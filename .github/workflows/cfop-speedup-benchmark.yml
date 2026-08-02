@@ -46,6 +46,7 @@ jobs:
           node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
           node --check benchmark/benchmark-no-fallback-policy.test.mjs
+          node --check benchmark-fmc-extreme-anytime-plan.mjs
           node --check benchmark-fmc-extreme-contract.mjs
           node --check benchmark-fmc-speed-identity.mjs
           node --check benchmark-fmc-insertion-speed-identity.mjs
@@ -90,7 +91,7 @@ jobs:
           grep -q 'enableStyleFallback: false' benchmark/benchmark-enhanced.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark.js
           grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
-          grep -q 'id: "independent-frontier-v2-compression-first-unlimited"' solver/fmcExtremeProfile.js
+          grep -q 'id: "independent-frontier-v3-anytime-widening"' solver/fmcExtremeProfile.js
           grep -q 'defaultTimeBudgetMs: 0' solver/fmcExtremeProfile.js
           grep -q 'extremeVariantCount: 24' solver/fmcExtremeProfile.js
           grep -q 'maxPremoveSets: 180' solver/fmcExtremeProfile.js
@@ -99,12 +100,16 @@ jobs:
           grep -q 'const variantOrder = \[reservedCompressionVariant, 0\]' solver/fmcSolver.js
           grep -q 'unlimitedTimeBudget' solver/fmcSolver.js
           grep -q 'internalBudgetUnlimited' solver/fmcSolver.js
+          grep -q 'extremeMaxRounds' solver/fmcSolver.js
+          grep -q 'quality_round_start' solver/fmcSolver.js
           grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
           grep -q 'requestedTimeBudgetMs === 0' benchmark/fmcBenchmarkWorker.js
           grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark-enhanced.js
           grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark.js
           grep -q '목표 도달 또는 중지까지' benchmark/benchmark-enhanced.js
           grep -q '목표 도달 또는 중지까지' benchmark/benchmark.js
+          grep -q 'quality_round_start' benchmark/benchmark-enhanced.js
+          grep -q 'quality_round_start' benchmark/benchmark.js
           grep -q 'searchVariant' solver/wasmSolver.js
           grep -q 'search_variant' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_EXTREME_PROFILE_MISMATCH' benchmark/fmcBenchmarkWorker.js
@@ -151,6 +156,9 @@ jobs:
 
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
+
+      - name: Verify FMC Extreme anytime frontier plan
+        run: node benchmark-fmc-extreme-anytime-plan.mjs
 
       - name: Verify FMC Extreme compression-first unlimited parity
         run: node benchmark-fmc-extreme-contract.mjs

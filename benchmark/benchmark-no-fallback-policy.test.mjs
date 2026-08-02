@@ -42,11 +42,11 @@ assert.equal(enforceBenchmarkNoFallback({
 }).reason, "FMC_QUALITY_MODE_DOWNGRADE_REJECTED");
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v2-compression-first-unlimited", qualityTargetReached: false, qualityDowngraded: false, moveCount: 22 },
+  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v3-anytime-widening", qualityTargetReached: false, qualityDowngraded: false, moveCount: 22 },
 }).reason, "FMC_EXTREME_TARGET_NOT_REACHED");
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v2-compression-first-unlimited", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
+  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v3-anytime-widening", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
 }).ok, true);
 
 assert.equal(enforceBenchmarkNoFallback({
