@@ -22,6 +22,9 @@ jobs:
           if [ -f tools/apply-fmc-extreme-target-driven.py ]; then
             python tools/apply-fmc-extreme-target-driven.py
           fi
+          if [ -f tools/repair-fmc-extreme-target-budget.py ]; then
+            python tools/repair-fmc-extreme-target-budget.py
+          fi
 
       - name: Validate source patch
         run: |
