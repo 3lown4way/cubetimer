@@ -5,14 +5,15 @@ import { buildFmcTablesWasm } from "./solver/wasmSolver.js";
 import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "./solver/fmcExtremeProfile.js";
 
 const scramble = "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2";
-const siteOptions = buildFmcExtremeOptions({ targetMoveCount: 20 });
+const siteOptions = buildFmcExtremeOptions({ targetMoveCount: 20, extremeMaxRounds: 1 });
 
-assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v2-compression-first-unlimited");
+assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v3-anytime-widening");
 assert.equal(siteOptions.timeBudgetMs, 0);
 assert.equal(siteOptions.extremeVariantCount, 24);
 assert.equal(siteOptions.maxPremoveSets, 180);
 assert.equal(siteOptions.extremeReservedCompressionPremoves, 24);
 assert.equal(siteOptions.continueBelowTarget, false);
+assert.equal(siteOptions.extremeMaxRounds, 1);
 assert.equal(siteOptions.enableCoverageFallback, false);
 assert.equal(siteOptions.allowCfopFallback, false);
 assert.equal(siteOptions.premoveAllowCfopFallback, false);
