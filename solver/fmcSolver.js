@@ -1524,9 +1524,12 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     ? Math.max(0, Math.floor(options.maxPremoveSets))
     : qualityPreset.maxPremoveSets;
   const forceRzp = options.forceRzp === true;
-  const timeBudgetMs = Number.isFinite(options.timeBudgetMs)
-    ? Math.max(1000, Math.floor(options.timeBudgetMs))
-    : qualityPreset.timeBudgetMs;
+  const unlimitedTimeBudget = qualityMode === "extreme" && Number(options.timeBudgetMs) === 0;
+  const timeBudgetMs = unlimitedTimeBudget
+    ? Number.POSITIVE_INFINITY
+    : Number.isFinite(options.timeBudgetMs)
+      ? Math.max(1000, Math.floor(options.timeBudgetMs))
+      : qualityPreset.timeBudgetMs;
   const targetMoveCount = Number.isFinite(options.targetMoveCount)
     ? Math.max(1, Math.floor(options.targetMoveCount))
     : qualityPreset.targetMoveCount;
@@ -1607,7 +1610,8 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
     qualityMode,
     extremeProfileId: qualityMode === "extreme" ? FMC_EXTREME_PROFILE.id : null,
     targetMoveCount,
-    totalBudgetMs: timeBudgetMs,
+    totalBudgetMs: Number.isFinite(timeBudgetMs) ? timeBudgetMs : null,
+    internalBudgetUnlimited: unlimitedTimeBudget,
     wasmStages: [],
     extremeStageCandidateBuckets: [],
     sweepBudgetMs,

@@ -11,6 +11,7 @@ const crossColorSelect = document.getElementById("crossColorSelect");
 const runCountInput = document.getElementById("runCountInput");
 const warmupCountInput = document.getElementById("warmupCountInput");
 const timeoutInput = document.getElementById("timeoutInput");
+const timeoutUnit = document.getElementById("timeoutUnit");
 const fmcQualityField = document.getElementById("fmcQualityField");
 const fmcQualitySelect = document.getElementById("fmcQualitySelect");
 const fmcTargetField = document.getElementById("fmcTargetField");
@@ -49,6 +50,12 @@ function clampInteger(value, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function isUnlimitedExtreme(config = null) {
+  const mode = config?.mode ?? modeSelect.value;
+  const qualityMode = config?.fmcQualityMode ?? fmcQualitySelect.value;
+  return mode === "fmc" && qualityMode === "extreme";
+}
+
 function setWorkerStatus(text, state = "idle") {
   workerStatus.textContent = text;
   workerStatus.dataset.state = state;
@@ -64,12 +71,15 @@ function setProgress(percent, title, detail) {
 
 function updateModeFields() {
   const isFmc = modeSelect.value === "fmc";
-  fmcQualityField.hidden = !isFmc;
-  fmcTargetField.hidden = !isFmc;
-  if (!isFmc) return;
-  if (fmcQualitySelect.value === "sweetSpot" && Number(fmcTargetSelect.value) < 20) {
+  if (isFmc && fmcQualitySelect.value === "sweetSpot" && Number(fmcTargetSelect.value) < 20) {
     fmcQualitySelect.value = "extreme";
   }
+  const unlimitedExtreme = isFmc && fmcQualitySelect.value === "extreme";
+  fmcQualityField.hidden = !isFmc;
+  fmcTargetField.hidden = !isFmc;
+  timeoutInput.hidden = unlimitedExtreme;
+  timeoutInput.disabled = unlimitedExtreme;
+  if (timeoutUnit) timeoutUnit.textContent = unlimitedExtreme ? "무제한 · 목표 도달 또는 중지까지" : "초";
 }
 
 function syncFmcTargetToQuality() {
@@ -141,13 +151,11 @@ function buildSolvePayload(config, scramble) {
   };
 
   if (config.mode === "fmc") {
-    const defaultBudget = config.fmcQualityMode === "extreme" ? 90000 : 8000;
     payload.fmcQualityMode = config.fmcQualityMode;
     payload.fmcTargetMoveCount = config.fmcTargetMoveCount;
-    payload.fmcTimeBudgetMs = Math.max(
-      100,
-      Math.min(defaultBudget, Math.max(100, config.timeoutMs - 100)),
-    );
+    payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)
+      ? 0
+      : Math.max(100, Math.min(8000, Math.max(100, config.timeoutMs - 100)));
   }
 
   return payload;
@@ -204,15 +212,18 @@ async function solveOnce(config, scramble, label) {
     progressDetail.textContent = `${label} · ${formatProgressMessage(progress)}`;
   });
 
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error("BENCHMARK_TIMEOUT")), config.timeoutMs);
-  });
+  const unlimitedExtreme = isUnlimitedExtreme(config);
+  const timeoutPromise = unlimitedExtreme
+    ? null
+    : new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error("BENCHMARK_TIMEOUT")), config.timeoutMs);
+      });
 
   try {
-    const result = await Promise.race([
-      api.solve(buildSolvePayload(config, scramble), onProgress),
-      timeoutPromise,
-    ]);
+    const solvePromise = api.solve(buildSolvePayload(config, scramble), onProgress);
+    const result = unlimitedExtreme
+      ? await solvePromise
+      : await Promise.race([solvePromise, timeoutPromise]);
     const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
     const policyResult = enforceBenchmarkNoFallback({ config, scramble, result });
     const solution = String(result?.solution || "").trim();
@@ -247,7 +258,7 @@ async function solveOnce(config, scramble, label) {
       solution: "",
     };
   } finally {
-    window.clearTimeout(timeoutId);
+    if (timeoutId) window.clearTimeout(timeoutId);
   }
 }
 
@@ -556,9 +567,13 @@ function exportCsv() {
 }
 
 modeSelect.addEventListener("change", updateModeFields);
-fmcQualitySelect.addEventListener("change", syncFmcTargetToQuality);
+fmcQualitySelect.addEventListener("change", () => {
+  syncFmcTargetToQuality();
+  updateModeFields();
+});
 fmcTargetSelect.addEventListener("change", () => {
   if (Number(fmcTargetSelect.value) < 20) fmcQualitySelect.value = "extreme";
+  updateModeFields();
 });
 runBtn.addEventListener("click", () => void runBenchmark());
 stopBtn.addEventListener("click", stopBenchmark);

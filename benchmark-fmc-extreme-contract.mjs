@@ -5,9 +5,10 @@ import { buildFmcTablesWasm } from "./solver/wasmSolver.js";
 import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "./solver/fmcExtremeProfile.js";
 
 const scramble = "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2";
-const siteOptions = buildFmcExtremeOptions({ timeBudgetMs: 1000, targetMoveCount: 20 });
+const siteOptions = buildFmcExtremeOptions({ targetMoveCount: 20 });
 
-assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v2-compression-first-24");
+assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v2-compression-first-unlimited");
+assert.equal(siteOptions.timeBudgetMs, 0);
 assert.equal(siteOptions.extremeVariantCount, 24);
 assert.equal(siteOptions.maxPremoveSets, 180);
 assert.equal(siteOptions.extremeReservedCompressionPremoves, 24);
@@ -24,6 +25,8 @@ const diagnostics = result?.performanceDiagnostics || {};
 const stages = diagnostics.wasmStages || [];
 
 assert.equal(result?.extremeProfileId || diagnostics.extremeProfileId, FMC_EXTREME_PROFILE.id);
+assert.equal(diagnostics.internalBudgetUnlimited, true);
+assert.equal(diagnostics.totalBudgetMs, null);
 assert.ok(stages.length >= 1, "compression-first Extreme executed no frontier");
 assert.equal(stages[0]?.name, "human-L3-V7-reserved");
 assert.equal(stages[0]?.maxPremoveSets, 24);
