@@ -17,19 +17,26 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Update no-fallback contract
+      - name: Update benchmark and no-fallback contract
         run: python tools/update-anytime-no-fallback-contract.py
 
       - name: Validate contract
         run: |
+          node --check benchmark/benchmark.js
           node --check tools/verify-benchmark-no-fallback.mjs
           node benchmark/benchmark-no-fallback-policy.test.mjs
           node tools/verify-benchmark-no-fallback.mjs
+          node benchmark-fmc-extreme-anytime-plan.mjs
+
+      - name: Restore normal CI workflow
+        run: |
+          git checkout origin/main -- .github/workflows/cfop-speedup-benchmark.yml
+          rm tools/update-anytime-no-fallback-contract.py
 
       - name: Commit contract update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Update no-fallback contract for FMC anytime rounds"
+          git commit -m "Finalize FMC Extreme anytime benchmark contract"
           git push origin HEAD:${{ github.head_ref }}
