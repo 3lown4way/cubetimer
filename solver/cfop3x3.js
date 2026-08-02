@@ -129,6 +129,16 @@ const CROSS_COLOR_LABELS = {
   L: "Orange",
 };
 const CROSS_COLOR_SEQUENCE = ["D", "U", "F", "B", "R", "L"];
+const CUBE_ROTATION_RE = /^[xyz](?:2'?|')?$/i;
+
+function countMetricMoves(moves) {
+  const tokens = Array.isArray(moves) ? moves : splitMoves(moves);
+  let count = 0;
+  for (const token of tokens) {
+    if (!CUBE_ROTATION_RE.test(String(token || "").trim())) count += 1;
+  }
+  return count;
+}
 // Per-color budget for CN cross probe; keeps total probe time bounded regardless of IDA* depth.
 // 40ms is sufficient for ≤7-move crosses (compact IDA* typically <5ms).
 const CN_CROSS_PROBE_BUDGET_MS = 80;
@@ -7292,15 +7302,15 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       if (setupMoves.length) {
         const firstMoves = simplifyMoves(setupMoves.concat(splitMoves(stages[0].solution || "")));
         stages[0].solution = joinMoves(firstMoves);
-        stages[0].moveCount = firstMoves.length;
-        stages[0].depth = firstMoves.length;
+        stages[0].moveCount = countMetricMoves(firstMoves);
+        stages[0].depth = countMetricMoves(firstMoves);
       }
       const lastIndex = stages.length - 1;
       if (cleanupMoves.length) {
         const lastMoves = simplifyMoves(splitMoves(stages[lastIndex].solution || "").concat(cleanupMoves));
         stages[lastIndex].solution = joinMoves(lastMoves);
-        stages[lastIndex].moveCount = lastMoves.length;
-        stages[lastIndex].depth = lastMoves.length;
+        stages[lastIndex].moveCount = countMetricMoves(lastMoves);
+        stages[lastIndex].depth = countMetricMoves(lastMoves);
       }
     }
 
@@ -7321,7 +7331,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       ...childResult,
       selectedCrossColor: crossColorRaw,
       solution: fullSolution,
-      moveCount: fullMoves.length,
+      moveCount: countMetricMoves(fullMoves),
       stages,
       solutionDisplay: formatStageDisplay(stages, fullSolution),
     });
@@ -7462,8 +7472,8 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
           stageEntries.push({
             name: `F2L ${pairLabel}`,
             solution: joinMoves(segmentMoves),
-            moveCount: segmentMoves.length,
-            depth: segmentMoves.length,
+            moveCount: countMetricMoves(segmentMoves),
+            depth: countMetricMoves(segmentMoves),
             nodes: index === 0 ? result.nodes : undefined,
           });
         });
@@ -7471,8 +7481,8 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         stageEntries.push({
           name: solvedStageLabel,
           solution: joinMoves(outputMoves),
-          moveCount: outputMoves.length,
-          depth: outputMoves.length,
+          moveCount: countMetricMoves(outputMoves),
+          depth: countMetricMoves(outputMoves),
           nodes: result.nodes,
         });
       }
@@ -7480,8 +7490,8 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       stageEntries.push({
         name: solvedStageLabel,
         solution: joinMoves(outputMoves),
-        moveCount: outputMoves.length,
-        depth: outputMoves.length,
+        moveCount: countMetricMoves(outputMoves),
+        depth: countMetricMoves(outputMoves),
         nodes: result.nodes,
       });
     }
@@ -7495,7 +7505,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
       nodes: result.nodes || 0,
       bound: result.bound,
       elapsedMs: Math.max(1, Date.now() - stageStartedAt),
-      moveCount: outputMoves.length,
+      moveCount: countMetricMoves(outputMoves),
       method: result.method || null,
       metrics:
         stage.name === "F2L"
@@ -7511,7 +7521,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         stageIndex: i,
         totalStages: stages.length,
         stageName: solvedStageLabel,
-        moveCount: outputMoves.length,
+        moveCount: countMetricMoves(outputMoves),
         elapsedMs: stageWallTime,
       });
     }
@@ -7537,7 +7547,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     ok: true,
     solution: fullSolution,
     solutionDisplay: formatStageDisplay(solvedStages, fullSolution),
-    moveCount: fullMoves.length,
+    moveCount: countMetricMoves(fullMoves),
     nodes: totalNodes,
     bound: totalBound,
     selectedCrossColor: crossColorRaw === "CN" ? "D" : crossColorRaw,

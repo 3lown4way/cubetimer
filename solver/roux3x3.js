@@ -652,6 +652,13 @@ const ROTATION_INVERSE = {
   "y": "y'", "y'": "y", "y2": "y2",
 };
 const ROUX_COLOR_SEQUENCE = Object.freeze(["D", "U", "F", "B", "R", "L"]);
+const CUBE_ROTATION_RE = /^[xyz](?:2'?|')?$/i;
+
+function countMetricMoves(moves) {
+  return (Array.isArray(moves) ? moves : String(moves || "").trim().split(/\s+/).filter(Boolean))
+    .filter((token) => !CUBE_ROTATION_RE.test(String(token || "").trim()))
+    .length;
+}
 
 function isRouxColorNeutral(value) {
   const normalized = String(value || "D").toUpperCase();
@@ -746,7 +753,7 @@ export async function solve3x3RouxFromPattern(pattern, options = {}) {
     return {
       ...result,
       solution: combined.join(" "),
-      moveCount: combined.length,
+      moveCount: result.moveCount,
       selectedCrossColor: colorKey,
     };
   }
@@ -916,7 +923,7 @@ async function _solveRouxFromPattern(pattern, options = {}, solvedPatternArg) {
   return {
     ok: true,
     solution: finalMoves.join(" "),
-    moveCount: finalMoves.length,
+    moveCount: countMetricMoves(finalMoves),
     nodes: totalNodes,
     stages,
     source: "INTERNAL_3X3_ROUX",
@@ -1001,7 +1008,7 @@ async function formatFallbackResult(pattern, solverResult) {
   return {
     ok: true,
     solution: finalMoves.join(" "),
-    moveCount: finalMoves.length,
+    moveCount: countMetricMoves(finalMoves),
     nodes: solverResult.nodes || 0,
     stages: extractedStages,
     source: "INTERNAL_3X3_ROUX",
