@@ -1,0 +1,1305 @@
+{
+  "legalStates": 7776,
+  "requiredStates": 7775,
+  "baseIndexCaseCount": 7901,
+  "baseIndexCandidateCount": 34217,
+  "baseCovered": 7453,
+  "uncoveredCount": 322,
+  "invalidIndexedStates": 112,
+  "supplementalCount": 322,
+  "supplementalMoveCount": {
+    "min": 1,
+    "max": 19,
+    "average": 16.419254658385093
+  },
+  "supplementalCases": [
+    {
+      "key": "ZC:p0,o2,p1,o1,p2,o2,p3,o1|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "U F2 B2 U R2 L2 D F2 U2 F U2 D2 F R2 L2 B U2 F2"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p2,o2,p3,o1|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "F2 U F2 U' F2 U' F U2 F U2 F' U2 F2 U2 F U2 F'"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o2,p2,o1,p3,o0|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R U' L U2 R' U F2 R' F2 R U2 R' F2 R F2 L' U2"
+    },
+    {
+      "key": "ZC:p0,o2,p1,o1,p2,o0,p3,o0|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "F U' B U2 F' U L2 F' L2 F U2 F' L2 F L2 B' U2"
+    },
+    {
+      "key": "ZC:p0,o1,p1,o0,p2,o0,p3,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "R2 U R2 U' R2 U' R U2 R U2 R' U2 R2 U2 R U2 R'"
+    },
+    {
+      "key": "ZC:p0,o1,p1,o1,p3,o2,p2,o2|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "B U2 B2 U' B U F' U2 F U2 B2 U2 B U2 R2 B2 R2 U2"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p3,o1,p2,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "B2 U' L2 B2 L2 U F U2 F' L2 B2 L2 U2 B' U2 B U2 B'"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p3,o1,p2,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F U' D F2 U D' F' L2 F L2 B' U2 B D2 B R2 B' D2"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p3,o1,p2,o2|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "F2 U L2 F2 L2 U' B' U2 B L2 F2 L2 U2 F U2 F' U2 F"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p3,o2,p2,o1|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "F2 U R2 B2 L2 D B2 R U2 R B2 L' B2 U2 L' U2 L U2"
+    },
+    {
+      "key": "ZC:p0,o1,p1,o2,p3,o0,p2,o0|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U R2 B2 R F2 R' B2 R F2 R U2"
+    },
+    {
+      "key": "ZC:p0,o1,p1,o2,p3,o2,p2,o1|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "L2 F2 L2 B U2 B' R2 F R2 U2 F' U B' U2 F2 U' B F'"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o0,p3,o1,p2,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U2 R L' U2 R L F L2 B D2 B' L2 U2 F' U2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o1,p3,o2,p2,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "B' R F2 R' B' D2 R' B2 U2 L2 U2 R' U2 L U2 F2 R2"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o2,p3,o0,p2,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "B' D' F2 D B' D' F2 R2 U R2 B2 U B2 U' B2 D"
+    },
+    {
+      "key": "ZC:p0,o1,p1,o0,p3,o2,p2,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F D B2 D' F D B2 R2 U' R2 F2 U' F2 U F2 D'"
+    },
+    {
+      "key": "ZC:p0,o2,p1,o0,p3,o0,p2,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F R' B2 R F D2 R F2 U2 L2 U2 R U2 L' U2 B2 R2"
+    },
+    {
+      "key": "ZC:p0,o2,p1,o1,p3,o0,p2,o0|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U B' R2 B' L2 B R2 B' L2 B2"
+    },
+    {
+      "key": "ZC:p0,o2,p1,o2,p3,o0,p2,o2|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "F' U2 F R2 U2 B2 L2 D2 B' L2 U2 F' U F' U B' F"
+    },
+    {
+      "key": "ZC:p0,o0,p1,o1,p3,o0,p2,o2|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "R D L2 D' R U2 R2 F2 U' R2 U' B2 R2 U F2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p1,o2,p3,o2|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "L' U2 R U2 B2 R2 D2 F2 R' D2 B2 R' U L' U L R'"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o2,p1,o2,p3,o1|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "R U2 R2 U' R U R F2 R2 F2 R U2 R' U2 F2 R2 F2 U2"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o0,p1,o1,p3,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "L F' R2 F L D2 F L2 U2 B2 U2 F U2 B' U2 R2 F2"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o1,p1,o2,p3,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F B U2 L2 F' B L D2 L' F2 L2 B2 U2 R' U2 L F2 L'"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o2,p1,o0,p3,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "L D R2 D' L D R2 F2 U' F2 L2 U' L2 U L2 D'"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o1,p1,o0,p3,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F D B' D' F D B R2 U R2 D' L2 D2 R2 B2 D' R2 D' L2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o2,p1,o0,p3,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R' F L2 F' R' D2 F' R2 U2 B2 U2 F' U2 B U2 L2 F2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p1,o1,p3,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R' D' L2 D R' D' L2 F2 U F2 R2 U R2 U' R2 D"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p1,o2,p3,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F' D' B D F' D' B' L2 U' L2 D R2 D2 L2 B2 D L2 D R2"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o1,p1,o2,p3,o0|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "R2 U' B2 R2 B2 U L U2 L' B2 R2 B2 U2 R' U2 R U2 R'"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p1,o0,p3,o1|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U F2 R2 F L2 F' R2 F L2 F U2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o0,p1,o2,p3,o0|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "F D B2 D' F U2 F2 L2 U' F2 U' R2 F2 U L2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o2,p1,o1,p3,o1|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "B2 D2 L2 B2 R' B2 R' U2 R F2 R' D F2 D F2 L' F2 R2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o0,p1,o0,p3,o2|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U R' F2 R' B2 R F2 R' B2 R2"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o1,p1,o2,p3,o0|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "L2 U B2 L2 B2 U' R' U2 R B2 L2 B2 U2 L U2 L' U2 L"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o2,p1,o1,p3,o0|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "L2 U F2 R2 B2 D R2 F U2 F R2 B' R2 U2 B' U2 B U2"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o2,p3,o1,p1,o0|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "F' L2 F' R2 F L2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o1,p3,o1,p1,o2|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "R2 F2 R' U R' U R U2 R2 F2 U2 L F2 L' F2 U2 R"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o0,p3,o1,p1,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "L2 U' L2 U L2 F2 D' B2 D2 R2 D' F D' B2 D F"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o1,p3,o0,p1,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R D L2 D' R D L2 D2 F2 U F2 R2 D B2 U' B2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o0,p3,o2,p1,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F D B2 D' F L2 F2 R2 B2 U' F2 D' B2 D L2 D' F2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o2,p3,o0,p1,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R2 D' B2 D L2 D' R2 U' L2 F2 R2 B2 R D' L2 D R"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p3,o0,p1,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "U R L' U2 R' L' F L2 F L2 F' L2 U2 B' R2 B' R2 B2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p3,o0,p1,o1|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "R2 U R D' L2 D R L2 D B2 U R2 F2 D2 B2 D' L2 D2 F2"
+    },
+    {
+      "key": "ZC:p0,o1,p2,o0,p3,o0,p1,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "R' U' R' D' R U R' F2 U L2 U' L2 D F2 R2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p3,o0,p1,o1|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "R2 U' F' U B2 U' F' U B2 U' F2 R2 D R2 D' F2 U F2 R2"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o2,p3,o2,p1,o0|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "R' U2 R B2 U2 L2 F2 D2 L' F2 U2 R' U R' U L' R U'"
+    },
+    {
+      "key": "ZC:p0,o0,p2,o1,p3,o2,p1,o0|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U2 R2 B2 R F2 R' B2 R F2 R"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p3,o1,p1,o0|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "B D F2 D' B U2 B2 R2 U' B2 U' L2 B2 U R2 U'"
+    },
+    {
+      "key": "ZC:p0,o2,p2,o0,p3,o0,p1,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "D F2 R2 U D F' U2 B R2 F2 D2 B' D2 B' D2 F U2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o0,p1,o1,p2,o2|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "F2 R2 F L2 F' R2 F L2 F"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o2,p1,o1,p2,o1|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "B2 R2 B' U B' U R2 F R2 F' U2 B' R2 F' U2 F B"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o1,p1,o0,p2,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F' D' B2 D F' D R2 D2 B2 D F2 L2 U' L2 U L2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o1,p1,o2,p2,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "B2 U B2 D' R2 F2 U' F2 D2 L2 D' R' D L2 D' R'"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o2,p1,o2,p2,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "B U B' U B U2 B' F2 L2 U F2 D' F2 D R2 U' R2 L2 F2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o0,p1,o1,p2,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "L D R' D' L D R' D2 B2 D L2 U F2 U' F2 D R2 D' F2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p1,o0,p2,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "U' F B' U2 F' B' R D2 R F2 R' D2 B2 L' B2 R' B2 L2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o0,p1,o0,p2,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F2 D L2 D' B2 D F2 U B2 R2 F2 L2 F' D B2 D' F'"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o0,p1,o1,p2,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R' D' L2 D R' B2 R2 F2 L2 U R2 D L2 D' B2 D R2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o2,p1,o0,p2,o1|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "L D R2 D' L U2 R2 U R2 U F2 U F2 U R2 L2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p1,o1,p2,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U R2 U' L2 B2 D B D2 B L2 F D2 L2 B L2 D2 F U2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p1,o0,p2,o0|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "F U' R2 U R2 U F R2 U L2 U R2 U2 L2 U' F2 L2 U2 L2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o0,p1,o2,p2,o1|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "R' F2 R' B2 R F2 R' B2 R2 U2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p1,o0,p2,o0|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "F U' R2 U R2 U F U2 R2 D B2 L2 D2 F2 D F2 U B2 R2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p1,o0,p2,o0|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "R U2 R F2 R' U2 R U R2 U' F2 U F2 U F2 U' R2 U F2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o2,p1,o2,p2,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "B' U2 F U2 R2 F2 D2 L2 F' D2 R2 F' U B' U B F' U"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o0,p2,o1,p1,o2|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "U B L2 U L2 U F2 R2 D2 F' B' R2 U2 B2 U2 F'"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "R U B2 L U L' U' F2 R U2 R2 B2 U2 L F2 R2 D2 L' B2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p2,o2,p1,o1|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "F' U F R2 U B U' F2 U2 B' R2 U2 R2 F R2 F R2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o0,p1,o0|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "U F R2 U R2 U F2 L2 D2 F B L2 U2 B2 U2 B'"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "U R2 U F2 R2 F2 U R D2 L' U2 B2 U2 L D2 R F2 U2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p2,o2,p1,o1|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "U R2 U F2 R2 F2 U F2 R2 F R2 F R2 U2 R2 F' R2 F R2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "R2 U' F2 B2 D L2 D' F2 R L2 B2 R' F2 D2 F2 L U2 L B2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o0,p2,o0,p1,o1|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "R2 U R2 U' R2 U' F' R2 F' D2 F' L2 B2 L2 F D2 F2 R2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p2,o2,p1,o1|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "U F2 U R2 F2 R2 U F' D2 B U2 L2 U2 B' D2 F' R2"
+    },
+    {
+      "key": "ZC:p0,o0,p3,o1,p2,o2,p1,o0|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "L2 U L2 U' L2 U' F' D2 F' U2 F D2 F' L2 F2 L2 U2 F2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "F2 U R2 L2 D' B2 D R F2 B2 L' U2 F2 R D2 L2 B2 L B2"
+    },
+    {
+      "key": "ZC:p0,o2,p3,o1,p2,o2,p1,o1|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "F U R2 B U B' U' R2 U2 F2 R2 F U2 F U2 F2 R2 F"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "R U B2 L U L' U' L2 D2 L D2 R' D2 R2 D2 B2 L U2"
+    },
+    {
+      "key": "ZC:p0,o1,p3,o2,p2,o1,p1,o2|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "U R2 U F2 R2 F2 U R' D2 L D2 F2 D2 L' D2 R' F2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p2,o0,p3,o0|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "B2 U R2 B2 R2 U' F' U2 F R2 B2 R2 U2 B U2 B' U2 B"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p2,o0,p3,o0|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "B2 U L2 F2 R2 D F2 U2 R U2 R' U2 B2 R' B2 L U2 L"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o2,p2,o2,p3,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "B' U2 F U2 R2 F2 D2 L2 F' D2 R2 F' U B' U B F'"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o2,p2,o1,p3,o1|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "F U2 F2 U' F U F L2 F2 L2 F U2 F' U2 L2 F2 L2 U2"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o0,p2,o1,p3,o2|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U' R2 B2 R F2 R' B2 R F2 R"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o1,p2,o0,p3,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F' D' B2 D F' D' B2 L2 U L2 F2 U F2 U' F2 D"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o1,p2,o2,p3,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "B L' F2 L B D2 L B2 U2 R2 U2 L U2 R' U2 F2 L2"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o2,p2,o2,p3,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "L' D' R D L' D' R' B2 U' B2 D F2 D2 B2 R2 D B2 D F2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p2,o0,p3,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U2 R L' U2 R' L' F L2 F L2 F' L2 U2 B' R2 B' R2 B2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o0,p2,o0,p3,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F' L B2 L' F' D2 L' F2 U2 R2 U2 L' U2 R U2 B2 L2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o0,p2,o1,p3,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "B D F2 D' B D F2 L2 U' L2 B2 U' B2 U B2 D'"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o2,p2,o0,p3,o1|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "L D R2 D' L U2 L2 B2 U' L2 U' F2 L2 U B2"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o0,p2,o2,p3,o1|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U F' L2 F' R2 F L2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p2,o0,p3,o0|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U' R2 F2 R2 U B U2 B' R2 F2 R2 U2 F' U2 F U2 F'"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o1,p2,o2|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "B2 U R2 F2 L2 D F' D2 F' R2 U2 R2 F D2 F' R2 U2"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o0,p3,o1,p2,o2|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "L F2 U F2 U R2 B2 D2 R' L' B2 U2 L2 U2 R'"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o1,p2,o2|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "F2 U R2 F2 R2 U F' D2 B U2 L2 U2 B' D2 F' R2 U2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p3,o2,p2,o1|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "R2 U' F2 R2 F2 U' R D2 L' U2 B2 U2 L D2 R F2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p3,o2,p2,o1|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U' R2 B2 L2 D' R2 F2 L' D2 L' F2 U2 F2 L D2 L' F2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o1,p2,o2|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R2 U F2 L2 B2 D F2 R2 B' D2 B' R2 U2 R2 B D2 B' R2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o0,p3,o0,p2,o1|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "F R2 U R2 U F2 R2 U2 R2 F2 U2 F U2 F2 U2 F2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p3,o2,p2,o1|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R2 U F2 R2 F2 U R D2 L' U2 B2 U2 L D2 R F2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o0,p2,o0|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "R B2 U B2 U R2 F2 D2 R L F2 U2 L2 U2 L'"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o1,p2,o2|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "B2 U R2 F2 L2 D F D2 F R2 U2 R2 F' D2 F R2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p3,o2,p2,o1|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "L2 U' F2 R2 B2 D B2 D2 R F2 L' F2 D2 F2 L F2 R F2"
+    },
+    {
+      "key": "ZC:p1,o0,p0,o1,p3,o2,p2,o0|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "B L2 U L2 U F2 R2 D2 F' B' R2 U2 B2 U2 F' U2"
+    },
+    {
+      "key": "ZC:p1,o1,p0,o2,p3,o1,p2,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U' R2 F2 R2 U' F' D2 B U2 L2 U2 B' D2 F' R2 U2"
+    },
+    {
+      "key": "ZC:p1,o2,p0,o1,p3,o2,p2,o1|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U' R2 F2 R2 U' R2 F2 R' F2 R' F2 U2 F2 R F2 R' F2"
+    },
+    {
+      "key": "ZC:p1,o2,p2,o1,p0,o0,p3,o0|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "L' B2 L' F2 L B2 L' F2 L2"
+    },
+    {
+      "key": "ZC:p1,o2,p2,o2,p0,o0,p3,o2|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "F' U2 F R2 U2 B2 L2 D2 B' L2 U2 F' U F' U B' F U'"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o1,p0,o0,p3,o2|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "R D L2 D' R U2 R2 F2 U' R2 U' B2 R2 U F2 U'"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p0,o1,p3,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "D L2 F2 U D R' F2 R D2 L2 B2 R' B2 R' B2 R U2"
+    },
+    {
+      "key": "ZC:p1,o1,p2,o1,p0,o2,p3,o2|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "F2 L2 F' U F' U F U2 F2 L2 U2 B L2 B' L2 U2 F"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p0,o1,p3,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U F D' B2 D F B2 D R2 U F2 L2 D2 R2 D' B2 D2 L2"
+    },
+    {
+      "key": "ZC:p1,o1,p2,o2,p0,o2,p3,o1|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "F D B U' B U' D F L2 F' B' U2 F L2 F L2 B' D2 F"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p0,o1,p3,o2|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "F2 U' L' U R2 U' L' U R2 U' L2 F2 D F2 D' L2 U L2 F2"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p0,o2,p3,o1|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "R F2 R' B2 R F2 R U R2 U2 B2 U' R2 U2 B2 U B2 R2 U"
+    },
+    {
+      "key": "ZC:p1,o1,p2,o2,p0,o0,p3,o0|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U2 F2 R2 F L2 F' R2 F L2 F"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p0,o1,p3,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R U' B2 D L' D F2 U2 F2 L' U2 L' F2 U2 L2 D2 B2 R"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o1,p0,o2,p3,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "B2 U' B2 U B2 L2 D' R2 D2 F2 D' L D' R2 D L"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o2,p0,o0,p3,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L D R2 D' L B2 L2 F2 R2 U' L2 D' R2 D B2 D' L2"
+    },
+    {
+      "key": "ZC:p1,o1,p2,o0,p0,o2,p3,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "F D B2 D' F D B2 R2 U' R2 F2 D' L2 U L2 U2"
+    },
+    {
+      "key": "ZC:p1,o2,p2,o0,p0,o0,p3,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "F2 U' F2 D R2 B2 U B2 L2 D' R' D L2 D' R'"
+    },
+    {
+      "key": "ZC:p1,o2,p2,o2,p0,o0,p3,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R' D' L D R' D' L D2 B2 D' R2 U' F2 U F2 D' L2 D F2"
+    },
+    {
+      "key": "ZC:p1,o2,p2,o1,p3,o0,p0,o0|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "F2 U F2 D' L2 D R2 F2 R D2 R B2 R' D2 R' F2 R2 U2"
+    },
+    {
+      "key": "ZC:p1,o1,p2,o0,p3,o0,p0,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "L2 U L2 D' B2 D F2 R2 B U2 B R2 B' U2 B' R2 F2 U2"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p3,o2,p0,o1|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "B2 U B2 D' R2 D R2 F2 R B2 L D2 L' B2 R' F2 R2 U2"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o0,p3,o0,p0,o0|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U'"
+    },
+    {
+      "key": "ZC:p1,o0,p2,o2,p3,o1,p0,o0|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "R2 U R2 D' F2 D F2 R2 B R2 F U2 F' R2 B' R2 F2 U2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p0,o1,p2,o0|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "R' D' L2 D R' F2 U2 F2 R2 F2 U' B2 U' R2 U F2 B2"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o2,p0,o1,p2,o0|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U' R' F2 R' B2 R F2 R' B2 R2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o1,p0,o1,p2,o2|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "L U2 L2 U' L U R' U2 R U2 L2 U2 L U2 B2 L2 B2"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o0,p0,o0,p2,o2|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "R2 U F2 L2 B2 D' R2 B D2 B L2 U2 B L2 F' L2 U2 B'"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p0,o0,p2,o1|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "R2 U B2 R2 B2 U B2 R' U2 R U2 R2 B2 R' U2 R U2 R'"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o0,p0,o1,p2,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U B2 U B2 D' R2 F2 U' F2 L2 D R D' L2 D R"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p0,o0,p2,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "R D L2 D' R D L2 B2 U' B2 R2 D' F2 U F2 U"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p0,o1,p2,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F' R' L F R L' F' R' F2 R U2 F2 R2 B2 R F2 R' B2 R2"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o0,p0,o2,p2,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "L' D' R2 D L' D' R2 B2 U B2 L2 D F2 U' F2 U'"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o2,p0,o0,p2,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U' B2 U' B2 D L2 F2 U F2 R2 D' L' D R2 D' L'"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p0,o0,p2,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F B' U2 F B R' D2 R' B2 R D2 F2 L F2 R F2 L2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p0,o0,p2,o1|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "L2 U' B2 L2 B2 U' B2 R B2 R F2 R2 U2 L' U2 R' F2 R"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p0,o2,p2,o0|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U B2 L2 B R2 B' L2 B R2 B"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o2,p0,o2,p2,o0|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "R' U2 F2 U' L' U F2 R2 B2 D2 L' D2 B2 L2 B2 R' B2 L'"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o0,p2,o0,p0,o2|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "B' R2 B' L2 B R2 B' L2 B2"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p2,o2,p0,o0|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "R U' B2 U B2 U R B2 R2 U2 R2 D' R2 D R2 B2 U R2"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o2,p2,o1,p0,o0|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "F L2 F' R2 F L2 F U F2 U2 R2 U' F2 U2 R2 U R2 F2 U"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o0,p2,o1,p0,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "L2 U' L2 D F2 R2 U R2 B2 D' F' D B2 D' F'"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p2,o2,p0,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F U' R2 D B' D L2 U2 L2 B' U2 B' R2 D2 F2 U2 L2 F"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o2,p2,o0,p0,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "L D R2 D' L D R2 F2 U' F2 L2 D' B2 U B2 U2"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o1,p2,o0,p0,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R' U' R U' R' U2 R L2 F2 U' L2 D L2 D' B2 U F2 B2 L2"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o2,p2,o0,p0,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R2 U' R2 U R2 B2 D' F2 D2 L2 D' B D' F2 D B"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p2,o1,p0,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R' D' L2 D R' D' L2 F2 U F2 R2 D B2 U' B2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p2,o2,p0,o2|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "L' U2 R U2 B2 R2 D2 F2 R' D2 B2 R' U L' U L R' U'"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o2,p2,o2,p0,o1|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "L2 B2 L' U L' U L U2 L2 B2 U2 R B2 R' B2 U2 L"
+    },
+    {
+      "key": "ZC:p1,o1,p3,o0,p2,o2,p0,o0|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "F D B2 D' F U2 F2 L2 U' F2 U' R2 F2 U L2 U'"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p2,o2,p0,o0|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "L2 U L D' R2 D L R2 D F2 U L2 B2 D2 F2 D' R2 D2 B2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o0,p2,o0,p0,o1|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "R2 B2 R F2 R' B2 R F2 R U2"
+    },
+    {
+      "key": "ZC:p1,o2,p3,o2,p2,o1,p0,o1|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "R2 U B2 U' F2 L2 D L D2 L F2 R D2 F2 L F2 D2 R"
+    },
+    {
+      "key": "ZC:p1,o0,p3,o1,p2,o2,p0,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "D B2 R2 U D F' D2 F' D2 F D2 R2 B U2 B' U2 B2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p1,o2,p3,o0|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "L2 F2 L B2 L' F2 L B2 L"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o2,p1,o2,p3,o0|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "R' U2 R B2 U2 L2 F2 D2 L' F2 U2 R' U R' U L' R U"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p1,o0,p3,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "D F2 R2 U D F' U2 B R2 F2 D2 B' D2 B' D2 F"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p1,o1,p3,o0|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "R' D' L2 D R U' F2 R2 D B2 R2 U' R2 D' R2 U2 F2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o1,p1,o1,p3,o2|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R2 F2 R' U R' U F2 R U2 R L2 D2 L' D2 L' F2 R2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o2,p1,o1,p3,o0|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "F' L2 F' R2 F L2 F' R2 F2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p1,o0,p3,o1|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "R2 U R D' L2 D R L2 U R2 U F2 L2 U2 L2 U F2 U2 R2"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o0,p1,o0,p3,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "R' U' R' D' R U R' F2 U L2 U' L2 D F2 R2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p1,o0,p3,o1|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "L U' F2 U F2 U L U2 F2 D R2 B2 D2 L2 D L2 U R2 F2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o0,p1,o1,p3,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L2 D B2 D' R2 D L2 U R2 F2 L2 B2 L' D R2 D' L'"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p1,o0,p3,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R D L2 D' R D L2 B2 U' B2 R2 D' F2 U F2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p1,o1,p3,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "B D F' D' B D F' D2 R2 D B2 U L2 U' L2 D F2 D' L2"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o0,p1,o2,p3,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L' D' R2 D L' D F2 D2 R2 D L2 B2 U' B2 U B2"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o2,p1,o0,p3,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "U2 L2 U' L2 D F2 R2 U R2 B2 D' F' D B2 D' F'"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p1,o0,p3,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "U' R L' U2 R L F L2 B D2 B' L2 U2 F' U2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o2,p3,o1,p1,o1|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "B2 L2 D' F2 U L2 U' F' U2 F L2 F' U2 R2 F' L2 B U2 B"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p3,o2,p1,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F B D2 F B R D2 R' D2 F2 R2 B2 R' U2 R' U2 R"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o0,p3,o0,p1,o2|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U R' F2 R' B2 R F2 R' B2 R2 U2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p3,o2,p1,o0|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "L2 U F2 L2 F2 U F2 R' F2 R U2 L2 F2 R' F2 R U2 L'"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o2,p3,o1,p1,o0|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U' R2 F2 R2 U' F2 R2 F U2 F' U2 R2 F' R2 F R2 F'"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o2,p3,o2,p1,o1|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "R U2 R2 U' R U R F2 R2 F2 R U2 R' U2 F2 R2 F2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o0,p3,o1,p1,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U' F2 U' F2 D R2 B2 U B2 L2 D' R' D L2 D' R'"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p3,o2,p1,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F B' U2 F' B' R D2 R F2 R' D2 B2 L' B2 R' B2 L2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o2,p3,o0,p1,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "L D R2 D' L D R2 F2 U' F2 L2 D' B2 U B2 U"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o1,p3,o0,p1,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F R B' R B' R F' R' D2 F2 L F2 L' F2 L D2 B2 R2 U2"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o2,p3,o0,p1,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "U F2 U F2 D' L2 B2 U' B2 R2 D L D' R2 D L"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p3,o1,p1,o0|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "R' D' L2 D R' D' L2 F2 U F2 R2 D B2 U' B2 U'"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p3,o2,p1,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "F' L' B L' B L' F L D2 F2 R' F2 R F2 R' D2 B2 L2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p3,o2,p1,o2|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "L' U2 F2 D' L' D F2 U2 L' B2 R2 D2 R D2 R B2 L2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p0,o0,p3,o0,p1,o1|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U F2 R2 F L2 F' R2 F L2 F"
+    },
+    {
+      "key": "ZC:p2,o1,p0,o0,p3,o2,p1,o0|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "F D B2 D' F U2 F2 L2 U' F2 U' R2 F2 U L2 U2"
+    },
+    {
+      "key": "ZC:p2,o0,p0,o1,p3,o2,p1,o0|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "R2 U' F2 R2 F2 U' F2 R U2 R' U2 R2 F2 R U2 R' U2 R"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "R U B2 L U L' U' L2 D2 L D2 R' D2 R2 D2 B2 L"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o1,p0,o2,p3,o0|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "L2 U L2 U' L2 U' F' L2 U2 F2 L2 U2 F' U2 F' U2 L2 F'"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "F2 U R2 L2 D' B2 D R F2 R B2 L' U2 F2 R D2 L' U2 R'"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p0,o2,p3,o1|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "F U R2 B U B' U' R2 U2 F2 R2 F U2 F U2 F2 R2 F U2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "U R2 U F2 R2 F2 U R' D2 L D2 F2 D2 L' D2 R' F2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p0,o2,p3,o1|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "F U R2 B U B' U' B2 D2 B D2 F' D2 F2 D2 R2 B U2"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o0,p0,o1,p3,o2|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "U B L2 U L2 U F2 R2 D2 F' B' R2 U2 B2 U2 F' U2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "R U B2 L U L' U' B2 U2 R2 B2 R U2 R U2 R2 B2 R"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p0,o2,p3,o1|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "F2 U' R2 L2 D B2 D' R2 F R2 F L2 U2 L2 B' D2 F2 B L2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "R' U R F2 D R D B2 L' D2 F2 D2 R D2 F2 R2 L F2"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o0,p0,o0,p3,o1|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "R2 U R2 U' R2 U' F' U2 L2 B2 U2 L2 F' D2 F' R2 D2 F'"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p0,o2,p3,o1|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "U F2 U R2 F2 R2 U F' D2 B U2 L2 U2 B' D2 F' R2 U2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o0,p3,o0|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "U F R2 U R2 U F2 R2 U2 R2 F2 U2 F U2 F2 U2 F2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p0,o1,p3,o2|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "U R2 U F2 R2 F2 U R D2 L' U2 B2 U2 L D2 R F2"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p0,o2,p3,o1|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "U R2 U F2 L2 B2 D F2 R2 B' D2 B' R2 U2 R2 B D2 B' R2"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o0,p3,o2,p0,o1|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "R' F2 R' B2 R F2 R' B2 R2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p3,o0,p0,o0|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "B2 U B D' F2 D B F2 D L2 U B2 R2 D2 L2 D' F2 D2 R2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p3,o0,p0,o0|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "F U' R2 U R2 U F R2 F2 U2 F2 D' F2 D F2 R2 U F2"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p3,o0,p0,o0|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "R D2 L' U2 L D2 R U' R2 U B2 D' F2 D B2 U R2 U' R2"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o2,p3,o2,p0,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "B' U2 F U2 R2 F2 D2 L2 F' D2 R2 F' U B' U B F' U'"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o2,p3,o1,p0,o1|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "B2 R2 B' U B' U B U2 B2 R2 U2 F R2 F' R2 U2 B"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o0,p3,o1,p0,o2|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "F2 R2 F L2 F' R2 F L2 F U2"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o2,p3,o0,p0,o1|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "L D R2 D' L U2 L2 B2 U' L2 U' F2 L2 U B2 U'"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o1,p3,o1,p0,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U R2 U' L2 B2 D B D2 B L2 F D2 L2 B L2 D2 F"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o1,p3,o0,p0,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R D L2 D' R F2 R2 B2 L2 U' R2 D' L2 D F2 D' R2"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o1,p3,o2,p0,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "B2 U' B2 D L2 F2 U F2 R2 D' L' D R2 D' L'"
+    },
+    {
+      "key": "ZC:p2,o0,p1,o2,p3,o2,p0,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L' D' R D L' D' R D2 F2 D' L2 U' B2 U B2 D' R2 D B2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o0,p3,o1,p0,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "F' U' F U' F' U2 F B2 L2 U' B2 D B2 D' R2 U R2 L2 B2"
+    },
+    {
+      "key": "ZC:p2,o1,p1,o2,p3,o0,p0,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "U F B' U2 F B R' D2 R' B2 R D2 F2 L F2 R F2 L2"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o0,p3,o0,p0,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "F2 U' F2 U F2 R2 D' L2 D2 B2 D' R D' L2 D R"
+    },
+    {
+      "key": "ZC:p2,o2,p1,o0,p3,o1,p0,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "B D F2 D' B D F2 D2 R2 U R2 B2 D L2 U' L2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o2,p0,o1,p1,o0|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "R U' L U2 R' U F2 R' F2 R U2 R' F2 R F2 L'"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o1,p0,o0,p1,o0|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "F U' B U2 F' U L2 F' L2 F U2 F' L2 F L2 B'"
+    },
+    {
+      "key": "ZC:p2,o1,p3,o0,p0,o0,p1,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "R2 U R2 U' R2 U R' U2 F2 R' U2 L' U2 B2 R B2 L F2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p0,o2,p1,o1|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "F2 U F2 U' F2 U F' U2 L2 F' U2 B' U2 R2 F R2 B L2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p0,o0,p1,o0|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U2"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o1,p0,o2,p1,o1|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U F2 B2 U R2 L2 D F2 U2 F U2 D2 F R2 L2 B U2 F2 U2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p1,o1,p0,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R L' U2 R' L' F L2 F L2 F' L2 U2 B' R2 B' R2 B2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o1,p1,o2,p0,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "U R2 U R2 D' F2 L2 U' L2 B2 D F D' B2 D F"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o2,p1,o0,p0,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "B' D' F2 D B' D' F2 R2 U R2 B2 D L2 U' L2 U'"
+    },
+    {
+      "key": "ZC:p2,o1,p3,o0,p1,o2,p0,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F D B2 D' F D B2 R2 U' R2 F2 D' L2 U L2 U"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o0,p1,o0,p0,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "U' R2 U' R2 D B2 L2 U L2 F2 D' B' D F2 D' B'"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o2,p1,o0,p0,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R' F' L F' L F' R F D2 R2 B' R2 B R2 B' D2 L2 F2 U2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o1,p1,o0,p0,o2|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "R D L2 D' R U2 R2 F2 U' R2 U' B2 R2 U F2 U2"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o1,p1,o0,p0,o0|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U' F' L2 F' R2 F L2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p2,o2,p3,o2,p1,o0,p0,o2|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "F' U2 R2 D' F' D R2 U2 F' L2 B2 D2 B D2 B L2 F2 U2"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p1,o1,p0,o2|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "B2 U' R2 B2 R2 U' R2 F R2 F L2 F2 U2 B' U2 F' L2 F"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p1,o1,p0,o2|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "R L D2 R L F L2 F' D2 R2 B2 L2 B' U2 F' L2 F"
+    },
+    {
+      "key": "ZC:p2,o1,p3,o1,p1,o2,p0,o2|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "B U2 B2 U' B U F' U2 F U2 B2 U2 B U2 R2 B2 R2"
+    },
+    {
+      "key": "ZC:p2,o1,p3,o2,p1,o0,p0,o0|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U R2 B2 R F2 R' B2 R F2 R"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p1,o1,p0,o2|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "F2 U R2 F2 R2 U R2 F' U2 F U2 F2 R2 F' U2 F U2 F'"
+    },
+    {
+      "key": "ZC:p2,o0,p3,o0,p1,o2,p0,o1|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "R2 U' F2 R2 F2 U' R2 F2 R' U2 R U2 F2 R F2 R' F2 R"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o2,p1,o1,p2,o0|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "R2 U R2 D' F2 D F2 R2 B R2 F U2 F' R2 B' R2 F2"
+    },
+    {
+      "key": "ZC:p3,o1,p0,o0,p1,o0,p2,o2|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "L2 U L2 D' B2 D F2 R2 B U2 B R2 B' U2 B' R2 F2"
+    },
+    {
+      "key": "ZC:p3,o2,p0,o1,p1,o0,p2,o0|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "F2 U F2 D' L2 D R2 F2 R D2 R B2 R' D2 R' F2 R2"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p1,o0,p2,o0|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p1,o2,p2,o1|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "B2 U B2 D' R2 D R2 F2 R B2 L D2 L' B2 R' F2 R2"
+    },
+    {
+      "key": "ZC:p3,o1,p0,o2,p2,o0,p1,o0|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "B2 L2 B R2 B' L2 B R2 B"
+    },
+    {
+      "key": "ZC:p3,o1,p0,o2,p2,o2,p1,o1|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "F D B U' B' U D' F' R2 F R2 B' R2 F' R2 B2 U2 B'"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p2,o1,p1,o2|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "B U' L2 U L2 U B U2 L2 D F2 R2 D2 B2 D B2 U F2 L2"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p2,o2,p1,o1|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "R F2 R' B2 R F2 R U R2 U2 B2 U B2 D2 L2 D' L2 B2 D'"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p2,o1,p1,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "R U' B2 D L' D L' U2 F2 L' F2 U2 L' D2 B2 R U2 R"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o1,p2,o2,p1,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "B2 U B2 D' R2 F2 U' F2 L2 D R D' L2 D R"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o2,p2,o0,p1,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "B' D' F2 D B' D L2 D2 F2 D B2 R2 U' R2 U R2"
+    },
+    {
+      "key": "ZC:p3,o1,p0,o0,p2,o2,p1,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F D B2 D' F D B2 R2 U' R2 F2 D' L2 U L2"
+    },
+    {
+      "key": "ZC:p3,o2,p0,o0,p2,o0,p1,o1|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "U2 B2 U' B2 D L2 F2 U F2 R2 D' L' D R2 D' L'"
+    },
+    {
+      "key": "ZC:p3,o2,p0,o2,p2,o0,p1,o2|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "F U F' U F U2 F' B2 R2 U B2 D' B2 D L2 U' R2 L2 B2"
+    },
+    {
+      "key": "ZC:p3,o2,p0,o2,p2,o0,p1,o2|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "F' U2 F R2 U2 B2 L2 D2 B' L2 U2 F' U F' U B' F U"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o1,p2,o0,p1,o2|ZE:p2,o0,p1,o0,p3,o0,p0,o0",
+      "algorithm": "R D L2 D' R U2 R2 F2 U' R2 U' B2 R2 U F2 U"
+    },
+    {
+      "key": "ZC:p3,o2,p0,o1,p2,o0,p1,o0|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U2 R' F2 R' B2 R F2 R' B2 R2"
+    },
+    {
+      "key": "ZC:p3,o1,p0,o1,p2,o2,p1,o2|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "F2 L2 F' U F' U L2 F U2 F B2 D2 B' D2 B' L2 F2"
+    },
+    {
+      "key": "ZC:p3,o0,p0,o0,p2,o1,p1,o2|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U F D' B2 D F B2 U F2 U L2 B2 U2 B2 U L2 U2 F2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p0,o0,p2,o1|ZE:p0,o0,p1,o0,p2,o0,p3,o0",
+      "algorithm": "R2 B2 R F2 R' B2 R F2 R"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o0,p0,o2,p2,o0|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "F D B2 D' F U2 F2 D R2 U R2 B2 D' R2 U' R2"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p0,o2,p2,o0|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "R U' B2 U B2 U R B2 U F2 U B2 U2 F2 U' R2 F2 U2 F2"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p0,o2,p2,o0|ZE:p1,o0,p0,o0,p3,o0,p2,o0",
+      "algorithm": "D B2 L2 U D F' L2 F D2 B2 R2 F' R2 F' R2 F"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p0,o2,p2,o0|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R U' B2 U B2 U R U2 B2 D L2 F2 D2 R2 D R2 U L2 B2"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o2,p0,o1,p2,o0|ZE:p2,o0,p0,o0,p1,o0,p3,o0",
+      "algorithm": "R U R D R' U' R B2 U2 L2 U' B2 R2 U L2 D L2 D2 F2"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o0,p0,o0,p2,o2|ZE:p2,o0,p3,o0,p0,o0,p1,o0",
+      "algorithm": "U2 F' L2 F' R2 F L2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p0,o2,p2,o2|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "L' U2 R U2 B2 R2 D2 F2 R' D2 B2 R' U L' U L R' U"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o2,p0,o2,p2,o1|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "L2 B2 L' U L' U B2 R B2 R' U2 L' B2 R' U2 R L"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o0,p0,o1,p2,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L2 U L2 D' B2 R2 U' R2 D2 F2 D' B' D F2 D' B'"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p0,o2,p2,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "F U' R2 D B' D B' U2 L2 B' L2 U2 B' D2 R2 F U2 F"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o2,p0,o0,p2,o1|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L D R2 D' L D R2 F2 U' F2 L2 D' B2 U B2"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o2,p0,o0,p2,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R2 D F2 D' L2 D R2 U L2 B2 R2 F2 R' D L2 D' R'"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p0,o1,p2,o0|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "R' D' L2 D R' D B2 D2 L2 D R2 F2 U' F2 U F2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p0,o2,p2,o2|ZE:p3,o0,p2,o0,p1,o0,p0,o0",
+      "algorithm": "L U L' U L U2 L' R2 F2 U R2 D' R2 D B2 U' F2 B2 R2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p2,o0,p0,o1|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "L2 U' F2 L2 F2 U R U2 R' F2 L2 F2 U2 L' U2 L U2 L'"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o0,p2,o0,p0,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "R2 U B2 L2 F2 D L2 U2 F U2 F' U2 R2 F' R2 B U2 B"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p2,o0,p0,o1|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "R2 U F2 R2 F2 U' L' U2 L F2 R2 F2 U2 R U2 R' U2 R"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o0,p2,o1,p0,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "L' B R2 B' L' D2 B' L2 U2 F2 U2 B' U2 F U2 R2 B2"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p2,o0,p0,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R D L2 D' R D L2 B2 U' B2 R2 U' R2 U R2 D'"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p2,o1,p0,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "B D F' D' B D F L2 U L2 D' R2 D2 L2 F2 D' L2 D' R2"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o0,p2,o2,p0,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "L' D' R2 D L' D' R2 B2 U B2 L2 U L2 U' L2 D"
+    },
+    {
+      "key": "ZC:p3,o1,p1,o2,p2,o0,p0,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R B' L2 B R D2 B R2 U2 F2 U2 B U2 F' U2 L2 B2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p2,o0,p0,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F B U2 R2 F B' R D2 R' B2 R2 F2 U2 L' U2 R B2 R'"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o2,p2,o2,p0,o0|ZE:p1,o0,p0,o0,p2,o0,p3,o0",
+      "algorithm": "R' U2 R B2 U2 L2 F2 D2 L' F2 U2 R' U R' U L' R"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o1,p2,o2,p0,o0|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U' F2 R2 F L2 F' R2 F L2 F"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p2,o1,p0,o0|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "R' D' L2 D R F2 U R2 D' R2 U' F2 L2 U R2 D R2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o0,p2,o0,p0,o1|ZE:p2,o0,p1,o0,p0,o0,p3,o0",
+      "algorithm": "R F' B' U2 F B' R B2 R2 U2 R B2 R2 B2 U2 R U2 R"
+    },
+    {
+      "key": "ZC:p3,o0,p1,o2,p2,o1,p0,o0|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U L' B2 L' F2 L B2 L' F2 L2"
+    },
+    {
+      "key": "ZC:p3,o2,p1,o1,p2,o1,p0,o2|ZE:p3,o0,p1,o0,p2,o0,p0,o0",
+      "algorithm": "L U2 L2 U' L U R' U2 R U2 L2 U2 L U2 B2 L2 B2 U2"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o2,p0,o0,p1,o1|ZE:p0,o0,p1,o0,p3,o0,p2,o0",
+      "algorithm": "L D R2 D' L U2 L2 B2 U' L2 U' F2 L2 U B2 U2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p0,o1,p1,o2|ZE:p0,o0,p2,o0,p1,o0,p3,o0",
+      "algorithm": "R2 B2 D' L2 U B2 U' L' U2 R D2 L' B2 U2 R' B2 R U2 R"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o1,p0,o0,p1,o2|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "F' D' B2 D F' D' B2 L2 U L2 F2 D R2 U' R2 U'"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o1,p0,o2,p1,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "U' L2 U' L2 D F2 R2 U R2 B2 D' F' D B2 D' F'"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o0,p0,o1,p1,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R' F B' R F' B R' F' U2 F U2 F2 R2 F' U2 F R2 F2 R2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p0,o0,p1,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "R L' U2 R L F L2 B D2 B' L2 U2 F' U2 F' R2 F2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o0,p0,o0,p1,o1|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "U L2 U L2 D' B2 R2 U' R2 F2 D B D' F2 D B"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o0,p0,o1,p1,o0|ZE:p0,o0,p3,o0,p2,o0,p1,o0",
+      "algorithm": "B D F2 D' B D F2 L2 U' L2 B2 D' R2 U R2 U"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o0,p0,o2,p1,o1|ZE:p1,o0,p2,o0,p3,o0,p0,o0",
+      "algorithm": "U F' L2 F' R2 F L2 F' R2 F2 U2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p0,o0,p1,o0|ZE:p1,o0,p3,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U' L2 F2 L2 U' L2 F U2 F' U2 F2 L2 F U2 F' U2 F"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o2,p0,o2,p1,o2|ZE:p2,o0,p0,o0,p3,o0,p1,o0",
+      "algorithm": "B' U2 R2 U' F' U' B2 U2 R2 F D2 R2 B2 R2 B' D2 B'"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p0,o0,p1,o0|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "B2 U L2 B2 L2 U L2 F' L2 F U2 B2 L2 F' L2 F U2 B'"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p0,o0,p1,o0|ZE:p2,o0,p3,o0,p1,o0,p0,o0",
+      "algorithm": "L2 U' F2 L2 F2 U' R2 B2 R' B2 L B2 D2 L D2 R' B2 L"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o0,p0,o1,p1,o2|ZE:p3,o0,p0,o0,p1,o0,p2,o0",
+      "algorithm": "U L2 F2 L B2 L' F2 L B2 L"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o2,p0,o1,p1,o1|ZE:p3,o0,p2,o0,p0,o0,p1,o0",
+      "algorithm": "F U2 F2 U' F U F L2 F2 L2 F U2 F' U2 L2 F2 L2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o1,p0,o2|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "R2 U F2 R2 F2 U F2 R2 F R2 F R2 U2 R2 F' R2 F R2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o0,p1,o0,p0,o1|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "F R2 U R2 U F2 L2 D2 F B L2 U2 B2 U2 B'"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p1,o2,p0,o1|ZE:p0,o0,p2,o0,p3,o0,p1,o0",
+      "algorithm": "R2 U F2 R2 F2 U R D2 L' U2 B2 U2 L D2 R F2 U2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o0,p0,o0|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "R B2 U B2 U R2 F2 D2 R L F2 U2 L2 U2 L' U2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o1,p0,o2|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "B2 U R2 F2 L2 D F D2 F R2 U2 R2 F' D2 F R2 U2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p1,o2,p0,o1|ZE:p0,o0,p3,o0,p1,o0,p2,o0",
+      "algorithm": "L2 U' F2 R2 B2 D' R' D2 R' F2 U2 F2 R D2 R' F2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o1,p0,o2|ZE:p1,o0,p2,o0,p0,o0,p3,o0",
+      "algorithm": "F2 U R2 F2 R2 U F D2 B' D2 R2 D2 B D2 F R2 U2"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o1,p1,o2,p0,o0|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "B L2 U L2 U F2 R2 D2 F' B' R2 U2 B2 U2 F'"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o1,p0,o2|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U' R2 F2 R2 U' F' D2 B U2 L2 U2 B' D2 F' R2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p1,o2,p0,o1|ZE:p1,o0,p3,o0,p2,o0,p0,o0",
+      "algorithm": "F2 U' R2 B2 L2 D' R2 F2 L D2 L F2 U2 F2 L' D2 L F2"
+    },
+    {
+      "key": "ZC:p3,o0,p2,o0,p1,o1,p0,o2|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "L F2 U F2 U R2 B2 D2 R' L' B2 U2 L2 U2 R' U2"
+    },
+    {
+      "key": "ZC:p3,o1,p2,o2,p1,o1,p0,o2|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "F2 U R2 F2 R2 U F' D2 B U2 L2 U2 B' D2 F' R2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p1,o2,p0,o1|ZE:p3,o0,p0,o0,p2,o0,p1,o0",
+      "algorithm": "R2 U' F2 R2 F2 U' R D2 L' U2 B2 U2 L D2 R F2 U2"
+    },
+    {
+      "key": "ZC:p3,o2,p2,o1,p1,o2,p0,o1|ZE:p3,o0,p1,o0,p0,o0,p2,o0",
+      "algorithm": "F2 U' R2 F2 R2 U' R2 F2 R B2 L D2 F2 D2 L' B2 R F2"
+    }
+  ]
+}
