@@ -3,7 +3,7 @@ import "./benchmark-enhanced.js";
 import "./benchmark-fmc-extreme-120s-ui.js?v=20260803-0935";
 import "./benchmark-method-stages.js";
 import "./benchmark-copy-record.js";
-import "./benchmark-fmc-cancellation-view.js?v=20260803-0810";
+import "./benchmark-fmc-cancellation-view.js?v=20260803-1056";
 
 if (!document.querySelector('link[data-benchmark-layout-fix]')) {
   const layoutFixStylesheet = document.createElement("link");
