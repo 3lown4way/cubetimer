@@ -64,7 +64,7 @@ jobs:
           node --check benchmark/benchmark-enhanced.js
           node --check benchmark/benchmark.js
           node benchmark-minmove-bundle-loader.mjs
-          cargo fmt --manifest-path solver-wasm/Cargo.toml -- --check
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
 
       - name: Install wasm-pack
