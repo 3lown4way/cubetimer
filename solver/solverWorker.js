@@ -1469,7 +1469,7 @@ const api = {
     if (normalizedEventId === "333" && mode === "minmove") {
       const { solveMinmoveExactV2 } = await import("./minmoveExactV2.js");
       return solveMinmoveExactV2(scramble, onProgress, {
-        timeBudgetMs: MINMOVE_333_TIMEOUT_MS,
+        timeBudgetMs: 60_000,
       });
     }
     const profileAwareCfop =
