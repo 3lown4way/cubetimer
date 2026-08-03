@@ -1,0 +1,76 @@
+name: Profile minmove joint pruning
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-minmove-joint-pruning
+  cancel-in-progress: true
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+      - name: Apply joint pruning changes
+        run: node tools/apply-twophase-joint-pruning.mjs
+      - name: Validate sources
+        run: |
+          node --check tools/apply-twophase-joint-pruning.mjs
+          node --check solver/wasmSolver.js
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo test --manifest-path solver-wasm/Cargo.toml --lib
+      - name: Export move data
+        run: node tools/export-minmove-move-data.mjs
+      - name: Build twophase v2 tables
+        run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin build_twophase_tables
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+      - name: Benchmark exact minmove corpus
+        run: node benchmark-minmove-exact-v2.mjs
+      - name: Report bundle size
+        run: ls -lh public/solver-wasm/twophase/twophase-333-v2.bin
+      - name: Commit benchmarked implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver-wasm/Cargo.toml \
+            solver-wasm/src/build_twophase_tables_main.rs \
+            solver-wasm/src/twophase_builder.rs \
+            solver-wasm/src/twophase_bundle.rs \
+            solver-wasm/src/twophase_search.rs \
+            solver/wasmSolver.js
+          git add -f \
+            public/solver-wasm/twophase/twophase-333-v2.bin \
+            public/solver-wasm/solver_wasm.js \
+            public/solver-wasm/solver_wasm.d.ts \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          if git diff --cached --quiet; then
+            echo "Joint pruning implementation already committed"
+            exit 0
+          fi
+          git commit -m "Add joint phase-one pruning for minmove"
+          git push origin "HEAD:${TARGET_BRANCH}"
