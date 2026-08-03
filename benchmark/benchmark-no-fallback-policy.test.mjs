@@ -3,6 +3,7 @@ import {
   enforceBenchmarkNoFallback,
   invertBenchmarkScramble,
 } from "./benchmark-no-fallback-policy.js";
+import { FMC_EXTREME_PROFILE } from "../solver/fmcExtremeProfile.js";
 
 assert.equal(invertBenchmarkScramble("R U2 F'"), "F U2 R'");
 assert.equal(enforceBenchmarkNoFallback({
@@ -38,20 +39,53 @@ assert.equal(enforceBenchmarkNoFallback({
 
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "sweetSpot", qualityTargetReached: true, moveCount: 20 },
+  result: { ok: true, source: "FMC_EXTREME_HYBRID", solution: "R", qualityMode: "sweetSpot", qualityTargetReached: true, moveCount: 20 },
 }).reason, "FMC_QUALITY_MODE_DOWNGRADE_REJECTED");
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v3-anytime-widening", qualityTargetReached: false, qualityDowngraded: false, moveCount: 22 },
-}).reason, "FMC_EXTREME_TARGET_NOT_REACHED");
-assert.equal(enforceBenchmarkNoFallback({
-  config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "independent-frontier-v3-anytime-widening", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
+  result: {
+    ok: true,
+    source: "FMC_EXTREME_HYBRID",
+    candidateSource: "FMC_WASM",
+    solution: "R U R'",
+    qualityMode: "extreme",
+    extremeProfileId: FMC_EXTREME_PROFILE.id,
+    qualityTargetReached: false,
+    qualityDowngraded: false,
+    moveCount: 22,
+  },
 }).ok, true);
-
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
-  result: { ok: true, source: "FMC_WASM", qualityMode: "extreme", extremeProfileId: "wrong-profile", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
+  result: {
+    ok: true,
+    source: "FMC_EXTREME_HYBRID",
+    candidateSource: "FMC_WASM",
+    solution: "R U R'",
+    qualityMode: "extreme",
+    extremeProfileId: FMC_EXTREME_PROFILE.id,
+    qualityTargetReached: true,
+    qualityDowngraded: false,
+    moveCount: 20,
+  },
+}).ok, true);
+assert.equal(enforceBenchmarkNoFallback({
+  config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
+  result: {
+    ok: true,
+    source: "FMC_EXTREME_HYBRID",
+    candidateSource: "FMC_WASM",
+    solution: "R U R'",
+    qualityMode: "extreme",
+    extremeProfileId: FMC_EXTREME_PROFILE.id,
+    qualityTargetReached: true,
+    qualityDowngraded: false,
+    moveCount: 21,
+  },
+}).reason, "FMC_EXTREME_TARGET_FLAG_MISMATCH");
+assert.equal(enforceBenchmarkNoFallback({
+  config: { mode: "fmc", fmcQualityMode: "extreme", fmcTargetMoveCount: 20 },
+  result: { ok: true, source: "FMC_EXTREME_HYBRID", solution: "R", qualityMode: "extreme", extremeProfileId: "wrong-profile", qualityTargetReached: true, qualityDowngraded: false, moveCount: 20 },
 }).reason, "FMC_EXTREME_PROFILE_MISMATCH");
 
 console.log("benchmark no-fallback policy verified");
