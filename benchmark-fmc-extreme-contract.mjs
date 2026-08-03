@@ -25,12 +25,12 @@ assert.equal(options.premoveAllowCfopFallback, false);
 assert.equal(options.enableCoverageFallback, false);
 
 const plan = buildFmcExtremeHybridPlan(120000);
-assert.equal(plan.length, 1);
-assert.equal(plan[0].id, "integrated-progressive-frontier");
-assert.equal(plan[0].qualityMode, "extreme");
-assert.equal(plan[0].timeBudgetMs, 120000);
-assert.equal(plan[0].maxPremoveSets, 96);
-assert.equal(plan[0].reservedCompressionPremoves, 12);
+assert.deepEqual(plan.map((stage) => stage.id), ["adaptive-seed", "progressive-frontier"]);
+assert.deepEqual(plan.map((stage) => stage.qualityMode), ["sweetSpot", "extreme"]);
+assert.deepEqual(plan.map((stage) => stage.timeBudgetMs), [20000, 100000]);
+assert.equal(plan[0].maxPremoveSets, 40);
+assert.equal(plan[1].maxPremoveSets, 96);
+assert.equal(plan[1].reservedCompressionPremoves, 12);
 
 const targetMiss = normalizeFmcHybridCandidate({
   ok: false,
@@ -39,9 +39,9 @@ const targetMiss = normalizeFmcHybridCandidate({
   bestHumanMoveCount: 22,
   bestHumanSource: "FMC_WASM",
   bestHumanStages: [{ name: "FMC Best", solution: "R U R'" }],
-}, "integrated-progressive-frontier");
+}, "progressive-frontier");
 assert.equal(targetMiss?.moveCount, 22);
-assert.equal(targetMiss?.hybridStageId, "integrated-progressive-frontier");
+assert.equal(targetMiss?.hybridStageId, "progressive-frontier");
 
 const twenty = normalizeFmcHybridCandidate({
   ok: true,
@@ -49,14 +49,14 @@ const twenty = normalizeFmcHybridCandidate({
   moveCount: 20,
   source: "FMC_WASM",
   stages: [{ name: "FMC Best", solution: "R U R' U'" }],
-}, "integrated-progressive-frontier");
+}, "adaptive-seed");
 const nineteen = normalizeFmcHybridCandidate({
   ok: true,
   solution: "R U2 R'",
   moveCount: 19,
   source: "FMC_WASM",
   stages: [{ name: "FMC Best", solution: "R U2 R'" }],
-}, "integrated-progressive-frontier");
+}, "progressive-frontier");
 assert.equal(pickBestFmcHybridCandidate([targetMiss, twenty, nineteen])?.moveCount, 19);
 assert.equal(normalizeFmcHybridCandidate({
   ok: true,
@@ -68,7 +68,11 @@ assert.equal(normalizeFmcHybridCandidate({
 console.log(JSON.stringify({
   profile: FMC_EXTREME_PROFILE.id,
   totalBudgetMs: FMC_EXTREME_PROFILE.defaultTimeBudgetMs,
-  executionModel: plan[0].id,
-  maxPremoveSets: plan[0].maxPremoveSets,
-  reservedCompressionPremoves: plan[0].reservedCompressionPremoves,
+  plan: plan.map((stage) => ({
+    id: stage.id,
+    mode: stage.qualityMode,
+    budgetMs: stage.timeBudgetMs,
+    maxPremoveSets: stage.maxPremoveSets,
+    reservedCompressionPremoves: stage.reservedCompressionPremoves ?? null,
+  })),
 }));
