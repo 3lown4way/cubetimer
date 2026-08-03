@@ -18,11 +18,19 @@ await import("./apply-twophase-joint-pruning.mjs");
 
 const searchPath = "solver-wasm/src/twophase_search.rs";
 let searchSource = fs.readFileSync(searchPath, "utf8");
-searchSource = searchSource.replaceAll(
-  "self.phase1_joint_lower_bound(tables,",
-  "phase1_joint_lower_bound(self.tables,",
+let repairedCalls = 0;
+searchSource = searchSource.replace(
+  /self\s*\.\s*phase1_joint_lower_bound\s*\(\s*tables\s*,/g,
+  () => {
+    repairedCalls += 1;
+    return "phase1_joint_lower_bound(self.tables,";
+  },
 );
-if (searchSource.includes("self.phase1_joint_lower_bound(tables,")) {
-  throw new Error("Generated joint pruning calls were not repaired");
+if (repairedCalls !== 2) {
+  throw new Error(`Expected to repair 2 generated joint-pruning calls, repaired ${repairedCalls}`);
+}
+if (/self\s*\.\s*phase1_joint_lower_bound\s*\(\s*tables\s*,/.test(searchSource)) {
+  throw new Error("Generated joint pruning calls were not fully repaired");
 }
 fs.writeFileSync(searchPath, searchSource);
+console.log(`repaired ${repairedCalls} generated joint-pruning calls`);
