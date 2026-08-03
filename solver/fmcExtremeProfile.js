@@ -1,11 +1,13 @@
 export const FMC_EXTREME_PROFILE = Object.freeze({
-  id: "independent-frontier-v3-anytime-widening",
+  id: "hybrid-adaptive-120s-v1",
   targetMoveCount: 20,
-  defaultTimeBudgetMs: 0,
+  searchTargetMoveCount: 18,
+  defaultTimeBudgetMs: 120000,
   maxPremoveSets: 180,
   extremeVariantCount: 24,
   extremeReservedCompressionPremoves: 24,
-  continueBelowTarget: false,
+  extremeMaxRounds: 1,
+  continueBelowTarget: true,
   verifyLimit: 32,
   enableInsertions: true,
   insertionCandidateLimit: 6,
@@ -22,6 +24,7 @@ export function buildFmcExtremeOptions(overrides = {}) {
     maxPremoveSets: FMC_EXTREME_PROFILE.maxPremoveSets,
     extremeVariantCount: FMC_EXTREME_PROFILE.extremeVariantCount,
     extremeReservedCompressionPremoves: FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves,
+    extremeMaxRounds: FMC_EXTREME_PROFILE.extremeMaxRounds,
     continueBelowTarget: FMC_EXTREME_PROFILE.continueBelowTarget,
     verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
     enableInsertions: FMC_EXTREME_PROFILE.enableInsertions,
@@ -33,7 +36,7 @@ export function buildFmcExtremeOptions(overrides = {}) {
     premoveAllowCfopFallback: false,
     enableCoverageFallback: false,
     preferNonCfop: true,
-    requireTargetReached: true,
+    requireTargetReached: false,
     ...overrides,
   };
 }
