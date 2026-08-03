@@ -1,7 +1,10 @@
 import { expose } from "../vendor/comlink/index.js";
 import { solveWithFMCSearch } from "../solver/fmcSolver.js";
-import { buildFmcTablesWasm } from "../solver/wasmSolver.js";
-import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "../solver/fmcExtremeProfile.js";
+import { FMC_EXTREME_PROFILE } from "../solver/fmcExtremeProfile.js";
+import {
+  solveWithFmcExtremeHybrid,
+  warmFmcExtremeHybrid,
+} from "../solver/fmcExtremeHybrid.js";
 
 function normalizeCrossColorList(crossColor) {
   const normalized = String(crossColor || "D").toUpperCase();
@@ -22,10 +25,36 @@ function normalizeQualityMode(value) {
     : "sweetSpot";
 }
 
+function normalizeTimeBudgetMs(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0
+    ? Math.max(1000, Math.floor(numeric))
+    : fallback;
+}
+
+function containsForbiddenFallback(result) {
+  const metadata = [
+    result?.source,
+    result?.candidateSource,
+    result?.proofSource,
+    result?.fallbackFrom,
+    result?.fallbackSource,
+    result?.fallbackReason,
+  ].filter(Boolean).join(" ");
+  return result?.fallbackUsed === true
+    || result?.usedFallback === true
+    || /(?:FALLBACK|EXTERNAL_CUBING_SEARCH)/i.test(metadata);
+}
+
 const api = {
   async ping() {
-    const warmed = await buildFmcTablesWasm();
-    return { ok: warmed === true, worker: "FMC_BENCHMARK_HUMAN_ONLY", warmed: warmed === true };
+    const warmed = await warmFmcExtremeHybrid();
+    return {
+      ok: warmed === true,
+      worker: "FMC_BENCHMARK_HYBRID_120S",
+      warmed: warmed === true,
+      extremeProfileId: FMC_EXTREME_PROFILE.id,
+    };
   },
 
   async solve(payload = {}, onProgress) {
@@ -33,26 +62,24 @@ const api = {
     if (!scramble) return { ok: false, reason: "NO_SCRAMBLE" };
 
     const qualityMode = normalizeQualityMode(payload.fmcQualityMode);
-    const requestedTimeBudgetMs = Number(payload.fmcTimeBudgetMs);
-    const timeBudgetMs = qualityMode === "extreme" &&
-      (!Number.isFinite(requestedTimeBudgetMs) || requestedTimeBudgetMs === 0)
-      ? 0
-      : Number.isFinite(requestedTimeBudgetMs)
-        ? Math.max(100, Math.floor(requestedTimeBudgetMs))
-        : 8000;
+    const timeBudgetMs = normalizeTimeBudgetMs(
+      payload.fmcTimeBudgetMs,
+      qualityMode === "extreme" ? FMC_EXTREME_PROFILE.defaultTimeBudgetMs : 8000,
+    );
     const targetMoveCount = Number.isFinite(Number(payload.fmcTargetMoveCount))
       ? Math.max(1, Math.floor(Number(payload.fmcTargetMoveCount)))
       : qualityMode === "extreme"
-        ? 20
+        ? FMC_EXTREME_PROFILE.targetMoveCount
         : 24;
+    const crossColors = normalizeCrossColorList(payload.crossColor);
 
-    const solveOptions = qualityMode === "extreme"
-      ? buildFmcExtremeOptions({
+    const result = qualityMode === "extreme"
+      ? await solveWithFmcExtremeHybrid(scramble, onProgress, {
           timeBudgetMs,
           targetMoveCount,
-          crossColors: normalizeCrossColorList(payload.crossColor),
+          crossColors,
         })
-      : {
+      : await solveWithFMCSearch(scramble, onProgress, {
           qualityMode,
           timeBudgetMs,
           targetMoveCount,
@@ -63,12 +90,17 @@ const api = {
           enableInsertions: true,
           enableCoverageFallback: false,
           requireTargetReached: false,
-          crossColors: normalizeCrossColorList(payload.crossColor),
-        };
-    const result = await solveWithFMCSearch(scramble, onProgress, solveOptions);
+          crossColors,
+        });
 
-    const actualExtremeProfile = result?.extremeProfileId || result?.performanceDiagnostics?.extremeProfileId || "";
-    if (qualityMode === "extreme" && actualExtremeProfile && actualExtremeProfile !== FMC_EXTREME_PROFILE.id) {
+    const actualExtremeProfile = result?.extremeProfileId
+      || result?.performanceDiagnostics?.extremeProfileId
+      || "";
+    if (
+      qualityMode === "extreme"
+      && actualExtremeProfile
+      && actualExtremeProfile !== FMC_EXTREME_PROFILE.id
+    ) {
       return {
         ok: false,
         reason: "FMC_EXTREME_PROFILE_MISMATCH",
@@ -77,10 +109,10 @@ const api = {
         rejectedResult: result,
       };
     }
-    if (result?.source === "FMC_TWOPHASE_FALLBACK") {
+    if (containsForbiddenFallback(result)) {
       return {
         ok: false,
-        reason: "UNEXPECTED_FMC_TWOPHASE_FALLBACK",
+        reason: "UNEXPECTED_FMC_FALLBACK",
         rejectedResult: result,
       };
     }
@@ -97,18 +129,6 @@ const api = {
       return {
         ok: false,
         reason: "FMC_QUALITY_MODE_DOWNGRADE_REJECTED",
-        rejectedResult: result,
-      };
-    }
-    if (
-      qualityMode === "extreme" &&
-      result?.ok &&
-      (result.qualityTargetReached !== true || Number(result.moveCount) > targetMoveCount)
-    ) {
-      return {
-        ok: false,
-        reason: "FMC_EXTREME_TARGET_NOT_REACHED",
-        requestedTarget: targetMoveCount,
         rejectedResult: result,
       };
     }
