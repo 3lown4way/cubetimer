@@ -3,6 +3,7 @@ import fs from "node:fs";
 const enhanced = fs.readFileSync(new URL("../benchmark/benchmark-enhanced.js", import.meta.url), "utf8");
 const legacy = fs.readFileSync(new URL("../benchmark/benchmark.js", import.meta.url), "utf8");
 const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
+const minmoveExactV2 = fs.readFileSync(new URL("../solver/minmoveExactV2.js", import.meta.url), "utf8");
 const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
 const fmcWorker = fs.readFileSync(new URL("../benchmark/fmcBenchmarkWorker.js", import.meta.url), "utf8");
 const fmcHybrid = fs.readFileSync(new URL("../solver/fmcExtremeHybrid.js", import.meta.url), "utf8");
@@ -21,11 +22,24 @@ for (const source of [enhanced, legacy]) {
 for (const token of [
   "TWOPHASE_WASM_FAILED_NO_FALLBACK",
   "TWOPHASE_TRIVIAL_INVERSE_REJECTED",
-  "MINMOVE_FALLBACK_RESULT_REJECTED",
+  'import("./minmoveExactV2.js")',
   "!benchmarkNoFallback && mode === \"strict\"",
   "benchmarkNoFallback || mode === \"zb\"",
 ]) {
   if (!worker.includes(token)) throw new Error(`worker no-fallback token missing: ${token}`);
+}
+for (const token of [
+  'reason: "MINMOVE_NOT_PROVEN"',
+  'solution: ""',
+  "optimalityProven: false",
+  "optimalityProven: true",
+  'proofSource: "exact_twophase_exhaustion"',
+  "fallbackReason: null",
+]) {
+  if (!minmoveExactV2.includes(token)) throw new Error(`exact minmove v2 contract token missing: ${token}`);
+}
+if (minmoveExactV2.includes("MINMOVE_FALLBACK_RESULT_REJECTED")) {
+  throw new Error("exact minmove v2 still depends on fallback-success rejection");
 }
 if ((worker.match(/enableRecovery: !benchmarkNoFallback,/g) || []).length !== 2) {
   throw new Error("Roux benchmark recovery is not disabled on both attempts");
@@ -125,4 +139,4 @@ for (const token of [
 if (!fmcSolver.includes("unlimitedTimeBudget")) {
   throw new Error("FMC solver no longer supports explicit unlimited custom searches");
 }
-console.log("benchmark no-fallback routing and FMC Extreme progressive 120-second contract verified");
+console.log("benchmark no-fallback routing, exact minmove v2, and FMC Extreme progressive 120-second contract verified");
