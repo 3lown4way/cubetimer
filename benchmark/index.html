@@ -76,13 +76,13 @@
 
           <label>
             워밍업 횟수
-            <input id="warmupCountInput" type="number" min="0" max="20" step="1" value="1" />
+            <input id="warmupCountInput" type="number" min="0" max="20" step="1" value="0" />
           </label>
 
           <label>
             1회 제한 시간
             <div class="input-with-unit">
-              <input id="timeoutInput" type="number" min="1" max="300" step="1" value="60" />
+              <input id="timeoutInput" type="number" min="1" max="300" step="1" value="120" />
               <span id="timeoutUnit">초</span>
             </div>
           </label>
@@ -206,7 +206,7 @@
       </section>
 
       <footer class="page-footer">
-        FMC Extreme 선택 시 제한 시간이 120초 미만이면 자동으로 120초로 조정됩니다.
+        FMC Extreme은 120초 동안 Adaptive → Full Human → Independent Frontier 순서로 탐색하며, 목표 미달이어도 현재 최선해를 보존합니다.
       </footer>
     </main>
 
@@ -227,6 +227,6 @@
       </article>
     </dialog>
 
-    <script type="module" src="benchmark-fixed.js?v=20260803-0834"></script>
+    <script type="module" src="benchmark-fixed.js?v=20260803-0905"></script>
   </body>
 </html>
