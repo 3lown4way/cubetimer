@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     env:
       TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
     steps:
@@ -29,183 +29,50 @@ jobs:
         with:
           node-version: 22
 
-      - name: Apply exact minmove v2 route
-        run: node tools/apply-minmove-exact-v2.mjs
-
-      - name: Validate exact minmove v2 source
-        run: |
-          node --check tools/apply-minmove-exact-v2.mjs
-          node --check solver/minmoveExactV2.js
-          node --check solver/solverWorker.js
-          node --check benchmark-minmove-exact-v2.mjs
-
-      - name: Detect deployed minmove assets
-        id: deployed
-        run: |
-          if [[ -f public/solver-wasm/minmove/minmove-333-v8.manifest.json ]] \
-            && [[ -f public/solver-wasm/minmove/minmove-333-v8.part-000.gz ]]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.deployed.outputs.ready != 'true'
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt
 
-      - name: Apply minmove deployment changes
-        if: steps.deployed.outputs.ready != 'true'
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("tools/apply-minmove-htm-fix.mjs")
-          lines = path.read_text(encoding="utf-8").splitlines()
-          repaired = []
-          replaced = False
-          for line in lines:
-              if "minmove HTM tables" in line and "return" in line and "percent" in line:
-                  repaired.append('    return (name || "minmove HTM tables") + (percent === null ? "" : " " + percent + "%");')
-                  replaced = True
-              else:
-                  repaired.append(line)
-          if not replaced:
-              raise SystemExit("Malformed progress formatter line not found")
-          path.write_text("\n".join(repaired) + "\n", encoding="utf-8")
-          PY
-          node tools/apply-minmove-htm-fix.mjs
-          node tools/apply-minmove-builder-bin.mjs
+      - name: Apply exact minmove v2 route
+        run: node tools/apply-minmove-exact-v2.mjs
 
-      - name: Validate source changes
-        if: steps.deployed.outputs.ready != 'true'
+      - name: Apply single-pass exact search
+        run: node tools/apply-minmove-exact-single-pass.mjs
+
+      - name: Validate source
         run: |
-          node --check tools/apply-minmove-htm-fix.mjs
-          node --check tools/export-minmove-move-data.mjs
-          node --check solver/minmoveBundleLoader.js
-          node --check solver/wasmSolver.js
+          node --check tools/apply-minmove-exact-v2.mjs
+          node --check tools/apply-minmove-exact-single-pass.mjs
+          node --check solver/minmoveExactV2.js
           node --check solver/solverWorker.js
-          node --check benchmark/benchmark-enhanced.js
-          node --check benchmark/benchmark.js
-          node benchmark-minmove-bundle-loader.mjs
+          node --check benchmark-minmove-exact-v2.mjs
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
 
       - name: Install wasm-pack
-        if: steps.deployed.outputs.ready != 'true'
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Export move convention
-        if: steps.deployed.outputs.ready != 'true'
-        run: node tools/export-minmove-move-data.mjs
-
-      - name: Build minmove v8 tables
-        if: steps.deployed.outputs.ready != 'true'
-        run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin build_minmove_tables
-
       - name: Build browser WASM
-        if: steps.deployed.outputs.ready != 'true'
         working-directory: solver-wasm
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
 
-      - name: Split and compress minmove bundle
-        if: steps.deployed.outputs.ready != 'true'
-        run: |
-          python3 - <<'PY'
-          import gzip
-          import json
-          import re
-          from pathlib import Path
-
-          directory = Path("public/solver-wasm/minmove")
-          raw_candidates = sorted(directory.glob("minmove-333-v*.bin"))
-          if not raw_candidates:
-              raise SystemExit("No generated minmove bundle found")
-          raw_path = raw_candidates[-1]
-          match = re.fullmatch(r"minmove-333-v(\d+)\.bin", raw_path.name)
-          if not match:
-              raise SystemExit(f"Unexpected bundle filename: {raw_path.name}")
-          version = int(match.group(1))
-          prefix = f"minmove-333-v{version}"
-
-          for old in directory.glob("minmove-333-v*.part-*.gz"):
-              old.unlink()
-          for old in directory.glob("minmove-333-v*.manifest.json"):
-              old.unlink()
-
-          chunk_size = 8 * 1024 * 1024
-          total_raw = raw_path.stat().st_size
-          parts = []
-          with raw_path.open("rb") as source:
-              index = 0
-              while True:
-                  raw = source.read(chunk_size)
-                  if not raw:
-                      break
-                  filename = f"{prefix}.part-{index:03d}.gz"
-                  compressed = gzip.compress(raw, compresslevel=9, mtime=0)
-                  (directory / filename).write_bytes(compressed)
-                  parts.append({
-                      "file": filename,
-                      "compressedBytes": len(compressed),
-                      "uncompressedBytes": len(raw),
-                  })
-                  index += 1
-
-          manifest = {
-              "format": "minmove-333-gzip-chunks-v1",
-              "bundleVersion": version,
-              "uncompressedBytes": total_raw,
-              "parts": parts,
-          }
-          manifest_path = directory / f"{prefix}.manifest.json"
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-          raw_path.unlink()
-          print(json.dumps({
-              "manifest": str(manifest_path),
-              "parts": len(parts),
-              "rawBytes": total_raw,
-              "compressedBytes": sum(part["compressedBytes"] for part in parts),
-          }, indent=2))
-          PY
-
-      - name: Verify deployed HTM path
-        run: |
-          node benchmark-minmove-bundle-loader.mjs
-          node benchmark-minmove-htm-smoke.mjs
-
-      - name: Verify exact minmove v2 on realistic scramble
+      - name: Verify exact minmove corpus
         run: node benchmark-minmove-exact-v2.mjs
 
-      - name: Commit exact minmove v2 route
+      - name: Commit optimized exact solver
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/solverWorker.js
-          if git diff --cached --quiet; then
-            echo "Exact v2 route already committed"
-          else
-            git commit -m "Route minmove to exact two-phase v2"
-            git push origin "HEAD:${TARGET_BRANCH}"
-          fi
-
-      - name: Commit generated solver and assets
-        if: steps.deployed.outputs.ready != 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git restore --source=HEAD --worktree .github/workflows/cfop-speedup-benchmark.yml
-          git add -A
+          git add solver/solverWorker.js solver-wasm/src/twophase_search.rs
           git add -f \
             public/solver-wasm/solver_wasm.js \
             public/solver-wasm/solver_wasm.d.ts \
             public/solver-wasm/solver_wasm_bg.wasm \
-            public/solver-wasm/solver_wasm_bg.wasm.d.ts \
-            public/solver-wasm/minmove/*.manifest.json \
-            public/solver-wasm/minmove/*.gz
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
           if git diff --cached --quiet; then
-            echo "No generated changes"
+            echo "Optimized exact solver already committed"
             exit 0
           fi
-          git commit -m "Restore deployable minmove HTM solver"
+          git commit -m "Speed up exact minmove search"
           git push origin "HEAD:${TARGET_BRANCH}"
