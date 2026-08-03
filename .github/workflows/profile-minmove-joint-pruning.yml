@@ -32,10 +32,11 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt
       - name: Apply joint pruning changes
-        run: node tools/apply-twophase-joint-pruning.mjs
+        run: node tools/run-twophase-joint-pruning.mjs
       - name: Validate sources
         run: |
           node --check tools/apply-twophase-joint-pruning.mjs
+          node --check tools/run-twophase-joint-pruning.mjs
           node --check solver/wasmSolver.js
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
