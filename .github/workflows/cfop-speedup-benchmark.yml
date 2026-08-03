@@ -21,6 +21,7 @@ jobs:
           node --check solver/solverWorker.js
           node --check solver/cfop3x3.js
           node --check solver/fmcExtremeProfile.js
+          node --check solver/fmcExtremeHybrid.js
           node --check solver/fmcSolver.js
           node --check solver/wasmSolver.js
           node --check solver/zbllCaseIndex.js
@@ -42,6 +43,7 @@ jobs:
           node --check benchmark/fmcBenchmarkWorker.js
           node --check benchmark/benchmark-enhanced.js
           node --check benchmark/benchmark.js
+          node --check benchmark/benchmark-fmc-extreme-120s-ui.js
           node --check benchmark/benchmark-copy-record.js
           node --check benchmark/benchmark-copy-record.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
@@ -86,33 +88,37 @@ jobs:
           ! grep -q 'rawCrossColor === "CN".*?"D"' solver/roux3x3.js
           ! grep -q 'rawCrossColor === "CN".*?"D"' solver/roux3x3v2.js
           grep -q 'import "./benchmark-copy-record.js"' benchmark/benchmark-fixed.js
+          grep -q 'benchmark-fmc-extreme-120s-ui.js' benchmark/benchmark-fixed.js
           grep -q 'benchmarkNoFallback: true' benchmark/benchmark-enhanced.js
           grep -q 'benchmarkNoFallback: true' benchmark/benchmark.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark-enhanced.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark.js
           grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
-          grep -q 'id: "independent-frontier-v3-anytime-widening"' solver/fmcExtremeProfile.js
-          grep -q 'defaultTimeBudgetMs: 0' solver/fmcExtremeProfile.js
+          grep -q 'id: "hybrid-adaptive-120s-v1"' solver/fmcExtremeProfile.js
+          grep -q 'defaultTimeBudgetMs: 120000' solver/fmcExtremeProfile.js
+          grep -q 'searchTargetMoveCount: 18' solver/fmcExtremeProfile.js
           grep -q 'extremeVariantCount: 24' solver/fmcExtremeProfile.js
           grep -q 'maxPremoveSets: 180' solver/fmcExtremeProfile.js
           grep -q 'extremeReservedCompressionPremoves: 24' solver/fmcExtremeProfile.js
-          grep -q 'continueBelowTarget: false' solver/fmcExtremeProfile.js
+          grep -q 'extremeMaxRounds: 1' solver/fmcExtremeProfile.js
+          grep -q 'continueBelowTarget: true' solver/fmcExtremeProfile.js
           grep -q 'const variantOrder = \[reservedCompressionVariant, 0\]' solver/fmcSolver.js
           grep -q 'unlimitedTimeBudget' solver/fmcSolver.js
           grep -q 'internalBudgetUnlimited' solver/fmcSolver.js
           grep -q 'extremeMaxRounds' solver/fmcSolver.js
           grep -q 'quality_round_start' solver/fmcSolver.js
           grep -q 'FMC_EXTREME_TARGET_NOT_REACHED' solver/fmcSolver.js
-          grep -q 'requestedTimeBudgetMs === 0' benchmark/fmcBenchmarkWorker.js
+          grep -q 'solveWithFmcExtremeHybrid' benchmark/fmcBenchmarkWorker.js
+          grep -q 'FMC_EXTREME_PROFILE.defaultTimeBudgetMs' benchmark/fmcBenchmarkWorker.js
+          grep -q 'FMC_EXTREME_HYBRID' solver/fmcExtremeHybrid.js
           grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark-enhanced.js
           grep -q 'payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)' benchmark/benchmark.js
-          grep -q '목표 도달 또는 중지까지' benchmark/benchmark-enhanced.js
-          grep -q '목표 도달 또는 중지까지' benchmark/benchmark.js
           grep -q 'quality_round_start' benchmark/benchmark-enhanced.js
           grep -q 'quality_round_start' benchmark/benchmark.js
           grep -q 'searchVariant' solver/wasmSolver.js
           grep -q 'search_variant' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_EXTREME_PROFILE_MISMATCH' benchmark/fmcBenchmarkWorker.js
+          grep -q '목표 미달이어도 현재 최선해를 보존' benchmark/index.html
           ! grep -q 'stage("extreme-target-unbounded"' solver/fmcSolver.js
           ! grep -q 'eo_fallback_used' solver-wasm/src/fmc_search.rs
 
@@ -157,10 +163,10 @@ jobs:
       - name: Compare two-phase frontier counts
         run: node benchmark-twophase-frontiers.mjs
 
-      - name: Verify FMC Extreme anytime frontier plan
+      - name: Verify FMC independent frontier implementation
         run: node benchmark-fmc-extreme-anytime-plan.mjs
 
-      - name: Verify FMC Extreme compression-first unlimited parity
+      - name: Verify FMC Extreme 120-second hybrid contract
         run: node benchmark-fmc-extreme-contract.mjs
 
       - name: Verify human FMC core pipeline
