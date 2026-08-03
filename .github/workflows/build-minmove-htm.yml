@@ -29,12 +29,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Detect deployed minmove assets
+        id: deployed
+        run: |
+          if [[ -f public/solver-wasm/minmove/minmove-333-v8.manifest.json ]] \
+            && [[ -f public/solver-wasm/minmove/minmove-333-v8.part-000.gz ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.deployed.outputs.ready != 'true'
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt
 
       - name: Apply minmove deployment changes
+        if: steps.deployed.outputs.ready != 'true'
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -56,8 +68,10 @@ jobs:
           node tools/apply-minmove-builder-bin.mjs
 
       - name: Validate source changes
+        if: steps.deployed.outputs.ready != 'true'
         run: |
           node --check tools/apply-minmove-htm-fix.mjs
+          node --check tools/export-minmove-move-data.mjs
           node --check solver/minmoveBundleLoader.js
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
@@ -68,19 +82,24 @@ jobs:
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
 
       - name: Install wasm-pack
+        if: steps.deployed.outputs.ready != 'true'
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Export move convention
+        if: steps.deployed.outputs.ready != 'true'
         run: node tools/export-minmove-move-data.mjs
 
       - name: Build minmove v8 tables
+        if: steps.deployed.outputs.ready != 'true'
         run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin build_minmove_tables
 
       - name: Build browser WASM
+        if: steps.deployed.outputs.ready != 'true'
         working-directory: solver-wasm
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
 
       - name: Split and compress minmove bundle
+        if: steps.deployed.outputs.ready != 'true'
         run: |
           python3 - <<'PY'
           import gzip
@@ -146,9 +165,11 @@ jobs:
           node benchmark-minmove-htm-smoke.mjs
 
       - name: Commit generated solver and assets
+        if: steps.deployed.outputs.ready != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git restore --source=HEAD --worktree .github/workflows/cfop-speedup-benchmark.yml
           git add -A
           git add -f \
             public/solver-wasm/solver_wasm.js \
