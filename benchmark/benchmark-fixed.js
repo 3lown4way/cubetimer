@@ -1,5 +1,6 @@
 import "./benchmark-twophase-reliability.js?v=20260803-0834";
 import "./benchmark-enhanced.js";
+import "./benchmark-fmc-extreme-120s-ui.js?v=20260803-0905";
 import "./benchmark-method-stages.js";
 import "./benchmark-copy-record.js";
 import "./benchmark-fmc-cancellation-view.js?v=20260803-0810";
