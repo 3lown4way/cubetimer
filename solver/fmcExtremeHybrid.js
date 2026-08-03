@@ -19,28 +19,23 @@ function emitProgress(onProgress, payload) {
 
 export function buildFmcExtremeHybridPlan(totalBudgetMs = FMC_EXTREME_PROFILE.defaultTimeBudgetMs) {
   const total = Math.max(3000, asPositiveInteger(totalBudgetMs, FMC_EXTREME_PROFILE.defaultTimeBudgetMs));
-  const adaptiveBudgetMs = Math.max(1000, Math.floor(total / 6));
-  const fullHumanBudgetMs = Math.max(1000, Math.floor(total / 3));
-  const independentBudgetMs = Math.max(1000, total - adaptiveBudgetMs - fullHumanBudgetMs);
-
+  const adaptiveBudgetMs = Math.max(1000, Math.min(20000, Math.floor(total / 6)));
+  const progressiveBudgetMs = Math.max(1000, total - adaptiveBudgetMs);
   return Object.freeze([
     Object.freeze({
-      id: "adaptive-human",
-      label: "Adaptive human FMC",
+      id: "adaptive-seed",
+      label: "Adaptive human seed",
       qualityMode: "sweetSpot",
       timeBudgetMs: adaptiveBudgetMs,
+      maxPremoveSets: 40,
     }),
     Object.freeze({
-      id: "full-human-portfolio",
-      label: "Full human portfolio",
-      qualityMode: "custom",
-      timeBudgetMs: fullHumanBudgetMs,
-    }),
-    Object.freeze({
-      id: "independent-frontier",
-      label: "Independent frontier",
+      id: "progressive-frontier",
+      label: "Progressive independent frontier",
       qualityMode: "extreme",
-      timeBudgetMs: independentBudgetMs,
+      timeBudgetMs: progressiveBudgetMs,
+      maxPremoveSets: FMC_EXTREME_PROFILE.integratedMaxPremoveSets,
+      reservedCompressionPremoves: FMC_EXTREME_PROFILE.integratedReservedCompressionPremoves,
     }),
   ]);
 }
@@ -103,66 +98,45 @@ export function pickBestFmcHybridCandidate(candidates) {
   })[0];
 }
 
-function buildStageOptions(stage, common, searchTargetMoveCount) {
+function buildStageOptions(stage, searchTargetMoveCount, crossColors) {
+  const common = {
+    targetMoveCount: searchTargetMoveCount,
+    timeBudgetMs: stage.timeBudgetMs,
+    allowCfopFallback: false,
+    premoveAllowCfopFallback: false,
+    enableCoverageFallback: false,
+    preferNonCfop: true,
+    enableInsertions: true,
+    requireTargetReached: false,
+    crossColors,
+  };
+
   if (stage.qualityMode === "sweetSpot") {
     return {
       ...common,
       qualityMode: "sweetSpot",
-      timeBudgetMs: stage.timeBudgetMs,
-      targetMoveCount: searchTargetMoveCount,
-      maxPremoveSets: 40,
+      maxPremoveSets: stage.maxPremoveSets,
       verifyLimit: 24,
       insertionCandidateLimit: 3,
       insertionMaxPasses: 3,
       insertionTimeMs: Math.min(5000, Math.max(1200, Math.floor(stage.timeBudgetMs * 0.3))),
       insertionThreshold: 28,
-      requireTargetReached: false,
-    };
-  }
-
-  if (stage.qualityMode === "custom") {
-    return {
-      ...common,
-      qualityMode: "custom",
-      timeBudgetMs: stage.timeBudgetMs,
-      targetMoveCount: searchTargetMoveCount,
-      maxPremoveSets: FMC_EXTREME_PROFILE.maxPremoveSets,
-      verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
-      enableMultiSwitchNiss: true,
-      enableDeepMultiSwitchNiss: true,
-      enableHtrSkeletons: true,
-      enableSliceInsertion: true,
-      enableMultiInsertion: true,
-      insertionCandidateLimit: FMC_EXTREME_PROFILE.insertionCandidateLimit,
-      insertionMaxPasses: FMC_EXTREME_PROFILE.insertionMaxPasses,
-      insertionTimeMs: Math.min(
-        FMC_EXTREME_PROFILE.insertionTimeMs,
-        Math.max(3000, Math.floor(stage.timeBudgetMs * 0.4)),
-      ),
-      insertionThreshold: FMC_EXTREME_PROFILE.insertionThreshold,
-      requireTargetReached: false,
     };
   }
 
   return {
     ...common,
     qualityMode: "extreme",
-    timeBudgetMs: stage.timeBudgetMs,
-    targetMoveCount: searchTargetMoveCount,
-    maxPremoveSets: FMC_EXTREME_PROFILE.maxPremoveSets,
+    maxPremoveSets: stage.maxPremoveSets,
     extremeVariantCount: FMC_EXTREME_PROFILE.extremeVariantCount,
-    extremeReservedCompressionPremoves: FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves,
+    extremeReservedCompressionPremoves: stage.reservedCompressionPremoves,
     extremeMaxRounds: FMC_EXTREME_PROFILE.extremeMaxRounds,
     continueBelowTarget: true,
     verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
     insertionCandidateLimit: FMC_EXTREME_PROFILE.insertionCandidateLimit,
     insertionMaxPasses: FMC_EXTREME_PROFILE.insertionMaxPasses,
-    insertionTimeMs: Math.min(
-      FMC_EXTREME_PROFILE.insertionTimeMs,
-      Math.max(3000, Math.floor(stage.timeBudgetMs * 0.35)),
-    ),
+    insertionTimeMs: FMC_EXTREME_PROFILE.insertionTimeMs,
     insertionThreshold: FMC_EXTREME_PROFILE.insertionThreshold,
-    requireTargetReached: false,
   };
 }
 
@@ -184,24 +158,17 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
     1,
     asPositiveInteger(options.targetMoveCount, FMC_EXTREME_PROFILE.targetMoveCount),
   );
-  // The public goal remains 20 (or the user-selected value), but Extreme keeps
-  // searching toward 18 instead of treating the first 20 as the terminal result.
-  const searchTargetMoveCount = Math.min(requestedTargetMoveCount, FMC_EXTREME_PROFILE.searchTargetMoveCount);
+  const searchTargetMoveCount = Math.min(
+    requestedTargetMoveCount,
+    FMC_EXTREME_PROFILE.searchTargetMoveCount,
+  );
+  const crossColors = Array.isArray(options.crossColors) ? options.crossColors : ["D"];
   const plan = buildFmcExtremeHybridPlan(totalBudgetMs);
   const candidates = [];
   const hybridStages = [];
+  const rawStageResults = [];
   const startedAt = Date.now();
   const deadlineTs = startedAt + totalBudgetMs;
-  let lastResult = null;
-
-  const common = {
-    allowCfopFallback: false,
-    premoveAllowCfopFallback: false,
-    enableCoverageFallback: false,
-    preferNonCfop: true,
-    enableInsertions: true,
-    crossColors: Array.isArray(options.crossColors) ? options.crossColors : ["D"],
-  };
 
   for (let index = 0; index < plan.length; index += 1) {
     if (Date.now() >= deadlineTs - 250) break;
@@ -234,26 +201,29 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
         hybridStageIndex: index,
         hybridTotalStages: plan.length,
       }),
-      buildStageOptions(stage, common, searchTargetMoveCount),
+      buildStageOptions(stage, searchTargetMoveCount, crossColors),
     ).catch((error) => ({
       ok: false,
       reason: String(error?.message || error || "FMC_HYBRID_STAGE_FAILED"),
     }));
-    lastResult = stageResult;
+    rawStageResults.push(stageResult);
 
     const candidate = normalizeFmcHybridCandidate(stageResult, stage.id);
     if (candidate) candidates.push(candidate);
     const best = pickBestFmcHybridCandidate(candidates);
+    const elapsedMs = Math.max(1, Date.now() - stageStartedAt);
     hybridStages.push({
       id: stage.id,
       label: stage.label,
       qualityMode: stage.qualityMode,
       budgetMs: stage.timeBudgetMs,
-      elapsedMs: Math.max(1, Date.now() - stageStartedAt),
+      elapsedMs,
       ok: stageResult?.ok === true,
       reason: String(stageResult?.reason || ""),
       moveCount: candidate?.moveCount ?? null,
       bestMoveCount: best?.moveCount ?? null,
+      maxPremoveSets: stage.maxPremoveSets,
+      reservedCompressionPremoves: stage.reservedCompressionPremoves ?? null,
     });
 
     emitProgress(onProgress, {
@@ -264,11 +234,12 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
       totalStages: plan.length,
       moveCount: candidate?.moveCount ?? null,
       bestMoveCount: best?.moveCount ?? null,
-      elapsedMs: Math.max(1, Date.now() - stageStartedAt),
+      elapsedMs,
     });
   }
 
   const best = pickBestFmcHybridCandidate(candidates);
+  const lastResult = rawStageResults[rawStageResults.length - 1] || null;
   if (!best) {
     return {
       ok: false,
@@ -284,6 +255,7 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
     };
   }
 
+  const elapsedMs = Math.max(1, Date.now() - startedAt);
   const qualityTargetReached = best.moveCount <= requestedTargetMoveCount;
   return {
     ok: true,
@@ -307,14 +279,17 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
     hybridWinningStage: best.hybridStageId,
     performanceDiagnostics: {
       ...(best.rawResult?.performanceDiagnostics || {}),
-      solver: "fmc-extreme-hybrid",
+      solver: "fmc-extreme-progressive",
       extremeProfileId: FMC_EXTREME_PROFILE.id,
+      executionModel: "adaptive-seed-plus-progressive-frontier",
       totalBudgetMs,
-      elapsedMs: Math.max(1, Date.now() - startedAt),
+      elapsedMs,
       requestedTargetMoveCount,
       searchTargetMoveCount,
       hybridWinningStage: best.hybridStageId,
       hybridStages,
+      progressiveFrontierDiagnostics:
+        rawStageResults.find((result, index) => plan[index]?.id === "progressive-frontier")?.performanceDiagnostics || null,
     },
   };
 }

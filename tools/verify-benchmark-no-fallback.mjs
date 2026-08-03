@@ -41,20 +41,22 @@ for (const token of [
   "defaultTimeBudgetMs: 120000",
   "extremeVariantCount: 24",
   "maxPremoveSets: 180",
+  "integratedMaxPremoveSets: 96",
   "extremeReservedCompressionPremoves: 24",
+  "integratedReservedCompressionPremoves: 12",
   "extremeMaxRounds: 1",
   "continueBelowTarget: true",
 ]) {
   if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
 }
 for (const token of [
-  'id: "adaptive-human"',
-  'id: "full-human-portfolio"',
-  'id: "independent-frontier"',
+  'id: "adaptive-seed"',
+  'id: "progressive-frontier"',
   "solveWithFmcExtremeHybrid",
   "FMC_EXTREME_HYBRID",
   "searchTargetMoveCount",
   "qualityTargetReached",
+  "adaptive-seed-plus-progressive-frontier",
 ]) {
   if (!fmcHybrid.includes(token)) throw new Error(`hybrid Extreme token missing: ${token}`);
 }
@@ -114,6 +116,8 @@ for (const source of [enhanced, legacy]) {
 for (const token of [
   "FIXED_EXTREME_SECONDS = 120",
   'warmup.value = "0"',
+  "Adaptive seed 20초",
+  "Progressive frontier를 100초",
   "목표 미달이어도 현재 최선해를 보존",
 ]) {
   if (!benchmarkUi.includes(token)) throw new Error(`120-second benchmark UI token missing: ${token}`);
@@ -121,4 +125,4 @@ for (const token of [
 if (!fmcSolver.includes("unlimitedTimeBudget")) {
   throw new Error("FMC solver no longer supports explicit unlimited custom searches");
 }
-console.log("benchmark no-fallback routing and FMC Extreme 120-second hybrid contract verified");
+console.log("benchmark no-fallback routing and FMC Extreme progressive 120-second contract verified");

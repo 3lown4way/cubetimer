@@ -32,7 +32,7 @@ function applyExtremeContractUi() {
   }
   if (footer) {
     footer.textContent = extreme
-      ? "FMC Extreme은 120초 동안 Adaptive → Full Human → Independent Frontier 순서로 탐색하며, 목표 미달이어도 현재 최선해를 보존합니다."
+      ? "FMC Extreme은 Adaptive seed 20초 후 Progressive frontier를 100초 실행합니다. L3 reserved는 12개 premove로 제한하고 남은 예산을 후속 독립 frontier에 배분하며, 목표 미달이어도 현재 최선해를 보존합니다."
       : "FMC는 외부 Two-Phase fallback 없이 인간형 탐색 결과만 측정합니다.";
   }
 }

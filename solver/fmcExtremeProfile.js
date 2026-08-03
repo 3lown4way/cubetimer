@@ -3,9 +3,15 @@ export const FMC_EXTREME_PROFILE = Object.freeze({
   targetMoveCount: 20,
   searchTargetMoveCount: 18,
   defaultTimeBudgetMs: 120000,
+  // Retained as the absolute frontier ceiling for compatibility and manual runs.
   maxPremoveSets: 180,
+  // The benchmark uses a narrower per-frontier width so the same 120-second
+  // budget reaches multiple independent variants instead of being consumed by
+  // the first L3 compression frontier.
+  integratedMaxPremoveSets: 96,
   extremeVariantCount: 24,
   extremeReservedCompressionPremoves: 24,
+  integratedReservedCompressionPremoves: 12,
   extremeMaxRounds: 1,
   continueBelowTarget: true,
   verifyLimit: 32,
