@@ -1,11 +1,9 @@
 name: Build minmove HTM assets
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/minmove-htm-bundle-loading
-    paths:
-      - .github/workflows/build-minmove-htm.yml
+      - main
   workflow_dispatch:
 
 permissions:
@@ -13,16 +11,19 @@ permissions:
 
 concurrency:
   group: build-minmove-htm-assets
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -144,4 +145,4 @@ jobs:
             exit 0
           fi
           git commit -m "Restore deployable minmove HTM solver"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${TARGET_BRANCH}"
