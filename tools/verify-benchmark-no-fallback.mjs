@@ -5,8 +5,10 @@ const legacy = fs.readFileSync(new URL("../benchmark/benchmark.js", import.meta.
 const worker = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
 const roux = fs.readFileSync(new URL("../solver/roux3x3.js", import.meta.url), "utf8");
 const fmcWorker = fs.readFileSync(new URL("../benchmark/fmcBenchmarkWorker.js", import.meta.url), "utf8");
+const fmcHybrid = fs.readFileSync(new URL("../solver/fmcExtremeHybrid.js", import.meta.url), "utf8");
 const fmcSolver = fs.readFileSync(new URL("../solver/fmcSolver.js", import.meta.url), "utf8");
 const profile = fs.readFileSync(new URL("../solver/fmcExtremeProfile.js", import.meta.url), "utf8");
+const benchmarkUi = fs.readFileSync(new URL("../benchmark/benchmark-fmc-extreme-120s-ui.js", import.meta.url), "utf8");
 const wasmSolver = fs.readFileSync(new URL("../solver/wasmSolver.js", import.meta.url), "utf8");
 const rustFmc = fs.readFileSync(new URL("../solver-wasm/src/fmc_search.rs", import.meta.url), "utf8");
 const rustApi = fs.readFileSync(new URL("../solver-wasm/src/lib.rs", import.meta.url), "utf8");
@@ -33,13 +35,28 @@ if (!roux.includes("const allowCrossMethodRecovery = options.enableRecovery !== 
 }
 
 for (const token of [
-  'id: "independent-frontier-v3-anytime-widening"',
+  'id: "hybrid-adaptive-120s-v1"',
+  "targetMoveCount: 20",
+  "searchTargetMoveCount: 18",
+  "defaultTimeBudgetMs: 120000",
   "extremeVariantCount: 24",
   "maxPremoveSets: 180",
   "extremeReservedCompressionPremoves: 24",
-  "defaultTimeBudgetMs: 0",
+  "extremeMaxRounds: 1",
+  "continueBelowTarget: true",
 ]) {
   if (!profile.includes(token)) throw new Error(`shared Extreme profile token missing: ${token}`);
+}
+for (const token of [
+  'id: "adaptive-human"',
+  'id: "full-human-portfolio"',
+  'id: "independent-frontier"',
+  "solveWithFmcExtremeHybrid",
+  "FMC_EXTREME_HYBRID",
+  "searchTargetMoveCount",
+  "qualityTargetReached",
+]) {
+  if (!fmcHybrid.includes(token)) throw new Error(`hybrid Extreme token missing: ${token}`);
 }
 for (const token of [
   'stage(`human-L${searchLevel}${roundSuffix}-V${searchVariant}',
@@ -52,7 +69,7 @@ for (const token of [
   'type: "quality_stage_start"',
   'type: "quality_stage_done"',
 ]) {
-  if (!fmcSolver.includes(token)) throw new Error(`independent-frontier-v3 token missing: ${token}`);
+  if (!fmcSolver.includes(token)) throw new Error(`independent-frontier token missing: ${token}`);
 }
 if (fmcSolver.includes('stage("extreme-target-unbounded"')) {
   throw new Error("site still uses the simplified one-pass Extreme implementation");
@@ -76,28 +93,32 @@ for (const source of [fmcSolver, wasmSolver, rustFmc, rustApi]) {
   }
 }
 for (const token of [
-  "buildFmcExtremeOptions",
+  "solveWithFmcExtremeHybrid",
   "FMC_EXTREME_PROFILE",
   "FMC_EXTREME_PROFILE_MISMATCH",
-  "FMC_EXTREME_TARGET_NOT_REACHED",
+  "FMC_EXTREME_PROFILE.defaultTimeBudgetMs",
 ]) {
-  if (!fmcWorker.includes(token)) throw new Error(`site-parity worker token missing: ${token}`);
+  if (!fmcWorker.includes(token)) throw new Error(`hybrid benchmark worker token missing: ${token}`);
 }
 for (const source of [enhanced, legacy]) {
   if (!source.includes("payload.fmcTimeBudgetMs = isUnlimitedExtreme(config)")) {
-    throw new Error("Extreme unlimited payload is missing");
+    throw new Error("Extreme sentinel payload is missing");
   }
   if (!source.includes("const result = unlimitedExtreme")) {
-    throw new Error("Extreme still uses the external Promise.race timeout");
-  }
-  if (!source.includes("목표 도달 또는 중지까지")) {
-    throw new Error("Extreme unlimited UI indicator is missing");
+    throw new Error("Extreme worker-owned deadline routing is missing");
   }
   if (!source.includes('progress.type === "quality_round_start"')) {
-    throw new Error("Extreme anytime round progress is missing");
+    throw new Error("Extreme frontier progress is missing");
   }
 }
-if (!fmcWorker.includes("requestedTimeBudgetMs === 0") || !fmcSolver.includes("unlimitedTimeBudget")) {
-  throw new Error("Extreme unlimited sentinel is not preserved end-to-end");
+for (const token of [
+  "FIXED_EXTREME_SECONDS = 120",
+  'warmup.value = "0"',
+  "목표 미달이어도 현재 최선해를 보존",
+]) {
+  if (!benchmarkUi.includes(token)) throw new Error(`120-second benchmark UI token missing: ${token}`);
 }
-console.log("benchmark no-fallback routing and FMC Extreme anytime site parity verified");
+if (!fmcSolver.includes("unlimitedTimeBudget")) {
+  throw new Error("FMC solver no longer supports explicit unlimited custom searches");
+}
+console.log("benchmark no-fallback routing and FMC Extreme 120-second hybrid contract verified");

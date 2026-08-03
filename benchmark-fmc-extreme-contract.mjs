@@ -1,55 +1,69 @@
 import assert from "node:assert/strict";
-import { performance } from "node:perf_hooks";
-import { solveWithFMCSearch } from "./solver/fmcSolver.js";
-import { buildFmcTablesWasm } from "./solver/wasmSolver.js";
 import { FMC_EXTREME_PROFILE, buildFmcExtremeOptions } from "./solver/fmcExtremeProfile.js";
+import {
+  buildFmcExtremeHybridPlan,
+  normalizeFmcHybridCandidate,
+  pickBestFmcHybridCandidate,
+} from "./solver/fmcExtremeHybrid.js";
 
-const scramble = "L2 U2 R U' F2 R' D L D2 L2 B' R' D2 F2 R' B' R2 F L F2 U B D2 B' U2";
-const siteOptions = buildFmcExtremeOptions({ targetMoveCount: 20, extremeMaxRounds: 1 });
+const options = buildFmcExtremeOptions();
+assert.equal(FMC_EXTREME_PROFILE.id, "hybrid-adaptive-120s-v1");
+assert.equal(FMC_EXTREME_PROFILE.defaultTimeBudgetMs, 120000);
+assert.equal(FMC_EXTREME_PROFILE.searchTargetMoveCount, 18);
+assert.equal(FMC_EXTREME_PROFILE.extremeMaxRounds, 1);
+assert.equal(FMC_EXTREME_PROFILE.continueBelowTarget, true);
+assert.equal(options.timeBudgetMs, 120000);
+assert.equal(options.requireTargetReached, false);
+assert.equal(options.extremeMaxRounds, 1);
+assert.equal(options.continueBelowTarget, true);
+assert.equal(options.allowCfopFallback, false);
+assert.equal(options.premoveAllowCfopFallback, false);
+assert.equal(options.enableCoverageFallback, false);
 
-assert.equal(FMC_EXTREME_PROFILE.id, "independent-frontier-v3-anytime-widening");
-assert.equal(siteOptions.timeBudgetMs, 0);
-assert.equal(siteOptions.extremeVariantCount, 24);
-assert.equal(siteOptions.maxPremoveSets, 180);
-assert.equal(siteOptions.extremeReservedCompressionPremoves, 24);
-assert.equal(siteOptions.continueBelowTarget, false);
-assert.equal(siteOptions.extremeMaxRounds, 1);
-assert.equal(siteOptions.enableCoverageFallback, false);
-assert.equal(siteOptions.allowCfopFallback, false);
-assert.equal(siteOptions.premoveAllowCfopFallback, false);
+const plan = buildFmcExtremeHybridPlan(120000);
+assert.deepEqual(plan.map((stage) => stage.id), [
+  "adaptive-human",
+  "full-human-portfolio",
+  "independent-frontier",
+]);
+assert.deepEqual(plan.map((stage) => stage.qualityMode), ["sweetSpot", "custom", "extreme"]);
+assert.deepEqual(plan.map((stage) => stage.timeBudgetMs), [20000, 40000, 60000]);
 
-assert.equal(await buildFmcTablesWasm(), true);
-const startedAt = performance.now();
-const result = await solveWithFMCSearch(scramble, null, siteOptions);
-const elapsedMs = performance.now() - startedAt;
-const diagnostics = result?.performanceDiagnostics || {};
-const stages = diagnostics.wasmStages || [];
+const targetMiss = normalizeFmcHybridCandidate({
+  ok: false,
+  reason: "FMC_EXTREME_TARGET_NOT_REACHED",
+  bestHumanSolution: "R U R'",
+  bestHumanMoveCount: 22,
+  bestHumanSource: "FMC_WASM",
+  bestHumanStages: [{ name: "FMC Best", solution: "R U R'" }],
+}, "independent-frontier");
+assert.equal(targetMiss?.moveCount, 22);
+assert.equal(targetMiss?.hybridStageId, "independent-frontier");
 
-assert.equal(result?.extremeProfileId || diagnostics.extremeProfileId, FMC_EXTREME_PROFILE.id);
-assert.equal(diagnostics.internalBudgetUnlimited, true);
-assert.equal(diagnostics.totalBudgetMs, null);
-assert.ok(stages.length >= 1, "compression-first Extreme executed no frontier");
-assert.equal(stages[0]?.name, "human-L3-V7-reserved");
-assert.equal(stages[0]?.maxPremoveSets, 24);
-assert.equal(stages[0]?.multiInsertion, true);
-assert.equal(stages[0]?.htr, true);
-assert.equal(stages[0]?.sliceInsertion, true);
-assert.equal(stages.some((stage) => /baseline|sweet/i.test(stage.name)), false);
-assert.equal(result?.qualityDowngraded, false);
-if (result?.ok) {
-  assert.equal(result.qualityTargetReached, true);
-  assert.ok(result.moveCount <= 20);
-  assert.equal(stages.length, 1, "target reached but Extreme continued into expansion stages");
-} else {
-  assert.equal(result?.reason, "FMC_EXTREME_TARGET_NOT_REACHED");
-  assert.ok(Number(result?.bestCandidate?.moveCount) > 20);
-}
+const twenty = normalizeFmcHybridCandidate({
+  ok: true,
+  solution: "R U R' U'",
+  moveCount: 20,
+  source: "FMC_WASM",
+  stages: [{ name: "FMC Best", solution: "R U R' U'" }],
+}, "adaptive-human");
+const nineteen = normalizeFmcHybridCandidate({
+  ok: true,
+  solution: "R U2 R'",
+  moveCount: 19,
+  source: "FMC_WASM",
+  stages: [{ name: "FMC Best", solution: "R U2 R'" }],
+}, "full-human-portfolio");
+assert.equal(pickBestFmcHybridCandidate([targetMiss, twenty, nineteen])?.moveCount, 19);
+assert.equal(normalizeFmcHybridCandidate({
+  ok: true,
+  solution: "R",
+  moveCount: 18,
+  source: "FMC_TWOPHASE_FALLBACK",
+}), null);
 
 console.log(JSON.stringify({
   profile: FMC_EXTREME_PROFILE.id,
-  elapsedMs,
-  ok: result?.ok === true,
-  reason: result?.reason || "",
-  moveCount: result?.moveCount ?? result?.bestCandidate?.moveCount ?? null,
-  stages: stages.map((stage) => ({ name: stage.name, maxPremoveSets: stage.maxPremoveSets, moveCount: stage.moveCount })),
+  totalBudgetMs: FMC_EXTREME_PROFILE.defaultTimeBudgetMs,
+  plan: plan.map((stage) => ({ id: stage.id, mode: stage.qualityMode, budgetMs: stage.timeBudgetMs })),
 }));

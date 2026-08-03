@@ -37,6 +37,7 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
   const metadata = [
     source,
     proofSource,
+    result?.candidateSource,
     result?.fallbackFrom,
     result?.fallbackSource,
     result?.fallbackReason,
@@ -77,11 +78,15 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
       if (String(result?.extremeProfileId || "") !== FMC_EXTREME_PROFILE.id) {
         return reject("FMC_EXTREME_PROFILE_MISMATCH");
       }
+      const moveCount = Number(result?.moveCount);
+      if (!Number.isFinite(moveCount) || moveCount <= 0 || !normalizeAlgorithm(result?.solution)) {
+        return reject("FMC_EXTREME_INVALID_BEST_RESULT");
+      }
       const target = Number.isFinite(Number(config?.fmcTargetMoveCount))
         ? Number(config.fmcTargetMoveCount)
-        : 20;
-      if (result?.qualityTargetReached !== true || !Number.isFinite(Number(result?.moveCount)) || Number(result.moveCount) > target) {
-        return reject("FMC_EXTREME_TARGET_NOT_REACHED");
+        : FMC_EXTREME_PROFILE.targetMoveCount;
+      if (result?.qualityTargetReached === true && moveCount > target) {
+        return reject("FMC_EXTREME_TARGET_FLAG_MISMATCH");
       }
     }
   }
