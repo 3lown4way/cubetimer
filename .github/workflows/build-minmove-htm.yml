@@ -29,6 +29,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Apply exact minmove v2 route
+        run: node tools/apply-minmove-exact-v2.mjs
+
+      - name: Validate exact minmove v2 source
+        run: |
+          node --check tools/apply-minmove-exact-v2.mjs
+          node --check solver/minmoveExactV2.js
+          node --check solver/solverWorker.js
+          node --check benchmark-minmove-exact-v2.mjs
+
       - name: Detect deployed minmove assets
         id: deployed
         run: |
@@ -163,6 +173,21 @@ jobs:
         run: |
           node benchmark-minmove-bundle-loader.mjs
           node benchmark-minmove-htm-smoke.mjs
+
+      - name: Verify exact minmove v2 on realistic scramble
+        run: node benchmark-minmove-exact-v2.mjs
+
+      - name: Commit exact minmove v2 route
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js
+          if git diff --cached --quiet; then
+            echo "Exact v2 route already committed"
+          else
+            git commit -m "Route minmove to exact two-phase v2"
+            git push origin "HEAD:${TARGET_BRANCH}"
+          fi
 
       - name: Commit generated solver and assets
         if: steps.deployed.outputs.ready != 'true'

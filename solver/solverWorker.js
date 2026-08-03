@@ -1467,16 +1467,10 @@ const api = {
       return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion, { noFallback: benchmarkNoFallback });
     }
     if (normalizedEventId === "333" && mode === "minmove") {
-      const minmoveResult = await solveWithInternal3x3Minmove(scramble, onProgress);
-      if (benchmarkNoFallback && minmoveResult?.ok && (
-        minmoveResult.optimalityProven !== true
-        || minmoveResult.fallbackReason
-        || /FALLBACK|RETRY/i.test(String(minmoveResult.source || ""))
-        || /fallback|retry/i.test(String(minmoveResult.proofSource || ""))
-      )) {
-        return { ok: false, reason: "MINMOVE_FALLBACK_RESULT_REJECTED", source: "REJECTED_MINMOVE_FALLBACK" };
-      }
-      return minmoveResult;
+      const { solveMinmoveExactV2 } = await import("./minmoveExactV2.js");
+      return solveMinmoveExactV2(scramble, onProgress, {
+        timeBudgetMs: 60_000,
+      });
     }
     const profileAwareCfop =
     mode === "zb" ||
