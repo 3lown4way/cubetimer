@@ -5,7 +5,7 @@ use crate::minmove_core::{
 };
 
 const BUNDLE_MAGIC: &[u8; 8] = b"TP3BNDL1";
-const BUNDLE_VERSION: u32 = 1;
+const BUNDLE_VERSION: u32 = 2;
 const PHASE2_MOVE_COUNT: usize = 10;
 const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] =
     ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
@@ -25,6 +25,8 @@ pub enum TableKind {
     Phase2CpMove = 9,
     Phase2EpMove = 10,
     Phase2SepMove = 11,
+    CoSliceJoint = 12,
+    EoSliceJoint = 13,
 }
 
 impl TableKind {
@@ -41,6 +43,8 @@ impl TableKind {
             9 => Some(Self::Phase2CpMove),
             10 => Some(Self::Phase2EpMove),
             11 => Some(Self::Phase2SepMove),
+            12 => Some(Self::CoSliceJoint),
+            13 => Some(Self::EoSliceJoint),
             _ => None,
         }
     }
@@ -66,6 +70,8 @@ pub struct TwophaseTables {
     pub co: PackedTable,
     pub eo: PackedTable,
     pub slice: PackedTable,
+    pub co_slice_joint: PackedTable,
+    pub eo_slice_joint: PackedTable,
     pub phase2_ep: PackedTable,
     pub phase2_cp_sep_joint: PackedTable,
     pub co_move: MoveTable,
@@ -229,6 +235,8 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
     let mut co: Option<PackedTable> = None;
     let mut eo: Option<PackedTable> = None;
     let mut slice: Option<PackedTable> = None;
+    let mut co_slice_joint: Option<PackedTable> = None;
+    let mut eo_slice_joint: Option<PackedTable> = None;
     let mut phase2_ep: Option<PackedTable> = None;
     let mut phase2_cp_sep_joint: Option<PackedTable> = None;
     let mut co_move: Option<MoveTable> = None;
@@ -297,6 +305,8 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
                 Some(TableKind::Slice) => slice = Some(table),
                 Some(TableKind::Phase2Ep) => phase2_ep = Some(table),
                 Some(TableKind::Phase2CpSepJoint) => phase2_cp_sep_joint = Some(table),
+                Some(TableKind::CoSliceJoint) => co_slice_joint = Some(table),
+                Some(TableKind::EoSliceJoint) => eo_slice_joint = Some(table),
                 _ => {}
             }
         }
@@ -312,6 +322,10 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
         co: co.ok_or_else(|| "twophase bundle missing CO table".to_string())?,
         eo: eo.ok_or_else(|| "twophase bundle missing EO table".to_string())?,
         slice: slice.ok_or_else(|| "twophase bundle missing Slice table".to_string())?,
+        co_slice_joint: co_slice_joint
+            .ok_or_else(|| "twophase bundle missing COxSlice table".to_string())?,
+        eo_slice_joint: eo_slice_joint
+            .ok_or_else(|| "twophase bundle missing EOxSlice table".to_string())?,
         phase2_ep: phase2_ep
             .ok_or_else(|| "twophase bundle missing Phase2 EP table".to_string())?,
         phase2_cp_sep_joint: phase2_cp_sep_joint
