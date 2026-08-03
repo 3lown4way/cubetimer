@@ -1,3 +1,5 @@
+import { loadChunkedMinmove333Bundle } from "./minmoveBundleLoader.js";
+
 const WASM_MODULE_CANDIDATES = [
   new URL("../public/solver-wasm/solver_wasm.js", import.meta.url).href,
   new URL("../solver-wasm/pkg/solver_wasm.js", import.meta.url).href,
@@ -6,6 +8,11 @@ const MINMOVE_333_BUNDLE_CANDIDATES = [
   new URL("../public/solver-wasm/minmove/minmove-333-v8.bin", import.meta.url).href,
   new URL("../public/solver-wasm/minmove/minmove-333-v7.bin", import.meta.url).href,
   new URL("../public/solver-wasm/minmove/minmove-333-v6.bin", import.meta.url).href,
+];
+const MINMOVE_333_MANIFEST_CANDIDATES = [
+  new URL("../public/solver-wasm/minmove/minmove-333-v8.manifest.json", import.meta.url).href,
+  new URL("../public/solver-wasm/minmove/minmove-333-v7.manifest.json", import.meta.url).href,
+  new URL("../public/solver-wasm/minmove/minmove-333-v6.manifest.json", import.meta.url).href,
 ];
 const TWOPHASE_333_BUNDLE_CANDIDATES = [
   new URL("../public/solver-wasm/twophase/twophase-333-v1.bin", import.meta.url).href,
@@ -72,6 +79,31 @@ async function loadWasmCandidate(specifier) {
       if (typeof mod.load_minmove_333_bundle !== "function") return false;
       mod.load_minmove_333_bundle(bytes);
       return true;
+    },
+    beginMinmove333Bundle(totalBytes) {
+      if (typeof mod.begin_minmove_333_bundle !== "function") {
+        throw new Error("MINMOVE_CHUNK_API_UNAVAILABLE");
+      }
+      mod.begin_minmove_333_bundle(totalBytes >>> 0);
+      return true;
+    },
+    appendMinmove333BundleGzipChunk(bytes) {
+      if (typeof mod.append_minmove_333_bundle_gzip_chunk !== "function") {
+        throw new Error("MINMOVE_CHUNK_API_UNAVAILABLE");
+      }
+      return Number(mod.append_minmove_333_bundle_gzip_chunk(bytes));
+    },
+    finishMinmove333Bundle(totalBytes) {
+      if (typeof mod.finish_minmove_333_bundle !== "function") {
+        throw new Error("MINMOVE_CHUNK_API_UNAVAILABLE");
+      }
+      mod.finish_minmove_333_bundle(totalBytes >>> 0);
+      return true;
+    },
+    abortMinmove333Bundle() {
+      if (typeof mod.abort_minmove_333_bundle === "function") {
+        mod.abort_minmove_333_bundle();
+      }
     },
     warmMinmove333() {
       if (typeof mod.warm_minmove_333 !== "function") return false;
@@ -207,18 +239,33 @@ export async function ensureWasmSolverReady() {
   return wasmApiPromise;
 }
 
-export async function ensureMinmove333Ready() {
+export async function ensureMinmove333Ready(onProgress = null) {
   const api = await ensureWasmSolverReady();
   if (!api) return null;
   if (minmove333ReadyPromise) return minmove333ReadyPromise;
 
-  minmove333ReadyPromise = (async () => {
-    if (typeof api.loadMinmove333Bundle !== "function") return null;
-    const bytes = await loadMinmove333BundleBytes();
-    if (!bytes) return null;
+  const readyPromise = (async () => {
+    let loaded = false;
+    const chunkedResult = await loadChunkedMinmove333Bundle(
+      api,
+      MINMOVE_333_MANIFEST_CANDIDATES,
+      { onProgress },
+    );
+    loaded = chunkedResult.ok === true;
+
+    if (!loaded && typeof api.loadMinmove333Bundle === "function") {
+      const bytes = await loadMinmove333BundleBytes();
+      if (bytes) {
+        try {
+          loaded = api.loadMinmove333Bundle(bytes) !== false;
+        } catch (_) {
+          loaded = false;
+        }
+      }
+    }
+    if (!loaded) return null;
+
     try {
-      const loaded = api.loadMinmove333Bundle(bytes);
-      if (!loaded) return null;
       if (typeof api.warmMinmove333 === "function") {
         api.warmMinmove333();
       }
@@ -228,7 +275,12 @@ export async function ensureMinmove333Ready() {
     }
   })();
 
-  return minmove333ReadyPromise;
+  minmove333ReadyPromise = readyPromise;
+  const ready = await readyPromise;
+  if (!ready && minmove333ReadyPromise === readyPromise) {
+    minmove333ReadyPromise = null;
+  }
+  return ready;
 }
 
 export async function ensureTwophase333Ready() {

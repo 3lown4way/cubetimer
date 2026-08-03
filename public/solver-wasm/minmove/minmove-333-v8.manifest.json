@@ -1,0 +1,132 @@
+{
+  "format": "minmove-333-gzip-chunks-v1",
+  "bundleVersion": 8,
+  "uncompressedBytes": 204898089,
+  "parts": [
+    {
+      "file": "minmove-333-v8.part-000.gz",
+      "compressedBytes": 3627694,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-001.gz",
+      "compressedBytes": 3563684,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-002.gz",
+      "compressedBytes": 3573279,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-003.gz",
+      "compressedBytes": 3662579,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-004.gz",
+      "compressedBytes": 3655469,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-005.gz",
+      "compressedBytes": 4066199,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-006.gz",
+      "compressedBytes": 3236020,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-007.gz",
+      "compressedBytes": 3410033,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-008.gz",
+      "compressedBytes": 3400722,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-009.gz",
+      "compressedBytes": 3405375,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-010.gz",
+      "compressedBytes": 3391679,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-011.gz",
+      "compressedBytes": 3349015,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-012.gz",
+      "compressedBytes": 3163733,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-013.gz",
+      "compressedBytes": 3174582,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-014.gz",
+      "compressedBytes": 4235135,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-015.gz",
+      "compressedBytes": 4348217,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-016.gz",
+      "compressedBytes": 4349541,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-017.gz",
+      "compressedBytes": 4347935,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-018.gz",
+      "compressedBytes": 4347123,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-019.gz",
+      "compressedBytes": 3887284,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-020.gz",
+      "compressedBytes": 3574841,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-021.gz",
+      "compressedBytes": 3620169,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-022.gz",
+      "compressedBytes": 3628853,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-023.gz",
+      "compressedBytes": 3597870,
+      "uncompressedBytes": 8388608
+    },
+    {
+      "file": "minmove-333-v8.part-024.gz",
+      "compressedBytes": 1568311,
+      "uncompressedBytes": 3571497
+    }
+  ]
+}

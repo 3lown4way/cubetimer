@@ -435,7 +435,7 @@ for (const path of ["benchmark/benchmark-enhanced.js", "benchmark/benchmark.js"]
     const percent = Number.isFinite(loaded) && Number.isFinite(totalBytes) && totalBytes > 0
       ? Math.min(100, Math.max(0, Math.round((loaded / totalBytes) * 100)))
       : null;
-    return \`${"${name || \"minmove HTM tables\"}"}${percent === null ? "" : \` ${"${percent}"}%\`}\`;
+    return (name || "minmove HTM tables") + (percent === null ? "" : " " + percent + "%");
   }
   if (progress.type === "bound_update") {`,
   );

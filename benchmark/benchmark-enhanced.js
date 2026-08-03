@@ -283,6 +283,14 @@ function formatProgressEvent(progress) {
   const index = Number.isFinite(progress.stageIndex) ? progress.stageIndex + 1 : null;
   const total = Number.isFinite(progress.totalStages) ? progress.totalStages : null;
   const prefix = index && total ? `[${index}/${total}] ` : "";
+  if (progress.type === "asset_load_progress") {
+    const loaded = Number(progress.loadedBytes);
+    const totalBytes = Number(progress.totalBytes);
+    const percent = Number.isFinite(loaded) && Number.isFinite(totalBytes) && totalBytes > 0
+      ? Math.min(100, Math.max(0, Math.round((loaded / totalBytes) * 100)))
+      : null;
+    return (name || "minmove HTM tables") + (percent === null ? "" : " " + percent + "%");
+  }
   if (progress.type === "bound_update") {
     const nodes = Number.isFinite(progress.nodes) ? ` · ${progress.nodes.toLocaleString()} nodes` : "";
     return `depth ${progress.bound ?? "?"}${nodes}`;

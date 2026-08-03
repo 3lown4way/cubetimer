@@ -14,25 +14,82 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("[minmove] generating HTM pruning and move tables...");
     let tables = build_all_tables(&move_data);
     let inputs = vec![
-        BundleInput::Dist { kind: TableKind::Co, values: &tables.co },
-        BundleInput::Dist { kind: TableKind::Eo, values: &tables.eo },
-        BundleInput::Dist { kind: TableKind::Slice, values: &tables.slice },
-        BundleInput::Dist { kind: TableKind::Cp, values: &tables.cp },
-        BundleInput::Dist { kind: TableKind::EdgeSubsetA, values: &tables.edge_subset_a },
-        BundleInput::Dist { kind: TableKind::EdgeSubsetB, values: &tables.edge_subset_b },
-        BundleInput::Move { kind: TableKind::CoMove, values: &tables.co_move },
-        BundleInput::Move { kind: TableKind::EoMove, values: &tables.eo_move },
-        BundleInput::Move { kind: TableKind::CpMove, values: &tables.cp_move },
-        BundleInput::Move { kind: TableKind::SliceMove, values: &tables.slice_move },
-        BundleInput::Dist { kind: TableKind::CoEoJoint, values: &tables.co_eo_joint },
-        BundleInput::Dist { kind: TableKind::CpSliceJoint, values: &tables.cp_slice_joint },
-        BundleInput::Dist { kind: TableKind::CoSliceJoint, values: &tables.co_slice_joint },
-        BundleInput::Dist { kind: TableKind::CpEoJoint, values: &tables.cp_eo_joint },
-        BundleInput::Dist { kind: TableKind::EdgePermSubsetA, values: &tables.edge_perm_subset_a },
-        BundleInput::Dist { kind: TableKind::EdgePermSubsetB, values: &tables.edge_perm_subset_b },
-        BundleInput::Dist { kind: TableKind::CornerFullJoint, values: &tables.corner_full },
-        BundleInput::Dist { kind: TableKind::EdgeSubsetC, values: &tables.edge_subset_c },
-        BundleInput::Dist { kind: TableKind::EdgeSubsetD, values: &tables.edge_subset_d },
+        BundleInput::Dist {
+            kind: TableKind::Co,
+            values: &tables.co,
+        },
+        BundleInput::Dist {
+            kind: TableKind::Eo,
+            values: &tables.eo,
+        },
+        BundleInput::Dist {
+            kind: TableKind::Slice,
+            values: &tables.slice,
+        },
+        BundleInput::Dist {
+            kind: TableKind::Cp,
+            values: &tables.cp,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgeSubsetA,
+            values: &tables.edge_subset_a,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgeSubsetB,
+            values: &tables.edge_subset_b,
+        },
+        BundleInput::Move {
+            kind: TableKind::CoMove,
+            values: &tables.co_move,
+        },
+        BundleInput::Move {
+            kind: TableKind::EoMove,
+            values: &tables.eo_move,
+        },
+        BundleInput::Move {
+            kind: TableKind::CpMove,
+            values: &tables.cp_move,
+        },
+        BundleInput::Move {
+            kind: TableKind::SliceMove,
+            values: &tables.slice_move,
+        },
+        BundleInput::Dist {
+            kind: TableKind::CoEoJoint,
+            values: &tables.co_eo_joint,
+        },
+        BundleInput::Dist {
+            kind: TableKind::CpSliceJoint,
+            values: &tables.cp_slice_joint,
+        },
+        BundleInput::Dist {
+            kind: TableKind::CoSliceJoint,
+            values: &tables.co_slice_joint,
+        },
+        BundleInput::Dist {
+            kind: TableKind::CpEoJoint,
+            values: &tables.cp_eo_joint,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgePermSubsetA,
+            values: &tables.edge_perm_subset_a,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgePermSubsetB,
+            values: &tables.edge_perm_subset_b,
+        },
+        BundleInput::Dist {
+            kind: TableKind::CornerFullJoint,
+            values: &tables.corner_full,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgeSubsetC,
+            values: &tables.edge_subset_c,
+        },
+        BundleInput::Dist {
+            kind: TableKind::EdgeSubsetD,
+            values: &tables.edge_subset_d,
+        },
     ];
     let bundle = build_bundle_bytes(&move_data_file, &inputs)?;
 
