@@ -17,6 +17,8 @@ pub struct GeneratedTwophaseTables {
     pub co: Vec<u8>,
     pub eo: Vec<u8>,
     pub slice: Vec<u8>,
+    pub co_slice_joint: Vec<u8>,
+    pub eo_slice_joint: Vec<u8>,
     pub phase2_ep: Vec<u8>,
     pub phase2_cp_sep_joint: Vec<u8>,
     pub co_move: Vec<u16>,
@@ -52,6 +54,46 @@ fn bfs_from_move_table_u16(
             }
             dist[next_state] = next_depth;
             queue[tail] = next_state as u32;
+            tail += 1;
+        }
+    }
+    dist
+}
+
+fn build_joint_dist(
+    first_move: &[u16],
+    first_size: usize,
+    second_move: &[u16],
+    second_size: usize,
+    first_start: usize,
+    second_start: usize,
+) -> Vec<u8> {
+    let size = first_size * second_size;
+    let mut dist = vec![NOT_SET; size];
+    let mut queue = vec![0u32; size];
+    let start = first_start * second_size + second_start;
+    let mut head = 0usize;
+    let mut tail = 0usize;
+    dist[start] = 0;
+    queue[tail] = start as u32;
+    tail += 1;
+    while head < tail {
+        let index = queue[head] as usize;
+        head += 1;
+        let first = index / second_size;
+        let second = index % second_size;
+        let next_depth = dist[index] + 1;
+        let first_base = first * MOVE_COUNT;
+        let second_base = second * MOVE_COUNT;
+        for move_index in 0..MOVE_COUNT {
+            let next_first = first_move[first_base + move_index] as usize;
+            let next_second = second_move[second_base + move_index] as usize;
+            let next_index = next_first * second_size + next_second;
+            if dist[next_index] != NOT_SET {
+                continue;
+            }
+            dist[next_index] = next_depth;
+            queue[tail] = next_index as u32;
             tail += 1;
         }
     }
@@ -285,6 +327,11 @@ pub fn build_all_tables(move_data: &MoveData) -> Result<GeneratedTwophaseTables,
     solved_slice_occupancy[11] = 1;
     let solved_slice = encode_slice_from_occupancy(&solved_slice_occupancy);
 
+    let co_slice_joint =
+        build_joint_dist(&co_move, CO_SIZE, &slice_move, SLICE_SIZE, 0, solved_slice);
+    let eo_slice_joint =
+        build_joint_dist(&eo_move, EO_SIZE, &slice_move, SLICE_SIZE, 0, solved_slice);
+
     let phase2_move_indices = resolve_phase2_move_indices(move_data)?;
     let phase2_cp_move = build_phase2_cp_move_table(move_data, &phase2_move_indices);
     let phase2_ep_move = build_phase2_ep_move_table(move_data, &phase2_move_indices)?;
@@ -294,6 +341,8 @@ pub fn build_all_tables(move_data: &MoveData) -> Result<GeneratedTwophaseTables,
         co: bfs_from_move_table_u16(&co_move, CO_SIZE, 0, MOVE_COUNT),
         eo: bfs_from_move_table_u16(&eo_move, EO_SIZE, 0, MOVE_COUNT),
         slice: bfs_from_move_table_u16(&slice_move, SLICE_SIZE, solved_slice, MOVE_COUNT),
+        co_slice_joint,
+        eo_slice_joint,
         phase2_ep: bfs_from_move_table_u16(&phase2_ep_move, EP_SIZE, 0, PHASE2_MOVE_COUNT),
         phase2_cp_sep_joint: build_phase2_cp_sep_joint_dist(&phase2_cp_move, &phase2_sep_move),
         co_move,

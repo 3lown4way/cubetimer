@@ -15,6 +15,7 @@ const MINMOVE_333_MANIFEST_CANDIDATES = [
   new URL("../public/solver-wasm/minmove/minmove-333-v6.manifest.json", import.meta.url).href,
 ];
 const TWOPHASE_333_BUNDLE_CANDIDATES = [
+  new URL("../public/solver-wasm/twophase/twophase-333-v2.bin", import.meta.url).href,
   new URL("../public/solver-wasm/twophase/twophase-333-v1.bin", import.meta.url).href,
 ];
 

@@ -245,6 +245,18 @@ fn encode_perm4(perm: &[u8; 4]) -> usize {
     index
 }
 
+#[inline(always)]
+fn phase1_joint_lower_bound(tables: &TwophaseTables, co: usize, eo: usize, slice: usize) -> u8 {
+    tables
+        .co_slice_joint
+        .get(co * crate::minmove_core::SLICE_SIZE + slice)
+        .max(
+            tables
+                .eo_slice_joint
+                .get(eo * crate::minmove_core::SLICE_SIZE + slice),
+        )
+}
+
 fn build_phase1_input(state: &CubeState, max_depth: u8, node_limit: u64) -> Phase1Input {
     Phase1Input {
         co_idx: encode_co(&state.co),
@@ -307,12 +319,7 @@ impl<'a, 'b> Phase1SearchCtx<'a, 'b> {
         if self.node_limit_hit {
             return STOP_SENTINEL;
         }
-        let h = self
-            .tables
-            .co
-            .get(co)
-            .max(self.tables.eo.get(eo))
-            .max(self.tables.slice.get(slice));
+        let h = phase1_joint_lower_bound(self.tables, co, eo, slice);
         let f = depth.saturating_add(h);
         if f > bound {
             return f as u16;
@@ -371,12 +378,8 @@ fn solve_phase1(input: &Phase1Input, tables: &TwophaseTables) -> Phase1SolveResu
         };
     }
 
-    let mut bound = tables
-        .co
-        .get(input.co_idx)
-        .max(tables.eo.get(input.eo_idx))
-        .max(tables.slice.get(input.slice_idx))
-        .max(1);
+    let mut bound =
+        phase1_joint_lower_bound(tables, input.co_idx, input.eo_idx, input.slice_idx).max(1);
     let mut fail_cache = PHASE1_FAIL_TABLE.lock().unwrap();
     fail_cache.reset();
     let mut ctx = Phase1SearchCtx {
@@ -476,11 +479,7 @@ fn solve_phase1_multi(
         if solutions.len() >= max_count {
             return;
         }
-        let h = tables
-            .co
-            .get(co)
-            .max(tables.eo.get(eo))
-            .max(tables.slice.get(slice));
+        let h = phase1_joint_lower_bound(tables, co, eo, slice);
         if depth.saturating_add(h) > target_depth {
             return;
         }
@@ -814,12 +813,7 @@ impl<'a> ExactPhase1SearchCtx<'a> {
             return self.found_path.is_some();
         }
 
-        let phase1_h = self
-            .tables
-            .co
-            .get(co)
-            .max(self.tables.eo.get(eo))
-            .max(self.tables.slice.get(slice));
+        let phase1_h = phase1_joint_lower_bound(self.tables, co, eo, slice);
         if depth.saturating_add(phase1_h) > target_phase1_depth {
             return false;
         }
@@ -952,11 +946,7 @@ pub fn search_twophase_exact_bound(
         found_path: None,
     };
 
-    let min_phase1_depth = tables
-        .co
-        .get(co_idx)
-        .max(tables.eo.get(eo_idx))
-        .max(tables.slice.get(slice_idx));
+    let min_phase1_depth = phase1_joint_lower_bound(tables, co_idx, eo_idx, slice_idx);
     let mut found = false;
     for target_phase1_depth in min_phase1_depth..=options.max_total_depth {
         ctx.path.clear();
