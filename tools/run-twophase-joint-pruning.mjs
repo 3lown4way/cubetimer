@@ -11,5 +11,9 @@ source = source.replace(
   'if (count !== 3) throw new Error(`Expected 3 phase1 heuristic replacements, got ${count}`);',
   'if (count !== 5) throw new Error(`Expected 5 phase1 heuristic replacements, got ${count}`);',
 );
+source = source.replace(
+  '  if (count !== 5) throw new Error(`Expected 5 phase1 heuristic replacements, got ${count}`);',
+  '  search = search.replaceAll("self.phase1_joint_lower_bound(tables,", "phase1_joint_lower_bound(self.tables,");\n  if (count !== 5) throw new Error(`Expected 5 phase1 heuristic replacements, got ${count}`);',
+);
 fs.writeFileSync(path, source);
 await import("./apply-twophase-joint-pruning.mjs");
