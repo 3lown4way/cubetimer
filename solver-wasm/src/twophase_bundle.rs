@@ -1,4 +1,4 @@
-use crate::minmove_bundle::{MoveTable, PackedTable};
+use crate::minmove_bundle::{MoveTable, PackedPayload, PackedTable};
 use crate::minmove_core::{
     build_allowed_moves_by_last_face, encode_slice_from_ep, MoveData, MoveDataFile, EDGE_COUNT,
     LAST_FACE_FREE, MOVE_COUNT,
@@ -288,7 +288,7 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
                 count: entry_count,
                 max_distance: meta,
                 nibble_packed,
-                payload: bytes[offset..offset + payload_len].to_vec(),
+                payload: PackedPayload::Owned(bytes[offset..offset + payload_len].to_vec()),
             };
             offset += payload_len;
             match kind {

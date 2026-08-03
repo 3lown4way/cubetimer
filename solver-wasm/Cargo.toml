@@ -14,9 +14,14 @@ serde_json = "1"
 once_cell = "1"
 console_error_panic_hook = "0.1"
 rustc-hash = "2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
+
+[[bin]]
+name = "build_minmove_tables"
+path = "src/build_minmove_tables_main.rs"
 
 [profile.release]
 opt-level = 3

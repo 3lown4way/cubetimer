@@ -1,5 +1,33 @@
 /* @ts-self-types="./solver_wasm.d.ts" */
 
+export function abort_minmove_333_bundle() {
+    wasm.abort_minmove_333_bundle();
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {number}
+ */
+export function append_minmove_333_bundle_gzip_chunk(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.append_minmove_333_bundle_gzip_chunk(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
+/**
+ * @param {number} total_bytes
+ */
+export function begin_minmove_333_bundle(total_bytes) {
+    const ret = wasm.begin_minmove_333_bundle(total_bytes);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
 /**
  * @returns {string}
  */
@@ -28,6 +56,16 @@ export function drop_minmove_search(search_id) {
  */
 export function drop_twophase_search(search_id) {
     wasm.drop_twophase_search(search_id);
+}
+
+/**
+ * @param {number} expected_bytes
+ */
+export function finish_minmove_333_bundle(expected_bytes) {
+    const ret = wasm.finish_minmove_333_bundle(expected_bytes);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
 }
 
 /**

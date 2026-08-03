@@ -14,16 +14,18 @@ pub mod twophase_bundle;
 pub mod twophase_search;
 mod utils;
 
+use flate2::read::GzDecoder;
 use fmc_insertion::optimize_insertion_wasm_impl;
 use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};
 use ida::{build_prune_tables, ida_solve};
-use minmove_bundle::{load_bundle, MinmoveTables};
+use minmove_bundle::{load_bundle, load_bundle_owned, MinmoveTables};
 use minmove_search::{
     build_bidirectional_context, search_to_string, MinmoveBidirectionalContext, SearchSession,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
 use twophase_bundle::{load_bundle as load_twophase_bundle, TwophaseTables};
@@ -57,6 +59,15 @@ static TWOPHASE_TABLES: Lazy<Mutex<Option<TwophaseTables>>> = Lazy::new(|| Mutex
 static TWOPHASE_SEARCHES: Lazy<Mutex<TwophaseSearchStore>> =
     Lazy::new(|| Mutex::new(TwophaseSearchStore::default()));
 static FMC_TABLES: Lazy<Mutex<Option<FmcTables>>> = Lazy::new(|| Mutex::new(None));
+
+#[derive(Default)]
+struct MinmoveBundleStaging {
+    expected_bytes: usize,
+    bytes: Vec<u8>,
+}
+
+static MINMOVE_BUNDLE_STAGING: Lazy<Mutex<Option<MinmoveBundleStaging>>> =
+    Lazy::new(|| Mutex::new(None));
 
 #[derive(Default)]
 struct MinmoveSearchStore {
@@ -163,12 +174,8 @@ pub fn solve_json(req_json: &str) -> String {
     }
 }
 
-#[wasm_bindgen]
-pub fn load_minmove_333_bundle(bytes: &[u8]) -> Result<(), JsValue> {
-    utils::set_panic_hook();
-    let tables = load_bundle(bytes).map_err(|error| JsValue::from_str(&error))?;
-    let bidirectional =
-        build_bidirectional_context(&tables).map_err(|error| JsValue::from_str(&error))?;
+fn install_minmove_tables(tables: MinmoveTables) -> Result<(), String> {
+    let bidirectional = build_bidirectional_context(&tables)?;
     {
         let mut guard = MINMOVE_TABLES.lock().unwrap();
         *guard = Some(tables);
@@ -179,6 +186,76 @@ pub fn load_minmove_333_bundle(bytes: &[u8]) -> Result<(), JsValue> {
     }
     MINMOVE_SEARCHES.lock().unwrap().sessions.clear();
     Ok(())
+}
+
+#[wasm_bindgen]
+pub fn load_minmove_333_bundle(bytes: &[u8]) -> Result<(), JsValue> {
+    utils::set_panic_hook();
+    *MINMOVE_BUNDLE_STAGING.lock().unwrap() = None;
+    let tables = load_bundle(bytes).map_err(|error| JsValue::from_str(&error))?;
+    install_minmove_tables(tables).map_err(|error| JsValue::from_str(&error))
+}
+
+#[wasm_bindgen]
+pub fn begin_minmove_333_bundle(total_bytes: u32) -> Result<(), JsValue> {
+    utils::set_panic_hook();
+    if total_bytes == 0 {
+        return Err(JsValue::from_str("MINMOVE_BUNDLE_SIZE_INVALID"));
+    }
+    let expected_bytes = total_bytes as usize;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(expected_bytes)
+        .map_err(|_| JsValue::from_str("MINMOVE_BUNDLE_ALLOCATION_FAILED"))?;
+    *MINMOVE_BUNDLE_STAGING.lock().unwrap() = Some(MinmoveBundleStaging {
+        expected_bytes,
+        bytes,
+    });
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub fn append_minmove_333_bundle_gzip_chunk(bytes: &[u8]) -> Result<u32, JsValue> {
+    utils::set_panic_hook();
+    let mut guard = MINMOVE_BUNDLE_STAGING.lock().unwrap();
+    let staging = guard
+        .as_mut()
+        .ok_or_else(|| JsValue::from_str("MINMOVE_BUNDLE_STAGING_NOT_STARTED"))?;
+    let before = staging.bytes.len();
+    let mut decoder = GzDecoder::new(bytes);
+    if let Err(error) = decoder.read_to_end(&mut staging.bytes) {
+        staging.bytes.truncate(before);
+        return Err(JsValue::from_str(&format!(
+            "MINMOVE_BUNDLE_CHUNK_DECODE_FAILED:{error}"
+        )));
+    }
+    if staging.bytes.len() > staging.expected_bytes {
+        staging.bytes.truncate(before);
+        return Err(JsValue::from_str("MINMOVE_BUNDLE_CHUNK_OVERFLOW"));
+    }
+    Ok(staging.bytes.len() as u32)
+}
+
+#[wasm_bindgen]
+pub fn finish_minmove_333_bundle(expected_bytes: u32) -> Result<(), JsValue> {
+    utils::set_panic_hook();
+    let staging = MINMOVE_BUNDLE_STAGING
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| JsValue::from_str("MINMOVE_BUNDLE_STAGING_NOT_STARTED"))?;
+    if staging.expected_bytes != expected_bytes as usize
+        || staging.bytes.len() != staging.expected_bytes
+    {
+        return Err(JsValue::from_str("MINMOVE_BUNDLE_SIZE_MISMATCH"));
+    }
+    let tables = load_bundle_owned(staging.bytes).map_err(|error| JsValue::from_str(&error))?;
+    install_minmove_tables(tables).map_err(|error| JsValue::from_str(&error))
+}
+
+#[wasm_bindgen]
+pub fn abort_minmove_333_bundle() {
+    *MINMOVE_BUNDLE_STAGING.lock().unwrap() = None;
 }
 
 #[wasm_bindgen]

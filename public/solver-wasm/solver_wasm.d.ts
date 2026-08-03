@@ -1,11 +1,19 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function abort_minmove_333_bundle(): void;
+
+export function append_minmove_333_bundle_gzip_chunk(bytes: Uint8Array): number;
+
+export function begin_minmove_333_bundle(total_bytes: number): void;
+
 export function build_fmc_tables_wasm(): string;
 
 export function drop_minmove_search(search_id: number): void;
 
 export function drop_twophase_search(search_id: number): void;
+
+export function finish_minmove_333_bundle(expected_bytes: number): void;
 
 export function load_minmove_333_bundle(bytes: Uint8Array): void;
 
@@ -43,9 +51,12 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly append_minmove_333_bundle_gzip_chunk: (a: number, b: number) => [number, number, number];
+    readonly begin_minmove_333_bundle: (a: number) => [number, number];
     readonly build_fmc_tables_wasm: () => [number, number];
     readonly drop_minmove_search: (a: number) => void;
     readonly drop_twophase_search: (a: number) => void;
+    readonly finish_minmove_333_bundle: (a: number) => [number, number];
     readonly load_minmove_333_bundle: (a: number, b: number) => [number, number];
     readonly load_twophase_333_bundle: (a: number, b: number) => [number, number];
     readonly optimize_insertion_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
@@ -60,6 +71,7 @@ export interface InitOutput {
     readonly verify_fmc_solution_wasm: (a: number, b: number, c: number, d: number) => [number, number];
     readonly warm_minmove_333: () => [number, number];
     readonly warm_twophase_333: () => [number, number];
+    readonly abort_minmove_333_bundle: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

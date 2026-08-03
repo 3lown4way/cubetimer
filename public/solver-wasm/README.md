@@ -18,7 +18,7 @@ wasm-pack build --target web --out-dir ../public/solver-wasm
 
 - Install wasm-pack first: https://rustwasm.github.io/wasm-pack/installer/
 - The move-data export step copies the current JS 3x3 move convention into `solver-wasm/assets/minmove_move_data.json`.
-- The minmove bundle step writes `public/solver-wasm/minmove/minmove-333-v4.bin`.
+- The minmove bundle step writes the current raw bundle, which the deployment workflow splits into lazily loaded gzip chunks plus a versioned manifest.
 - The twophase bundle step writes `public/solver-wasm/twophase/twophase-333-v1.bin`.
 - The wasm-pack step writes the runtime module into `public/solver-wasm`.
 
@@ -47,5 +47,5 @@ cargo run --manifest-path solver-wasm/Cargo.toml --bin twophase_cli -- --scrambl
   const res = JSON.parse(solve_json(JSON.stringify({ scramble, event_id: "222" })));
   ```
 - Keep this in a Web Worker to avoid blocking the main thread.
-- For `minmove`, fetch `public/solver-wasm/minmove/minmove-333-v4.bin`, pass it to `load_minmove_333_bundle(...)`, then call `prepare_minmove_333(...)` and `search_minmove_bound(...)` bound by bound.
+- For `minmove`, load the versioned manifest and append each gzip chunk through the incremental bundle API, then call `prepare_minmove_333(...)` and `search_minmove_bound(...)` bound by bound.
 - For `twophase`, fetch `public/solver-wasm/twophase/twophase-333-v1.bin`, pass it to `load_twophase_333_bundle(...)`, then call `prepare_twophase_333(...)` and `search_twophase_333(...)`.

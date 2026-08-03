@@ -110,9 +110,9 @@ async function getLlFamilyCalibrationForSolverLazy(transitionProfileSolver) {
   return getLlFamilyCalibrationForSolver(transitionProfileSolver);
 }
 
-async function ensureMinmove333ReadyLazy() {
+async function ensureMinmove333ReadyLazy(onProgress = null) {
   const { ensureMinmove333Ready } = await getWasmSolverModule();
-  return ensureMinmove333Ready();
+  return ensureMinmove333Ready(onProgress);
 }
 
 async function ensureTwophase333ReadyLazy() {
@@ -595,6 +595,7 @@ async function solveWithInternal3x3Minmove(scramble, onProgress) {
     return { ok: false, reason: "MINMOVE_BAD_SCRAMBLE" };
   }
 
+  const minmoveReadyPromise = ensureMinmove333ReadyLazy(onProgress);
   let incumbentSolution = inverseSolution;
   let incumbentLength = countAlgorithmMoves(incumbentSolution);
   let incumbentSource = "inverse scramble";
@@ -660,7 +661,7 @@ async function solveWithInternal3x3Minmove(scramble, onProgress) {
     } catch (_) {}
   }
 
-  const ready = await ensureMinmove333ReadyLazy();
+  const ready = await minmoveReadyPromise;
   if (!ready) {
     return { ok: false, reason: "MINMOVE_UNAVAILABLE" };
   }

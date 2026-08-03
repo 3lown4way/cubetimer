@@ -2,6 +2,7 @@ use crate::minmove_core::{
     build_allowed_moves_by_last_face, edge_subset_state_from_full, encode_edge_subset_state,
     encode_slice_from_ep, MoveData, MoveDataFile, EDGE_SUBSET_A, EDGE_SUBSET_B, MOVE_COUNT,
 };
+use std::sync::Arc;
 
 const BUNDLE_MAGIC: &[u8; 8] = b"MM3BNDL1";
 const BUNDLE_VERSION: u32 = 8;
@@ -67,19 +68,43 @@ impl TableKind {
 }
 
 #[derive(Clone, Debug)]
+pub enum PackedPayload {
+    Owned(Vec<u8>),
+    Shared {
+        bytes: Arc<[u8]>,
+        offset: usize,
+        len: usize,
+    },
+}
+
+impl PackedPayload {
+    #[inline(always)]
+    fn byte(&self, index: usize) -> u8 {
+        match self {
+            Self::Owned(payload) => payload[index],
+            Self::Shared { bytes, offset, len } => {
+                debug_assert!(index < *len);
+                bytes[*offset + index]
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct PackedTable {
     pub count: usize,
     pub max_distance: u8,
     pub nibble_packed: bool,
-    pub payload: Vec<u8>,
+    pub payload: PackedPayload,
 }
 
 impl PackedTable {
+    #[inline(always)]
     pub fn get(&self, index: usize) -> u8 {
         if !self.nibble_packed {
-            return self.payload[index];
+            return self.payload.byte(index);
         }
-        let byte = self.payload[index / 2];
+        let byte = self.payload.byte(index / 2);
         if index % 2 == 0 {
             byte & 0x0f
         } else {
@@ -229,6 +254,15 @@ pub fn build_bundle_bytes(
 }
 
 pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
+    load_bundle_owned(bytes.to_vec())
+}
+
+pub fn load_bundle_owned(bytes: Vec<u8>) -> Result<MinmoveTables, String> {
+    load_bundle_shared(Arc::<[u8]>::from(bytes))
+}
+
+fn load_bundle_shared(shared_bytes: Arc<[u8]>) -> Result<MinmoveTables, String> {
+    let bytes = shared_bytes.as_ref();
     if bytes.len() < BUNDLE_MAGIC.len() || &bytes[..BUNDLE_MAGIC.len()] != BUNDLE_MAGIC {
         return Err("invalid minmove bundle magic".into());
     }
@@ -315,7 +349,11 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
                 count: entry_count,
                 max_distance: meta,
                 nibble_packed,
-                payload: bytes[offset..offset + payload_len].to_vec(),
+                payload: PackedPayload::Shared {
+                    bytes: shared_bytes.clone(),
+                    offset,
+                    len: payload_len,
+                },
             };
             offset += payload_len;
             match TableKind::from_u8(raw_kind) {
@@ -366,7 +404,7 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
                 count: 1,
                 max_distance: 0,
                 nibble_packed: false,
-                payload: vec![0],
+                payload: PackedPayload::Owned(vec![0]),
             }
         } else {
             edge_subset_c.ok_or_else(|| "missing edge subset C table".to_string())?
@@ -376,7 +414,7 @@ pub fn load_bundle(bytes: &[u8]) -> Result<MinmoveTables, String> {
                 count: 1,
                 max_distance: 0,
                 nibble_packed: false,
-                payload: vec![0],
+                payload: PackedPayload::Owned(vec![0]),
             }
         } else {
             edge_subset_d.ok_or_else(|| "missing edge subset D table".to_string())?
