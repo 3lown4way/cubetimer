@@ -19,28 +19,14 @@ function emitProgress(onProgress, payload) {
 
 export function buildFmcExtremeHybridPlan(totalBudgetMs = FMC_EXTREME_PROFILE.defaultTimeBudgetMs) {
   const total = Math.max(3000, asPositiveInteger(totalBudgetMs, FMC_EXTREME_PROFILE.defaultTimeBudgetMs));
-  const adaptiveBudgetMs = Math.max(1000, Math.floor(total / 6));
-  const fullHumanBudgetMs = Math.max(1000, Math.floor(total / 3));
-  const independentBudgetMs = Math.max(1000, total - adaptiveBudgetMs - fullHumanBudgetMs);
-
   return Object.freeze([
     Object.freeze({
-      id: "adaptive-human",
-      label: "Adaptive human FMC",
-      qualityMode: "sweetSpot",
-      timeBudgetMs: adaptiveBudgetMs,
-    }),
-    Object.freeze({
-      id: "full-human-portfolio",
-      label: "Full human portfolio",
-      qualityMode: "custom",
-      timeBudgetMs: fullHumanBudgetMs,
-    }),
-    Object.freeze({
-      id: "independent-frontier",
-      label: "Independent frontier",
+      id: "integrated-progressive-frontier",
+      label: "Integrated progressive frontier",
       qualityMode: "extreme",
-      timeBudgetMs: independentBudgetMs,
+      timeBudgetMs: total,
+      maxPremoveSets: FMC_EXTREME_PROFILE.integratedMaxPremoveSets,
+      reservedCompressionPremoves: FMC_EXTREME_PROFILE.integratedReservedCompressionPremoves,
     }),
   ]);
 }
@@ -103,69 +89,6 @@ export function pickBestFmcHybridCandidate(candidates) {
   })[0];
 }
 
-function buildStageOptions(stage, common, searchTargetMoveCount) {
-  if (stage.qualityMode === "sweetSpot") {
-    return {
-      ...common,
-      qualityMode: "sweetSpot",
-      timeBudgetMs: stage.timeBudgetMs,
-      targetMoveCount: searchTargetMoveCount,
-      maxPremoveSets: 40,
-      verifyLimit: 24,
-      insertionCandidateLimit: 3,
-      insertionMaxPasses: 3,
-      insertionTimeMs: Math.min(5000, Math.max(1200, Math.floor(stage.timeBudgetMs * 0.3))),
-      insertionThreshold: 28,
-      requireTargetReached: false,
-    };
-  }
-
-  if (stage.qualityMode === "custom") {
-    return {
-      ...common,
-      qualityMode: "custom",
-      timeBudgetMs: stage.timeBudgetMs,
-      targetMoveCount: searchTargetMoveCount,
-      maxPremoveSets: FMC_EXTREME_PROFILE.maxPremoveSets,
-      verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
-      enableMultiSwitchNiss: true,
-      enableDeepMultiSwitchNiss: true,
-      enableHtrSkeletons: true,
-      enableSliceInsertion: true,
-      enableMultiInsertion: true,
-      insertionCandidateLimit: FMC_EXTREME_PROFILE.insertionCandidateLimit,
-      insertionMaxPasses: FMC_EXTREME_PROFILE.insertionMaxPasses,
-      insertionTimeMs: Math.min(
-        FMC_EXTREME_PROFILE.insertionTimeMs,
-        Math.max(3000, Math.floor(stage.timeBudgetMs * 0.4)),
-      ),
-      insertionThreshold: FMC_EXTREME_PROFILE.insertionThreshold,
-      requireTargetReached: false,
-    };
-  }
-
-  return {
-    ...common,
-    qualityMode: "extreme",
-    timeBudgetMs: stage.timeBudgetMs,
-    targetMoveCount: searchTargetMoveCount,
-    maxPremoveSets: FMC_EXTREME_PROFILE.maxPremoveSets,
-    extremeVariantCount: FMC_EXTREME_PROFILE.extremeVariantCount,
-    extremeReservedCompressionPremoves: FMC_EXTREME_PROFILE.extremeReservedCompressionPremoves,
-    extremeMaxRounds: FMC_EXTREME_PROFILE.extremeMaxRounds,
-    continueBelowTarget: true,
-    verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
-    insertionCandidateLimit: FMC_EXTREME_PROFILE.insertionCandidateLimit,
-    insertionMaxPasses: FMC_EXTREME_PROFILE.insertionMaxPasses,
-    insertionTimeMs: Math.min(
-      FMC_EXTREME_PROFILE.insertionTimeMs,
-      Math.max(3000, Math.floor(stage.timeBudgetMs * 0.35)),
-    ),
-    insertionThreshold: FMC_EXTREME_PROFILE.insertionThreshold,
-    requireTargetReached: false,
-  };
-}
-
 export async function warmFmcExtremeHybrid() {
   const { buildFmcTablesWasm } = await import("./wasmSolver.js");
   return buildFmcTablesWasm();
@@ -184,95 +107,91 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
     1,
     asPositiveInteger(options.targetMoveCount, FMC_EXTREME_PROFILE.targetMoveCount),
   );
-  // The public goal remains 20 (or the user-selected value), but Extreme keeps
-  // searching toward 18 instead of treating the first 20 as the terminal result.
-  const searchTargetMoveCount = Math.min(requestedTargetMoveCount, FMC_EXTREME_PROFILE.searchTargetMoveCount);
+  const searchTargetMoveCount = Math.min(
+    requestedTargetMoveCount,
+    FMC_EXTREME_PROFILE.searchTargetMoveCount,
+  );
   const plan = buildFmcExtremeHybridPlan(totalBudgetMs);
-  const candidates = [];
-  const hybridStages = [];
+  const stage = plan[0];
   const startedAt = Date.now();
-  const deadlineTs = startedAt + totalBudgetMs;
-  let lastResult = null;
 
-  const common = {
-    allowCfopFallback: false,
-    premoveAllowCfopFallback: false,
-    enableCoverageFallback: false,
-    preferNonCfop: true,
-    enableInsertions: true,
-    crossColors: Array.isArray(options.crossColors) ? options.crossColors : ["D"],
-  };
+  emitProgress(onProgress, {
+    type: "quality_stage_start",
+    stageName: stage.label,
+    hybridStage: stage.id,
+    stageIndex: 0,
+    totalStages: 1,
+    requestedTargetMoveCount,
+    searchTargetMoveCount,
+  });
 
-  for (let index = 0; index < plan.length; index += 1) {
-    if (Date.now() >= deadlineTs - 250) break;
-    if (candidates.some((candidate) => candidate.moveCount <= searchTargetMoveCount)) break;
-
-    const plannedStage = plan[index];
-    const remainingMs = Math.max(1000, deadlineTs - Date.now());
-    const stage = {
-      ...plannedStage,
-      timeBudgetMs: Math.max(1000, Math.min(plannedStage.timeBudgetMs, remainingMs)),
-    };
-    emitProgress(onProgress, {
-      type: "quality_stage_start",
-      stageName: stage.label,
+  const stageResult = await solveWithFMCSearch(
+    normalizedScramble,
+    (progress) => emitProgress(onProgress, {
+      ...progress,
       hybridStage: stage.id,
-      stageIndex: index,
-      totalStages: plan.length,
-      bestMoveCount: pickBestFmcHybridCandidate(candidates)?.moveCount ?? null,
-      requestedTargetMoveCount,
-      searchTargetMoveCount,
-    });
+      hybridStageName: stage.label,
+      hybridStageIndex: 0,
+      hybridTotalStages: 1,
+    }),
+    {
+      qualityMode: "extreme",
+      timeBudgetMs: totalBudgetMs,
+      targetMoveCount: searchTargetMoveCount,
+      maxPremoveSets: stage.maxPremoveSets,
+      extremeVariantCount: FMC_EXTREME_PROFILE.extremeVariantCount,
+      extremeReservedCompressionPremoves: stage.reservedCompressionPremoves,
+      extremeMaxRounds: FMC_EXTREME_PROFILE.extremeMaxRounds,
+      continueBelowTarget: true,
+      verifyLimit: FMC_EXTREME_PROFILE.verifyLimit,
+      enableInsertions: FMC_EXTREME_PROFILE.enableInsertions,
+      insertionCandidateLimit: FMC_EXTREME_PROFILE.insertionCandidateLimit,
+      insertionMaxPasses: FMC_EXTREME_PROFILE.insertionMaxPasses,
+      insertionTimeMs: FMC_EXTREME_PROFILE.insertionTimeMs,
+      insertionThreshold: FMC_EXTREME_PROFILE.insertionThreshold,
+      allowCfopFallback: false,
+      premoveAllowCfopFallback: false,
+      enableCoverageFallback: false,
+      preferNonCfop: true,
+      requireTargetReached: false,
+      crossColors: Array.isArray(options.crossColors) ? options.crossColors : ["D"],
+    },
+  ).catch((error) => ({
+    ok: false,
+    reason: String(error?.message || error || "FMC_INTEGRATED_EXTREME_FAILED"),
+  }));
 
-    const stageStartedAt = Date.now();
-    const stageResult = await solveWithFMCSearch(
-      normalizedScramble,
-      (progress) => emitProgress(onProgress, {
-        ...progress,
-        hybridStage: stage.id,
-        hybridStageName: stage.label,
-        hybridStageIndex: index,
-        hybridTotalStages: plan.length,
-      }),
-      buildStageOptions(stage, common, searchTargetMoveCount),
-    ).catch((error) => ({
-      ok: false,
-      reason: String(error?.message || error || "FMC_HYBRID_STAGE_FAILED"),
-    }));
-    lastResult = stageResult;
+  const elapsedMs = Math.max(1, Date.now() - startedAt);
+  const candidate = normalizeFmcHybridCandidate(stageResult, stage.id);
+  const hybridStages = [{
+    id: stage.id,
+    label: stage.label,
+    qualityMode: stage.qualityMode,
+    budgetMs: stage.timeBudgetMs,
+    elapsedMs,
+    ok: stageResult?.ok === true,
+    reason: String(stageResult?.reason || ""),
+    moveCount: candidate?.moveCount ?? null,
+    bestMoveCount: candidate?.moveCount ?? null,
+    maxPremoveSets: stage.maxPremoveSets,
+    reservedCompressionPremoves: stage.reservedCompressionPremoves,
+  }];
 
-    const candidate = normalizeFmcHybridCandidate(stageResult, stage.id);
-    if (candidate) candidates.push(candidate);
-    const best = pickBestFmcHybridCandidate(candidates);
-    hybridStages.push({
-      id: stage.id,
-      label: stage.label,
-      qualityMode: stage.qualityMode,
-      budgetMs: stage.timeBudgetMs,
-      elapsedMs: Math.max(1, Date.now() - stageStartedAt),
-      ok: stageResult?.ok === true,
-      reason: String(stageResult?.reason || ""),
-      moveCount: candidate?.moveCount ?? null,
-      bestMoveCount: best?.moveCount ?? null,
-    });
+  emitProgress(onProgress, {
+    type: "quality_stage_done",
+    stageName: stage.label,
+    hybridStage: stage.id,
+    stageIndex: 0,
+    totalStages: 1,
+    moveCount: candidate?.moveCount ?? null,
+    bestMoveCount: candidate?.moveCount ?? null,
+    elapsedMs,
+  });
 
-    emitProgress(onProgress, {
-      type: "quality_stage_done",
-      stageName: stage.label,
-      hybridStage: stage.id,
-      stageIndex: index,
-      totalStages: plan.length,
-      moveCount: candidate?.moveCount ?? null,
-      bestMoveCount: best?.moveCount ?? null,
-      elapsedMs: Math.max(1, Date.now() - stageStartedAt),
-    });
-  }
-
-  const best = pickBestFmcHybridCandidate(candidates);
-  if (!best) {
+  if (!candidate) {
     return {
       ok: false,
-      reason: String(lastResult?.reason || "FMC_NO_VALID_SOLUTION"),
+      reason: String(stageResult?.reason || "FMC_NO_VALID_SOLUTION"),
       qualityMode: "extreme",
       extremeProfileId: FMC_EXTREME_PROFILE.id,
       qualityTarget: requestedTargetMoveCount,
@@ -280,17 +199,17 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
       qualityDowngraded: false,
       humanStyle: true,
       hybridStages,
-      rejectedResult: lastResult,
+      rejectedResult: stageResult,
     };
   }
 
-  const qualityTargetReached = best.moveCount <= requestedTargetMoveCount;
+  const qualityTargetReached = candidate.moveCount <= requestedTargetMoveCount;
   return {
     ok: true,
-    solution: best.solution,
-    moveCount: best.moveCount,
+    solution: candidate.solution,
+    moveCount: candidate.moveCount,
     source: "FMC_EXTREME_HYBRID",
-    candidateSource: best.source,
+    candidateSource: candidate.source,
     qualityMode: "extreme",
     extremeProfileId: FMC_EXTREME_PROFILE.id,
     qualityTarget: requestedTargetMoveCount,
@@ -299,21 +218,22 @@ export async function solveWithFmcExtremeHybrid(scramble, onProgress, options = 
     humanStyle: true,
     continueBelowTarget: true,
     searchTargetMoveCount,
-    stages: best.stages,
-    parts: best.parts,
-    attempts: best.attempts,
-    solutionDisplay: best.solutionDisplay,
+    stages: candidate.stages,
+    parts: candidate.parts,
+    attempts: candidate.attempts,
+    solutionDisplay: candidate.solutionDisplay,
     hybridStages,
-    hybridWinningStage: best.hybridStageId,
+    hybridWinningStage: candidate.hybridStageId,
     performanceDiagnostics: {
-      ...(best.rawResult?.performanceDiagnostics || {}),
-      solver: "fmc-extreme-hybrid",
+      ...(candidate.rawResult?.performanceDiagnostics || {}),
+      solver: "fmc-extreme-integrated",
       extremeProfileId: FMC_EXTREME_PROFILE.id,
+      executionModel: "single-session-progressive-frontier",
       totalBudgetMs,
-      elapsedMs: Math.max(1, Date.now() - startedAt),
+      elapsedMs,
       requestedTargetMoveCount,
       searchTargetMoveCount,
-      hybridWinningStage: best.hybridStageId,
+      hybridWinningStage: candidate.hybridStageId,
       hybridStages,
     },
   };
