@@ -36,11 +36,28 @@ jobs:
 
       - name: Apply minmove deployment changes
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tools/apply-minmove-htm-fix.mjs")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          repaired = []
+          replaced = False
+          for line in lines:
+              if "minmove HTM tables" in line and "return" in line and "percent" in line:
+                  repaired.append('    return (name || "minmove HTM tables") + (percent === null ? "" : " " + percent + "%");')
+                  replaced = True
+              else:
+                  repaired.append(line)
+          if not replaced:
+              raise SystemExit("Malformed progress formatter line not found")
+          path.write_text("\n".join(repaired) + "\n", encoding="utf-8")
+          PY
           node tools/apply-minmove-htm-fix.mjs
           node tools/apply-minmove-builder-bin.mjs
 
       - name: Validate source changes
         run: |
+          node --check tools/apply-minmove-htm-fix.mjs
           node --check solver/minmoveBundleLoader.js
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
