@@ -11,11 +11,14 @@ const DEFAULT_TIME_BUDGET_MS = 90_000;
 const DEFAULT_SEED_CONFIGS = [
   { maxPhase1Solutions: 96, phase1MaxDepth: 15, phase1NodeLimit: 2_000_000, phase2NodeLimit: 12_000_000 },
   { maxPhase1Solutions: 384, phase1MaxDepth: 18, phase1NodeLimit: 8_000_000, phase2NodeLimit: 40_000_000 },
+  { maxPhase1Solutions: 2_048, phase1MaxDepth: 18, phase1NodeLimit: 80_000_000, phase2NodeLimit: 100_000_000 },
+  { maxPhase1Solutions: 8_192, phase1MaxDepth: 19, phase1NodeLimit: 250_000_000, phase2NodeLimit: 250_000_000 },
 ];
 const DEFAULT_EXACT_PROFILES = [
   { phase1NodeLimit: 1_000_000, phase2NodeLimit: 8_000_000 },
   { phase1NodeLimit: 4_000_000, phase2NodeLimit: 32_000_000 },
   { phase1NodeLimit: 16_000_000, phase2NodeLimit: 128_000_000 },
+  { phase1NodeLimit: 64_000_000, phase2NodeLimit: 512_000_000 },
 ];
 
 function splitMoves(sequence) {
@@ -52,6 +55,16 @@ function emitProgress(onProgress, progress) {
   } catch (_) {
     // Progress is best-effort.
   }
+}
+
+function normalizeExactSearchState(searched) {
+  const status = String(searched?.status || "").trim().toLowerCase();
+  return {
+    found: searched?.found === true || status === "found",
+    interrupted: searched?.interrupted === true || status === "interrupted",
+    exhausted: searched?.exhausted === true || status === "exhausted",
+    status,
+  };
 }
 
 async function verifySolution(scramble, solution) {
@@ -212,8 +225,9 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         continue;
       }
       totalNodes += Number.isFinite(searched.nodes) ? searched.nodes : 0;
+      const exactState = normalizeExactSearchState(searched);
 
-      if (searched.found && typeof searched.solution === "string") {
+      if (exactState.found && typeof searched.solution === "string") {
         const candidateSolution = searched.solution.trim();
         const candidateLength = splitMoves(candidateSolution).length;
         if (
@@ -237,11 +251,15 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         return { ok: false, reason: "MINMOVE_EXACT_RESULT_INVALID" };
       }
 
-      if (!searched.interrupted) {
+      if (exactState.exhausted) {
         exhausted = true;
         break;
       }
-      lastReason = searched.reason || "MINMOVE_EXACT_SEARCH_LIMIT";
+      if (exactState.interrupted) {
+        lastReason = searched.reason || "MINMOVE_EXACT_SEARCH_LIMIT";
+        continue;
+      }
+      lastReason = searched.reason || "MINMOVE_EXACT_STATUS_MISSING";
     }
 
     if (improved) continue;
