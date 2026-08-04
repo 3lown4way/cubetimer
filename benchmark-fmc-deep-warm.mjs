@@ -36,9 +36,28 @@ for (let run = 0; run < 3; run += 1) {
   if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
     throw new Error(`FMC_DEEP_REPEAT_FAILED:${run}:${result?.reason || "UNKNOWN"}`);
   }
+  const candidateChecks = [];
+  for (const candidate of result.candidates) {
+    const check = await verifyFmcSolutionWasm(scramble, candidate.solution);
+    candidateChecks.push({
+      solution: String(candidate.solution || ""),
+      moveCount: Number(candidate.moveCount || 0),
+      source: String(candidate.source || ""),
+      axisName: String(candidate.axisName || ""),
+      solved: check?.ok === true && check.solved === true,
+      verification: check || null,
+    });
+  }
   const verification = await verifyFmcSolutionWasm(scramble, result.solution);
   if (!verification?.ok || verification.solved !== true) {
-    throw new Error(`FMC_DEEP_REPEAT_INVALID:${run}`);
+    throw new Error(
+      `FMC_DEEP_REPEAT_INVALID:${run}:${JSON.stringify({
+        solution: result.solution,
+        moveCount: result.moveCount,
+        verification,
+        candidateChecks,
+      })}`,
+    );
   }
   rows.push({
     run,
