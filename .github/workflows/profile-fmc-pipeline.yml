@@ -35,14 +35,18 @@ jobs:
         run: |
           node tools/apply-fmc-htr-coordinate-table.mjs
           node tools/apply-fmc-deep-warmup-v2.mjs
+          node tools/apply-fmc-deep-component-mask.mjs
       - name: Validate sources
         run: |
           node --check benchmark-fmc-profile.mjs
           node --check benchmark-fmc-feature-case.mjs
           node --check benchmark-fmc-feature-matrix.mjs
           node --check benchmark-fmc-deep-warm.mjs
+          node --check benchmark-fmc-deep-component-case.mjs
+          node --check benchmark-fmc-deep-components.mjs
           node --check tools/apply-fmc-htr-coordinate-table.mjs
           node --check tools/apply-fmc-deep-warmup-v2.mjs
+          node --check tools/apply-fmc-deep-component-mask.mjs
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check main.js
@@ -57,6 +61,8 @@ jobs:
         run: node benchmark-fmc-feature-matrix.mjs
       - name: Measure explicit deep-table warmup
         run: node benchmark-fmc-deep-warm.mjs
+      - name: Profile deep FMC components
+        run: node benchmark-fmc-deep-components.mjs
       - name: Commit validated FMC implementation
         run: |
           git config user.name "github-actions[bot]"
@@ -76,5 +82,5 @@ jobs:
             echo "FMC deep-table implementation already committed"
             exit 0
           fi
-          git commit -m "Prewarm compact FMC deep search tables"
+          git commit -m "Add FMC deep component diagnostics"
           git push origin "HEAD:${TARGET_BRANCH}"
