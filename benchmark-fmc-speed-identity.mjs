@@ -83,7 +83,13 @@ for (let index = 0; index < scrambles.length; index += 1) {
   });
   const solveMs = performance.now() - solveStartedAt;
   if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
-    throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}`);
+    const diagnostics = {
+      reason: result?.reason || "UNKNOWN",
+      candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : -1,
+      invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
+      repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
+    };
+    throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}:${JSON.stringify(diagnostics)}`);
   }
 
   for (const candidate of result.candidates) {
