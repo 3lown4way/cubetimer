@@ -16,7 +16,10 @@ mod utils;
 
 use flate2::read::GzDecoder;
 use fmc_insertion::optimize_insertion_wasm_impl;
-use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};
+use fmc_search::{
+    build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables,
+    FMC_DEEP_COMPONENT_ALL,
+};
 use ida::{build_prune_tables, ida_solve};
 use minmove_bundle::{load_bundle, load_bundle_owned, MinmoveTables};
 use minmove_search::{
@@ -721,6 +724,11 @@ struct FmcOptionsJson {
     enable_multi_switch_niss: bool,
     #[serde(rename = "enableDeepMultiSwitchNiss", default)]
     enable_deep_multi_switch_niss: bool,
+    #[serde(
+        rename = "deepComponentMask",
+        default = "default_fmc_deep_component_mask"
+    )]
+    deep_component_mask: u8,
     #[serde(rename = "searchLevel", default)]
     search_level: u8,
     #[serde(rename = "searchVariant", default)]
@@ -730,6 +738,9 @@ struct FmcOptionsJson {
         default = "default_fmc_incumbent_move_count"
     )]
     incumbent_move_count: usize,
+}
+fn default_fmc_deep_component_mask() -> u8 {
+    FMC_DEEP_COMPONENT_ALL
 }
 fn default_fmc_incumbent_move_count() -> usize {
     40
@@ -769,6 +780,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
         options.enable_deep_multi_switch_niss,
+        options.deep_component_mask,
         options.search_level,
         options.search_variant,
         options.incumbent_move_count,

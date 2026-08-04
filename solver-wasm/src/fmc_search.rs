@@ -140,6 +140,17 @@ const FMC_HTR_TAIL_SLACK: usize = 2;
 /// than exhausting WASM linear memory.
 const FMC_HTR_STATE_LIMIT: usize = 1_000_000;
 
+/// Diagnostic selection mask for the four expensive Deep-Extreme subpaths.
+/// Production callers use ALL, preserving the existing search portfolio.
+const FMC_DEEP_COMPONENT_STAGE_BOUNDARY: u8 = 1 << 0;
+const FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM: u8 = 1 << 1;
+const FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL: u8 = 1 << 2;
+const FMC_DEEP_COMPONENT_PRE_EO: u8 = 1 << 3;
+pub const FMC_DEEP_COMPONENT_ALL: u8 = FMC_DEEP_COMPONENT_STAGE_BOUNDARY
+    | FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM
+    | FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL
+    | FMC_DEEP_COMPONENT_PRE_EO;
+
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
 // Move convention: U=0,R=1,F=2,D=3,L=4,B=5
@@ -3696,6 +3707,7 @@ fn solve_fmc_with_eo_depth(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    deep_component_mask: u8,
     search_level: u8,
     search_variant: u32,
     incumbent_move_count: usize,
@@ -3722,6 +3734,15 @@ fn solve_fmc_with_eo_depth(
     };
 
     let search_level = search_level.min(3) as usize;
+    let deep_component_mask = deep_component_mask & FMC_DEEP_COMPONENT_ALL;
+    let deep_stage_boundary_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_STAGE_BOUNDARY != 0;
+    let deep_complementary_mitm_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM != 0;
+    let deep_complementary_normal_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL != 0;
+    let deep_pre_eo_enabled =
+        enable_deep_multi_switch_niss && deep_component_mask & FMC_DEEP_COMPONENT_PRE_EO != 0;
     let direct_eo_limit = [FMC_EO_LIMIT, 12, 24, 48][search_level];
     let premove_eo_limit = [FMC_PM_EO_LIMIT, 6, 12, 24][search_level];
     let p2_node_limit = [FMC_P2_NODE_LIMIT, 8_000_000, 24_000_000, 64_000_000][search_level];
@@ -3921,7 +3942,7 @@ fn solve_fmc_with_eo_depth(
         .unwrap_or(raw_exploration_limit);
 
     // --- Phase 2b: stage-boundary multi-switch NISS ---
-    if enable_multi_switch_niss || enable_deep_multi_switch_niss {
+    if enable_multi_switch_niss || deep_stage_boundary_enabled {
         for axis in 0..3u8 {
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
@@ -3937,7 +3958,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut completed_best,
                 force_rzp,
-                enable_deep_multi_switch_niss,
+                deep_stage_boundary_enabled,
             );
             for result in direct_results {
                 let simplified = simplify_moves(&cvt(&result.moves));
@@ -3982,7 +4003,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut completed_best,
                 force_rzp,
-                enable_deep_multi_switch_niss,
+                deep_stage_boundary_enabled,
             );
             for result in inverse_results {
                 let effective_inverse_solution = cvt(&result.moves);
@@ -4031,7 +4052,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_complementary_mitm_enabled
         && search_level >= 3
         && completed_best_before_complementary > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
     {
@@ -4141,7 +4162,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_complementary_normal_enabled
         && search_level >= 3
         && completed_best_before_complementary_normal > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
     {
@@ -4223,7 +4244,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_pre_eo_enabled
         && search_level >= 3
         && completed_best_before_pre_eo > FMC_PRE_EO_NISS_TARGET_TOTAL
     {
@@ -4687,6 +4708,7 @@ pub fn solve_fmc(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    deep_component_mask: u8,
     search_level: u8,
     search_variant: u32,
     incumbent_move_count: usize,
@@ -4703,6 +4725,7 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
+        deep_component_mask,
         search_level,
         search_variant,
         incumbent_move_count,
@@ -4727,6 +4750,7 @@ pub fn solve_fmc(
             enable_slice_insertion,
             enable_multi_switch_niss,
             enable_deep_multi_switch_niss,
+            deep_component_mask,
             search_level,
             search_variant.wrapping_add(FMC_EXTREME_RETRY_VARIANT_OFFSET),
             incumbent_move_count,
@@ -4751,6 +4775,7 @@ pub fn solve_fmc(
             enable_slice_insertion,
             enable_multi_switch_niss,
             enable_deep_multi_switch_niss,
+            deep_component_mask,
             search_level,
             search_variant.wrapping_add(FMC_EXTREME_SUB20_VARIANT_OFFSET),
             incumbent_move_count,

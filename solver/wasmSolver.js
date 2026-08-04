@@ -475,6 +475,9 @@ export async function solveFmcWasm(scramble, options = {}) {
       enableSliceInsertion: options.enableSliceInsertion === true,
       enableMultiSwitchNiss: options.enableMultiSwitchNiss === true,
       enableDeepMultiSwitchNiss: options.enableDeepMultiSwitchNiss === true,
+      deepComponentMask: Number.isFinite(options.deepComponentMask)
+        ? Math.max(0, Math.min(15, Math.floor(options.deepComponentMask)))
+        : 15,
       searchLevel: Number.isFinite(options.searchLevel) ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
       searchVariant: Number.isFinite(options.searchVariant) ? Math.max(0, Math.floor(options.searchVariant)) : 0,
       incumbentMoveCount: Number.isFinite(options.incumbentMoveCount)
@@ -485,7 +488,63 @@ export async function solveFmcWasm(scramble, options = {}) {
     if (!raw) return null;
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!parsed || parsed.ok === undefined) return null;
-    return parsed;
+    if (parsed.ok !== true) return parsed;
+
+    // The public FMC verifier is the source of truth for the exact solution
+    // string returned to callers. Filter every ranked candidate at this final
+    // boundary so an invalid premove/NISS flattening can never become the best
+    // displayed solution or seed a downstream insertion pass.
+    if (
+      typeof api.verifyFmcSolutionWasm !== "function" ||
+      !Array.isArray(parsed.candidates)
+    ) {
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_CANDIDATE_VERIFIER_UNAVAILABLE",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+      };
+    }
+
+    const validCandidates = [];
+    for (const candidate of parsed.candidates) {
+      const solution = String(candidate?.solution || "");
+      if (!solution) continue;
+      let verification = null;
+      try {
+        const verifyRaw = api.verifyFmcSolutionWasm(String(scramble), solution);
+        verification = typeof verifyRaw === "string" ? JSON.parse(verifyRaw) : verifyRaw;
+      } catch (_) {
+        verification = null;
+      }
+      if (verification?.ok === true && verification.solved === true) {
+        validCandidates.push(candidate);
+      }
+    }
+
+    const invalidCandidateCount = parsed.candidates.length - validCandidates.length;
+    if (validCandidates.length === 0) {
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_NO_VERIFIED_SOLUTION",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+        invalidCandidateCount,
+      };
+    }
+
+    const best = validCandidates[0];
+    return {
+      ...parsed,
+      solution: String(best.solution),
+      moveCount: Number(best.moveCount || 0),
+      candidates: validCandidates,
+      invalidCandidateCount,
+    };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
     return null;
