@@ -1,0 +1,38 @@
+name: WASM readiness contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - solver/wasmSolver.js
+      - solver/fmcSolver.js
+      - benchmark-wasm-readiness-contract.mjs
+      - .github/workflows/wasm-readiness-contract.yml
+  push:
+    branches:
+      - main
+    paths:
+      - solver/wasmSolver.js
+      - solver/fmcSolver.js
+      - benchmark-wasm-readiness-contract.mjs
+      - .github/workflows/wasm-readiness-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify retryable WASM readiness loading
+        run: |
+          node --check solver/wasmSolver.js
+          node --check solver/fmcSolver.js
+          node --check benchmark-wasm-readiness-contract.mjs
+          node benchmark-wasm-readiness-contract.mjs
