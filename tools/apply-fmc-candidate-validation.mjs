@@ -28,10 +28,11 @@ fn fmc_candidate_solves_scramble(
     moves: &[u8],
     tables: &TwophaseTables,
 ) -> bool {
-    !moves.is_empty()
-        && scramble_state
-            .apply_moves(moves, &tables.move_data)
-            .is_solved()
+    if moves.is_empty() {
+        return false;
+    }
+    let final_state = scramble_state.apply_moves(moves, &tables.move_data);
+    is_fmc_solved_up_to_rotation(&final_state, tables)
 }
 `,
     "FMC candidate validation helper",
@@ -102,7 +103,8 @@ fn fmc_candidate_solves_scramble(
     all_candidates.extend(multi_inserted_candidates);
 
     // Final integrity boundary: no candidate reaches the UI unless applying it
-    // after the original scramble produces the solved state exactly.
+    // after the original scramble is solved, allowing the same whole-cube
+    // rotation equivalence as the public FMC verifier.
     all_candidates.retain(|candidate| {
         fmc_candidate_solves_scramble(&original_scramble_state, &candidate.moves, tables)
     });
