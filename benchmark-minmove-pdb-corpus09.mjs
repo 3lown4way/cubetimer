@@ -10,6 +10,7 @@ import {
 
 const scramble = "F R2 U' B2 D2 F2 U R2 U2 L2 D' B' R' U2 L F D R2 U'";
 const knownOptimum = 18;
+const proofBound = knownOptimum - 1;
 
 const loadStarted = performance.now();
 const ready = await ensureMinmove333Ready();
@@ -20,35 +21,42 @@ const prepared = await prepareMinmove333(scramble);
 assert.equal(prepared?.ok, true, prepared?.reason || "prepare_minmove_333 failed");
 assert.ok(Number.isFinite(prepared.searchId), "missing search id");
 assert.ok(Number.isFinite(prepared.lowerBound), "missing lower bound");
+assert.ok(prepared.lowerBound <= proofBound, "heuristic lower bound exceeds the known proof bound");
 
-const rows = [];
+let proof = null;
 let found = null;
 try {
-  for (let bound = prepared.lowerBound; bound <= knownOptimum; bound += 1) {
-    const started = performance.now();
-    const result = await searchMinmove333Bound(prepared.searchId, bound, 0);
-    const elapsedMs = Math.round(performance.now() - started);
-    assert.equal(result?.ok, true, result?.reason || `bound ${bound} failed`);
-    rows.push({
-      bound,
-      status: result.status,
-      moveCount: result.moveCount,
-      nodes: result.nodes,
-      elapsedMs,
-    });
-    console.log(JSON.stringify(rows.at(-1)));
-    if (result.status === "found") {
-      found = result;
-      break;
-    }
-    assert.equal(result.status, "exhausted", `bound ${bound} must be exhausted or found`);
-  }
+  const proofStarted = performance.now();
+  proof = await searchMinmove333Bound(prepared.searchId, proofBound, 0);
+  const proofElapsedMs = Math.round(performance.now() - proofStarted);
+  assert.equal(proof?.ok, true, proof?.reason || `bound ${proofBound} failed`);
+  assert.equal(proof.status, "exhausted", `bound ${proofBound} must prove every shorter depth impossible`);
+  console.log(JSON.stringify({
+    type: "proof",
+    bound: proofBound,
+    status: proof.status,
+    nodes: proof.nodes,
+    elapsedMs: proofElapsedMs,
+  }));
+
+  const findStarted = performance.now();
+  found = await searchMinmove333Bound(prepared.searchId, knownOptimum, 0);
+  const findElapsedMs = Math.round(performance.now() - findStarted);
+  assert.equal(found?.ok, true, found?.reason || `bound ${knownOptimum} failed`);
+  assert.equal(found.status, "found", `bound ${knownOptimum} must find the known optimum`);
+  assert.equal(found.moveCount, knownOptimum, "PDB exact search returned an unexpected optimum");
+  console.log(JSON.stringify({
+    type: "find",
+    bound: knownOptimum,
+    status: found.status,
+    moveCount: found.moveCount,
+    nodes: found.nodes,
+    elapsedMs: findElapsedMs,
+  }));
 } finally {
   await dropMinmove333Search(prepared.searchId);
 }
 
-assert.ok(found, `PDB exact search did not find the known ${knownOptimum}-HTM solution`);
-assert.equal(found.moveCount, knownOptimum, "PDB exact search returned an unexpected optimum");
 const verification = await verifyFmcSolutionWasm(scramble, found.solution);
 assert.equal(verification?.solved, true, "PDB exact solution does not solve the scramble");
 
@@ -58,8 +66,9 @@ console.log(JSON.stringify({
   lowerBound: prepared.lowerBound,
   reverseDepth: prepared.reverseDepth,
   reverseStates: prepared.reverseStates,
-  totalSearchMs: rows.reduce((sum, row) => sum + row.elapsedMs, 0),
-  totalNodes: rows.reduce((sum, row) => sum + Number(row.nodes || 0), 0),
+  proofBound,
+  proofNodes: Number(proof?.nodes || 0),
+  findNodes: Number(found?.nodes || 0),
   moveCount: found.moveCount,
   solution: found.solution,
 }));
