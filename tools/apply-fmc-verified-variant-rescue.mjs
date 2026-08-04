@@ -6,53 +6,13 @@ let source = before;
 
 const marker = "const validateCandidateFrontier = (candidateResult) => {";
 if (!source.includes(marker)) {
-  const oldBlock = `    const validCandidates = [];
-    const seenSolutions = new Set();
-    let invalidCandidateCount = 0;
-    let repairedPremoveNissCandidateCount = 0;
-    for (const candidate of parsed.candidates) {
-      const originalSolution = String(candidate?.solution || "").trim();
-      let accepted = null;
-      if (verifyCandidateSolution(originalSolution)) {
-        accepted = candidate;
-      } else {
-        invalidCandidateCount += 1;
-        for (const alternate of buildVerifiedPremoveNissAlternates(candidate)) {
-          if (!verifyCandidateSolution(alternate.solution)) continue;
-          accepted = {
-            ...candidate,
-            solution: alternate.solution,
-            moves: alternate.moves,
-            moveCount: alternate.moveCount,
-            repairedPremoveNissOrder: true,
-          };
-          repairedPremoveNissCandidateCount += 1;
-          break;
-        }
-      }
-      if (!accepted) continue;
-      const solution = String(accepted.solution || "").trim();
-      if (!solution || seenSolutions.has(solution)) continue;
-      seenSolutions.add(solution);
-      validCandidates.push(accepted);
-    }
-
-    validCandidates.sort((left, right) =>
-      Number(left?.moveCount || 0) - Number(right?.moveCount || 0),
-    );
-    if (validCandidates.length === 0) {
-      return {
-        ...parsed,
-        ok: false,
-        reason: "FMC_NO_VERIFIED_SOLUTION",
-        solution: "",
-        moveCount: 0,
-        candidates: [],
-        invalidCandidateCount,
-        repairedPremoveNissCandidateCount,
-      };
-    }
-`;
+  const startAnchor = "    const validCandidates = [];\n";
+  const endAnchor = "    const best = validCandidates[0];\n";
+  const start = source.indexOf(startAnchor);
+  const end = source.indexOf(endAnchor, start);
+  if (start < 0 || end < 0) {
+    throw new Error("Missing inline FMC candidate validation anchors");
+  }
 
   const newBlock = `    const validateCandidateFrontier = (candidateResult) => {
       const validCandidates = [];
@@ -151,33 +111,33 @@ if (!source.includes(marker)) {
         verifiedVariantRescueVariant,
       };
     }
+
 `;
 
-  if (!source.includes(oldBlock)) {
-    throw new Error("Missing inline FMC candidate validation block");
-  }
-  source = source.replace(oldBlock, newBlock);
+  source = source.slice(0, start) + newBlock + source.slice(end);
 }
 
-const returnAnchor = `      levelEscalationUsed,
+const successAnchor = `      repairedPremoveNissCandidateCount,
+      levelEscalationUsed,
       initialReason,
     };`;
-const returnReplacement = `      levelEscalationUsed,
+const successReplacement = `      repairedPremoveNissCandidateCount,
+      levelEscalationUsed,
       initialReason,
       verifiedVariantRescueAttempted,
       verifiedVariantRescueUsed,
       verifiedVariantRescueVariant,
     };`;
-if (!source.includes("verifiedVariantRescueUsed,\n      verifiedVariantRescueVariant,")) {
-  const solveEnd = source.indexOf("export async function optimizeInsertionWasm");
-  const last = source.lastIndexOf(returnAnchor, solveEnd);
-  if (last < 0) throw new Error("Missing verified FMC success return anchor");
-  source = source.slice(0, last) + returnReplacement + source.slice(last + returnAnchor.length);
+if (source.includes(successAnchor)) {
+  source = source.replace(successAnchor, successReplacement);
 }
 
 if (!source.includes(marker)) throw new Error("Verified FMC frontier helper was not applied");
 if (!source.includes("searchVariant: verifiedVariantRescueVariant")) {
   throw new Error("Verified FMC variant rescue request was not applied");
+}
+if (!source.includes(successReplacement)) {
+  throw new Error("Verified FMC success diagnostics were not applied");
 }
 
 if (source !== before) fs.writeFileSync(path, source);
