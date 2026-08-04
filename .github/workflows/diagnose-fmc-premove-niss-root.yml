@@ -21,10 +21,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - name: Apply phase-2 orientation invariant
+        run: node tools/apply-fmc-p2-orientation-guard.mjs
+      - name: Run Rust tests
+        working-directory: solver-wasm
+        run: cargo test --lib
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build fresh browser WASM
         working-directory: solver-wasm
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
-      - name: Reproduce premove NISS invalid candidate
+      - name: Verify premove NISS candidates at source
         run: node benchmark-fmc-premove-niss-root.mjs
