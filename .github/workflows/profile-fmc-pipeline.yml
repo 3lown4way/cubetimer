@@ -19,7 +19,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Validate benchmark
-        run: node --check benchmark-fmc-profile.mjs
-      - name: Profile FMC modes
-        run: node benchmark-fmc-profile.mjs
+      - name: Validate benchmarks
+        run: |
+          node --check benchmark-fmc-profile.mjs
+          node --check benchmark-fmc-feature-case.mjs
+          node --check benchmark-fmc-feature-matrix.mjs
+      - name: Profile isolated FMC features
+        run: node benchmark-fmc-feature-matrix.mjs
