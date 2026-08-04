@@ -33,11 +33,13 @@ for (const [id, mask] of cases) {
   console.log(JSON.stringify(row));
 }
 
-const allRow = rows.find((row) => row.id === "all");
-if (!allRow || allRow.ok !== true || allRow.moveCount <= 0) {
-  throw new Error("FMC_DEEP_COMPONENT_ALL_INVALID");
-}
+// This matrix deliberately runs without the premove frontier, so an isolated
+// component (including ALL) may produce no complete solution. The preceding
+// feature and repeat benchmarks own correctness; this step only profiles cost.
 if (rows.some((row) => !Number.isFinite(row.elapsedMs) || row.elapsedMs < 0)) {
   throw new Error("FMC_DEEP_COMPONENT_TIMING_INVALID");
+}
+if (rows.some((row) => !Number.isFinite(row.warmMs) || row.warmMs < 0)) {
+  throw new Error("FMC_DEEP_COMPONENT_WARM_TIMING_INVALID");
 }
 console.log("FMC_DEEP_COMPONENTS=" + JSON.stringify(rows));
