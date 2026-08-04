@@ -4800,6 +4800,13 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
     } else {
         solution_string_from_path(&candidate.premove_moves, &tables.move_data)
     };
+    let premove_index = if candidate.premove_moves.is_empty() {
+        None
+    } else {
+        FMC_PREMOVE_SETS
+            .iter()
+            .position(|premove| premove.moves == candidate.premove_moves)
+    };
     let base_source = match candidate.source_tag {
         0 => format!("FMC_EO_{}", AXIS_NAMES[candidate.axis as usize]),
         1 => format!("FMC_NISS_{}", AXIS_NAMES[candidate.axis as usize]),
@@ -4903,6 +4910,7 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         "axisName": AXIS_NAMES[candidate.axis as usize],
         "source": source,
         "premoves": premove_str,
+        "premoveIndex": premove_index,
         "moves": solution.split_whitespace().collect::<Vec<_>>(),
         "rzpUsed": candidate.rzp_used,
     });
