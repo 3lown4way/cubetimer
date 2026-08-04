@@ -38,6 +38,7 @@ jobs:
           node --check benchmark-fmc-profile.mjs
           node --check benchmark-fmc-feature-case.mjs
           node --check benchmark-fmc-feature-matrix.mjs
+          node --check benchmark-fmc-deep-warm.mjs
           node --check tools/apply-fmc-htr-coordinate-table.mjs
           cargo fmt --manifest-path solver-wasm/Cargo.toml -- --check
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
@@ -48,6 +49,8 @@ jobs:
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
       - name: Profile isolated FMC features
         run: node benchmark-fmc-feature-matrix.mjs
+      - name: Measure deep-switch cold and warm cost
+        run: node benchmark-fmc-deep-warm.mjs
       - name: Commit validated HTR implementation
         run: |
           git config user.name "github-actions[bot]"
