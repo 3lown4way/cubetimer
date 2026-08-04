@@ -28,7 +28,9 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - name: Apply root fix
-        run: node tools/apply-twophase-trivial-inverse-root.mjs
+        run: |
+          node tools/apply-twophase-trivial-inverse-root.mjs
+          node tools/adjust-twophase-exclusion-contract.mjs
       - name: Check JavaScript
         run: |
           node --check solver/wasmSolver.js
