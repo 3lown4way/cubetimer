@@ -40,6 +40,7 @@ jobs:
           node tools/apply-fmc-premove-index-diagnostic.mjs
           node tools/apply-fmc-variant-frontier-merge.mjs
           node tools/apply-fmc-bounded-level-escalation.mjs
+          node tools/apply-fmc-verified-variant-rescue.mjs
       - name: Validate sources
         run: |
           node --check benchmark-fmc-profile.mjs
@@ -57,6 +58,7 @@ jobs:
           node --check tools/apply-fmc-premove-index-diagnostic.mjs
           node --check tools/apply-fmc-variant-frontier-merge.mjs
           node --check tools/apply-fmc-bounded-level-escalation.mjs
+          node --check tools/apply-fmc-verified-variant-rescue.mjs
           node --check tools/audit-fmc-move-order.mjs
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
