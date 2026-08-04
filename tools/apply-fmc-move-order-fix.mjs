@@ -25,12 +25,28 @@ const replacements = [
     "        0 => [2, 11], // U2 D2 completes E2\n        1 => [5, 14], // R2 L2 completes M2\n        2 => [8, 17], // F2 B2 completes S2",
     "        0 => [1, 10], // U2 D2 completes E2\n        1 => [4, 13], // R2 L2 completes M2\n        2 => [7, 16], // F2 B2 completes S2",
   ],
+  [
+    "        let reverse = vec![3, 10, 1, 4]; // R D' U' R'",
+    "        let reverse = vec![3, 11, 2, 5]; // R D' U' R'",
+  ],
+  [
+    "            &[3, 1, 10, 4], // R U' D' R'",
+    "            &[3, 2, 11, 5], // R U' D' R'",
+  ],
+  [
+    "            canonicalize_commuting_axis_blocks(&[4, 0, 9, 1]), // R' U D U'\n            canonicalize_commuting_axis_blocks(&[4, 9]),       // R' D",
+    "            canonicalize_commuting_axis_blocks(&[5, 0, 9, 2]), // R' U D U'\n            canonicalize_commuting_axis_blocks(&[5, 9]),       // R' D",
+  ],
+  [
+    "            &[3, 1, 11, 4], // R U' D2 R'",
+    "            &[3, 2, 10, 5], // R U' D2 R'",
+  ],
 ];
 
 for (const [from, to] of replacements) {
   if (source.includes(to)) continue;
   if (!source.includes(from)) {
-    throw new Error(`Missing FMC move-order anchor: ${from.slice(0, 80)}`);
+    throw new Error(`Missing FMC move-order anchor: ${from.slice(0, 100)}`);
   }
   source = source.replace(from, to);
 }
