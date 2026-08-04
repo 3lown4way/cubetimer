@@ -44,6 +44,8 @@ console.log("FMC_CASE_RESULT=" + JSON.stringify({
   reason: result?.reason || null,
   moveCount: Number(result?.moveCount || 0),
   candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : 0,
+  invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
+  repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
   skeletonCount: Number(result?.skeletonCount || 0),
   insertionCandidateCount: Number(result?.insertionCandidateCount || 0),
   multiSwitchNissCandidateCount: Number(result?.multiSwitchNissCandidateCount || 0),
