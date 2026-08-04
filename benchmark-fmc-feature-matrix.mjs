@@ -54,3 +54,21 @@ for (const [id, extra] of cases) {
   console.log(JSON.stringify(row));
 }
 console.log("FMC_FEATURE_MATRIX=" + JSON.stringify(rows));
+
+const requiredL3Cases = new Set([
+  "l3-pm20",
+  "l3-base",
+  "l3-htr",
+  "l3-multi-switch",
+  "l3-deep-switch",
+  "l3-insertions",
+  "l3-full",
+]);
+const coverageFailures = rows.filter((row) =>
+  requiredL3Cases.has(row.id) &&
+  (row.ok !== true || Number(row.moveCount || 0) <= 0 || Number(row.moveCount || 0) > 24 || Number(row.candidateCount || 0) < 1)
+);
+if (coverageFailures.length > 0) {
+  console.error("FMC_REQUIRED_L3_COVERAGE_FAILED=" + JSON.stringify(coverageFailures));
+  process.exitCode = 1;
+}
