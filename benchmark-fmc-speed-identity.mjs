@@ -88,6 +88,8 @@ for (let index = 0; index < scrambles.length; index += 1) {
       candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : -1,
       invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
       repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
+      levelEscalationUsed: result?.levelEscalationUsed === true,
+      initialReason: result?.initialReason || null,
     };
     throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}:${JSON.stringify(diagnostics)}`);
   }
@@ -129,6 +131,8 @@ for (let index = 0; index < scrambles.length; index += 1) {
     moveCount: Number(result.moveCount || 0),
     candidates: result.candidates.map(normalizedCandidate),
     solveMs,
+    levelEscalationUsed: result.levelEscalationUsed === true,
+    initialReason: result.initialReason || null,
     insertionMs,
     insertion,
   });
@@ -145,6 +149,7 @@ const summary = {
   averageSolveMs: average(solveTimes),
   medianSolveMs: percentile(solveTimes, 0.5),
   p95SolveMs: percentile(solveTimes, 0.95),
+  levelEscalationRuns: rows.filter((row) => row.levelEscalationUsed).length,
   averageInsertionMs: average(insertionTimes),
   medianInsertionMs: percentile(insertionTimes, 0.5),
 };
