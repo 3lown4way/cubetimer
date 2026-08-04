@@ -36,6 +36,7 @@ jobs:
           node tools/apply-fmc-htr-coordinate-table.mjs
           node tools/apply-fmc-deep-warmup-v2.mjs
           node tools/run-fmc-deep-component-mask-first-apply.mjs
+          node tools/apply-fmc-candidate-validation.mjs
       - name: Validate sources
         run: |
           node --check benchmark-fmc-profile.mjs
@@ -48,6 +49,7 @@ jobs:
           node --check tools/apply-fmc-deep-warmup-v2.mjs
           node --check tools/apply-fmc-deep-component-mask.mjs
           node --check tools/run-fmc-deep-component-mask-first-apply.mjs
+          node --check tools/apply-fmc-candidate-validation.mjs
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check main.js
@@ -80,8 +82,8 @@ jobs:
             public/solver-wasm/solver_wasm_bg.wasm \
             public/solver-wasm/solver_wasm_bg.wasm.d.ts
           if git diff --cached --quiet; then
-            echo "FMC deep-table implementation already committed"
+            echo "FMC candidate validation implementation already committed"
             exit 0
           fi
-          git commit -m "Add FMC deep component diagnostics"
+          git commit -m "Validate FMC candidates before ranking"
           git push origin "HEAD:${TARGET_BRANCH}"
