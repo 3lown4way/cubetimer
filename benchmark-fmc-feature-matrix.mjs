@@ -26,7 +26,7 @@ const rows = [];
 for (const [id, extra] of cases) {
   const child = spawnSync(process.execPath, ["benchmark-fmc-feature-case.mjs"], {
     encoding: "utf8",
-    timeout: 120000,
+    timeout: 30000,
     env: {
       ...process.env,
       FMC_CASE_ID: id,
