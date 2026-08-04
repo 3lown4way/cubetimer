@@ -538,7 +538,8 @@ export async function solveFmcWasm(scramble, options = {}) {
   }
   if (!api || typeof api.solveFmcWasm !== "function") return null;
   try {
-    const optionsJson = JSON.stringify({
+    const explicitSearchLevel = Number.isFinite(options.searchLevel);
+    const normalizedOptions = {
       maxPremoveSets: options.maxPremoveSets ?? 120,
       forceRzp: options.forceRzp ?? false,
       enableMultiInsertion: options.enableMultiInsertion === true,
@@ -549,17 +550,44 @@ export async function solveFmcWasm(scramble, options = {}) {
       deepComponentMask: Number.isFinite(options.deepComponentMask)
         ? Math.max(0, Math.min(15, Math.floor(options.deepComponentMask)))
         : 15,
-      searchLevel: Number.isFinite(options.searchLevel) ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
+      searchLevel: explicitSearchLevel ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
       searchVariant: Number.isFinite(options.searchVariant) ? Math.max(0, Math.floor(options.searchVariant)) : 0,
       incumbentMoveCount: Number.isFinite(options.incumbentMoveCount)
         ? Math.max(1, Math.min(40, Math.floor(options.incumbentMoveCount)))
         : 40,
-    });
-    const raw = api.solveFmcWasm(scramble, optionsJson);
-    if (!raw) return null;
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    };
+    const invokeFmc = (requestOptions) => {
+      const raw = api.solveFmcWasm(scramble, JSON.stringify(requestOptions));
+      if (!raw) return null;
+      return typeof raw === "string" ? JSON.parse(raw) : raw;
+    };
+
+    let parsed = invokeFmc(normalizedOptions);
     if (!parsed || parsed.ok === undefined) return null;
-    if (parsed.ok !== true) return parsed;
+    let levelEscalationUsed = false;
+    let initialReason = null;
+    // Unspecified raw callers use a very cheap L0 probe first. If that probe has
+    // no frontier, run one bounded L3 portfolio with the same premove budget.
+    // Explicit site quality stages retain their requested level unchanged.
+    if (parsed.ok !== true && !explicitSearchLevel) {
+      initialReason = String(parsed.reason || "FMC_NO_SOLUTION");
+      const escalated = invokeFmc({
+        ...normalizedOptions,
+        maxPremoveSets: Math.max(20, Number(normalizedOptions.maxPremoveSets) || 0),
+        searchLevel: 3,
+      });
+      if (escalated && escalated.ok !== undefined) {
+        parsed = escalated;
+        levelEscalationUsed = true;
+      }
+    }
+    if (parsed.ok !== true) {
+      return {
+        ...parsed,
+        levelEscalationUsed,
+        initialReason,
+      };
+    }
 
     // The public FMC verifier is the source of truth for the exact solution
     // string returned to callers. The Rust search uses internal state frames,
@@ -644,6 +672,8 @@ export async function solveFmcWasm(scramble, options = {}) {
       candidates: validCandidates,
       invalidCandidateCount,
       repairedPremoveNissCandidateCount,
+      levelEscalationUsed,
+      initialReason,
     };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
