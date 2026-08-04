@@ -5113,7 +5113,10 @@ mod skeleton_tests {
             let half = clockwise + 1;
             let counter_clockwise = clockwise + 2;
             assert_eq!(simplify_moves(&[clockwise, clockwise]), vec![half]);
-            assert_eq!(simplify_moves(&[counter_clockwise, counter_clockwise]), vec![half]);
+            assert_eq!(
+                simplify_moves(&[counter_clockwise, counter_clockwise]),
+                vec![half]
+            );
             assert!(simplify_moves(&[clockwise, counter_clockwise]).is_empty());
             assert!(simplify_moves(&[half, half]).is_empty());
         }
