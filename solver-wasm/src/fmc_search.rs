@@ -4697,6 +4697,50 @@ fn fmc_result_best_move_count(result: &FmcResult) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+fn merge_fmc_result_frontier(base: &mut FmcResult, mut extra: FmcResult) {
+    base.candidates.append(&mut extra.candidates);
+    base.candidates.sort_by_key(|candidate| {
+        (
+            candidate.moves.len(),
+            candidate.skeleton_kind.is_none(),
+            candidate.source_tag,
+            candidate.axis,
+        )
+    });
+    let mut seen = std::collections::HashSet::new();
+    base.candidates
+        .retain(|candidate| seen.insert(candidate.moves.clone()));
+    base.candidates.truncate(32);
+
+    base.skeletons.append(&mut extra.skeletons);
+    base.skeletons.truncate(FMC_SKELETON_BEAM_LIMIT * 2);
+    base.insertion_candidate_count = base
+        .insertion_candidate_count
+        .saturating_add(extra.insertion_candidate_count);
+    base.mixed_insertion_candidate_count = base
+        .mixed_insertion_candidate_count
+        .saturating_add(extra.mixed_insertion_candidate_count);
+    base.multi_insertion_candidate_count = base
+        .multi_insertion_candidate_count
+        .saturating_add(extra.multi_insertion_candidate_count);
+    base.multi_insertion_transition_count = base
+        .multi_insertion_transition_count
+        .saturating_add(extra.multi_insertion_transition_count);
+    base.multi_insertion_pair_count = base
+        .multi_insertion_pair_count
+        .saturating_add(extra.multi_insertion_pair_count);
+    base.slice_insertion_candidate_count = base
+        .slice_insertion_candidate_count
+        .saturating_add(extra.slice_insertion_candidate_count);
+    base.multi_switch_niss_candidate_count = base
+        .multi_switch_niss_candidate_count
+        .saturating_add(extra.multi_switch_niss_candidate_count);
+    base.reverse_scramble_rejected_count = base
+        .reverse_scramble_rejected_count
+        .saturating_add(extra.reverse_scramble_rejected_count);
+    base.ok = !base.candidates.is_empty();
+}
+
 /// Run the selected human FMC frontier. L3 performs additional independent
 /// variants inside the same method; no alternate solver or EO-depth fallback runs.
 pub fn solve_fmc(
@@ -4733,14 +4777,10 @@ pub fn solve_fmc(
         incumbent_move_count,
         requested_eo_depth,
     );
-    if !primary.ok {
-        return primary;
-    }
-
     let mut best_result = primary;
     let mut best_count = fmc_result_best_move_count(&best_result);
 
-    if search_level >= 3 && best_count > FMC_EXTREME_RETRY_TARGET {
+    if search_level >= 3 && (!best_result.ok || best_count > FMC_EXTREME_RETRY_TARGET) {
         let secondary_variant = solve_fmc_with_eo_depth(
             scramble,
             tables,
@@ -4759,13 +4799,13 @@ pub fn solve_fmc(
             requested_eo_depth,
         );
         let secondary_count = fmc_result_best_move_count(&secondary_variant);
-        if secondary_variant.ok && secondary_count < best_count {
-            best_result = secondary_variant;
-            best_count = secondary_count;
+        if secondary_variant.ok {
+            merge_fmc_result_frontier(&mut best_result, secondary_variant);
+            best_count = fmc_result_best_move_count(&best_result);
         }
     }
 
-    if search_level >= 3 && best_count > FMC_EXTREME_SUB20_TARGET {
+    if search_level >= 3 && (!best_result.ok || best_count > FMC_EXTREME_SUB20_TARGET) {
         let sub20_variant = solve_fmc_with_eo_depth(
             scramble,
             tables,
@@ -4784,8 +4824,8 @@ pub fn solve_fmc(
             requested_eo_depth,
         );
         let sub20_count = fmc_result_best_move_count(&sub20_variant);
-        if sub20_variant.ok && sub20_count < best_count {
-            best_result = sub20_variant;
+        if sub20_variant.ok {
+            merge_fmc_result_frontier(&mut best_result, sub20_variant);
         }
     }
 
