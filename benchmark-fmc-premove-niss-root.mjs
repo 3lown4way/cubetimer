@@ -37,8 +37,8 @@ const result = await solveFmcWasm(scramble, {
   incumbentMoveCount: 40,
 });
 
-if (!result?.ok || !Array.isArray(result.candidates)) {
-  throw new Error(`FMC_DIAGNOSTIC_SOLVE_FAILED:${JSON.stringify(result)}`);
+if (!result?.ok || !Array.isArray(result.candidates) || result.candidates.length === 0) {
+  throw new Error(`FMC_ROOT_FIX_SOLVE_FAILED:${JSON.stringify(result)}`);
 }
 
 const inverseScramble = invertMoves(tokens(scramble));
@@ -54,24 +54,14 @@ for (const [index, candidate] of result.candidates.entries()) {
     ...invertMoves(pipeline),
     ...invertMoves(premoves),
   ].join(" ");
-  const oppositeMetadataFlattening = [
-    ...invertMoves(premoves),
-    ...invertMoves(pipeline),
-  ].join(" ");
 
   const verification = await verifyFmcSolutionWasm(scramble, candidate.solution);
-  const pipelineVerification = await verifyFmcSolutionWasm(
-    effectiveInverseScramble,
-    pipeline.join(" "),
-  );
-  const metadataVerification = await verifyFmcSolutionWasm(
-    scramble,
-    metadataFlattening,
-  );
-  const oppositeMetadataVerification = await verifyFmcSolutionWasm(
-    scramble,
-    oppositeMetadataFlattening,
-  );
+  const pipelineVerification = candidate.source.includes("PREMOVE_NISS")
+    ? await verifyFmcSolutionWasm(effectiveInverseScramble, pipeline.join(" "))
+    : null;
+  const metadataVerification = candidate.source.includes("PREMOVE_NISS")
+    ? await verifyFmcSolutionWasm(scramble, metadataFlattening)
+    : null;
 
   rows.push({
     index,
@@ -87,14 +77,14 @@ for (const [index, candidate] of result.candidates.entries()) {
     finishMoves,
     pipeline: pipeline.join(" "),
     pipelineSolvesEffectiveInverse:
-      pipelineVerification?.ok === true && pipelineVerification.solved === true,
-    pipelineVerification,
+      pipelineVerification == null
+        ? null
+        : pipelineVerification?.ok === true && pipelineVerification.solved === true,
     metadataFlattening,
     metadataFlatteningSolved:
-      metadataVerification?.ok === true && metadataVerification.solved === true,
-    oppositeMetadataFlattening,
-    oppositeMetadataFlatteningSolved:
-      oppositeMetadataVerification?.ok === true && oppositeMetadataVerification.solved === true,
+      metadataVerification == null
+        ? null
+        : metadataVerification?.ok === true && metadataVerification.solved === true,
     eoLength: Number(candidate.eoLength || 0),
     drLength: Number(candidate.drLength || 0),
     p2Length: Number(candidate.p2Length || 0),
@@ -102,11 +92,20 @@ for (const [index, candidate] of result.candidates.entries()) {
   });
 }
 
-console.log(`FMC_PREMOVE_NISS_ROOT=${JSON.stringify({ scramble, rows })}`);
+console.log(`FMC_PREMOVE_NISS_ROOT_FIXED=${JSON.stringify({ scramble, rows })}`);
 
-const invalidPremoveNiss = rows.filter(
-  (row) => !row.solved && row.source.includes("PREMOVE_NISS"),
+const invalidCandidates = rows.filter((row) => !row.solved);
+if (invalidCandidates.length > 0) {
+  throw new Error(`FMC_INVALID_CANDIDATES_REMAIN:${JSON.stringify(invalidCandidates)}`);
+}
+
+const invalidPremovePipelines = rows.filter(
+  (row) =>
+    row.source.includes("PREMOVE_NISS") &&
+    (row.pipelineSolvesEffectiveInverse !== true || row.metadataFlatteningSolved !== true),
 );
-if (invalidPremoveNiss.length === 0) {
-  throw new Error("FMC_PREMOVE_NISS_BUG_NOT_REPRODUCED");
+if (invalidPremovePipelines.length > 0) {
+  throw new Error(
+    `FMC_PREMOVE_NISS_PIPELINE_INVALID:${JSON.stringify(invalidPremovePipelines)}`,
+  );
 }
