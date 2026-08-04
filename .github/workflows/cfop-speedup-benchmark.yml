@@ -52,6 +52,7 @@ jobs:
           node --check benchmark-fmc-extreme-contract.mjs
           node --check benchmark-fmc-speed-identity.mjs
           node --check benchmark-fmc-insertion-speed-identity.mjs
+          node --check benchmark-fmc-premove-niss-root.mjs
 
       - name: Compile Rust solver
         run: |
@@ -168,6 +169,9 @@ jobs:
 
       - name: Verify FMC Extreme 120-second hybrid contract
         run: node benchmark-fmc-extreme-contract.mjs
+
+      - name: Verify FMC premove NISS source construction
+        run: node benchmark-fmc-premove-niss-root.mjs
 
       - name: Verify human FMC core pipeline
         env:

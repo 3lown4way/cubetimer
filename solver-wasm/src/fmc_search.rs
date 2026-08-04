@@ -10,14 +10,15 @@ use once_cell::sync::{Lazy, OnceCell};
 // --- Constants ---
 
 /// Inverse of each move: U↔U', U2↔U2, R↔R', etc.
-pub const MOVE_INVERSE: [u8; 18] = [1, 0, 2, 4, 3, 5, 7, 6, 8, 10, 9, 11, 13, 12, 14, 16, 15, 17];
+pub const MOVE_INVERSE: [u8; 18] = [2, 1, 0, 5, 4, 3, 8, 7, 6, 11, 10, 9, 14, 13, 12, 17, 16, 15];
 
 /// EO-preserving moves for DR solving (all except F, F', B, B').
-/// U(0),U'(1),U2(2), R(3),R'(4),R2(5), F2(8), D(9),D'(10),D2(11), L(12),L'(13),L2(14), B2(17)
-const DR_EO_MOVE_INDICES: [u8; 14] = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 17];
+/// Repository order per face is clockwise, half turn, counter-clockwise.
+/// U(0),U2(1),U'(2), R(3),R2(4),R'(5), F2(7), D(9),D2(10),D'(11), L(12),L2(13),L'(14), B2(16)
+const DR_EO_MOVE_INDICES: [u8; 14] = [0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 13, 14, 16];
 
 /// Quarter-turn amounts for move suffix index (0→1 CW, 1→3 CCW, 2→2 half).
-const TURN_AMOUNTS: [u8; 3] = [1, 3, 2];
+const TURN_AMOUNTS: [u8; 3] = [1, 2, 3];
 
 /// Opposite face lookup (move-face convention: U=0,R=1,F=2,D=3,L=4,B=5).
 pub const OPPOSITE_FACE: [u8; 6] = [3, 4, 5, 0, 1, 2];
@@ -127,7 +128,7 @@ const FMC_EXTREME_SUB20_VARIANT_OFFSET: u32 = 111;
 const FMC_SLICE_RELOCATION_LIMIT: usize = 64;
 
 /// Global half turns used inside the HTR subgroup.
-const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
+const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [1, 4, 7, 10, 13, 16];
 
 /// Avoid accepting an HTR detour that is materially longer than the normal P2 tail.
 const FMC_HTR_TAIL_SLACK: usize = 2;
@@ -391,11 +392,11 @@ fn build_two_corner_two_edge_algorithms(
     // T, Jb, Ra, Rb and F permutations in the repository move convention.
     // Every sequence is effect-checked before it is admitted to the library.
     let base_sequences: [Vec<u8>; 5] = [
-        vec![3, 0, 4, 1, 4, 6, 5, 1, 4, 1, 3, 0, 4, 7],
-        vec![3, 0, 4, 7, 3, 0, 4, 1, 4, 6, 5, 1, 4, 1],
-        vec![3, 1, 4, 1, 3, 0, 3, 9, 4, 1, 3, 10, 4, 2, 4],
-        vec![4, 2, 3, 2, 4, 6, 3, 0, 4, 1, 4, 7, 5, 1],
-        vec![4, 1, 7, 3, 0, 4, 1, 4, 6, 5, 1, 4, 1, 3, 0, 4, 0, 3],
+        vec![3, 0, 5, 2, 5, 6, 4, 2, 5, 2, 3, 0, 5, 8],
+        vec![3, 0, 5, 8, 3, 0, 5, 2, 5, 6, 4, 2, 5, 2],
+        vec![3, 2, 5, 2, 3, 0, 3, 9, 5, 2, 3, 11, 5, 1, 5],
+        vec![5, 1, 3, 1, 5, 6, 3, 0, 5, 2, 5, 8, 4, 2],
+        vec![5, 2, 8, 3, 0, 5, 2, 5, 6, 4, 2, 5, 2, 3, 0, 5, 0, 3],
     ];
     let setups = enumerate_canonical_sequences(
         FMC_TWO_CORNER_TWO_EDGE_SETUP_DEPTH,
@@ -452,9 +453,9 @@ fn slice_residual_state(axis: u8) -> CubeState {
 /// up to a free whole-cube x2/y2/z2 rotation.
 fn slice_outer_pair(axis: u8) -> [u8; 2] {
     match axis {
-        0 => [2, 11], // U2 D2 completes E2
-        1 => [5, 14], // R2 L2 completes M2
-        2 => [8, 17], // F2 B2 completes S2
+        0 => [1, 10], // U2 D2 completes E2
+        1 => [4, 13], // R2 L2 completes M2
+        2 => [7, 16], // F2 B2 completes S2
         _ => unreachable!(),
     }
 }
@@ -1261,6 +1262,14 @@ fn encode_perm4(perm: &[u8; 4]) -> usize {
 }
 
 fn build_p2_input(state: &CubeState) -> Option<Phase2Input> {
+    // Phase 2 coordinates do not encode corner or edge orientation. Never
+    // admit an oriented state, otherwise P2 can solve only the permutations
+    // and return a false completed FMC pipeline.
+    if state.co.iter().any(|&orientation| orientation != 0)
+        || state.eo.iter().any(|&orientation| orientation != 0)
+    {
+        return None;
+    }
     // Verify edges are in DR configuration: UD edges (0-7) in UD positions, E-slice (8-11) in E-slice.
     for i in 0..8 {
         if state.ep[i] >= 8 {
@@ -1305,8 +1314,8 @@ fn build_p2_input(state: &CubeState) -> Option<Phase2Input> {
 fn turn_to_suffix(combined: u8) -> u8 {
     match combined {
         1 => 0,
-        3 => 1,
-        2 => 2,
+        2 => 1,
+        3 => 2,
         _ => unreachable!(),
     }
 }
@@ -5098,19 +5107,35 @@ mod skeleton_tests {
     }
 
     #[test]
+    fn simplification_matches_repository_turn_order() {
+        for face in 0..6u8 {
+            let clockwise = face * 3;
+            let half = clockwise + 1;
+            let counter_clockwise = clockwise + 2;
+            assert_eq!(simplify_moves(&[clockwise, clockwise]), vec![half]);
+            assert_eq!(
+                simplify_moves(&[counter_clockwise, counter_clockwise]),
+                vec![half]
+            );
+            assert!(simplify_moves(&[clockwise, counter_clockwise]).is_empty());
+            assert!(simplify_moves(&[half, half]).is_empty());
+        }
+    }
+
+    #[test]
     fn recognizes_reverse_scramble_notation_under_axis_commutation() {
-        let reverse = vec![3, 10, 1, 4]; // R D' U' R'
+        let reverse = vec![3, 11, 2, 5]; // R D' U' R'
         let reverse_canonical = canonicalize_commuting_axis_blocks(&reverse);
         assert!(is_trivial_reverse_solution(
-            &[3, 1, 10, 4], // R U' D' R'
+            &[3, 2, 11, 5], // R U' D' R'
             &reverse_canonical,
         ));
         assert_eq!(
-            canonicalize_commuting_axis_blocks(&[4, 0, 9, 1]), // R' U D U'
-            canonicalize_commuting_axis_blocks(&[4, 9]),       // R' D
+            canonicalize_commuting_axis_blocks(&[5, 0, 9, 2]), // R' U D U'
+            canonicalize_commuting_axis_blocks(&[5, 9]),       // R' D
         );
         assert!(!is_trivial_reverse_solution(
-            &[3, 1, 11, 4], // R U' D2 R'
+            &[3, 2, 10, 5], // R U' D2 R'
             &reverse_canonical,
         ));
     }

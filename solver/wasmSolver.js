@@ -2,6 +2,8 @@ import { loadChunkedMinmove333Bundle } from "./minmoveBundleLoader.js";
 
 const WASM_MODULE_CANDIDATES = [
   new URL("../public/solver-wasm/solver_wasm.js", import.meta.url).href,
+  // Some static hosts publish the public directory as the site root.
+  new URL("../solver-wasm/solver_wasm.js", import.meta.url).href,
   new URL("../solver-wasm/pkg/solver_wasm.js", import.meta.url).href,
 ];
 const MINMOVE_333_BUNDLE_CANDIDATES = [
@@ -16,13 +18,41 @@ const MINMOVE_333_MANIFEST_CANDIDATES = [
 ];
 const TWOPHASE_333_BUNDLE_CANDIDATES = [
   new URL("../public/solver-wasm/twophase/twophase-333-v2.bin", import.meta.url).href,
+  new URL("../solver-wasm/twophase/twophase-333-v2.bin", import.meta.url).href,
   new URL("../public/solver-wasm/twophase/twophase-333-v1.bin", import.meta.url).href,
+  new URL("../solver-wasm/twophase/twophase-333-v1.bin", import.meta.url).href,
 ];
 
 let wasmApiPromise = null;
 let wasmApi = null;
 let minmove333ReadyPromise = null;
 let twophase333ReadyPromise = null;
+let twophase333Ready = false;
+let wasmLastFailure = null;
+
+function recordWasmFailure(stage, target, error) {
+  const message = String(error?.message || error || "UNKNOWN_WASM_ERROR");
+  wasmLastFailure = {
+    stage: String(stage || "unknown"),
+    target: target ? String(target) : null,
+    message,
+    timestamp: Date.now(),
+  };
+  console.warn(
+    "[WASM] " + wasmLastFailure.stage + " failed" + (wasmLastFailure.target ? ": " + wasmLastFailure.target : "") + ": " + message,
+  );
+}
+
+export function getWasmSolverReadinessStatus() {
+  return {
+    wasmModuleReady: wasmApi !== null,
+    wasmModuleLoading: wasmApi === null && wasmApiPromise !== null,
+    twophaseReady: twophase333Ready,
+    twophaseLoading: !twophase333Ready && twophase333ReadyPromise !== null,
+    fmcTablesBuilt: typeof fmcTablesBuilt === "boolean" ? fmcTablesBuilt : false,
+    lastFailure: wasmLastFailure ? { ...wasmLastFailure } : null,
+  };
+}
 
 function normalizeSolveResponse(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -44,10 +74,14 @@ async function loadWasmCandidate(specifier) {
   let mod;
   try {
     mod = await import(/* @vite-ignore */ specifier);
-  } catch (_) {
+  } catch (error) {
+    recordWasmFailure("module-import", specifier, error);
     return null;
   }
-  if (!mod) return null;
+  if (!mod) {
+    recordWasmFailure("module-import", specifier, new Error("EMPTY_WASM_MODULE"));
+    return null;
+  }
 
   const isNode = typeof process !== "undefined" && !!process.versions?.node;
   const isBrowserLike = typeof window !== "undefined" || typeof self !== "undefined";
@@ -58,7 +92,8 @@ async function loadWasmCandidate(specifier) {
       const wasmUrl = new URL("solver_wasm_bg.wasm", specifier);
       const wasmBytes = fs.readFileSync(fileURLToPath(wasmUrl));
       mod.initSync({ module: wasmBytes });
-    } catch (_) {
+    } catch (error) {
+      recordWasmFailure("module-init-sync", specifier, error);
       return null;
     }
   } else {
@@ -66,12 +101,16 @@ async function loadWasmCandidate(specifier) {
     if (init) {
       try {
         await init();
-      } catch (_) {
+      } catch (error) {
+        recordWasmFailure("module-init", specifier, error);
         return null;
       }
     }
   }
-  if (typeof mod.solve_json !== "function") return null;
+  if (typeof mod.solve_json !== "function") {
+    recordWasmFailure("module-api", specifier, new Error("SOLVE_JSON_EXPORT_MISSING"));
+    return null;
+  }
   return {
     solveJson(req) {
       return mod.solve_json(req);
@@ -180,23 +219,37 @@ async function loadBinaryCandidate(url) {
       const { fileURLToPath } = await import("url");
       const fs = await import("fs");
       const filePath = fileURLToPath(url);
-      return new Uint8Array(fs.readFileSync(filePath));
-    } catch (_) {
+      const bytes = new Uint8Array(fs.readFileSync(filePath));
+      if (bytes.byteLength > 0) return bytes;
+      recordWasmFailure("binary-read", url, new Error("EMPTY_BINARY"));
+      return null;
+    } catch (error) {
+      recordWasmFailure("binary-read", url, error);
       return null;
     }
   }
-  let response;
-  try {
-    response = await fetch(url, { cache: "force-cache" });
-  } catch (_) {
-    return null;
+
+  for (const cacheMode of ["force-cache", "reload"]) {
+    let response;
+    try {
+      response = await fetch(url, { cache: cacheMode });
+    } catch (error) {
+      recordWasmFailure("binary-fetch", url, error);
+      continue;
+    }
+    if (!response.ok) {
+      recordWasmFailure("binary-fetch", url, new Error("HTTP_" + response.status));
+      continue;
+    }
+    try {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > 0) return bytes;
+      recordWasmFailure("binary-fetch", url, new Error("EMPTY_BINARY"));
+    } catch (error) {
+      recordWasmFailure("binary-decode", url, error);
+    }
   }
-  if (!response.ok) return null;
-  try {
-    return new Uint8Array(await response.arrayBuffer());
-  } catch (_) {
-    return null;
-  }
+  return null;
 }
 
 async function loadMinmove333BundleBytes() {
@@ -227,17 +280,24 @@ export async function ensureWasmSolverReady() {
   if (wasmApi) return wasmApi;
   if (wasmApiPromise) return wasmApiPromise;
 
-  wasmApiPromise = (async () => {
-    for (let i = 0; i < WASM_MODULE_CANDIDATES.length; i++) {
+  const readyPromise = (async () => {
+    for (let i = 0; i < WASM_MODULE_CANDIDATES.length; i += 1) {
       const api = await loadWasmCandidate(WASM_MODULE_CANDIDATES[i]);
       if (!api) continue;
       wasmApi = api;
+      wasmLastFailure = null;
       return wasmApi;
     }
     return null;
   })();
 
-  return wasmApiPromise;
+  wasmApiPromise = readyPromise;
+  const ready = await readyPromise;
+  if (!ready && wasmApiPromise === readyPromise) {
+    // A transient import/deployment failure must not poison the page forever.
+    wasmApiPromise = null;
+  }
+  return ready;
 }
 
 export async function ensureMinmove333Ready(onProgress = null) {
@@ -287,25 +347,44 @@ export async function ensureMinmove333Ready(onProgress = null) {
 export async function ensureTwophase333Ready() {
   const api = await ensureWasmSolverReady();
   if (!api) return null;
+  if (twophase333Ready) return api;
   if (twophase333ReadyPromise) return twophase333ReadyPromise;
 
-  twophase333ReadyPromise = (async () => {
-    if (typeof api.loadTwophase333Bundle !== "function") return null;
+  const readyPromise = (async () => {
+    if (typeof api.loadTwophase333Bundle !== "function") {
+      recordWasmFailure("twophase-api", null, new Error("LOAD_TWOPHASE_EXPORT_MISSING"));
+      return null;
+    }
     const bytes = await loadTwophase333BundleBytes();
-    if (!bytes) return null;
+    if (!bytes) {
+      recordWasmFailure("twophase-bundle", null, new Error("TWOPHASE_BUNDLE_UNAVAILABLE"));
+      return null;
+    }
     try {
       const loaded = api.loadTwophase333Bundle(bytes);
-      if (!loaded) return null;
+      if (!loaded) {
+        recordWasmFailure("twophase-load", null, new Error("TWOPHASE_BUNDLE_REJECTED"));
+        return null;
+      }
       if (typeof api.warmTwophase333 === "function") {
         api.warmTwophase333();
       }
+      twophase333Ready = true;
+      wasmLastFailure = null;
       return api;
-    } catch (_) {
+    } catch (error) {
+      recordWasmFailure("twophase-load", null, error);
       return null;
     }
   })();
 
-  return twophase333ReadyPromise;
+  twophase333ReadyPromise = readyPromise;
+  const ready = await readyPromise;
+  if (!ready && twophase333ReadyPromise === readyPromise) {
+    // Permit the next solve/warm request to retry after a transient asset failure.
+    twophase333ReadyPromise = null;
+  }
+  return ready;
 }
 
 export async function prepareMinmove333(scramble) {
@@ -415,16 +494,26 @@ export async function buildFmcTablesWasm() {
   let api;
   try {
     api = await ensureTwophase333Ready();
-  } catch (_) {
+  } catch (error) {
+    recordWasmFailure("fmc-readiness", null, error);
     return false;
   }
-  if (!api || typeof api.buildFmcTablesWasm !== "function") return false;
+  if (!api || typeof api.buildFmcTablesWasm !== "function") {
+    recordWasmFailure("fmc-api", null, new Error("BUILD_FMC_TABLES_EXPORT_MISSING"));
+    return false;
+  }
   try {
     const raw = api.buildFmcTablesWasm();
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     fmcTablesBuilt = !!(parsed && parsed.ok);
+    if (!fmcTablesBuilt) {
+      recordWasmFailure("fmc-table-build", null, new Error(parsed?.reason || "FMC_TABLE_BUILD_REJECTED"));
+    } else {
+      wasmLastFailure = null;
+    }
     return fmcTablesBuilt;
-  } catch (_) {
+  } catch (error) {
+    recordWasmFailure("fmc-table-build", null, error);
     return false;
   }
 }
