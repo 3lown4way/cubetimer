@@ -1,6 +1,7 @@
 import fs from "node:fs";
 
 const wasmPath = "solver/wasmSolver.js";
+const rustPath = "solver-wasm/src/fmc_search.rs";
 const before = fs.readFileSync(wasmPath, "utf8");
 let source = before;
 
@@ -188,4 +189,22 @@ if (!source.includes(enhancedMarker)) {
 }
 
 if (source !== before) fs.writeFileSync(wasmPath, source);
-console.log(source === before ? "FMC candidate repair and validation already applied" : "Applied FMC candidate repair and validation");
+
+const rustBefore = fs.readFileSync(rustPath, "utf8");
+let rustSource = rustBefore;
+const narrowFrontier = "    all_candidates.truncate(10);";
+const verificationFrontier = `    // Keep a wider raw frontier until the public verifier rejects or repairs
+    // malformed premove-NISS flattenings. The caller re-ranks verified results.
+    all_candidates.truncate(32);`;
+if (!rustSource.includes(verificationFrontier)) {
+  const first = rustSource.indexOf(narrowFrontier);
+  if (first < 0) throw new Error("Missing FMC raw candidate frontier limit");
+  if (rustSource.indexOf(narrowFrontier, first + narrowFrontier.length) >= 0) {
+    throw new Error("Ambiguous FMC raw candidate frontier limit");
+  }
+  rustSource = rustSource.slice(0, first) + verificationFrontier + rustSource.slice(first + narrowFrontier.length);
+}
+if (rustSource !== rustBefore) fs.writeFileSync(rustPath, rustSource);
+
+const changed = source !== before || rustSource !== rustBefore;
+console.log(changed ? "Applied FMC candidate repair and verification frontier" : "FMC candidate repair and verification frontier already applied");
