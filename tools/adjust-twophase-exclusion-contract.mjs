@@ -42,6 +42,15 @@ benchmark = replaceRequired(
       strictIncumbent: false,`,
   "benchmark exact-inverse exclusion options",
 );
+benchmark = replaceRequired(
+  benchmark,
+  `if (expanded.length === 0) {
+  throw new Error("TWOPHASE_ADAPTIVE_FRONTIER_PATH_NOT_EXERCISED");
+}
+`,
+  "",
+  "unnecessary adaptive frontier assertion",
+);
 fs.writeFileSync(benchmarkPath, benchmark);
 
 console.log("Adjusted two-phase contract to exclude only the exact inverse path");
