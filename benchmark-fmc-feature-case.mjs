@@ -29,6 +29,7 @@ if (result?.ok && Array.isArray(result.candidates)) {
           source: candidate.source,
           axisName: candidate.axisName,
           premoves: candidate.premoves,
+          premoveIndex: candidate.premoveIndex,
           verification,
         })}`,
       );
@@ -42,6 +43,7 @@ const candidates = Array.isArray(result?.candidates)
       source: String(candidate?.source || ""),
       axisName: String(candidate?.axisName || ""),
       premoves: String(candidate?.premoves || ""),
+      premoveIndex: Number.isInteger(candidate?.premoveIndex) ? candidate.premoveIndex : null,
       repairedPremoveNissOrder: candidate?.repairedPremoveNissOrder === true,
     }))
   : [];
