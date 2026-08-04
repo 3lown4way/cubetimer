@@ -8,6 +8,14 @@ const base = {
 };
 
 const cases = [
+  ...Array.from({ length: 8 }, (_, searchVariant) => [
+    `l0-pm20-v${searchVariant}`,
+    {
+      maxPremoveSets: 20,
+      searchLevel: 0,
+      searchVariant,
+    },
+  ]),
   ["l3-base", {}],
   ["l3-htr", { enableHtrSkeletons: true }],
   ["l3-multi-switch", { enableMultiSwitchNiss: true }],
