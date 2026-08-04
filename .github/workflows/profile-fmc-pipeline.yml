@@ -52,9 +52,11 @@ jobs:
           node --check tools/run-fmc-deep-component-mask-first-apply.mjs
           node --check tools/apply-fmc-candidate-validation.mjs
           node --check tools/apply-fmc-premove-index-diagnostic.mjs
+          node --check tools/audit-fmc-move-order.mjs
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check main.js
+          node tools/audit-fmc-move-order.mjs
           cargo fmt --manifest-path solver-wasm/Cargo.toml
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
       - name: Install wasm-pack
