@@ -132,6 +132,11 @@ const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
 /// Avoid accepting an HTR detour that is materially longer than the normal P2 tail.
 const FMC_HTR_TAIL_SLACK: usize = 2;
 
+/// Safety ceiling for the compact HTR coordinate table. The expected exact
+/// subgroup is below this bound; reaching it leaves a safe partial table rather
+/// than exhausting WASM linear memory.
+const FMC_HTR_STATE_LIMIT: usize = 1_000_000;
+
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
 // Move convention: U=0,R=1,F=2,D=3,L=4,B=5
@@ -779,7 +784,7 @@ pub struct FmcTables {
     /// Exact E2/M2/S2 leave-slice relocation plans.
     slice_relocation_plans: Vec<FmcMultiRelocationPlan>,
     /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
-    htr_first_move: OnceCell<std::collections::HashMap<u128, u8>>,
+    htr_first_move: OnceCell<std::collections::HashMap<u64, u8>>,
     complementary_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcComplementaryTail>>,
     pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcPreEoTail>>,
 }
@@ -1667,32 +1672,46 @@ fn collect_axis_skeleton_prefixes(
     prefixes
 }
 
-fn htr_permutation_key(state: &CubeState) -> u128 {
-    let mut key = 0u128;
-    for (index, &piece) in state.cp.iter().enumerate() {
-        key |= (piece as u128) << (index * 3);
-    }
-    for (index, &piece) in state.ep.iter().enumerate() {
-        key |= (piece as u128) << (24 + index * 4);
-    }
-    key
+fn htr_coordinate_key(cp_idx: usize, ep_idx: usize, sep_idx: usize) -> u64 {
+    (cp_idx as u64) | ((ep_idx as u64) << 16) | ((sep_idx as u64) << 32)
 }
 
-fn build_htr_first_move_table(tables: &TwophaseTables) -> std::collections::HashMap<u128, u8> {
-    let solved = CubeState::solved();
-    let mut first_move = std::collections::HashMap::<u128, u8>::new();
-    let mut queue = std::collections::VecDeque::<CubeState>::new();
-    first_move.insert(htr_permutation_key(&solved), 255);
-    queue.push_back(solved);
+fn htr_half_turn_local_moves(tables: &TwophaseTables) -> Vec<u8> {
+    tables
+        .phase2_move_indices
+        .iter()
+        .enumerate()
+        .filter_map(|(local, &global)| {
+            FMC_HTR_HALF_TURN_MOVES
+                .contains(&global)
+                .then_some(local as u8)
+        })
+        .collect()
+}
 
-    while let Some(state) = queue.pop_front() {
-        for &move_index in &FMC_HTR_HALF_TURN_MOVES {
-            let next = state.apply_move(move_index as usize, &tables.move_data);
-            let key = htr_permutation_key(&next);
-            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
-                entry.insert(move_index);
-                queue.push_back(next);
+fn build_htr_first_move_table(tables: &TwophaseTables) -> std::collections::HashMap<u64, u8> {
+    let half_turn_moves = htr_half_turn_local_moves(tables);
+    let mut first_move = std::collections::HashMap::<u64, u8>::new();
+    let mut queue = std::collections::VecDeque::<(usize, usize, usize)>::new();
+    first_move.insert(htr_coordinate_key(0, 0, 0), 255);
+    queue.push_back((0, 0, 0));
+
+    while let Some((cp_idx, ep_idx, sep_idx)) = queue.pop_front() {
+        for &local_move in &half_turn_moves {
+            let local = local_move as usize;
+            let next_cp = tables.phase2_cp_move.get(cp_idx, local) as usize;
+            let next_ep = tables.phase2_ep_move.get(ep_idx, local) as usize;
+            let next_sep = tables.phase2_sep_move.get(sep_idx, local) as usize;
+            let key = htr_coordinate_key(next_cp, next_ep, next_sep);
+            if first_move.contains_key(&key) {
+                continue;
             }
+            if first_move.len() >= FMC_HTR_STATE_LIMIT {
+                continue;
+            }
+            // Every HTR generator is a half turn and therefore self-inverse.
+            first_move.insert(key, local_move);
+            queue.push_back((next_cp, next_ep, next_sep));
         }
     }
     first_move
@@ -1706,19 +1725,25 @@ fn htr_finish_moves(
     if state.co.iter().any(|&value| value != 0) || state.eo.iter().any(|&value| value != 0) {
         return None;
     }
+    let input = build_p2_input(state)?;
     let table = fmc_tables
         .htr_first_move
         .get_or_init(|| build_htr_first_move_table(tables));
-    let mut current = *state;
+    let mut cp_idx = input.cp_idx;
+    let mut ep_idx = input.ep_idx;
+    let mut sep_idx = input.sep_idx;
     let mut moves = Vec::new();
     let mut guard = 0usize;
     loop {
-        let move_index = *table.get(&htr_permutation_key(&current))?;
-        if move_index == 255 {
+        let local_move = *table.get(&htr_coordinate_key(cp_idx, ep_idx, sep_idx))?;
+        if local_move == 255 {
             return Some(moves);
         }
-        moves.push(move_index);
-        current = current.apply_move(move_index as usize, &tables.move_data);
+        let local = local_move as usize;
+        moves.push(tables.phase2_move_indices[local]);
+        cp_idx = tables.phase2_cp_move.get(cp_idx, local) as usize;
+        ep_idx = tables.phase2_ep_move.get(ep_idx, local) as usize;
+        sep_idx = tables.phase2_sep_move.get(sep_idx, local) as usize;
         guard += 1;
         if guard > 40 {
             return None;
