@@ -23,7 +23,7 @@ for (const [id, mask] of cases) {
   const marker = output
     .split(/\r?\n/)
     .find((line) => line.startsWith("FMC_DEEP_COMPONENT_RESULT="));
-  if (!marker) {
+  if (!marker || child.status !== 0) {
     throw new Error(
       `FMC_DEEP_COMPONENT_PROCESS_FAILED:${id}:${child.status}:${child.signal || ""}\n${output}`,
     );
@@ -33,7 +33,11 @@ for (const [id, mask] of cases) {
   console.log(JSON.stringify(row));
 }
 
-if (rows.some((row) => row.ok !== true || row.moveCount <= 0)) {
-  throw new Error("FMC_DEEP_COMPONENT_INVALID_RESULT");
+const allRow = rows.find((row) => row.id === "all");
+if (!allRow || allRow.ok !== true || allRow.moveCount <= 0) {
+  throw new Error("FMC_DEEP_COMPONENT_ALL_INVALID");
+}
+if (rows.some((row) => !Number.isFinite(row.elapsedMs) || row.elapsedMs < 0)) {
+  throw new Error("FMC_DEEP_COMPONENT_TIMING_INVALID");
 }
 console.log("FMC_DEEP_COMPONENTS=" + JSON.stringify(rows));
