@@ -4669,7 +4669,9 @@ fn solve_fmc_with_eo_depth(
     // Deduplicate by final solution.
     let mut seen = std::collections::HashSet::new();
     all_candidates.retain(|candidate| seen.insert(candidate.moves.clone()));
-    all_candidates.truncate(10);
+    // Keep a wider raw frontier until the public verifier rejects or repairs
+    // malformed premove-NISS flattenings. The caller re-ranks verified results.
+    all_candidates.truncate(32);
 
     FmcResult {
         ok: !all_candidates.is_empty(),
