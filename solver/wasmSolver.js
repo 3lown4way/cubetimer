@@ -453,6 +453,77 @@ export async function warmFmcDeepTablesWasm() {
   return result;
 }
 
+function normalizeFmcMoveTokens(value) {
+  if (Array.isArray(value)) return value.map((move) => String(move || "").trim()).filter(Boolean);
+  return String(value || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function invertFmcMoveToken(token) {
+  const value = String(token || "").trim();
+  if (!value || value.endsWith("2")) return value;
+  return value.endsWith("'") ? value.slice(0, -1) : value + "'";
+}
+
+function invertFmcMoveSequence(tokens) {
+  return normalizeFmcMoveTokens(tokens).reverse().map(invertFmcMoveToken);
+}
+
+function simplifyFmcMoveSequence(tokens) {
+  const output = [];
+  for (const rawToken of normalizeFmcMoveTokens(tokens)) {
+    const match = /^([URFDLBMESxyzurfdlb])(2|')?$/.exec(rawToken);
+    if (!match) {
+      output.push(rawToken);
+      continue;
+    }
+    const face = match[1];
+    const amount = match[2] === "2" ? 2 : match[2] === "'" ? 3 : 1;
+    const previous = output[output.length - 1];
+    const previousMatch = previous ? /^([URFDLBMESxyzurfdlb])(2|')?$/.exec(previous) : null;
+    if (!previousMatch || previousMatch[1] !== face) {
+      output.push(rawToken);
+      continue;
+    }
+    const previousAmount = previousMatch[2] === "2" ? 2 : previousMatch[2] === "'" ? 3 : 1;
+    const combined = (previousAmount + amount) % 4;
+    output.pop();
+    if (combined === 1) output.push(face);
+    else if (combined === 2) output.push(face + "2");
+    else if (combined === 3) output.push(face + "'");
+  }
+  return output;
+}
+
+function buildVerifiedPremoveNissAlternates(candidate) {
+  const sourceTag = String(candidate?.source || "");
+  if (!/^FMC_(?:HTR_)?PREMOVE_NISS_/.test(sourceTag)) return [];
+
+  const pipeline = [
+    ...normalizeFmcMoveTokens(candidate?.eoMoves),
+    ...normalizeFmcMoveTokens(candidate?.drMoves),
+    ...normalizeFmcMoveTokens(candidate?.finishMoves),
+  ];
+  const premoves = normalizeFmcMoveTokens(candidate?.premoves);
+  if (pipeline.length === 0 || premoves.length === 0) return [];
+
+  const inversePipeline = invertFmcMoveSequence(pipeline);
+  const inversePremoves = invertFmcMoveSequence(premoves);
+  const current = String(candidate?.solution || "").trim();
+  const seen = new Set(current ? [current] : []);
+  const alternatives = [];
+  for (const tokens of [
+    [...inversePremoves, ...inversePipeline],
+    [...inversePipeline, ...inversePremoves],
+  ]) {
+    const simplified = simplifyFmcMoveSequence(tokens);
+    const solution = simplified.join(" ");
+    if (!solution || seen.has(solution)) continue;
+    seen.add(solution);
+    alternatives.push({ solution, moves: simplified, moveCount: simplified.length });
+  }
+  return alternatives;
+}
+
 /**
  * Run the full FMC pipeline (EO→DR→P2, 3 axes, NISS, premove sweep) entirely in WASM.
  * No alternate solver or coverage fallback is permitted.
@@ -491,9 +562,8 @@ export async function solveFmcWasm(scramble, options = {}) {
     if (parsed.ok !== true) return parsed;
 
     // The public FMC verifier is the source of truth for the exact solution
-    // string returned to callers. Filter every ranked candidate at this final
-    // boundary so an invalid premove/NISS flattening can never become the best
-    // displayed solution or seed a downstream insertion pass.
+    // string returned to callers. The Rust search uses internal state frames,
+    // so final validity and premove-NISS order repair remain at this boundary.
     if (
       typeof api.verifyFmcSolutionWasm !== "function" ||
       !Array.isArray(parsed.candidates)
@@ -508,23 +578,51 @@ export async function solveFmcWasm(scramble, options = {}) {
       };
     }
 
-    const validCandidates = [];
-    for (const candidate of parsed.candidates) {
-      const solution = String(candidate?.solution || "");
-      if (!solution) continue;
-      let verification = null;
+    const verifyCandidateSolution = (solution) => {
+      if (!solution) return false;
       try {
-        const verifyRaw = api.verifyFmcSolutionWasm(String(scramble), solution);
-        verification = typeof verifyRaw === "string" ? JSON.parse(verifyRaw) : verifyRaw;
+        const verifyRaw = api.verifyFmcSolutionWasm(String(scramble), String(solution));
+        const verification = typeof verifyRaw === "string" ? JSON.parse(verifyRaw) : verifyRaw;
+        return verification?.ok === true && verification.solved === true;
       } catch (_) {
-        verification = null;
+        return false;
       }
-      if (verification?.ok === true && verification.solved === true) {
-        validCandidates.push(candidate);
+    };
+
+    const validCandidates = [];
+    const seenSolutions = new Set();
+    let invalidCandidateCount = 0;
+    let repairedPremoveNissCandidateCount = 0;
+    for (const candidate of parsed.candidates) {
+      const originalSolution = String(candidate?.solution || "").trim();
+      let accepted = null;
+      if (verifyCandidateSolution(originalSolution)) {
+        accepted = candidate;
+      } else {
+        invalidCandidateCount += 1;
+        for (const alternate of buildVerifiedPremoveNissAlternates(candidate)) {
+          if (!verifyCandidateSolution(alternate.solution)) continue;
+          accepted = {
+            ...candidate,
+            solution: alternate.solution,
+            moves: alternate.moves,
+            moveCount: alternate.moveCount,
+            repairedPremoveNissOrder: true,
+          };
+          repairedPremoveNissCandidateCount += 1;
+          break;
+        }
       }
+      if (!accepted) continue;
+      const solution = String(accepted.solution || "").trim();
+      if (!solution || seenSolutions.has(solution)) continue;
+      seenSolutions.add(solution);
+      validCandidates.push(accepted);
     }
 
-    const invalidCandidateCount = parsed.candidates.length - validCandidates.length;
+    validCandidates.sort((left, right) =>
+      Number(left?.moveCount || 0) - Number(right?.moveCount || 0),
+    );
     if (validCandidates.length === 0) {
       return {
         ...parsed,
@@ -534,6 +632,7 @@ export async function solveFmcWasm(scramble, options = {}) {
         moveCount: 0,
         candidates: [],
         invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
       };
     }
 
@@ -544,6 +643,7 @@ export async function solveFmcWasm(scramble, options = {}) {
       moveCount: Number(best.moveCount || 0),
       candidates: validCandidates,
       invalidCandidateCount,
+      repairedPremoveNissCandidateCount,
     };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
