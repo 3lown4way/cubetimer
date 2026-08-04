@@ -85,6 +85,54 @@ if (!source.includes("const explicitSearchLevel = Number.isFinite(options.search
   source = source.replace(oldBlock, newBlock);
 }
 
+const noVerifiedBlock = `    if (validCandidates.length === 0) {
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_NO_VERIFIED_SOLUTION",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+        invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
+      };
+    }
+`;
+const escalatedNoVerifiedBlock = `    if (validCandidates.length === 0) {
+      if (!explicitSearchLevel) {
+        const escalated = await solveFmcWasm(scramble, {
+          ...options,
+          maxPremoveSets: Math.max(20, Number(normalizedOptions.maxPremoveSets) || 0),
+          searchLevel: 3,
+        });
+        if (escalated?.ok === true) {
+          return {
+            ...escalated,
+            levelEscalationUsed: true,
+            initialReason: "FMC_NO_VERIFIED_SOLUTION",
+            initialInvalidCandidateCount: invalidCandidateCount,
+          };
+        }
+      }
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_NO_VERIFIED_SOLUTION",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+        invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
+        levelEscalationUsed,
+        initialReason,
+      };
+    }
+`;
+if (!source.includes("initialInvalidCandidateCount: invalidCandidateCount")) {
+  if (!source.includes(noVerifiedBlock)) throw new Error("Missing no-verified-candidate block");
+  source = source.replace(noVerifiedBlock, escalatedNoVerifiedBlock);
+}
+
 const returnAnchor = `      repairedPremoveNissCandidateCount,
     };`;
 const returnReplacement = `      repairedPremoveNissCandidateCount,
@@ -100,8 +148,8 @@ if (!source.includes("levelEscalationUsed,\n      initialReason,")) {
 if (!source.includes("const explicitSearchLevel = Number.isFinite(options.searchLevel);")) {
   throw new Error("Bounded FMC level escalation was not applied");
 }
-if (!source.includes("searchLevel: 3,")) {
-  throw new Error("Bounded FMC L3 request is missing");
+if (!source.includes("initialInvalidCandidateCount: invalidCandidateCount")) {
+  throw new Error("Unverified FMC frontier escalation was not applied");
 }
 
 if (source !== before) fs.writeFileSync(path, source);
