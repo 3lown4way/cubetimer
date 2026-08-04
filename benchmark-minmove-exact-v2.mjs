@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 
 import { solveMinmoveExactV2 } from "./solver/minmoveExactV2.js";
-import { verifyFmcSolutionWasm } from "./solver/wasmSolver.js";
+import {
+  dropMinmove333Search,
+  ensureMinmove333Ready,
+  prepareMinmove333,
+  searchMinmove333Bound,
+  verifyFmcSolutionWasm,
+} from "./solver/wasmSolver.js";
 
-const cases = [
+const baseCases = [
   { name: "four-move-proof", scramble: "R U R' U'", maxElapsedMs: 15_000 },
   {
     name: "realistic-wca-proof",
@@ -62,15 +68,109 @@ const cases = [
   },
 ];
 
+const FACE_AXIS = { U: 0, D: 0, R: 1, L: 1, F: 2, B: 2 };
+const FACES = Object.keys(FACE_AXIS);
+const SUFFIXES = ["", "2", "'"];
+
+function seededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+function generateScramble(seed, length = 20) {
+  const random = seededRandom(seed);
+  const moves = [];
+  let previousFace = "";
+  let previousAxis = -1;
+  for (let index = 0; index < length; index += 1) {
+    const candidates = FACES.filter((face) => face !== previousFace && FACE_AXIS[face] !== previousAxis);
+    const face = candidates[Math.floor(random() * candidates.length)];
+    const suffix = SUFFIXES[Math.floor(random() * SUFFIXES.length)];
+    moves.push(`${face}${suffix}`);
+    previousFace = face;
+    previousAxis = FACE_AXIS[face];
+  }
+  return moves.join(" ");
+}
+
+const generatedCases = Array.from({ length: 24 }, (_, index) => ({
+  name: `generated-${String(index + 1).padStart(2, "0")}`,
+  scramble: generateScramble(0x51f15e + index * 7919),
+  maxElapsedMs: 120_000,
+}));
+
+const cases = [...baseCases, ...generatedCases];
+
+function splitMoves(sequence) {
+  return String(sequence || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function invertMove(move) {
+  if (move.endsWith("2") || move.endsWith("2'")) return `${move[0]}2`;
+  if (move.endsWith("'")) return move.slice(0, -1);
+  return `${move}'`;
+}
+
+function invertAlgorithm(sequence) {
+  return splitMoves(sequence).reverse().map(invertMove).join(" ");
+}
+
+async function findLegacyShorterSolution(scramble, maxBound) {
+  const ready = await ensureMinmove333Ready();
+  assert.ok(ready, "legacy minmove WASM tables must load");
+  const prepared = await prepareMinmove333(scramble);
+  assert.equal(prepared?.ok, true, prepared?.reason || "legacy prepare failed");
+  assert.ok(Number.isFinite(prepared?.searchId), "legacy search id missing");
+
+  let totalNodes = 0;
+  try {
+    for (let bound = prepared.lowerBound; bound <= maxBound; bound += 1) {
+      for (;;) {
+        const searched = await searchMinmove333Bound(prepared.searchId, bound, 8_000_000);
+        assert.equal(searched?.ok, true, searched?.reason || `legacy bound ${bound} failed`);
+        totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
+        if (searched.status === "found") {
+          return {
+            found: true,
+            solution: String(searched.solution || "").trim(),
+            moveCount: searched.moveCount,
+            bound,
+            nodes: totalNodes,
+          };
+        }
+        if (searched.status === "exhausted") break;
+        assert.equal(searched.status, "interrupted", `unexpected legacy status at bound ${bound}`);
+      }
+    }
+    return { found: false, solution: "", moveCount: 0, bound: maxBound, nodes: totalNodes };
+  } finally {
+    await dropMinmove333Search(prepared.searchId);
+  }
+}
+
 const rows = [];
+let oracleChecks = 0;
+const MAX_ORACLE_CHECKS = 4;
 for (const testCase of cases) {
   const startedAt = Date.now();
   const result = await solveMinmoveExactV2(testCase.scramble, null, {
     timeBudgetMs: testCase.maxElapsedMs,
   });
   const elapsedMs = Date.now() - startedAt;
+  const inverse = invertAlgorithm(testCase.scramble);
+  const literalInverse = String(result?.solution || "").trim() === inverse;
+  let legacyOracle = null;
+  if (literalInverse && result?.ok === true && result.moveCount > 0 && oracleChecks < MAX_ORACLE_CHECKS) {
+    oracleChecks += 1;
+    legacyOracle = await findLegacyShorterSolution(testCase.scramble, result.moveCount - 1);
+  }
+
   const row = {
     name: testCase.name,
+    scramble: testCase.scramble,
     elapsedMs,
     ok: result?.ok === true,
     reason: result?.reason || null,
@@ -79,6 +179,12 @@ for (const testCase of cases) {
     nodes: result?.nodes ?? null,
     proofSource: result?.proofSource || null,
     interruptedReason: result?.interruptedReason || null,
+    literalInverse,
+    seedSource: result?.seedSource || null,
+    oracleChecked: legacyOracle !== null,
+    oracleFoundShorter: legacyOracle?.found === true,
+    oracleMoveCount: legacyOracle?.moveCount ?? null,
+    oracleNodes: legacyOracle?.nodes ?? null,
   };
   rows.push(row);
   console.log(JSON.stringify(row));
@@ -91,6 +197,11 @@ for (const testCase of cases) {
 
   const verification = await verifyFmcSolutionWasm(testCase.scramble, result.solution);
   assert.equal(verification?.solved, true, `${testCase.name} solution does not solve the cube`);
+  assert.equal(
+    legacyOracle?.found === true,
+    false,
+    `${testCase.name} v2 claimed ${result.moveCount} HTM but legacy exact found ${legacyOracle?.moveCount} HTM`,
+  );
 }
 
 const sortedTimes = rows.map((row) => row.elapsedMs).sort((a, b) => a - b);
@@ -100,6 +211,8 @@ console.log(JSON.stringify({
   summary: true,
   cases: rows.length,
   success: rows.filter((row) => row.ok).length,
+  literalInverseCount: rows.filter((row) => row.literalInverse).length,
+  oracleChecks,
   averageMs: Math.round(average),
   medianMs: percentile(0.5),
   p95Ms: percentile(0.95),
