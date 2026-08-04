@@ -1,0 +1,27 @@
+name: Diagnose FMC premove NISS root
+
+on:
+  push:
+    branches:
+      - fix/fmc-premove-niss-root
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build fresh browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+      - name: Reproduce premove NISS invalid candidate
+        run: node benchmark-fmc-premove-niss-root.mjs
