@@ -14,6 +14,8 @@ const INTERNAL_333_PHASE_TIMEOUT_MS = 20000;
 const TWOPHASE_333_TIMEOUT_MS = 45000;
 const TWOPHASE_333_V1_MAX_FRONTIERS = 12;
 const TWOPHASE_333_V2_MAX_FRONTIERS = 2;
+const TWOPHASE_333_V2_EXPANDED_FRONTIERS = 12;
+const TWOPHASE_333_V2_MAX_FRONTIERS_HARD = 48;
 const EXTERNAL_333_FALLBACK_TIMEOUT_MS = 20000;
 const MINMOVE_333_TIMEOUT_MS = 235000;
 const MINMOVE_333_EXACT_PROOF_TIMEOUT_MS = 60000;
@@ -148,6 +150,11 @@ async function searchTwophase333Lazy(searchId, options) {
 async function searchTwophaseExact333Lazy(scramble, options) {
   const { searchTwophaseExact333 } = await getWasmSolverModule();
   return searchTwophaseExact333(scramble, options);
+}
+
+async function solveTwophaseAdaptive333Lazy(scramble, options) {
+  const { solveTwophaseAdaptive333 } = await getWasmSolverModule();
+  return solveTwophaseAdaptive333(scramble, options);
 }
 
 async function dropMinmove333SearchLazy(searchId) {
@@ -448,42 +455,47 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
     } catch (_) {}
   }
 
-  let twophaseSearchId = null;
   try {
     const wasmReady = await ensureTwophase333ReadyLazy().catch(() => null);
     if (wasmReady) {
-      const prepared = await withTimeout(
-        prepareTwophase333Lazy(scramble, {
-          maxPhase1Solutions: maxFrontiers,
-          phase1MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1MaxDepth,
-          phase1NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1NodeLimit,
+      const v2Strict = noFallback && normalizeSolverVersion(solverVersion) === "v2";
+      const frontierLimits = v2Strict
+        ? [
+            TWOPHASE_333_V2_MAX_FRONTIERS,
+            TWOPHASE_333_V2_EXPANDED_FRONTIERS,
+            TWOPHASE_333_V2_MAX_FRONTIERS_HARD,
+          ]
+        : [maxFrontiers];
+      const searched = await withTimeout(
+        solveTwophaseAdaptive333Lazy(scramble, {
+          frontierLimits,
+          prepareOptions: {
+            phase1MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1MaxDepth,
+            phase1NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase1NodeLimit,
+          },
+          searchOptions: {
+            incumbentLength: inverseLength > 0 ? inverseLength : undefined,
+            excludedSolution: noFallback ? inverseSolution : undefined,
+            strictIncumbent: false,
+            phase2MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2MaxDepth,
+            phase2NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2NodeLimit,
+          },
         }),
         TWOPHASE_333_TIMEOUT_MS,
       ).catch(() => null);
-      if (prepared?.ok && Number.isFinite(prepared.searchId)) {
-        twophaseSearchId = prepared.searchId;
-        const searched = await withTimeout(
-          searchTwophase333Lazy(twophaseSearchId, {
-            incumbentLength: inverseLength > 0 ? inverseLength : undefined,
-            phase2MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2MaxDepth,
-            phase2NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2NodeLimit,
-          }),
-          TWOPHASE_333_TIMEOUT_MS,
-        ).catch(() => null);
-        if (searched?.ok) {
-          phaseResult = searched;
-          phaseSource = "WASM_3X3_TWOPHASE";
-        }
+      if (searched) {
+        phaseResult = searched;
+        if (searched.ok) phaseSource = "WASM_3X3_TWOPHASE";
       }
     }
-  } finally {
-    if (Number.isFinite(twophaseSearchId)) {
-      void dropTwophase333SearchLazy(twophaseSearchId).catch(() => false);
-    }
-  }
+  } catch (_) {}
 
   if (!phaseResult?.ok && noFallback) {
-    phaseResult = { ok: false, reason: "TWOPHASE_WASM_FAILED_NO_FALLBACK" };
+    phaseResult = {
+      ...(phaseResult || {}),
+      ok: false,
+      reason: phaseResult?.reason || "TWOPHASE_WASM_FAILED_NO_FALLBACK",
+    };
   }
 
   if (!phaseResult?.ok && !noFallback) {
@@ -514,7 +526,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
 
   const solution = String(phaseResult.solution || "").trim();
   if (noFallback && inverseSolution && solution === inverseSolution) {
-    return { ok: false, reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED", source: phaseSource };
+    return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };
   }
   if (!(await verify3x3Solution(scramble, solution))) {
     return { ok: false, reason: "TWOPHASE_FINAL_STATE_NOT_SOLVED" };

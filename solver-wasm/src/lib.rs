@@ -490,6 +490,8 @@ pub fn search_twophase_333(search_id: u32, options_json: &str) -> String {
     let options = serde_json::from_str::<TwophaseSearchOptions>(options_json).unwrap_or(
         TwophaseSearchOptions {
             incumbent_length: None,
+            excluded_solution: None,
+            strict_incumbent: false,
             phase2_max_depth: 20,
             phase2_node_limit: 0,
         },

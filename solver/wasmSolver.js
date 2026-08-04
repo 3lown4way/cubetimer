@@ -462,6 +462,54 @@ export async function dropTwophase333Search(searchId) {
   }
 }
 
+export async function solveTwophaseAdaptive333(scramble, options = {}) {
+  const frontierLimits = Array.from(new Set(
+    (Array.isArray(options.frontierLimits) ? options.frontierLimits : [2])
+      .map((value) => Math.max(1, Math.floor(Number(value) || 0)))
+      .filter((value) => value > 0),
+  ));
+  const prepareOptions = options.prepareOptions || {};
+  const searchOptions = options.searchOptions || {};
+  let lastResult = { ok: false, reason: "TWOPHASE_NOT_ATTEMPTED" };
+
+  for (let index = 0; index < frontierLimits.length; index += 1) {
+    const frontierLimit = frontierLimits[index];
+    const prepared = await prepareTwophase333(scramble, {
+      ...prepareOptions,
+      maxPhase1Solutions: frontierLimit,
+    });
+    if (!prepared?.ok || !Number.isFinite(prepared.searchId)) {
+      lastResult = {
+        ...(prepared || {}),
+        ok: false,
+        reason: prepared?.reason || "TWOPHASE_PREPARE_FAILED",
+        frontierLimit,
+        frontierExpansionCount: index,
+      };
+      continue;
+    }
+
+    let searched = null;
+    try {
+      searched = await searchTwophase333(prepared.searchId, searchOptions);
+    } finally {
+      await dropTwophase333Search(prepared.searchId);
+    }
+    lastResult = {
+      ...(searched || {}),
+      ok: searched?.ok === true,
+      reason: searched?.reason || null,
+      frontierLimit,
+      frontierExpansionCount: index,
+      preparedCandidateCount: prepared.candidateCount ?? null,
+    };
+    if (lastResult.ok) return lastResult;
+    if (!["TWOPHASE_NO_IMPROVING_SOLUTION", "PHASE2_NOT_FOUND"].includes(lastResult.reason)) break;
+  }
+
+  return lastResult;
+}
+
 /**
  * Solve Phase 2 directly using WASM with (cpIdx, epIdx, sepIdx) coordinates.
  * Returns { ok, moves: string[], depth, nodes } or null if WASM unavailable.
