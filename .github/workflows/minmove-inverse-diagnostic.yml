@@ -1,0 +1,35 @@
+name: Minmove inverse diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "solver/minmoveExactV2.js"
+      - "solver-wasm/src/twophase_search.rs"
+      - "benchmark-minmove-exact-v2.mjs"
+      - ".github/workflows/minmove-inverse-diagnostic.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minmove-inverse-diagnostic-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate benchmark syntax
+        run: node --check benchmark-minmove-exact-v2.mjs
+
+      - name: Compare exact v2 with legacy HTM oracle
+        run: node benchmark-minmove-exact-v2.mjs
