@@ -34,28 +34,33 @@ const options = {
 const startedAt = performance.now();
 const result = await solveFmcWasm(scramble, options);
 const elapsedMs = performance.now() - startedAt;
-if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
-  throw new Error(`FMC_DEEP_COMPONENT_FAILED:${id}:${result?.reason || "UNKNOWN"}`);
-}
-const verification = await verifyFmcSolutionWasm(scramble, result.solution);
-if (!verification?.ok || verification.solved !== true) {
-  throw new Error(`FMC_DEEP_COMPONENT_INVALID:${id}`);
+
+const solved = result?.ok === true && result.solution && Array.isArray(result.candidates);
+if (solved) {
+  const verification = await verifyFmcSolutionWasm(scramble, result.solution);
+  if (!verification?.ok || verification.solved !== true) {
+    throw new Error(`FMC_DEEP_COMPONENT_INVALID:${id}`);
+  }
 }
 
-const sources = result.candidates.map((candidate) => String(candidate?.source || ""));
+const sources = solved
+  ? result.candidates.map((candidate) => String(candidate?.source || ""))
+  : [];
 const row = {
   id,
   deepComponentMask,
   tableBuildMs,
   warmMs,
   elapsedMs,
-  ok: true,
-  moveCount: Number(result.moveCount || 0),
-  candidateCount: result.candidates.length,
+  ok: solved === true,
+  reason: solved ? null : String(result?.reason || "FMC_NO_SOLUTION"),
+  moveCount: solved ? Number(result.moveCount || 0) : 0,
+  candidateCount: solved ? result.candidates.length : 0,
+  invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
   sources,
   complementaryMitmCandidates: sources.filter((source) => source.includes("COMPLEMENTARY_MITM")).length,
   complementaryNormalCandidates: sources.filter((source) => source.includes("COMPLEMENTARY_NORMAL")).length,
   preEoCandidates: sources.filter((source) => source.includes("PRE_EO_NISS")).length,
-  multiSwitchCandidates: Number(result.multiSwitchNissCandidateCount || 0),
+  multiSwitchCandidates: Number(result?.multiSwitchNissCandidateCount || 0),
 };
 console.log("FMC_DEEP_COMPONENT_RESULT=" + JSON.stringify(row));
