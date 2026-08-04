@@ -90,6 +90,14 @@ for (let index = 0; index < scrambles.length; index += 1) {
       repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
       levelEscalationUsed: result?.levelEscalationUsed === true,
       initialReason: result?.initialReason || null,
+      verifiedVariantRescueAttempted: result?.verifiedVariantRescueAttempted === true,
+      verifiedVariantRescueUsed: result?.verifiedVariantRescueUsed === true,
+      verifiedVariantRescueVariant: Number.isFinite(result?.verifiedVariantRescueVariant)
+        ? result.verifiedVariantRescueVariant
+        : null,
+      verifiedVariantRescueVariantsTried: Array.isArray(result?.verifiedVariantRescueVariantsTried)
+        ? result.verifiedVariantRescueVariantsTried.map(Number)
+        : [],
     };
     throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}:${JSON.stringify(diagnostics)}`);
   }
@@ -133,6 +141,14 @@ for (let index = 0; index < scrambles.length; index += 1) {
     solveMs,
     levelEscalationUsed: result.levelEscalationUsed === true,
     initialReason: result.initialReason || null,
+    verifiedVariantRescueAttempted: result.verifiedVariantRescueAttempted === true,
+    verifiedVariantRescueUsed: result.verifiedVariantRescueUsed === true,
+    verifiedVariantRescueVariant: Number.isFinite(result.verifiedVariantRescueVariant)
+      ? result.verifiedVariantRescueVariant
+      : null,
+    verifiedVariantRescueVariantsTried: Array.isArray(result.verifiedVariantRescueVariantsTried)
+      ? result.verifiedVariantRescueVariantsTried.map(Number)
+      : [],
     insertionMs,
     insertion,
   });
@@ -150,6 +166,10 @@ const summary = {
   medianSolveMs: percentile(solveTimes, 0.5),
   p95SolveMs: percentile(solveTimes, 0.95),
   levelEscalationRuns: rows.filter((row) => row.levelEscalationUsed).length,
+  verifiedVariantRescueRuns: rows.filter((row) => row.verifiedVariantRescueUsed).length,
+  verifiedVariantRescueVariants: rows
+    .filter((row) => Number.isFinite(row.verifiedVariantRescueVariant))
+    .map((row) => row.verifiedVariantRescueVariant),
   averageInsertionMs: average(insertionTimes),
   medianInsertionMs: percentile(insertionTimes, 0.5),
 };
