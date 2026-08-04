@@ -72,7 +72,7 @@ jobs:
         run: node benchmark-fmc-feature-matrix.mjs
       - name: Verify default FMC core escalation
         env:
-          FMC_SPEED_RUNS: 1
+          FMC_SPEED_RUNS: 4
           FMC_SPEED_PREMOVE_SETS: 20
           FMC_SPEED_INSERTION_RUNS: 0
         run: node benchmark-fmc-speed-identity.mjs
