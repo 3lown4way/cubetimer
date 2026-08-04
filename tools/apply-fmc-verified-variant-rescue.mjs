@@ -109,6 +109,7 @@ if (!source.includes(marker)) {
   source =
     source.slice(0, start) +
     validationHelperAndState +
+    rescueState +
     `    if (validCandidates.length === 0) {
       return {
         ...parsed,
