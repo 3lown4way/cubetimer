@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Repair applicator syntax
+        run: node tools/fix-wasm-readiness-applicator-syntax.mjs
       - name: Apply loader repair
         run: node tools/apply-wasm-readiness-retry.mjs
       - name: Validate loader repair
