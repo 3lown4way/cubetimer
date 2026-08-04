@@ -10,6 +10,8 @@ const cases = [
 
 const rows = [];
 for (const [id, mask] of cases) {
+  // Use a fresh process per mask so WASM initialization and deep-table warmup
+  // remain explicit instead of leaking cached state from the previous case.
   const child = spawnSync(process.execPath, ["benchmark-fmc-deep-component-case.mjs"], {
     encoding: "utf8",
     timeout: 30000,
