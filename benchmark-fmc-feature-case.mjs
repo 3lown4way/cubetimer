@@ -36,6 +36,16 @@ if (result?.ok && Array.isArray(result.candidates)) {
   }
 }
 
+const candidates = Array.isArray(result?.candidates)
+  ? result.candidates.map((candidate) => ({
+      moveCount: Number(candidate?.moveCount || 0),
+      source: String(candidate?.source || ""),
+      axisName: String(candidate?.axisName || ""),
+      premoves: String(candidate?.premoves || ""),
+      repairedPremoveNissOrder: candidate?.repairedPremoveNissOrder === true,
+    }))
+  : [];
+
 console.log("FMC_CASE_RESULT=" + JSON.stringify({
   id,
   tableBuildMs,
@@ -43,7 +53,8 @@ console.log("FMC_CASE_RESULT=" + JSON.stringify({
   ok: result?.ok === true,
   reason: result?.reason || null,
   moveCount: Number(result?.moveCount || 0),
-  candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : 0,
+  candidateCount: candidates.length,
+  candidates,
   invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
   repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
   skeletonCount: Number(result?.skeletonCount || 0),
