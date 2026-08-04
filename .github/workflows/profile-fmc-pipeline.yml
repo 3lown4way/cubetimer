@@ -45,6 +45,7 @@ jobs:
           node --check benchmark-fmc-profile.mjs
           node --check benchmark-fmc-feature-case.mjs
           node --check benchmark-fmc-feature-matrix.mjs
+          node --check benchmark-fmc-rescue-matrix.mjs
           node --check benchmark-fmc-deep-warm.mjs
           node --check benchmark-fmc-deep-component-case.mjs
           node --check benchmark-fmc-deep-components.mjs
@@ -70,6 +71,8 @@ jobs:
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
       - name: Profile isolated FMC features
         run: node benchmark-fmc-feature-matrix.mjs
+      - name: Diagnose FMC rescue variants
+        run: node benchmark-fmc-rescue-matrix.mjs
       - name: Verify default FMC core escalation
         env:
           FMC_SPEED_RUNS: 4
