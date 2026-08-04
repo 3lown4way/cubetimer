@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import {
   buildFmcTablesWasm,
   solveFmcWasm,
+  verifyFmcSolutionWasm,
   warmFmcDeepTablesWasm,
 } from "./solver/wasmSolver.js";
 
@@ -28,15 +29,28 @@ console.log("FMC_DEEP_TABLES=" + JSON.stringify({ warmElapsedMs, ...warmResult }
 const rows = [];
 for (let run = 0; run < 3; run += 1) {
   const startedAt = performance.now();
-  const result = await solveFmcWasm(scramble, { ...options, searchVariant: run });
+  // Repeat the same viable frontier. Changing searchVariant here measures
+  // diversification quality, not cold-vs-warm execution cost.
+  const result = await solveFmcWasm(scramble, options);
+  const elapsedMs = performance.now() - startedAt;
+  if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
+    throw new Error(`FMC_DEEP_REPEAT_FAILED:${run}:${result?.reason || "UNKNOWN"}`);
+  }
+  const verification = await verifyFmcSolutionWasm(scramble, result.solution);
+  if (!verification?.ok || verification.solved !== true) {
+    throw new Error(`FMC_DEEP_REPEAT_INVALID:${run}`);
+  }
   rows.push({
     run,
-    elapsedMs: performance.now() - startedAt,
-    ok: result?.ok === true,
-    moveCount: Number(result?.moveCount || 0),
-    candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : 0,
-    reason: result?.reason || null,
+    elapsedMs,
+    ok: true,
+    moveCount: Number(result.moveCount || 0),
+    candidateCount: result.candidates.length,
+    reason: null,
   });
   console.log(JSON.stringify(rows.at(-1)));
 }
+
+const moveCounts = new Set(rows.map((row) => row.moveCount));
+if (moveCounts.size !== 1) throw new Error("FMC_DEEP_REPEAT_NONDETERMINISTIC");
 console.log("FMC_DEEP_WARM=" + JSON.stringify({ warmElapsedMs, warmResult, rows }));
