@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/fmc-premove-niss-root
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,8 +17,13 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -40,4 +48,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Retry transient WASM readiness failures"
-          git push
+          git push origin "HEAD:${TARGET_BRANCH}"
