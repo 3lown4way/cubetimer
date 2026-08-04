@@ -1,0 +1,25 @@
+name: Profile FMC pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: profile-fmc-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate benchmark
+        run: node --check benchmark-fmc-profile.mjs
+      - name: Profile FMC modes
+        run: node benchmark-fmc-profile.mjs
