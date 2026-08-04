@@ -39,10 +39,7 @@ jobs:
           node benchmark-wasm-readiness-contract.mjs
       - name: Commit loader repair
         run: |
-          git add \
-            solver/wasmSolver.js \
-            solver/fmcSolver.js \
-            .github/workflows/cfop-speedup-benchmark.yml
+          git add solver/wasmSolver.js solver/fmcSolver.js
           if git diff --cached --quiet; then
             echo "WASM readiness repair already committed"
             exit 0
