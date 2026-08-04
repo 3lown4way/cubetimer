@@ -4,6 +4,8 @@ const wasmPath = "solver/wasmSolver.js";
 const before = fs.readFileSync(wasmPath, "utf8");
 let source = before;
 
+// Both premove-NISS flattening orders are intentional regression candidates;
+// only the public solved-up-to-rotation verifier is allowed to select one.
 const helperMarker = "function buildVerifiedPremoveNissAlternates(candidate)";
 if (!source.includes(helperMarker)) {
   const helperAnchor = `/**
