@@ -1,0 +1,63 @@
+name: Apply two-phase trivial inverse root fix
+
+on:
+  push:
+    branches:
+      - fix/twophase-trivial-inverse-root
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Apply root fix
+        run: node tools/apply-twophase-trivial-inverse-root.mjs
+      - name: Check JavaScript
+        run: |
+          node --check solver/wasmSolver.js
+          node --check solver/solverWorker.js
+          node --check benchmark-twophase-nontrivial-reliability.mjs
+      - name: Format and test Rust
+        working-directory: solver-wasm
+        run: |
+          cargo fmt
+          cargo test --lib
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Rebuild browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+      - name: Verify 100-case nontrivial reliability
+        run: node benchmark-twophase-nontrivial-reliability.mjs
+      - name: Commit root fix
+        run: |
+          git add \
+            solver-wasm/src/twophase_search.rs \
+            solver-wasm/src/lib.rs \
+            solver/wasmSolver.js \
+            solver/solverWorker.js \
+            benchmark/benchmark-fixed.js \
+            benchmark-twophase-nontrivial-reliability.mjs \
+            public/solver-wasm
+          if git diff --cached --quiet; then
+            echo "Two-phase root fix already committed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Eliminate trivial inverse two-phase failures"
+          git push origin "HEAD:fix/twophase-trivial-inverse-root"
