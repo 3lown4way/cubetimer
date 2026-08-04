@@ -1,6 +1,9 @@
 name: Apply two-phase trivial inverse root fix
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - fix/twophase-trivial-inverse-root
