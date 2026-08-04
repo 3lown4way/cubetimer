@@ -18,6 +18,10 @@ const replacements = [
     "const TURN_AMOUNTS: [u8; 3] = [1, 2, 3];",
   ],
   [
+    "fn turn_to_suffix(combined: u8) -> u8 {\n    match combined {\n        1 => 0,\n        3 => 1,\n        2 => 2,\n        _ => unreachable!(),\n    }\n}",
+    "fn turn_to_suffix(combined: u8) -> u8 {\n    match combined {\n        1 => 0,\n        2 => 1,\n        3 => 2,\n        _ => unreachable!(),\n    }\n}",
+  ],
+  [
     "const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];",
     "const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [1, 4, 7, 10, 13, 16];",
   ],
@@ -49,6 +53,14 @@ for (const [from, to] of replacements) {
     throw new Error(`Missing FMC move-order anchor: ${from.slice(0, 100)}`);
   }
   source = source.replace(from, to);
+}
+
+const testMarker = "    #[test]\n    fn simplification_matches_repository_turn_order()";
+if (!source.includes(testMarker)) {
+  const anchor = "    #[test]\n    fn recognizes_reverse_scramble_notation_under_axis_commutation()";
+  if (!source.includes(anchor)) throw new Error("Missing FMC simplification test anchor");
+  const test = `    #[test]\n    fn simplification_matches_repository_turn_order() {\n        for face in 0..6u8 {\n            let clockwise = face * 3;\n            let half = clockwise + 1;\n            let counter_clockwise = clockwise + 2;\n            assert_eq!(simplify_moves(&[clockwise, clockwise]), vec![half]);\n            assert_eq!(simplify_moves(&[counter_clockwise, counter_clockwise]), vec![half]);\n            assert!(simplify_moves(&[clockwise, counter_clockwise]).is_empty());\n            assert!(simplify_moves(&[half, half]).is_empty());\n        }\n    }\n\n`;
+  source = source.replace(anchor, `${test}${anchor}`);
 }
 
 if (source !== before) fs.writeFileSync(path, source);
