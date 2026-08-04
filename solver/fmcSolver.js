@@ -5,6 +5,7 @@ import { MOVE_NAMES } from "./moves.js";
 import { parsePatternToCoords3x3 } from "./solver3x3Phase/state3x3.js";
 import {
   buildFmcTablesWasm,
+  getWasmSolverReadinessStatus,
   solveFmcWasm,
   optimizeInsertionWasm,
   verifyFmcSolutionWasm,
@@ -2159,6 +2160,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
       ok: false,
       reason: "FMC_WASM_NOT_READY",
       attempts,
+      wasmReadiness: getWasmSolverReadinessStatus(),
       performanceDiagnostics: finalizeDiagnostics(),
     };
   }
