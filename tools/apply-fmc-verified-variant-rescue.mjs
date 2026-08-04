@@ -154,7 +154,11 @@ if (!source.includes(marker)) {
   }
 }
 
-const successAnchor = `      repairedPremoveNissCandidateCount,
+const successBaseAnchor = `      repairedPremoveNissCandidateCount,
+      levelEscalationUsed,
+      initialReason,
+    };`;
+const successSingleRescueAnchor = `      repairedPremoveNissCandidateCount,
       levelEscalationUsed,
       initialReason,
       verifiedVariantRescueAttempted,
@@ -169,8 +173,10 @@ const successReplacement = `      repairedPremoveNissCandidateCount,
       verifiedVariantRescueVariant,
       verifiedVariantRescueVariantsTried,
     };`;
-if (source.includes(successAnchor)) {
-  source = source.replace(successAnchor, successReplacement);
+if (source.includes(successSingleRescueAnchor)) {
+  source = source.replace(successSingleRescueAnchor, successReplacement);
+} else if (source.includes(successBaseAnchor)) {
+  source = source.replace(successBaseAnchor, successReplacement);
 }
 
 if (!source.includes(marker)) throw new Error("Verified FMC frontier helper was not applied");
