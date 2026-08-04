@@ -4798,7 +4798,6 @@ pub fn solve_fmc(
             incumbent_move_count,
             requested_eo_depth,
         );
-        let secondary_count = fmc_result_best_move_count(&secondary_variant);
         if secondary_variant.ok {
             merge_fmc_result_frontier(&mut best_result, secondary_variant);
             best_count = fmc_result_best_move_count(&best_result);
@@ -4823,7 +4822,6 @@ pub fn solve_fmc(
             incumbent_move_count,
             requested_eo_depth,
         );
-        let sub20_count = fmc_result_best_move_count(&sub20_variant);
         if sub20_variant.ok {
             merge_fmc_result_frontier(&mut best_result, sub20_variant);
         }
