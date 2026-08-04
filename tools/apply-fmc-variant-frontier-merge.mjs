@@ -101,12 +101,24 @@ source = source.replace(
         }`,
 );
 
+source = source.replace(
+  "        let secondary_count = fmc_result_best_move_count(&secondary_variant);\n",
+  "",
+);
+source = source.replace(
+  "        let sub20_count = fmc_result_best_move_count(&sub20_variant);\n",
+  "",
+);
+
 if (!source.includes(helperMarker)) throw new Error("FMC variant merge helper was not applied");
 if (!source.includes("merge_fmc_result_frontier(&mut best_result, secondary_variant)")) {
   throw new Error("FMC secondary variant merge was not applied");
 }
 if (!source.includes("merge_fmc_result_frontier(&mut best_result, sub20_variant)")) {
   throw new Error("FMC sub-20 variant merge was not applied");
+}
+if (source.includes("let secondary_count =") || source.includes("let sub20_count =")) {
+  throw new Error("Obsolete FMC variant count temporaries remain");
 }
 
 if (source !== before) fs.writeFileSync(path, source);
