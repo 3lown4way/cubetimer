@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   diagnose:
     runs-on: ubuntu-latest
@@ -35,3 +38,15 @@ jobs:
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
       - name: Verify premove NISS candidates at source
         run: node benchmark-fmc-premove-niss-root.mjs
+      - name: Commit fixed source and browser WASM
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        run: |
+          git add solver-wasm/src/fmc_search.rs public/solver-wasm
+          if git diff --cached --quiet; then
+            echo "No generated FMC changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix FMC move index ordering"
+          git push
