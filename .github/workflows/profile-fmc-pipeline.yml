@@ -70,6 +70,12 @@ jobs:
         run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
       - name: Profile isolated FMC features
         run: node benchmark-fmc-feature-matrix.mjs
+      - name: Verify default FMC core escalation
+        env:
+          FMC_SPEED_RUNS: 1
+          FMC_SPEED_PREMOVE_SETS: 20
+          FMC_SPEED_INSERTION_RUNS: 0
+        run: node benchmark-fmc-speed-identity.mjs
       - name: Measure explicit deep-table warmup
         run: node benchmark-fmc-deep-warm.mjs
       - name: Profile deep FMC components
