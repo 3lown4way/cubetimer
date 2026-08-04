@@ -3,6 +3,11 @@ import fs from "node:fs";
 const path = "solver-wasm/src/fmc_search.rs";
 let source = fs.readFileSync(path, "utf8");
 
+if (source.includes("fn htr_coordinate_key(")) {
+  console.log("Compact HTR coordinate table already applied");
+  process.exit(0);
+}
+
 source = source.replace(
   "const FMC_HTR_TAIL_SLACK: usize = 2;",
   "const FMC_HTR_TAIL_SLACK: usize = 2;\n\n/// Safety ceiling for the compact HTR coordinate table. The expected exact\n/// subgroup is below this bound; reaching it leaves a safe partial table rather\n/// than exhausting WASM linear memory.\nconst FMC_HTR_STATE_LIMIT: usize = 1_000_000;",
