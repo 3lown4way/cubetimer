@@ -1283,6 +1283,21 @@ async function prewarmProfileSelection(options = {}) {
       ? options.styleProfile
       : undefined;
 
+    if (mode === "fmc") {
+      const { buildFmcTablesWasm, warmFmcDeepTablesWasm } = await getWasmSolverModule();
+      const fmcTablesBuilt = await buildFmcTablesWasm();
+      const quality = String(options.fmcQualityMode || "sweetSpot").toLowerCase();
+      const deepResult = quality === "extreme" ? await warmFmcDeepTablesWasm() : null;
+      return {
+        ok: fmcTablesBuilt === true,
+        warmed: fmcTablesBuilt === true,
+        mode,
+        fmcQualityMode: quality,
+        fmcDeepTablesWarmed: deepResult?.ok === true,
+        fmcDeepTableMetrics: deepResult || null,
+      };
+    }
+
     const [{ getDefaultPattern }, { prewarm3x3StrictCfopLibraries, solve3x3StrictCfopFromPattern }] = await Promise.all([
       import("./context.js"),
       import("./cfop3x3.js"),

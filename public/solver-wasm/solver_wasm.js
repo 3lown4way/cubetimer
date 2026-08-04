@@ -305,6 +305,22 @@ export function verify_fmc_solution_wasm(scramble, solution) {
     }
 }
 
+/**
+ * @returns {string}
+ */
+export function warm_fmc_deep_tables_wasm() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.warm_fmc_deep_tables_wasm();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
 export function warm_minmove_333() {
     const ret = wasm.warm_minmove_333();
     if (ret[1]) {

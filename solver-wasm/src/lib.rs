@@ -16,7 +16,10 @@ mod utils;
 
 use flate2::read::GzDecoder;
 use fmc_insertion::optimize_insertion_wasm_impl;
-use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};
+use fmc_search::{
+    build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables,
+    FMC_DEEP_COMPONENT_ALL,
+};
 use ida::{build_prune_tables, ida_solve};
 use minmove_bundle::{load_bundle, load_bundle_owned, MinmoveTables};
 use minmove_search::{
@@ -683,6 +686,28 @@ pub fn build_fmc_tables_wasm() -> String {
     .to_string()
 }
 
+#[wasm_bindgen]
+pub fn warm_fmc_deep_tables_wasm() -> String {
+    utils::set_panic_hook();
+    let tables_guard = TWOPHASE_TABLES.lock().unwrap();
+    let Some(tables) = tables_guard.as_ref() else {
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
+    };
+    let fmc_guard = FMC_TABLES.lock().unwrap();
+    let Some(fmc_tables) = fmc_guard.as_ref() else {
+        return serde_json::json!({"ok": false, "reason": "FMC_TABLES_NOT_BUILT"}).to_string();
+    };
+    let (htr_count, complementary_count, pre_eo_count) = fmc_tables.warm_deep_tables(tables);
+    serde_json::json!({
+        "ok": true,
+        "htrStateCount": htr_count,
+        "complementaryTailCount": complementary_count,
+        "preEoTailCount": pre_eo_count,
+    })
+    .to_string()
+}
+
 #[derive(Deserialize)]
 struct FmcOptionsJson {
     #[serde(rename = "maxPremoveSets", default = "default_max_premove_sets")]
@@ -699,6 +724,11 @@ struct FmcOptionsJson {
     enable_multi_switch_niss: bool,
     #[serde(rename = "enableDeepMultiSwitchNiss", default)]
     enable_deep_multi_switch_niss: bool,
+    #[serde(
+        rename = "deepComponentMask",
+        default = "default_fmc_deep_component_mask"
+    )]
+    deep_component_mask: u8,
     #[serde(rename = "searchLevel", default)]
     search_level: u8,
     #[serde(rename = "searchVariant", default)]
@@ -708,6 +738,9 @@ struct FmcOptionsJson {
         default = "default_fmc_incumbent_move_count"
     )]
     incumbent_move_count: usize,
+}
+fn default_fmc_deep_component_mask() -> u8 {
+    FMC_DEEP_COMPONENT_ALL
 }
 fn default_fmc_incumbent_move_count() -> usize {
     40
@@ -747,6 +780,7 @@ pub fn solve_fmc_wasm(scramble: &str, options_json: &str) -> String {
         options.enable_slice_insertion,
         options.enable_multi_switch_niss,
         options.enable_deep_multi_switch_niss,
+        options.deep_component_mask,
         options.search_level,
         options.search_variant,
         options.incumbent_move_count,

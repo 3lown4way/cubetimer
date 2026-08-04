@@ -19,6 +19,7 @@ export const solve_fmc_wasm: (a: number, b: number, c: number, d: number) => [nu
 export const solve_json: (a: number, b: number) => [number, number];
 export const solve_phase2_direct: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const verify_fmc_solution_wasm: (a: number, b: number, c: number, d: number) => [number, number];
+export const warm_fmc_deep_tables_wasm: () => [number, number];
 export const warm_minmove_333: () => [number, number];
 export const warm_twophase_333: () => [number, number];
 export const abort_minmove_333_bundle: () => void;

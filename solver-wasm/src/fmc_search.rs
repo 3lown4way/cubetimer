@@ -113,6 +113,9 @@ const FMC_PRE_EO_NISS_P2_REVERSE_DEPTH: usize = 3;
 const FMC_PRE_EO_NISS_DR_REVERSE_DEPTH: usize = 3;
 const FMC_PRE_EO_NISS_DR_FORWARD_DEPTH: usize = 5;
 const FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT: usize = 350_000;
+/// Bound the reverse pre-EO table so an unexpectedly broad frontier cannot
+/// exhaust browser WASM memory.
+const FMC_PRE_EO_TAIL_STATE_LIMIT: usize = 1_200_000;
 
 /// L3 Extreme retries one independent EO/premove frontier only when the
 /// primary portfolio still exceeds the human sub-20 target.
@@ -131,6 +134,22 @@ const FMC_HTR_HALF_TURN_MOVES: [u8; 6] = [2, 5, 8, 11, 14, 17];
 
 /// Avoid accepting an HTR detour that is materially longer than the normal P2 tail.
 const FMC_HTR_TAIL_SLACK: usize = 2;
+
+/// Safety ceiling for the compact HTR coordinate table. The expected exact
+/// subgroup is below this bound; reaching it leaves a safe partial table rather
+/// than exhausting WASM linear memory.
+const FMC_HTR_STATE_LIMIT: usize = 1_000_000;
+
+/// Diagnostic selection mask for the four expensive Deep-Extreme subpaths.
+/// Production callers use ALL, preserving the existing search portfolio.
+const FMC_DEEP_COMPONENT_STAGE_BOUNDARY: u8 = 1 << 0;
+const FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM: u8 = 1 << 1;
+const FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL: u8 = 1 << 2;
+const FMC_DEEP_COMPONENT_PRE_EO: u8 = 1 << 3;
+pub const FMC_DEEP_COMPONENT_ALL: u8 = FMC_DEEP_COMPONENT_STAGE_BOUNDARY
+    | FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM
+    | FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL
+    | FMC_DEEP_COMPONENT_PRE_EO;
 
 // --- Axis conjugation ---
 // JS convention: U=0,D=1,R=2,L=3,F=4,B=5
@@ -779,12 +798,25 @@ pub struct FmcTables {
     /// Exact E2/M2/S2 leave-slice relocation plans.
     slice_relocation_plans: Vec<FmcMultiRelocationPlan>,
     /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
-    htr_first_move: OnceCell<std::collections::HashMap<u128, u8>>,
+    htr_first_move: OnceCell<std::collections::HashMap<u64, u8>>,
     complementary_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcComplementaryTail>>,
-    pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcPreEoTail>>,
+    pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u64, FmcPreEoTail>>,
 }
 
 impl FmcTables {
+    pub fn warm_deep_tables(&self, tables: &TwophaseTables) -> (usize, usize, usize) {
+        let htr = self
+            .htr_first_move
+            .get_or_init(|| build_htr_first_move_table(tables));
+        let complementary = self
+            .complementary_short_p2_tails
+            .get_or_init(|| build_complementary_short_p2_tails(tables));
+        let pre_eo = self
+            .pre_eo_short_p2_tails
+            .get_or_init(|| build_pre_eo_short_p2_tails(tables));
+        (htr.len(), complementary.len(), pre_eo.len())
+    }
+
     pub fn multi_relocation_plan_count(&self) -> usize {
         self.multi_relocation_plans.len()
     }
@@ -1667,32 +1699,46 @@ fn collect_axis_skeleton_prefixes(
     prefixes
 }
 
-fn htr_permutation_key(state: &CubeState) -> u128 {
-    let mut key = 0u128;
-    for (index, &piece) in state.cp.iter().enumerate() {
-        key |= (piece as u128) << (index * 3);
-    }
-    for (index, &piece) in state.ep.iter().enumerate() {
-        key |= (piece as u128) << (24 + index * 4);
-    }
-    key
+fn htr_coordinate_key(cp_idx: usize, ep_idx: usize, sep_idx: usize) -> u64 {
+    (cp_idx as u64) | ((ep_idx as u64) << 16) | ((sep_idx as u64) << 32)
 }
 
-fn build_htr_first_move_table(tables: &TwophaseTables) -> std::collections::HashMap<u128, u8> {
-    let solved = CubeState::solved();
-    let mut first_move = std::collections::HashMap::<u128, u8>::new();
-    let mut queue = std::collections::VecDeque::<CubeState>::new();
-    first_move.insert(htr_permutation_key(&solved), 255);
-    queue.push_back(solved);
+fn htr_half_turn_local_moves(tables: &TwophaseTables) -> Vec<u8> {
+    tables
+        .phase2_move_indices
+        .iter()
+        .enumerate()
+        .filter_map(|(local, &global)| {
+            FMC_HTR_HALF_TURN_MOVES
+                .contains(&global)
+                .then_some(local as u8)
+        })
+        .collect()
+}
 
-    while let Some(state) = queue.pop_front() {
-        for &move_index in &FMC_HTR_HALF_TURN_MOVES {
-            let next = state.apply_move(move_index as usize, &tables.move_data);
-            let key = htr_permutation_key(&next);
-            if let std::collections::hash_map::Entry::Vacant(entry) = first_move.entry(key) {
-                entry.insert(move_index);
-                queue.push_back(next);
+fn build_htr_first_move_table(tables: &TwophaseTables) -> std::collections::HashMap<u64, u8> {
+    let half_turn_moves = htr_half_turn_local_moves(tables);
+    let mut first_move = std::collections::HashMap::<u64, u8>::new();
+    let mut queue = std::collections::VecDeque::<(usize, usize, usize)>::new();
+    first_move.insert(htr_coordinate_key(0, 0, 0), 255);
+    queue.push_back((0, 0, 0));
+
+    while let Some((cp_idx, ep_idx, sep_idx)) = queue.pop_front() {
+        for &local_move in &half_turn_moves {
+            let local = local_move as usize;
+            let next_cp = tables.phase2_cp_move.get(cp_idx, local) as usize;
+            let next_ep = tables.phase2_ep_move.get(ep_idx, local) as usize;
+            let next_sep = tables.phase2_sep_move.get(sep_idx, local) as usize;
+            let key = htr_coordinate_key(next_cp, next_ep, next_sep);
+            if first_move.contains_key(&key) {
+                continue;
             }
+            if first_move.len() >= FMC_HTR_STATE_LIMIT {
+                continue;
+            }
+            // Every HTR generator is a half turn and therefore self-inverse.
+            first_move.insert(key, local_move);
+            queue.push_back((next_cp, next_ep, next_sep));
         }
     }
     first_move
@@ -1706,19 +1752,25 @@ fn htr_finish_moves(
     if state.co.iter().any(|&value| value != 0) || state.eo.iter().any(|&value| value != 0) {
         return None;
     }
+    let input = build_p2_input(state)?;
     let table = fmc_tables
         .htr_first_move
         .get_or_init(|| build_htr_first_move_table(tables));
-    let mut current = *state;
+    let mut cp_idx = input.cp_idx;
+    let mut ep_idx = input.ep_idx;
+    let mut sep_idx = input.sep_idx;
     let mut moves = Vec::new();
     let mut guard = 0usize;
     loop {
-        let move_index = *table.get(&htr_permutation_key(&current))?;
-        if move_index == 255 {
+        let local_move = *table.get(&htr_coordinate_key(cp_idx, ep_idx, sep_idx))?;
+        if local_move == 255 {
             return Some(moves);
         }
-        moves.push(move_index);
-        current = current.apply_move(move_index as usize, &tables.move_data);
+        let local = local_move as usize;
+        moves.push(tables.phase2_move_indices[local]);
+        cp_idx = tables.phase2_cp_move.get(cp_idx, local) as usize;
+        ep_idx = tables.phase2_ep_move.get(ep_idx, local) as usize;
+        sep_idx = tables.phase2_sep_move.get(sep_idx, local) as usize;
         guard += 1;
         if guard > 40 {
             return None;
@@ -2158,14 +2210,41 @@ fn pre_eo_tail_order(
     )
 }
 
+fn encode_edge_permutation_12(ep: &[u8; EDGE_COUNT]) -> u32 {
+    let mut rank = 0u32;
+    for i in 0..EDGE_COUNT {
+        let mut smaller = 0u32;
+        for j in (i + 1)..EDGE_COUNT {
+            if ep[j] < ep[i] {
+                smaller += 1;
+            }
+        }
+        rank = rank * (EDGE_COUNT - i) as u32 + smaller;
+    }
+    rank
+}
+
+/// EO remains solved throughout the reverse P2/DR table and the matching
+/// forward DR search. CP (16 bits), CO (12 bits), and full EP (29 bits)
+/// therefore form a collision-free 57-bit coordinate.
+fn pre_eo_compact_state_key(state: &CubeState) -> u64 {
+    let cp = encode_perm8(&state.cp) as u64;
+    let co = encode_co(&state.co) as u64;
+    let ep = encode_edge_permutation_12(&state.ep) as u64;
+    cp | (co << 16) | (ep << 28)
+}
+
 fn retain_pre_eo_tail(
-    tails: &mut std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &mut std::collections::HashMap<u64, FmcPreEoTail>,
     state: &CubeState,
     candidate: FmcPreEoTail,
 ) -> bool {
-    let key = complementary_compact_state_key(state);
+    let key = pre_eo_compact_state_key(state);
     match tails.get(&key) {
         None => {
+            if tails.len() >= FMC_PRE_EO_TAIL_STATE_LIMIT {
+                return false;
+            }
             tails.insert(key, candidate);
             true
         }
@@ -2179,10 +2258,10 @@ fn retain_pre_eo_tail(
 
 fn build_pre_eo_short_p2_tails(
     tables: &TwophaseTables,
-) -> std::collections::HashMap<u128, FmcPreEoTail> {
+) -> std::collections::HashMap<u64, FmcPreEoTail> {
     let solved = CubeState::solved();
     let solved_tail = FmcPreEoTail::solved();
-    let mut tails = std::collections::HashMap::<u128, FmcPreEoTail>::new();
+    let mut tails = std::collections::HashMap::<u64, FmcPreEoTail>::new();
     retain_pre_eo_tail(&mut tails, &solved, solved_tail);
 
     let mut p2_frontier = vec![(solved, solved_tail)];
@@ -2326,7 +2405,7 @@ fn solve_pre_eo_joint_mitm(
     start: &CubeState,
     last_face_before_dr: u8,
     remaining_budget: usize,
-    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &std::collections::HashMap<u64, FmcPreEoTail>,
     fmc_tables: &FmcTables,
     tables: &TwophaseTables,
 ) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -2344,17 +2423,14 @@ fn solve_pre_eo_joint_mitm(
         len: 0,
         last_face: last_face_before_dr,
     }];
-    let mut seen = std::collections::HashMap::<(u128, u8), u8>::new();
-    seen.insert(
-        (complementary_compact_state_key(start), last_face_before_dr),
-        0,
-    );
+    let mut seen = std::collections::HashMap::<(u64, u8), u8>::new();
+    seen.insert((pre_eo_compact_state_key(start), last_face_before_dr), 0);
     let mut node_count = 1usize;
     let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
 
     for depth in 0..=FMC_PRE_EO_NISS_DR_FORWARD_DEPTH {
         for node in &frontier {
-            if let Some(tail) = tails.get(&complementary_compact_state_key(&node.state)) {
+            if let Some(tail) = tails.get(&pre_eo_compact_state_key(&node.state)) {
                 let total = node.len as usize + tail.total_len();
                 if total <= remaining_budget {
                     let mut dr_moves = node.path[..node.len as usize].to_vec();
@@ -2405,7 +2481,7 @@ fn solve_pre_eo_joint_mitm(
                 let next_state = node
                     .state
                     .apply_move(move_index as usize, &tables.move_data);
-                let key = complementary_compact_state_key(&next_state);
+                let key = pre_eo_compact_state_key(&next_state);
                 let next_co = encode_co(&next_state.co);
                 let next_slice = encode_slice_from_ep(&next_state.ep);
                 let distance = fmc_tables.co_slice_dist[next_co * SLICE_SIZE + next_slice];
@@ -2465,7 +2541,7 @@ fn solve_pre_eo_niss_single_axis(
     tables: &TwophaseTables,
     fmc_tables: &FmcTables,
     max_eo_depth: u8,
-    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &std::collections::HashMap<u64, FmcPreEoTail>,
 ) -> Vec<FmcPreEoNissResult> {
     let boundaries = collect_pre_eo_niss_frontier(state, tables, fmc_tables, max_eo_depth);
     let mut output = Vec::new();
@@ -3631,6 +3707,7 @@ fn solve_fmc_with_eo_depth(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    deep_component_mask: u8,
     search_level: u8,
     search_variant: u32,
     incumbent_move_count: usize,
@@ -3657,6 +3734,15 @@ fn solve_fmc_with_eo_depth(
     };
 
     let search_level = search_level.min(3) as usize;
+    let deep_component_mask = deep_component_mask & FMC_DEEP_COMPONENT_ALL;
+    let deep_stage_boundary_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_STAGE_BOUNDARY != 0;
+    let deep_complementary_mitm_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_COMPLEMENTARY_MITM != 0;
+    let deep_complementary_normal_enabled = enable_deep_multi_switch_niss
+        && deep_component_mask & FMC_DEEP_COMPONENT_COMPLEMENTARY_NORMAL != 0;
+    let deep_pre_eo_enabled =
+        enable_deep_multi_switch_niss && deep_component_mask & FMC_DEEP_COMPONENT_PRE_EO != 0;
     let direct_eo_limit = [FMC_EO_LIMIT, 12, 24, 48][search_level];
     let premove_eo_limit = [FMC_PM_EO_LIMIT, 6, 12, 24][search_level];
     let p2_node_limit = [FMC_P2_NODE_LIMIT, 8_000_000, 24_000_000, 64_000_000][search_level];
@@ -3856,7 +3942,7 @@ fn solve_fmc_with_eo_depth(
         .unwrap_or(raw_exploration_limit);
 
     // --- Phase 2b: stage-boundary multi-switch NISS ---
-    if enable_multi_switch_niss || enable_deep_multi_switch_niss {
+    if enable_multi_switch_niss || deep_stage_boundary_enabled {
         for axis in 0..3u8 {
             let cvt = |v: &[u8]| -> Vec<u8> {
                 v.iter()
@@ -3872,7 +3958,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut completed_best,
                 force_rzp,
-                enable_deep_multi_switch_niss,
+                deep_stage_boundary_enabled,
             );
             for result in direct_results {
                 let simplified = simplify_moves(&cvt(&result.moves));
@@ -3917,7 +4003,7 @@ fn solve_fmc_with_eo_depth(
                 &mut p2_cache,
                 &mut completed_best,
                 force_rzp,
-                enable_deep_multi_switch_niss,
+                deep_stage_boundary_enabled,
             );
             for result in inverse_results {
                 let effective_inverse_solution = cvt(&result.moves);
@@ -3966,7 +4052,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_complementary_mitm_enabled
         && search_level >= 3
         && completed_best_before_complementary > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
     {
@@ -4076,7 +4162,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_complementary_normal_enabled
         && search_level >= 3
         && completed_best_before_complementary_normal > FMC_COMPLEMENTARY_MITM_TARGET_TOTAL
     {
@@ -4158,7 +4244,7 @@ fn solve_fmc_with_eo_depth(
         .map(|candidate| candidate.moves.len())
         .min()
         .unwrap_or(usize::MAX);
-    if enable_deep_multi_switch_niss
+    if deep_pre_eo_enabled
         && search_level >= 3
         && completed_best_before_pre_eo > FMC_PRE_EO_NISS_TARGET_TOTAL
     {
@@ -4583,7 +4669,9 @@ fn solve_fmc_with_eo_depth(
     // Deduplicate by final solution.
     let mut seen = std::collections::HashSet::new();
     all_candidates.retain(|candidate| seen.insert(candidate.moves.clone()));
-    all_candidates.truncate(10);
+    // Keep a wider raw frontier until the public verifier rejects or repairs
+    // malformed premove-NISS flattenings. The caller re-ranks verified results.
+    all_candidates.truncate(32);
 
     FmcResult {
         ok: !all_candidates.is_empty(),
@@ -4609,6 +4697,50 @@ fn fmc_result_best_move_count(result: &FmcResult) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+fn merge_fmc_result_frontier(base: &mut FmcResult, mut extra: FmcResult) {
+    base.candidates.append(&mut extra.candidates);
+    base.candidates.sort_by_key(|candidate| {
+        (
+            candidate.moves.len(),
+            candidate.skeleton_kind.is_none(),
+            candidate.source_tag,
+            candidate.axis,
+        )
+    });
+    let mut seen = std::collections::HashSet::new();
+    base.candidates
+        .retain(|candidate| seen.insert(candidate.moves.clone()));
+    base.candidates.truncate(32);
+
+    base.skeletons.append(&mut extra.skeletons);
+    base.skeletons.truncate(FMC_SKELETON_BEAM_LIMIT * 2);
+    base.insertion_candidate_count = base
+        .insertion_candidate_count
+        .saturating_add(extra.insertion_candidate_count);
+    base.mixed_insertion_candidate_count = base
+        .mixed_insertion_candidate_count
+        .saturating_add(extra.mixed_insertion_candidate_count);
+    base.multi_insertion_candidate_count = base
+        .multi_insertion_candidate_count
+        .saturating_add(extra.multi_insertion_candidate_count);
+    base.multi_insertion_transition_count = base
+        .multi_insertion_transition_count
+        .saturating_add(extra.multi_insertion_transition_count);
+    base.multi_insertion_pair_count = base
+        .multi_insertion_pair_count
+        .saturating_add(extra.multi_insertion_pair_count);
+    base.slice_insertion_candidate_count = base
+        .slice_insertion_candidate_count
+        .saturating_add(extra.slice_insertion_candidate_count);
+    base.multi_switch_niss_candidate_count = base
+        .multi_switch_niss_candidate_count
+        .saturating_add(extra.multi_switch_niss_candidate_count);
+    base.reverse_scramble_rejected_count = base
+        .reverse_scramble_rejected_count
+        .saturating_add(extra.reverse_scramble_rejected_count);
+    base.ok = !base.candidates.is_empty();
+}
+
 /// Run the selected human FMC frontier. L3 performs additional independent
 /// variants inside the same method; no alternate solver or EO-depth fallback runs.
 pub fn solve_fmc(
@@ -4622,6 +4754,7 @@ pub fn solve_fmc(
     enable_slice_insertion: bool,
     enable_multi_switch_niss: bool,
     enable_deep_multi_switch_niss: bool,
+    deep_component_mask: u8,
     search_level: u8,
     search_variant: u32,
     incumbent_move_count: usize,
@@ -4638,19 +4771,16 @@ pub fn solve_fmc(
         enable_slice_insertion,
         enable_multi_switch_niss,
         enable_deep_multi_switch_niss,
+        deep_component_mask,
         search_level,
         search_variant,
         incumbent_move_count,
         requested_eo_depth,
     );
-    if !primary.ok {
-        return primary;
-    }
-
     let mut best_result = primary;
     let mut best_count = fmc_result_best_move_count(&best_result);
 
-    if search_level >= 3 && best_count > FMC_EXTREME_RETRY_TARGET {
+    if search_level >= 3 && (!best_result.ok || best_count > FMC_EXTREME_RETRY_TARGET) {
         let secondary_variant = solve_fmc_with_eo_depth(
             scramble,
             tables,
@@ -4662,19 +4792,19 @@ pub fn solve_fmc(
             enable_slice_insertion,
             enable_multi_switch_niss,
             enable_deep_multi_switch_niss,
+            deep_component_mask,
             search_level,
             search_variant.wrapping_add(FMC_EXTREME_RETRY_VARIANT_OFFSET),
             incumbent_move_count,
             requested_eo_depth,
         );
-        let secondary_count = fmc_result_best_move_count(&secondary_variant);
-        if secondary_variant.ok && secondary_count < best_count {
-            best_result = secondary_variant;
-            best_count = secondary_count;
+        if secondary_variant.ok {
+            merge_fmc_result_frontier(&mut best_result, secondary_variant);
+            best_count = fmc_result_best_move_count(&best_result);
         }
     }
 
-    if search_level >= 3 && best_count > FMC_EXTREME_SUB20_TARGET {
+    if search_level >= 3 && (!best_result.ok || best_count > FMC_EXTREME_SUB20_TARGET) {
         let sub20_variant = solve_fmc_with_eo_depth(
             scramble,
             tables,
@@ -4686,14 +4816,14 @@ pub fn solve_fmc(
             enable_slice_insertion,
             enable_multi_switch_niss,
             enable_deep_multi_switch_niss,
+            deep_component_mask,
             search_level,
             search_variant.wrapping_add(FMC_EXTREME_SUB20_VARIANT_OFFSET),
             incumbent_move_count,
             requested_eo_depth,
         );
-        let sub20_count = fmc_result_best_move_count(&sub20_variant);
-        if sub20_variant.ok && sub20_count < best_count {
-            best_result = sub20_variant;
+        if sub20_variant.ok {
+            merge_fmc_result_frontier(&mut best_result, sub20_variant);
         }
     }
 
@@ -4707,6 +4837,13 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         String::new()
     } else {
         solution_string_from_path(&candidate.premove_moves, &tables.move_data)
+    };
+    let premove_index = if candidate.premove_moves.is_empty() {
+        None
+    } else {
+        FMC_PREMOVE_SETS
+            .iter()
+            .position(|premove| premove.moves == candidate.premove_moves)
     };
     let base_source = match candidate.source_tag {
         0 => format!("FMC_EO_{}", AXIS_NAMES[candidate.axis as usize]),
@@ -4811,6 +4948,7 @@ pub fn candidate_to_json(candidate: &FmcCandidate, tables: &TwophaseTables) -> s
         "axisName": AXIS_NAMES[candidate.axis as usize],
         "source": source,
         "premoves": premove_str,
+        "premoveIndex": premove_index,
         "moves": solution.split_whitespace().collect::<Vec<_>>(),
         "rzpUsed": candidate.rzp_used,
     });

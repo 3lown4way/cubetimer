@@ -83,7 +83,23 @@ for (let index = 0; index < scrambles.length; index += 1) {
   });
   const solveMs = performance.now() - solveStartedAt;
   if (!result?.ok || !result.solution || !Array.isArray(result.candidates)) {
-    throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}`);
+    const diagnostics = {
+      reason: result?.reason || "UNKNOWN",
+      candidateCount: Array.isArray(result?.candidates) ? result.candidates.length : -1,
+      invalidCandidateCount: Number(result?.invalidCandidateCount || 0),
+      repairedPremoveNissCandidateCount: Number(result?.repairedPremoveNissCandidateCount || 0),
+      levelEscalationUsed: result?.levelEscalationUsed === true,
+      initialReason: result?.initialReason || null,
+      verifiedVariantRescueAttempted: result?.verifiedVariantRescueAttempted === true,
+      verifiedVariantRescueUsed: result?.verifiedVariantRescueUsed === true,
+      verifiedVariantRescueVariant: Number.isFinite(result?.verifiedVariantRescueVariant)
+        ? result.verifiedVariantRescueVariant
+        : null,
+      verifiedVariantRescueVariantsTried: Array.isArray(result?.verifiedVariantRescueVariantsTried)
+        ? result.verifiedVariantRescueVariantsTried.map(Number)
+        : [],
+    };
+    throw new Error(`FMC_SOLVE_FAILED:${index}:${scramble}:${JSON.stringify(diagnostics)}`);
   }
 
   for (const candidate of result.candidates) {
@@ -123,6 +139,16 @@ for (let index = 0; index < scrambles.length; index += 1) {
     moveCount: Number(result.moveCount || 0),
     candidates: result.candidates.map(normalizedCandidate),
     solveMs,
+    levelEscalationUsed: result.levelEscalationUsed === true,
+    initialReason: result.initialReason || null,
+    verifiedVariantRescueAttempted: result.verifiedVariantRescueAttempted === true,
+    verifiedVariantRescueUsed: result.verifiedVariantRescueUsed === true,
+    verifiedVariantRescueVariant: Number.isFinite(result.verifiedVariantRescueVariant)
+      ? result.verifiedVariantRescueVariant
+      : null,
+    verifiedVariantRescueVariantsTried: Array.isArray(result.verifiedVariantRescueVariantsTried)
+      ? result.verifiedVariantRescueVariantsTried.map(Number)
+      : [],
     insertionMs,
     insertion,
   });
@@ -139,6 +165,11 @@ const summary = {
   averageSolveMs: average(solveTimes),
   medianSolveMs: percentile(solveTimes, 0.5),
   p95SolveMs: percentile(solveTimes, 0.95),
+  levelEscalationRuns: rows.filter((row) => row.levelEscalationUsed).length,
+  verifiedVariantRescueRuns: rows.filter((row) => row.verifiedVariantRescueUsed).length,
+  verifiedVariantRescueVariants: rows
+    .filter((row) => Number.isFinite(row.verifiedVariantRescueVariant))
+    .map((row) => row.verifiedVariantRescueVariant),
   averageInsertionMs: average(insertionTimes),
   medianInsertionMs: percentile(insertionTimes, 0.5),
 };

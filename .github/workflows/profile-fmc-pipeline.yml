@@ -1,0 +1,105 @@
+name: Profile FMC pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-fmc-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+      - name: Apply FMC search optimizations
+        run: |
+          node tools/apply-fmc-htr-coordinate-table.mjs
+          node tools/apply-fmc-deep-warmup-v2.mjs
+          node tools/run-fmc-deep-component-mask-first-apply.mjs
+          node tools/apply-fmc-candidate-validation.mjs
+          node tools/apply-fmc-premove-index-diagnostic.mjs
+          node tools/apply-fmc-variant-frontier-merge.mjs
+          node tools/apply-fmc-bounded-level-escalation.mjs
+          node tools/apply-fmc-verified-variant-rescue.mjs
+      - name: Validate sources
+        run: |
+          node --check benchmark-fmc-profile.mjs
+          node --check benchmark-fmc-feature-case.mjs
+          node --check benchmark-fmc-feature-matrix.mjs
+          node --check benchmark-fmc-deep-warm.mjs
+          node --check benchmark-fmc-deep-component-case.mjs
+          node --check benchmark-fmc-deep-components.mjs
+          node --check tools/apply-fmc-htr-coordinate-table.mjs
+          node --check tools/apply-fmc-deep-warmup-v2.mjs
+          node --check tools/apply-fmc-deep-component-mask.mjs
+          node --check tools/run-fmc-deep-component-mask-first-apply.mjs
+          node --check tools/apply-fmc-candidate-validation.mjs
+          node --check tools/apply-fmc-premove-index-diagnostic.mjs
+          node --check tools/apply-fmc-variant-frontier-merge.mjs
+          node --check tools/apply-fmc-bounded-level-escalation.mjs
+          node --check tools/apply-fmc-verified-variant-rescue.mjs
+          node --check tools/audit-fmc-move-order.mjs
+          node --check solver/wasmSolver.js
+          node --check solver/solverWorker.js
+          node --check main.js
+          node tools/audit-fmc-move-order.mjs
+          cargo fmt --manifest-path solver-wasm/Cargo.toml
+          cargo test --manifest-path solver-wasm/Cargo.toml --lib
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+      - name: Profile isolated FMC features
+        run: node benchmark-fmc-feature-matrix.mjs
+      - name: Verify default FMC core escalation
+        env:
+          FMC_SPEED_RUNS: 4
+          FMC_SPEED_PREMOVE_SETS: 20
+          FMC_SPEED_INSERTION_RUNS: 0
+        run: node benchmark-fmc-speed-identity.mjs
+      - name: Measure explicit deep-table warmup
+        run: node benchmark-fmc-deep-warm.mjs
+      - name: Profile deep FMC components
+        run: node benchmark-fmc-deep-components.mjs
+      - name: Commit validated FMC implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            main.js \
+            solver/solverWorker.js \
+            solver/wasmSolver.js \
+            solver-wasm/src/fmc_search.rs \
+            solver-wasm/src/lib.rs
+          git add -f \
+            public/solver-wasm/solver_wasm.js \
+            public/solver-wasm/solver_wasm.d.ts \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          if git diff --cached --quiet; then
+            echo "FMC candidate validation implementation already committed"
+            exit 0
+          fi
+          git commit -m "Validate FMC candidates before ranking"
+          git push origin "HEAD:${TARGET_BRANCH}"

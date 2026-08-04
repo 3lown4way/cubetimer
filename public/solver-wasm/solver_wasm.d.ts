@@ -43,6 +43,8 @@ export function solve_phase2_direct(cp_idx: number, ep_idx: number, sep_idx: num
  */
 export function verify_fmc_solution_wasm(scramble: string, solution: string): string;
 
+export function warm_fmc_deep_tables_wasm(): string;
+
 export function warm_minmove_333(): void;
 
 export function warm_twophase_333(): void;
@@ -69,6 +71,7 @@ export interface InitOutput {
     readonly solve_json: (a: number, b: number) => [number, number];
     readonly solve_phase2_direct: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly verify_fmc_solution_wasm: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly warm_fmc_deep_tables_wasm: () => [number, number];
     readonly warm_minmove_333: () => [number, number];
     readonly warm_twophase_333: () => [number, number];
     readonly abort_minmove_333_bundle: () => void;

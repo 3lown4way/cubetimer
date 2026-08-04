@@ -2288,6 +2288,12 @@ function rememberSolverProfileWarmupKey(key) {
 function buildSelectedPlayerProfileWarmupPayload() {
   const solverMode = appState.settings.solverMode || "strict";
   if (solverMode === "minmove" || solverMode === "twophase") return null;
+  if (solverMode === "fmc") {
+    return {
+      mode: "fmc",
+      fmcQualityMode: appState.settings.fmcQualityMode || "sweetSpot",
+    };
+  }
   const playerName = String(appState.settings.stylePlayer || "").trim();
   if (!playerName || !styleProfilesLoaded) return null;
   const f2lMethod = appState.settings.f2lMethod || DEFAULT_F2L_METHOD;
@@ -3072,6 +3078,7 @@ solverModeSelect?.addEventListener("change", () => {
     : "strict";
   updateFmcQualityControls();
   saveState();
+  scheduleSelectedPlayerProfileWarmup();
 });
 
 fmcQualitySelect?.addEventListener("change", () => {
@@ -3081,6 +3088,7 @@ fmcQualitySelect?.addEventListener("change", () => {
     : "sweetSpot";
   saveState();
   resetSolverState();
+  scheduleSelectedPlayerProfileWarmup();
 });
 
 solverVersionSelect?.addEventListener("change", () => {

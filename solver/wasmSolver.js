@@ -159,6 +159,10 @@ async function loadWasmCandidate(specifier) {
       if (typeof mod.build_fmc_tables_wasm !== "function") return "";
       return mod.build_fmc_tables_wasm();
     },
+    warmFmcDeepTablesWasm() {
+      if (typeof mod.warm_fmc_deep_tables_wasm !== "function") return "";
+      return mod.warm_fmc_deep_tables_wasm();
+    },
     solveFmcWasm(scramble, optionsJson) {
       if (typeof mod.solve_fmc_wasm !== "function") return "";
       return mod.solve_fmc_wasm(scramble, optionsJson);
@@ -429,6 +433,97 @@ export async function buildFmcTablesWasm() {
   }
 }
 
+let fmcDeepTablesWarmPromise = null;
+export async function warmFmcDeepTablesWasm() {
+  if (fmcDeepTablesWarmPromise) return fmcDeepTablesWarmPromise;
+  fmcDeepTablesWarmPromise = (async () => {
+    if (!(await buildFmcTablesWasm())) return null;
+    const api = await ensureTwophase333Ready();
+    if (!api || typeof api.warmFmcDeepTablesWasm !== "function") return null;
+    try {
+      const raw = api.warmFmcDeepTablesWasm();
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return parsed?.ok ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+  const result = await fmcDeepTablesWarmPromise;
+  if (!result) fmcDeepTablesWarmPromise = null;
+  return result;
+}
+
+function normalizeFmcMoveTokens(value) {
+  if (Array.isArray(value)) return value.map((move) => String(move || "").trim()).filter(Boolean);
+  return String(value || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function invertFmcMoveToken(token) {
+  const value = String(token || "").trim();
+  if (!value || value.endsWith("2")) return value;
+  return value.endsWith("'") ? value.slice(0, -1) : value + "'";
+}
+
+function invertFmcMoveSequence(tokens) {
+  return normalizeFmcMoveTokens(tokens).reverse().map(invertFmcMoveToken);
+}
+
+function simplifyFmcMoveSequence(tokens) {
+  const output = [];
+  for (const rawToken of normalizeFmcMoveTokens(tokens)) {
+    const match = /^([URFDLBMESxyzurfdlb])(2|')?$/.exec(rawToken);
+    if (!match) {
+      output.push(rawToken);
+      continue;
+    }
+    const face = match[1];
+    const amount = match[2] === "2" ? 2 : match[2] === "'" ? 3 : 1;
+    const previous = output[output.length - 1];
+    const previousMatch = previous ? /^([URFDLBMESxyzurfdlb])(2|')?$/.exec(previous) : null;
+    if (!previousMatch || previousMatch[1] !== face) {
+      output.push(rawToken);
+      continue;
+    }
+    const previousAmount = previousMatch[2] === "2" ? 2 : previousMatch[2] === "'" ? 3 : 1;
+    const combined = (previousAmount + amount) % 4;
+    output.pop();
+    if (combined === 1) output.push(face);
+    else if (combined === 2) output.push(face + "2");
+    else if (combined === 3) output.push(face + "'");
+  }
+  return output;
+}
+
+function buildVerifiedPremoveNissAlternates(candidate) {
+  const sourceTag = String(candidate?.source || "");
+  if (!/^FMC_(?:HTR_)?PREMOVE_NISS_/.test(sourceTag)) return [];
+
+  const pipeline = [
+    ...normalizeFmcMoveTokens(candidate?.eoMoves),
+    ...normalizeFmcMoveTokens(candidate?.drMoves),
+    ...normalizeFmcMoveTokens(candidate?.finishMoves),
+  ];
+  const premoves = normalizeFmcMoveTokens(candidate?.premoves);
+  if (pipeline.length === 0 || premoves.length === 0) return [];
+
+  const inversePipeline = invertFmcMoveSequence(pipeline);
+  const inversePremoves = invertFmcMoveSequence(premoves);
+  const current = String(candidate?.solution || "").trim();
+  const seen = new Set(current ? [current] : []);
+  const alternatives = [];
+  for (const tokens of [
+    [...inversePremoves, ...inversePipeline],
+    [...inversePipeline, ...inversePremoves],
+  ]) {
+    const simplified = simplifyFmcMoveSequence(tokens);
+    const solution = simplified.join(" ");
+    if (!solution || seen.has(solution)) continue;
+    seen.add(solution);
+    alternatives.push({ solution, moves: simplified, moveCount: simplified.length });
+  }
+  return alternatives;
+}
+
 /**
  * Run the full FMC pipeline (EO→DR→P2, 3 axes, NISS, premove sweep) entirely in WASM.
  * No alternate solver or coverage fallback is permitted.
@@ -443,7 +538,8 @@ export async function solveFmcWasm(scramble, options = {}) {
   }
   if (!api || typeof api.solveFmcWasm !== "function") return null;
   try {
-    const optionsJson = JSON.stringify({
+    const explicitSearchLevel = Number.isFinite(options.searchLevel);
+    const normalizedOptions = {
       maxPremoveSets: options.maxPremoveSets ?? 120,
       forceRzp: options.forceRzp ?? false,
       enableMultiInsertion: options.enableMultiInsertion === true,
@@ -451,17 +547,197 @@ export async function solveFmcWasm(scramble, options = {}) {
       enableSliceInsertion: options.enableSliceInsertion === true,
       enableMultiSwitchNiss: options.enableMultiSwitchNiss === true,
       enableDeepMultiSwitchNiss: options.enableDeepMultiSwitchNiss === true,
-      searchLevel: Number.isFinite(options.searchLevel) ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
+      deepComponentMask: Number.isFinite(options.deepComponentMask)
+        ? Math.max(0, Math.min(15, Math.floor(options.deepComponentMask)))
+        : 15,
+      searchLevel: explicitSearchLevel ? Math.max(0, Math.min(3, Math.floor(options.searchLevel))) : 0,
       searchVariant: Number.isFinite(options.searchVariant) ? Math.max(0, Math.floor(options.searchVariant)) : 0,
       incumbentMoveCount: Number.isFinite(options.incumbentMoveCount)
         ? Math.max(1, Math.min(40, Math.floor(options.incumbentMoveCount)))
         : 40,
-    });
-    const raw = api.solveFmcWasm(scramble, optionsJson);
-    if (!raw) return null;
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    };
+    const invokeFmc = (requestOptions) => {
+      const raw = api.solveFmcWasm(scramble, JSON.stringify(requestOptions));
+      if (!raw) return null;
+      return typeof raw === "string" ? JSON.parse(raw) : raw;
+    };
+
+    let parsed = invokeFmc(normalizedOptions);
     if (!parsed || parsed.ok === undefined) return null;
-    return parsed;
+    let levelEscalationUsed = false;
+    let initialReason = null;
+    // Unspecified raw callers use a very cheap L0 probe first. If that probe has
+    // no frontier, run one bounded L3 portfolio with the same premove budget.
+    // Explicit site quality stages retain their requested level unchanged.
+    if (parsed.ok !== true && !explicitSearchLevel) {
+      initialReason = String(parsed.reason || "FMC_NO_SOLUTION");
+      const escalated = invokeFmc({
+        ...normalizedOptions,
+        maxPremoveSets: Math.max(20, Number(normalizedOptions.maxPremoveSets) || 0),
+        searchLevel: 3,
+      });
+      if (escalated && escalated.ok !== undefined) {
+        parsed = escalated;
+        levelEscalationUsed = true;
+      }
+    }
+    if (parsed.ok !== true) {
+      return {
+        ...parsed,
+        levelEscalationUsed,
+        initialReason,
+      };
+    }
+
+    // The public FMC verifier is the source of truth for the exact solution
+    // string returned to callers. The Rust search uses internal state frames,
+    // so final validity and premove-NISS order repair remain at this boundary.
+    if (
+      typeof api.verifyFmcSolutionWasm !== "function" ||
+      !Array.isArray(parsed.candidates)
+    ) {
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_CANDIDATE_VERIFIER_UNAVAILABLE",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+      };
+    }
+
+    const verifyCandidateSolution = (solution) => {
+      if (!solution) return false;
+      try {
+        const verifyRaw = api.verifyFmcSolutionWasm(String(scramble), String(solution));
+        const verification = typeof verifyRaw === "string" ? JSON.parse(verifyRaw) : verifyRaw;
+        return verification?.ok === true && verification.solved === true;
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const validateCandidateFrontier = (candidateResult) => {
+      const validCandidates = [];
+      const seenSolutions = new Set();
+      let invalidCandidateCount = 0;
+      let repairedPremoveNissCandidateCount = 0;
+      for (const candidate of Array.isArray(candidateResult?.candidates)
+        ? candidateResult.candidates
+        : []) {
+        const originalSolution = String(candidate?.solution || "").trim();
+        let accepted = null;
+        if (verifyCandidateSolution(originalSolution)) {
+          accepted = candidate;
+        } else {
+          invalidCandidateCount += 1;
+          for (const alternate of buildVerifiedPremoveNissAlternates(candidate)) {
+            if (!verifyCandidateSolution(alternate.solution)) continue;
+            accepted = {
+              ...candidate,
+              solution: alternate.solution,
+              moves: alternate.moves,
+              moveCount: alternate.moveCount,
+              repairedPremoveNissOrder: true,
+            };
+            repairedPremoveNissCandidateCount += 1;
+            break;
+          }
+        }
+        if (!accepted) continue;
+        const solution = String(accepted.solution || "").trim();
+        if (!solution || seenSolutions.has(solution)) continue;
+        seenSolutions.add(solution);
+        validCandidates.push(accepted);
+      }
+
+      validCandidates.sort((left, right) =>
+        Number(left?.moveCount || 0) - Number(right?.moveCount || 0),
+      );
+      return {
+        validCandidates,
+        invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
+      };
+    };
+
+    let validation = validateCandidateFrontier(parsed);
+    let invalidCandidateCount = validation.invalidCandidateCount;
+    let repairedPremoveNissCandidateCount = validation.repairedPremoveNissCandidateCount;
+    let verifiedVariantRescueAttempted = false;
+    let verifiedVariantRescueUsed = false;
+    let verifiedVariantRescueVariant = null;
+    const verifiedVariantRescueVariantsTried = [];
+    const verifiedVariantRescueOffsets = [2, 16];
+
+    // Raw default callers first keep the cheap base frontier. If every completed
+    // candidate fails the public verifier, try a small independent FMC portfolio.
+    // Explicit site quality stages retain the exact requested search variant.
+    if (validation.validCandidates.length === 0 && !explicitSearchLevel) {
+      verifiedVariantRescueAttempted = true;
+      for (const offset of verifiedVariantRescueOffsets) {
+        const rescueVariant = Math.max(
+          0,
+          Math.floor(Number(normalizedOptions.searchVariant) || 0) + offset,
+        );
+        verifiedVariantRescueVariantsTried.push(rescueVariant);
+        const rescueParsed = invokeFmc({
+          ...normalizedOptions,
+          maxPremoveSets: Math.max(20, Number(normalizedOptions.maxPremoveSets) || 0),
+          searchLevel: 3,
+          searchVariant: rescueVariant,
+        });
+        if (rescueParsed?.ok !== true || !Array.isArray(rescueParsed.candidates)) {
+          continue;
+        }
+        const rescueValidation = validateCandidateFrontier(rescueParsed);
+        invalidCandidateCount += rescueValidation.invalidCandidateCount;
+        repairedPremoveNissCandidateCount +=
+          rescueValidation.repairedPremoveNissCandidateCount;
+        if (rescueValidation.validCandidates.length === 0) continue;
+        parsed = rescueParsed;
+        validation = rescueValidation;
+        verifiedVariantRescueUsed = true;
+        verifiedVariantRescueVariant = rescueVariant;
+        break;
+      }
+    }
+
+    const validCandidates = validation.validCandidates;
+    if (validCandidates.length === 0) {
+      return {
+        ...parsed,
+        ok: false,
+        reason: "FMC_NO_VERIFIED_SOLUTION",
+        solution: "",
+        moveCount: 0,
+        candidates: [],
+        invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
+        levelEscalationUsed,
+        initialReason,
+        verifiedVariantRescueAttempted,
+        verifiedVariantRescueUsed,
+        verifiedVariantRescueVariant,
+        verifiedVariantRescueVariantsTried,
+      };
+    }
+
+    const best = validCandidates[0];
+    return {
+      ...parsed,
+      solution: String(best.solution),
+      moveCount: Number(best.moveCount || 0),
+      candidates: validCandidates,
+      invalidCandidateCount,
+      repairedPremoveNissCandidateCount,
+      levelEscalationUsed,
+      initialReason,
+      verifiedVariantRescueAttempted,
+      verifiedVariantRescueUsed,
+      verifiedVariantRescueVariant,
+      verifiedVariantRescueVariantsTried,
+    };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
     return null;
