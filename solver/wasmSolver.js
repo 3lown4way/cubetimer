@@ -159,6 +159,10 @@ async function loadWasmCandidate(specifier) {
       if (typeof mod.build_fmc_tables_wasm !== "function") return "";
       return mod.build_fmc_tables_wasm();
     },
+    warmFmcDeepTablesWasm() {
+      if (typeof mod.warm_fmc_deep_tables_wasm !== "function") return "";
+      return mod.warm_fmc_deep_tables_wasm();
+    },
     solveFmcWasm(scramble, optionsJson) {
       if (typeof mod.solve_fmc_wasm !== "function") return "";
       return mod.solve_fmc_wasm(scramble, optionsJson);
@@ -427,6 +431,26 @@ export async function buildFmcTablesWasm() {
   } catch (_) {
     return false;
   }
+}
+
+let fmcDeepTablesWarmPromise = null;
+export async function warmFmcDeepTablesWasm() {
+  if (fmcDeepTablesWarmPromise) return fmcDeepTablesWarmPromise;
+  fmcDeepTablesWarmPromise = (async () => {
+    if (!(await buildFmcTablesWasm())) return null;
+    const api = await ensureTwophase333Ready();
+    if (!api || typeof api.warmFmcDeepTablesWasm !== "function") return null;
+    try {
+      const raw = api.warmFmcDeepTablesWasm();
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return parsed?.ok ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+  const result = await fmcDeepTablesWarmPromise;
+  if (!result) fmcDeepTablesWarmPromise = null;
+  return result;
 }
 
 /**

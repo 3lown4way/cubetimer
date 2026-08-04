@@ -683,6 +683,28 @@ pub fn build_fmc_tables_wasm() -> String {
     .to_string()
 }
 
+#[wasm_bindgen]
+pub fn warm_fmc_deep_tables_wasm() -> String {
+    utils::set_panic_hook();
+    let tables_guard = TWOPHASE_TABLES.lock().unwrap();
+    let Some(tables) = tables_guard.as_ref() else {
+        return serde_json::json!({"ok": false, "reason": "TWOPHASE_TABLES_NOT_LOADED"})
+            .to_string();
+    };
+    let fmc_guard = FMC_TABLES.lock().unwrap();
+    let Some(fmc_tables) = fmc_guard.as_ref() else {
+        return serde_json::json!({"ok": false, "reason": "FMC_TABLES_NOT_BUILT"}).to_string();
+    };
+    let (htr_count, complementary_count, pre_eo_count) = fmc_tables.warm_deep_tables(tables);
+    serde_json::json!({
+        "ok": true,
+        "htrStateCount": htr_count,
+        "complementaryTailCount": complementary_count,
+        "preEoTailCount": pre_eo_count,
+    })
+    .to_string()
+}
+
 #[derive(Deserialize)]
 struct FmcOptionsJson {
     #[serde(rename = "maxPremoveSets", default = "default_max_premove_sets")]

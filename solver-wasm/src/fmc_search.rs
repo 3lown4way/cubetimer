@@ -113,6 +113,9 @@ const FMC_PRE_EO_NISS_P2_REVERSE_DEPTH: usize = 3;
 const FMC_PRE_EO_NISS_DR_REVERSE_DEPTH: usize = 3;
 const FMC_PRE_EO_NISS_DR_FORWARD_DEPTH: usize = 5;
 const FMC_PRE_EO_NISS_FORWARD_NODE_LIMIT: usize = 350_000;
+/// Bound the reverse pre-EO table so an unexpectedly broad frontier cannot
+/// exhaust browser WASM memory.
+const FMC_PRE_EO_TAIL_STATE_LIMIT: usize = 1_200_000;
 
 /// L3 Extreme retries one independent EO/premove frontier only when the
 /// primary portfolio still exceeds the human sub-20 target.
@@ -786,10 +789,23 @@ pub struct FmcTables {
     /// Lazily built half-turn subgroup table. Values are the first half turn toward solved.
     htr_first_move: OnceCell<std::collections::HashMap<u64, u8>>,
     complementary_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcComplementaryTail>>,
-    pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u128, FmcPreEoTail>>,
+    pre_eo_short_p2_tails: OnceCell<std::collections::HashMap<u64, FmcPreEoTail>>,
 }
 
 impl FmcTables {
+    pub fn warm_deep_tables(&self, tables: &TwophaseTables) -> (usize, usize, usize) {
+        let htr = self
+            .htr_first_move
+            .get_or_init(|| build_htr_first_move_table(tables));
+        let complementary = self
+            .complementary_short_p2_tails
+            .get_or_init(|| build_complementary_short_p2_tails(tables));
+        let pre_eo = self
+            .pre_eo_short_p2_tails
+            .get_or_init(|| build_pre_eo_short_p2_tails(tables));
+        (htr.len(), complementary.len(), pre_eo.len())
+    }
+
     pub fn multi_relocation_plan_count(&self) -> usize {
         self.multi_relocation_plans.len()
     }
@@ -2183,14 +2199,41 @@ fn pre_eo_tail_order(
     )
 }
 
+fn encode_edge_permutation_12(ep: &[u8; EDGE_COUNT]) -> u32 {
+    let mut rank = 0u32;
+    for i in 0..EDGE_COUNT {
+        let mut smaller = 0u32;
+        for j in (i + 1)..EDGE_COUNT {
+            if ep[j] < ep[i] {
+                smaller += 1;
+            }
+        }
+        rank = rank * (EDGE_COUNT - i) as u32 + smaller;
+    }
+    rank
+}
+
+/// EO remains solved throughout the reverse P2/DR table and the matching
+/// forward DR search. CP (16 bits), CO (12 bits), and full EP (29 bits)
+/// therefore form a collision-free 57-bit coordinate.
+fn pre_eo_compact_state_key(state: &CubeState) -> u64 {
+    let cp = encode_perm8(&state.cp) as u64;
+    let co = encode_co(&state.co) as u64;
+    let ep = encode_edge_permutation_12(&state.ep) as u64;
+    cp | (co << 16) | (ep << 28)
+}
+
 fn retain_pre_eo_tail(
-    tails: &mut std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &mut std::collections::HashMap<u64, FmcPreEoTail>,
     state: &CubeState,
     candidate: FmcPreEoTail,
 ) -> bool {
-    let key = complementary_compact_state_key(state);
+    let key = pre_eo_compact_state_key(state);
     match tails.get(&key) {
         None => {
+            if tails.len() >= FMC_PRE_EO_TAIL_STATE_LIMIT {
+                return false;
+            }
             tails.insert(key, candidate);
             true
         }
@@ -2204,10 +2247,10 @@ fn retain_pre_eo_tail(
 
 fn build_pre_eo_short_p2_tails(
     tables: &TwophaseTables,
-) -> std::collections::HashMap<u128, FmcPreEoTail> {
+) -> std::collections::HashMap<u64, FmcPreEoTail> {
     let solved = CubeState::solved();
     let solved_tail = FmcPreEoTail::solved();
-    let mut tails = std::collections::HashMap::<u128, FmcPreEoTail>::new();
+    let mut tails = std::collections::HashMap::<u64, FmcPreEoTail>::new();
     retain_pre_eo_tail(&mut tails, &solved, solved_tail);
 
     let mut p2_frontier = vec![(solved, solved_tail)];
@@ -2351,7 +2394,7 @@ fn solve_pre_eo_joint_mitm(
     start: &CubeState,
     last_face_before_dr: u8,
     remaining_budget: usize,
-    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &std::collections::HashMap<u64, FmcPreEoTail>,
     fmc_tables: &FmcTables,
     tables: &TwophaseTables,
 ) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -2369,17 +2412,14 @@ fn solve_pre_eo_joint_mitm(
         len: 0,
         last_face: last_face_before_dr,
     }];
-    let mut seen = std::collections::HashMap::<(u128, u8), u8>::new();
-    seen.insert(
-        (complementary_compact_state_key(start), last_face_before_dr),
-        0,
-    );
+    let mut seen = std::collections::HashMap::<(u64, u8), u8>::new();
+    seen.insert((pre_eo_compact_state_key(start), last_face_before_dr), 0);
     let mut node_count = 1usize;
     let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
 
     for depth in 0..=FMC_PRE_EO_NISS_DR_FORWARD_DEPTH {
         for node in &frontier {
-            if let Some(tail) = tails.get(&complementary_compact_state_key(&node.state)) {
+            if let Some(tail) = tails.get(&pre_eo_compact_state_key(&node.state)) {
                 let total = node.len as usize + tail.total_len();
                 if total <= remaining_budget {
                     let mut dr_moves = node.path[..node.len as usize].to_vec();
@@ -2430,7 +2470,7 @@ fn solve_pre_eo_joint_mitm(
                 let next_state = node
                     .state
                     .apply_move(move_index as usize, &tables.move_data);
-                let key = complementary_compact_state_key(&next_state);
+                let key = pre_eo_compact_state_key(&next_state);
                 let next_co = encode_co(&next_state.co);
                 let next_slice = encode_slice_from_ep(&next_state.ep);
                 let distance = fmc_tables.co_slice_dist[next_co * SLICE_SIZE + next_slice];
@@ -2490,7 +2530,7 @@ fn solve_pre_eo_niss_single_axis(
     tables: &TwophaseTables,
     fmc_tables: &FmcTables,
     max_eo_depth: u8,
-    tails: &std::collections::HashMap<u128, FmcPreEoTail>,
+    tails: &std::collections::HashMap<u64, FmcPreEoTail>,
 ) -> Vec<FmcPreEoNissResult> {
     let boundaries = collect_pre_eo_niss_frontier(state, tables, fmc_tables, max_eo_depth);
     let mut output = Vec::new();
