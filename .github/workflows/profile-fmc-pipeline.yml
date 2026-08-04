@@ -34,7 +34,7 @@ jobs:
       - name: Apply FMC search optimizations
         run: |
           node tools/apply-fmc-htr-coordinate-table.mjs
-          node tools/apply-fmc-deep-warmup.mjs
+          node tools/apply-fmc-deep-warmup-v2.mjs
       - name: Validate sources
         run: |
           node --check benchmark-fmc-profile.mjs
@@ -42,7 +42,7 @@ jobs:
           node --check benchmark-fmc-feature-matrix.mjs
           node --check benchmark-fmc-deep-warm.mjs
           node --check tools/apply-fmc-htr-coordinate-table.mjs
-          node --check tools/apply-fmc-deep-warmup.mjs
+          node --check tools/apply-fmc-deep-warmup-v2.mjs
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check main.js
