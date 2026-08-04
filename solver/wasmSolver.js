@@ -617,40 +617,93 @@ export async function solveFmcWasm(scramble, options = {}) {
       }
     };
 
-    const validCandidates = [];
-    const seenSolutions = new Set();
-    let invalidCandidateCount = 0;
-    let repairedPremoveNissCandidateCount = 0;
-    for (const candidate of parsed.candidates) {
-      const originalSolution = String(candidate?.solution || "").trim();
-      let accepted = null;
-      if (verifyCandidateSolution(originalSolution)) {
-        accepted = candidate;
-      } else {
-        invalidCandidateCount += 1;
-        for (const alternate of buildVerifiedPremoveNissAlternates(candidate)) {
-          if (!verifyCandidateSolution(alternate.solution)) continue;
-          accepted = {
-            ...candidate,
-            solution: alternate.solution,
-            moves: alternate.moves,
-            moveCount: alternate.moveCount,
-            repairedPremoveNissOrder: true,
-          };
-          repairedPremoveNissCandidateCount += 1;
-          break;
+    const validateCandidateFrontier = (candidateResult) => {
+      const validCandidates = [];
+      const seenSolutions = new Set();
+      let invalidCandidateCount = 0;
+      let repairedPremoveNissCandidateCount = 0;
+      for (const candidate of Array.isArray(candidateResult?.candidates)
+        ? candidateResult.candidates
+        : []) {
+        const originalSolution = String(candidate?.solution || "").trim();
+        let accepted = null;
+        if (verifyCandidateSolution(originalSolution)) {
+          accepted = candidate;
+        } else {
+          invalidCandidateCount += 1;
+          for (const alternate of buildVerifiedPremoveNissAlternates(candidate)) {
+            if (!verifyCandidateSolution(alternate.solution)) continue;
+            accepted = {
+              ...candidate,
+              solution: alternate.solution,
+              moves: alternate.moves,
+              moveCount: alternate.moveCount,
+              repairedPremoveNissOrder: true,
+            };
+            repairedPremoveNissCandidateCount += 1;
+            break;
+          }
         }
+        if (!accepted) continue;
+        const solution = String(accepted.solution || "").trim();
+        if (!solution || seenSolutions.has(solution)) continue;
+        seenSolutions.add(solution);
+        validCandidates.push(accepted);
       }
-      if (!accepted) continue;
-      const solution = String(accepted.solution || "").trim();
-      if (!solution || seenSolutions.has(solution)) continue;
-      seenSolutions.add(solution);
-      validCandidates.push(accepted);
+
+      validCandidates.sort((left, right) =>
+        Number(left?.moveCount || 0) - Number(right?.moveCount || 0),
+      );
+      return {
+        validCandidates,
+        invalidCandidateCount,
+        repairedPremoveNissCandidateCount,
+      };
+    };
+
+    let validation = validateCandidateFrontier(parsed);
+    let invalidCandidateCount = validation.invalidCandidateCount;
+    let repairedPremoveNissCandidateCount = validation.repairedPremoveNissCandidateCount;
+    let verifiedVariantRescueAttempted = false;
+    let verifiedVariantRescueUsed = false;
+    let verifiedVariantRescueVariant = null;
+    const verifiedVariantRescueVariantsTried = [];
+    const verifiedVariantRescueOffsets = [2, 16];
+
+    // Raw default callers first keep the cheap base frontier. If every completed
+    // candidate fails the public verifier, try a small independent FMC portfolio.
+    // Explicit site quality stages retain the exact requested search variant.
+    if (validation.validCandidates.length === 0 && !explicitSearchLevel) {
+      verifiedVariantRescueAttempted = true;
+      for (const offset of verifiedVariantRescueOffsets) {
+        const rescueVariant = Math.max(
+          0,
+          Math.floor(Number(normalizedOptions.searchVariant) || 0) + offset,
+        );
+        verifiedVariantRescueVariantsTried.push(rescueVariant);
+        const rescueParsed = invokeFmc({
+          ...normalizedOptions,
+          maxPremoveSets: Math.max(20, Number(normalizedOptions.maxPremoveSets) || 0),
+          searchLevel: 3,
+          searchVariant: rescueVariant,
+        });
+        if (rescueParsed?.ok !== true || !Array.isArray(rescueParsed.candidates)) {
+          continue;
+        }
+        const rescueValidation = validateCandidateFrontier(rescueParsed);
+        invalidCandidateCount += rescueValidation.invalidCandidateCount;
+        repairedPremoveNissCandidateCount +=
+          rescueValidation.repairedPremoveNissCandidateCount;
+        if (rescueValidation.validCandidates.length === 0) continue;
+        parsed = rescueParsed;
+        validation = rescueValidation;
+        verifiedVariantRescueUsed = true;
+        verifiedVariantRescueVariant = rescueVariant;
+        break;
+      }
     }
 
-    validCandidates.sort((left, right) =>
-      Number(left?.moveCount || 0) - Number(right?.moveCount || 0),
-    );
+    const validCandidates = validation.validCandidates;
     if (validCandidates.length === 0) {
       return {
         ...parsed,
@@ -661,6 +714,12 @@ export async function solveFmcWasm(scramble, options = {}) {
         candidates: [],
         invalidCandidateCount,
         repairedPremoveNissCandidateCount,
+        levelEscalationUsed,
+        initialReason,
+        verifiedVariantRescueAttempted,
+        verifiedVariantRescueUsed,
+        verifiedVariantRescueVariant,
+        verifiedVariantRescueVariantsTried,
       };
     }
 
@@ -674,6 +733,10 @@ export async function solveFmcWasm(scramble, options = {}) {
       repairedPremoveNissCandidateCount,
       levelEscalationUsed,
       initialReason,
+      verifiedVariantRescueAttempted,
+      verifiedVariantRescueUsed,
+      verifiedVariantRescueVariant,
+      verifiedVariantRescueVariantsTried,
     };
   } catch (err) {
     console.warn("[solveFmcWasm] error:", err);
