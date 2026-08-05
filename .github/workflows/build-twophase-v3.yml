@@ -69,7 +69,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            solver-wasm/assets/minmove_move_data.json \
             solver-wasm/src/twophase_builder.rs \
             solver-wasm/src/twophase_bundle.rs \
             solver-wasm/src/twophase_search.rs \
@@ -78,8 +77,8 @@ jobs:
             public/solver-wasm/solver_wasm.js \
             public/solver-wasm/solver_wasm.d.ts \
             public/solver-wasm/solver_wasm_bg.wasm \
-            public/solver-wasm/solver_wasm_bg.wasm.d.ts \
-            public/solver-wasm/twophase/twophase-333-v3.bin
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          git add -f public/solver-wasm/twophase/twophase-333-v3.bin
           if git diff --cached --quiet; then
             echo "Twophase v3 assets already current"
             exit 0
