@@ -1,13 +1,36 @@
 name: 3x3 Two-Phase deadline
 
 on:
+  pull_request:
+    paths:
+      - "solver-wasm/src/twophase_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/minmoveExactV2.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-twophase-deadline.mjs"
+      - ".github/workflows/3x3-twophase-deadline.yml"
   push:
     branches:
+      - main
       - "fix/3x3-twophase-deadline"
-  workflow_dispatch:
+    paths:
+      - "solver-wasm/src/twophase_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/minmoveExactV2.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-twophase-deadline.mjs"
+      - ".github/workflows/3x3-twophase-deadline.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deadline-contract:
@@ -16,15 +39,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: fix/3x3-twophase-deadline
-
-      - name: Apply one-time source patch
-        shell: bash
-        run: |
-          if ! grep -q 'TWOPHASE_DEADLINE_REASON' solver-wasm/src/twophase_search.rs; then
-            node tools/apply-3x3-twophase-deadline.mjs
-          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -37,8 +51,8 @@ jobs:
         with:
           workspaces: solver-wasm
 
-      - name: Format Rust
-        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all -- --check
 
       - name: Run Rust unit tests
         run: cargo test --manifest-path solver-wasm/Cargo.toml --lib
@@ -56,31 +70,18 @@ jobs:
             cargo install wasm-pack --locked
           fi
 
-      - name: Build browser WASM package
+      - name: Rebuild browser WASM package
         run: wasm-pack build solver-wasm --target web --out-dir ../target/wasm-web --release
 
-      - name: Publish generated WASM package to branch
+      - name: Verify checked-in WASM package
         run: |
-          cp target/wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
-          cp target/wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
-          cp target/wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
-          cp target/wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          cmp target/wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
+          cmp target/wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
+          cmp target/wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
+          cmp target/wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
 
       - name: Verify deadline and no-fallback contract
         run: node tools/verify-3x3-twophase-deadline.mjs
 
       - name: Validate repository diff
         run: git diff --check
-
-      - name: Commit generated deadline fix
-        shell: bash
-        run: |
-          if git diff --quiet; then
-            echo "No generated changes"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver-wasm/src/twophase_search.rs solver-wasm/src/lib.rs solver/wasmSolver.js solver/minmoveExactV2.js public/solver-wasm/solver_wasm.js public/solver-wasm/solver_wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm.d.ts
-          git commit -m "Enforce Two-Phase search deadlines without fallback"
-          git push origin HEAD:fix/3x3-twophase-deadline
