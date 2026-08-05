@@ -31,6 +31,7 @@ jobs:
       - name: Validate source
         run: |
           node --check solver/minmoveExactV2.js
+          node --check benchmark-minmove-exact-v2.mjs
           node --check benchmark-minmove-seed-frontier.mjs
 
       - name: Profile seed frontier coverage
