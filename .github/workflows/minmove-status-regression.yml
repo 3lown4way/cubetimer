@@ -34,8 +34,8 @@ jobs:
           node --check benchmark-minmove-exact-v2.mjs
           node --check benchmark-minmove-seed-frontier.mjs
 
-      - name: Profile seed frontier coverage
+      - name: Profile non-inverse seed frontier coverage
         run: node benchmark-minmove-seed-frontier.mjs
 
-      - name: Run exact minmove corpus
+      - name: Verify exact minmove never exposes literal inverse
         run: node benchmark-minmove-exact-v2.mjs
