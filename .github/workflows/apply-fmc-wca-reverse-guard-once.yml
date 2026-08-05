@@ -1,0 +1,67 @@
+name: Apply FMC WCA reverse guard once
+
+on:
+  push:
+    branches:
+      - fix/fmc-wca-reverse-derivation
+    paths:
+      - ".github/workflows/apply-fmc-wca-reverse-guard-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/fmc-wca-reverse-derivation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Apply WCA-style reverse derivation guard
+        run: python tools/apply-fmc-wca-reverse-guard.py
+
+      - name: Validate source contracts
+        run: |
+          node --check solver/fmcSolver.js
+          node --check benchmark-fmc-reverse-scramble-guard.mjs
+          grep -q 'FMC_REVERSE_PREFIX_DNF_LEN: usize = 4' solver-wasm/src/fmc_search.rs
+          grep -q 'FMC_REVERSE_CONTIGUOUS_DNF_LEN: usize = 6' solver-wasm/src/fmc_search.rs
+          grep -q 'is_disallowed_reverse_derived_solution' solver-wasm/src/fmc_search.rs
+          grep -q 'FMC_REVERSE_PREFIX_DNF_LEN = 4' solver/fmcSolver.js
+          git diff --check
+
+      - name: Format and test Rust
+        working-directory: solver-wasm
+        run: |
+          cargo fmt
+          cargo test --lib
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Rebuild browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+
+      - name: Verify FMC reverse derivation policy
+        run: node benchmark-fmc-reverse-scramble-guard.mjs
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Enforce WCA-style FMC reverse derivation limits"
+          git push origin HEAD:fix/fmc-wca-reverse-derivation
