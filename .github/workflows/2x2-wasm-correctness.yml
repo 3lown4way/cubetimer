@@ -3,26 +3,32 @@ name: 2x2 WASM correctness
 on:
   pull_request:
     paths:
+      - "solver/solverWorker.js"
       - "solver-wasm/src/ida.rs"
+      - "solver-wasm/src/lib.rs"
       - "solver-wasm/src/parser.rs"
       - "solver-wasm/src/state.rs"
       - "solver-wasm/src/tables.rs"
       - "solver-wasm/Cargo.toml"
+      - "tools/apply-2x2-safety-patch.mjs"
       - ".github/workflows/2x2-wasm-correctness.yml"
   push:
     branches:
       - main
       - "fix/2x2-wasm-correctness"
     paths:
+      - "solver/solverWorker.js"
       - "solver-wasm/src/ida.rs"
+      - "solver-wasm/src/lib.rs"
       - "solver-wasm/src/parser.rs"
       - "solver-wasm/src/state.rs"
       - "solver-wasm/src/tables.rs"
       - "solver-wasm/Cargo.toml"
+      - "tools/apply-2x2-safety-patch.mjs"
       - ".github/workflows/2x2-wasm-correctness.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rust-unit-tests:
@@ -31,14 +37,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: solver-wasm
 
+      - name: Apply 2x2 safety patch
+        run: node tools/apply-2x2-safety-patch.mjs
+
+      - name: Format Rust
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all
+
       - name: Run 2x2 and library unit tests
         run: cargo test --manifest-path solver-wasm/Cargo.toml --lib
+
+      - name: Validate worker JavaScript syntax
+        run: node --check solver/solverWorker.js
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit generated fixes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/2x2-wasm-correctness'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js solver-wasm/src/lib.rs solver-wasm/src/*.rs
+          git commit -m "Verify 2x2 WASM solutions and remove unsafe prune init"
+          git push origin HEAD:fix/2x2-wasm-correctness
