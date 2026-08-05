@@ -71,7 +71,7 @@ updated = updated.replace(blockPattern, () => {
   return replacement;
 });
 
-if (replaced !== 2 && !original.includes("solveWithFmcExtremeHybridLazy(scramble, onProgress")) {
+if (replaced !== 1 && !original.includes("solveWithFmcExtremeHybridLazy(scramble, onProgress")) {
   throw new Error(`FMC_WORKER_BLOCK_COUNT_${replaced}`);
 }
 
@@ -79,5 +79,5 @@ if (updated === original) {
   console.log("FMC extreme worker fix already applied");
 } else {
   await fs.writeFile(workerPath, updated, "utf8");
-  console.log(`Patched ${workerPath}; replaced ${replaced} FMC blocks`);
+  console.log(`Patched ${workerPath}; replaced ${replaced} FMC block`);
 }
