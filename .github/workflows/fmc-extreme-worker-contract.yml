@@ -1,0 +1,75 @@
+name: FMC extreme worker contract
+
+on:
+  push:
+    branches:
+      - main
+      - fix/fmc-extreme-target-miss
+    paths:
+      - "solver/solverWorker.js"
+      - "solver/fmcExtremeHybrid.js"
+      - "solver/fmcExtremeProfile.js"
+      - "solver/fmcSolver.js"
+      - "benchmark-fmc-extreme-contract.mjs"
+      - "tools/verify-fmc-extreme-worker-contract.mjs"
+      - "tools/apply-fmc-extreme-worker-fix.mjs"
+      - ".github/workflows/fmc-extreme-worker-contract.yml"
+  pull_request:
+    paths:
+      - "solver/solverWorker.js"
+      - "solver/fmcExtremeHybrid.js"
+      - "solver/fmcExtremeProfile.js"
+      - "solver/fmcSolver.js"
+      - "benchmark-fmc-extreme-contract.mjs"
+      - "tools/verify-fmc-extreme-worker-contract.mjs"
+      - ".github/workflows/fmc-extreme-worker-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply one-time worker patch
+        if: github.event_name == 'push' && github.ref_name == 'fix/fmc-extreme-target-miss'
+        shell: bash
+        run: |
+          if [[ -f tools/apply-fmc-extreme-worker-fix.mjs ]]; then
+            node tools/apply-fmc-extreme-worker-fix.mjs
+          fi
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check solver/solverWorker.js
+          node --check solver/fmcExtremeHybrid.js
+          node --check tools/verify-fmc-extreme-worker-contract.mjs
+
+      - name: Validate Extreme profile and worker routing
+        run: |
+          node benchmark-fmc-extreme-contract.mjs
+          node tools/verify-fmc-extreme-worker-contract.mjs
+
+      - name: Validate repository diff
+        run: git diff --check
+
+      - name: Commit generated worker fix
+        if: github.event_name == 'push' && github.ref_name == 'fix/fmc-extreme-target-miss'
+        shell: bash
+        run: |
+          if [[ ! -f tools/apply-fmc-extreme-worker-fix.mjs ]]; then
+            exit 0
+          fi
+          git rm tools/apply-fmc-extreme-worker-fix.mjs
+          if git diff --quiet && git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js
+          git commit -m "Fix timer Extreme FMC target miss handling"
+          git push
