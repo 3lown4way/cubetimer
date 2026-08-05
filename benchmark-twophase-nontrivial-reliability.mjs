@@ -51,7 +51,6 @@ function invertAlgorithm(algorithm) {
     .join(" ");
 }
 
-
 function splitAlgorithm(algorithm) {
   return String(algorithm || "").trim().split(/\s+/).filter(Boolean);
 }
@@ -100,15 +99,42 @@ function isInverseDerived(solution, inverse) {
   return contiguous >= 10 && contiguous * 2 >= sharedLength;
 }
 
+const regressionCases = [
+  {
+    name: "uploaded-local-commutation",
+    scramble: "F2 D F2 D2 B2 R2 D' B2 D R2 U2 B2 L R2 D F' R U2 B D U'",
+    rejectedSolution: "U D' B' U2 R' F D' L' R2 B2 U2 R2 D' B2 D R2 B2 D2 F2 D' F2",
+  },
+  {
+    name: "uploaded-long-inverse-block",
+    scramble: "F2 L2 F2 U' L2 B2 U B2 R2 F2 U2 F2 L D' R' U L B' L2 R D2",
+    rejectedSolution: "D2 R' L2 B L' U' R D L' F2 U2 D F2 U F2 L2 F2 D' F2 B2 D",
+  },
+];
+
+for (const regressionCase of regressionCases) {
+  const inverse = invertAlgorithm(regressionCase.scramble);
+  if (!isInverseDerived(regressionCase.rejectedSolution, inverse)) {
+    throw new Error(`TWOPHASE_REGRESSION_CLASSIFIER_MISS:${regressionCase.name}`);
+  }
+}
+
 const ready = await ensureTwophase333Ready();
 if (!ready) throw new Error("TWOPHASE_RELIABILITY_WASM_NOT_READY");
 
 const kpuzzle = await cube3x3x3.kpuzzle();
 const solved = kpuzzle.defaultPattern();
-const scrambles = generateScrambles(100, 20);
+const cases = [
+  ...regressionCases.map(({ name, scramble }) => ({ name, scramble })),
+  ...generateScrambles(100, 20).map((scramble, index) => ({
+    name: `generated-${String(index + 1).padStart(3, "0")}`,
+    scramble,
+  })),
+];
 const rows = [];
 
-for (const [index, scramble] of scrambles.entries()) {
+for (const [index, testCase] of cases.entries()) {
+  const { name, scramble } = testCase;
   const inverse = invertAlgorithm(scramble);
   const startedAt = performance.now();
   const result = await solveTwophaseAdaptive333(scramble, {
@@ -133,16 +159,17 @@ for (const [index, scramble] of scrambles.entries()) {
       .applyAlg(scramble)
       .applyAlg(solution)
       .experimentalIsSolved({ ignorePuzzleOrientation: false });
-  const nontrivial = !isInverseDerived(solution, inverse);
+  const inverseDerived = isInverseDerived(solution, inverse);
   rows.push({
     index,
-    ok: solvedState && nontrivial,
+    name,
+    ok: solvedState && !inverseDerived,
     elapsedMs,
     moveCount: result?.moveCount ?? null,
     frontierLimit: result?.frontierLimit ?? null,
     frontierExpansionCount: result?.frontierExpansionCount ?? null,
     reason: result?.reason || null,
-    inverseDerived: isInverseDerived(solution, inverse),
+    inverseDerived,
   });
 }
 
@@ -153,8 +180,10 @@ const averageElapsedMs = rows.reduce((sum, row) => sum + row.elapsedMs, 0) / row
 
 console.log(`TWOPHASE_NONTRIVIAL_RELIABILITY=${JSON.stringify({
   total: rows.length,
+  regressionCases: regressionCases.length,
   successes: rows.length - failures.length,
   failures,
+  inverseDerivedResults: rows.filter((row) => row.inverseDerived).length,
   expandedCases: expanded.length,
   averageElapsedMs,
   maxElapsedMs,
