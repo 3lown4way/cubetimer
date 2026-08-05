@@ -65,6 +65,9 @@ jobs:
           grep -q 'solverVersion,' main.js
           grep -q 'TWOPHASE_333_V1_MAX_FRONTIERS = 12' solver/solverWorker.js
           grep -q 'TWOPHASE_333_V2_MAX_FRONTIERS = 2' solver/solverWorker.js
+          grep -q 'excludedSolution' solver/solverWorker.js
+          grep -q 'TWOPHASE_STRICT_EXCLUSION_VIOLATION' solver/solverWorker.js
+          ! grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
           grep -q 'import("./roux3x3v2.js")' solver/solverWorker.js
           grep -q 'import("./rouxExactTableCacheV2.js")' solver/rouxExactTablesV2.js
           grep -q 'globalThis.indexedDB' solver/rouxExactTableCacheV2.js
@@ -94,7 +97,6 @@ jobs:
           grep -q 'benchmarkNoFallback: true' benchmark/benchmark.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark-enhanced.js
           grep -q 'enableStyleFallback: false' benchmark/benchmark.js
-          grep -q 'TWOPHASE_TRIVIAL_INVERSE_REJECTED' solver/solverWorker.js
           grep -q 'id: "hybrid-adaptive-120s-v1"' solver/fmcExtremeProfile.js
           grep -q 'defaultTimeBudgetMs: 120000' solver/fmcExtremeProfile.js
           grep -q 'searchTargetMoveCount: 18' solver/fmcExtremeProfile.js

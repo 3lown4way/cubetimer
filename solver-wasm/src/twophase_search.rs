@@ -132,6 +132,10 @@ pub struct TwophasePrepareOptions {
 pub struct TwophaseSearchOptions {
     #[serde(rename = "incumbentLength")]
     pub incumbent_length: Option<u8>,
+    #[serde(rename = "excludedSolution", default)]
+    pub excluded_solution: Option<String>,
+    #[serde(rename = "strictIncumbent", default)]
+    pub strict_incumbent: bool,
     #[serde(rename = "phase2MaxDepth", default = "default_phase2_max_depth")]
     pub phase2_max_depth: u8,
     #[serde(rename = "phase2NodeLimit", default)]
@@ -713,6 +717,7 @@ fn run_phase2_pass(
     best_phase1_depth: &mut u8,
     best_phase2_depth: &mut u8,
     phase2_nodes: &mut u64,
+    excluded_path: Option<&[u8]>,
 ) {
     for candidate in candidates {
         let phase1_depth = candidate.moves.len();
@@ -756,6 +761,9 @@ fn run_phase2_pass(
             full_path.push(tables.phase2_move_indices[phase2_move as usize]);
         }
         let total = full_path.len();
+        if excluded_path.map_or(false, |excluded| full_path.as_slice() == excluded) {
+            continue;
+        }
         if best_found_total.map_or(true, |best_total| total < best_total) {
             *best_phase1_depth = candidate.moves.len() as u8;
             *best_phase2_depth = phase2.depth;
@@ -1069,6 +1077,10 @@ impl TwophaseSession {
         let mut best_phase2_depth = 0u8;
         let mut best_found_total: Option<usize> = None;
         let mut phase2_nodes = 0u64;
+        let excluded_path = options
+            .excluded_solution
+            .as_deref()
+            .and_then(|solution| parse_scramble(solution, &tables.move_data).ok());
 
         run_phase2_pass(
             &self.candidates,
@@ -1080,8 +1092,9 @@ impl TwophaseSession {
             &mut best_phase1_depth,
             &mut best_phase2_depth,
             &mut phase2_nodes,
+            excluded_path.as_deref(),
         );
-        if best_found_total.is_none() {
+        if best_found_total.is_none() && !options.strict_incumbent {
             run_phase2_pass(
                 &self.candidates,
                 tables,
@@ -1092,6 +1105,7 @@ impl TwophaseSession {
                 &mut best_phase1_depth,
                 &mut best_phase2_depth,
                 &mut phase2_nodes,
+                excluded_path.as_deref(),
             );
         }
 
@@ -1121,7 +1135,11 @@ impl TwophaseSession {
             phase1_depth: self.phase1_min_depth,
             phase2_depth: 0,
             candidate_count: self.candidates.len(),
-            reason: "PHASE2_NOT_FOUND".into(),
+            reason: if options.strict_incumbent && options.incumbent_length.is_some() {
+                "TWOPHASE_NO_IMPROVING_SOLUTION".into()
+            } else {
+                "PHASE2_NOT_FOUND".into()
+            },
         }
     }
 }

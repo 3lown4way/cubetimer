@@ -21,12 +21,16 @@ for (const source of [enhanced, legacy]) {
 }
 for (const token of [
   "TWOPHASE_WASM_FAILED_NO_FALLBACK",
-  "TWOPHASE_TRIVIAL_INVERSE_REJECTED",
+  "TWOPHASE_STRICT_EXCLUSION_VIOLATION",
+  "excludedSolution",
   'import("./minmoveExactV2.js")',
   "!benchmarkNoFallback && mode === \"strict\"",
   "benchmarkNoFallback || mode === \"zb\"",
 ]) {
   if (!worker.includes(token)) throw new Error(`worker no-fallback token missing: ${token}`);
+}
+if (worker.includes("TWOPHASE_TRIVIAL_INVERSE_REJECTED")) {
+  throw new Error("worker still rejects trivial inverse after search completion");
 }
 for (const token of [
   'reason: "MINMOVE_NOT_PROVEN"',

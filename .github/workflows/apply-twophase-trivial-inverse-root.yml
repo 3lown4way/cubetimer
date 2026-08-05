@@ -1,0 +1,54 @@
+name: Verify two-phase nontrivial reliability
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "solver-wasm/src/twophase_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/solverWorker.js"
+      - "benchmark/benchmark-fixed.js"
+      - "benchmark-twophase-nontrivial-reliability.mjs"
+      - "public/solver-wasm/**"
+      - ".github/workflows/apply-twophase-trivial-inverse-root.yml"
+  push:
+    branches:
+      - fix/twophase-trivial-inverse-root
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Check JavaScript
+        run: |
+          node --check solver/wasmSolver.js
+          node --check solver/solverWorker.js
+          node --check benchmark-twophase-nontrivial-reliability.mjs
+      - name: Check Rust formatting and tests
+        working-directory: solver-wasm
+        run: |
+          cargo fmt --check
+          cargo test --lib
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Verify committed browser WASM is reproducible
+        working-directory: solver-wasm
+        run: |
+          wasm-pack build --release --target web --out-dir ../public/solver-wasm
+          git diff --exit-code -- ../public/solver-wasm
+      - name: Verify 100-case nontrivial reliability
+        run: node benchmark-twophase-nontrivial-reliability.mjs
