@@ -1,0 +1,83 @@
+name: Build twophase v3
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: twophase-v3-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
+      - name: Apply CO-EO pruning source changes
+        run: node tools/apply-twophase-co-eo-pruning.mjs
+
+      - name: Validate and test Rust source
+        run: |
+          node --check tools/apply-twophase-co-eo-pruning.mjs
+          node --check solver/wasmSolver.js
+          cargo fmt --manifest-path solver-wasm/Cargo.toml --check
+          cargo test --manifest-path solver-wasm/Cargo.toml --lib
+
+      - name: Build twophase v3 table bundle
+        run: cargo run --release --manifest-path solver-wasm/Cargo.toml --bin build_twophase_tables
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+
+      - name: Validate generated v3 path
+        run: |
+          test -s public/solver-wasm/twophase/twophase-333-v3.bin
+          node --check solver/wasmSolver.js
+          node benchmark-wasm-readiness-contract.mjs
+
+      - name: Commit source and generated assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            solver-wasm/src/twophase_builder.rs \
+            solver-wasm/src/twophase_bundle.rs \
+            solver-wasm/src/twophase_search.rs \
+            solver-wasm/src/build_twophase_tables_main.rs \
+            solver/wasmSolver.js \
+            public/solver-wasm/solver_wasm.js \
+            public/solver-wasm/solver_wasm.d.ts \
+            public/solver-wasm/solver_wasm_bg.wasm \
+            public/solver-wasm/solver_wasm_bg.wasm.d.ts \
+            public/solver-wasm/twophase/twophase-333-v3.bin
+          if git diff --cached --quiet; then
+            echo "Twophase v3 assets already current"
+            exit 0
+          fi
+          git commit -m "Add CO-EO pruning to exact minmove"
+          git push origin "HEAD:${TARGET_BRANCH}"
