@@ -1,13 +1,37 @@
 name: 3x3 search deadline
 
 on:
+  pull_request:
+    paths:
+      - "solver-wasm/src/minmove_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/solverWorker.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-search-deadline.mjs"
+      - ".github/workflows/3x3-search-deadline.yml"
   push:
     branches:
+      - main
       - "fix/3x3-search-deadline"
+    paths:
+      - "solver-wasm/src/minmove_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/solverWorker.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-search-deadline.mjs"
+      - ".github/workflows/3x3-search-deadline.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: 3x3-search-deadline-${{ github.ref }}
@@ -21,9 +45,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply one-time source patch
-        run: node tools/apply-3x3-search-deadline.mjs
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,8 +56,8 @@ jobs:
         with:
           workspaces: solver-wasm
 
-      - name: Format Rust
-        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all -- --check
 
       - name: Run Rust unit tests
         run: cargo test --manifest-path solver-wasm/Cargo.toml --lib
@@ -53,38 +74,18 @@ jobs:
             cargo install wasm-pack --locked
           fi
 
-      - name: Build browser WASM package
+      - name: Rebuild browser WASM package
         run: wasm-pack build solver-wasm --target web --out-dir ../target/wasm-web --release
 
-      - name: Publish generated WASM package to branch
+      - name: Verify checked-in WASM package
         run: |
-          cp target/wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
-          cp target/wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
-          cp target/wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
-          cp target/wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
+          cmp target/wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
+          cmp target/wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
+          cmp target/wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
+          cmp target/wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
 
       - name: Verify deadline contract
         run: node tools/verify-3x3-search-deadline.mjs
 
       - name: Validate repository diff
         run: git diff --check
-
-      - name: Commit generated deadline fix
-        run: |
-          git add \
-            solver-wasm/src/minmove_search.rs \
-            solver-wasm/src/lib.rs \
-            solver/wasmSolver.js \
-            solver/solverWorker.js \
-            public/solver-wasm/solver_wasm.js \
-            public/solver-wasm/solver_wasm.d.ts \
-            public/solver-wasm/solver_wasm_bg.wasm \
-            public/solver-wasm/solver_wasm_bg.wasm.d.ts
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Enforce 3x3 minmove WASM search deadline"
-          git push
