@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply short inverse exemption
-        run: python tools/apply-short-inverse-exemption.py
+        run: |
+          python tools/apply-short-inverse-exemption.py
+          python tools/fix-short-inverse-benchmark-markers.py
       - name: Validate syntax and regressions
         run: |
           node --check solver/inverseSolutionPolicy.js
