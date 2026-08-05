@@ -9,7 +9,31 @@ import {
   verifyFmcSolutionWasm,
 } from "./solver/wasmSolver.js";
 
+function splitMoves(sequence) {
+  return String(sequence || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function invertMove(token) {
+  const normalized = String(token || "").trim();
+  if (!/^[URFDLB](2|'|2')?$/.test(normalized)) return "";
+  if (normalized.endsWith("2") || normalized.endsWith("2'")) return `${normalized[0]}2`;
+  if (normalized.endsWith("'")) return normalized.slice(0, -1);
+  return `${normalized}'`;
+}
+
+function invertAlgorithm(sequence) {
+  const moves = splitMoves(sequence);
+  const inverse = [];
+  for (let index = moves.length - 1; index >= 0; index -= 1) {
+    const move = invertMove(moves[index]);
+    if (!move) return "";
+    inverse.push(move);
+  }
+  return inverse.join(" ");
+}
+
 const scramble = "F R2 U' B2 D2 F2 U R2 U2 L2 D' B' R' U2 L F D R2 U'";
+const literalInverse = invertAlgorithm(scramble);
 const incumbentLength = 19;
 const profiles = [
   { maxPhase1Solutions: 96, phase1MaxDepth: 15, phase1NodeLimit: 2_000_000, phase2NodeLimit: 12_000_000 },
@@ -57,6 +81,7 @@ for (const profile of profiles) {
       phase2Nodes: searched?.phase2Nodes ?? null,
       elapsedMs,
       solved: verification?.solved === true,
+      literalInverse: solution === literalInverse,
       solution,
     };
     rows.push(row);
@@ -66,12 +91,14 @@ for (const profile of profiles) {
   }
 }
 
-const improving = rows.filter((row) => row.ok && row.solved && row.moveCount < incumbentLength);
+const improving = rows.filter((row) => row.ok && row.solved && !row.literalInverse && row.moveCount < incumbentLength);
+assert.ok(improving.length > 0, "seed frontier found no non-inverse improvement");
 console.log(JSON.stringify({
   type: "seed-summary",
   profiles: rows.length,
   firstImprovingFrontier: improving[0]?.maxPhase1Solutions ?? null,
   bestMoveCount: improving.length ? Math.min(...improving.map((row) => row.moveCount)) : null,
+  literalInverseResults: rows.filter((row) => row.literalInverse).length,
 }));
 
 const proofScramble = "U2 L' F' R U' F2 L D L2 F' B R2 F' U2 R2 F' U2 F U'";
