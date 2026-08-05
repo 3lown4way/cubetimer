@@ -1,0 +1,93 @@
+name: 2x2 WASM correctness
+
+on:
+  pull_request:
+    paths:
+      - "solver/solverWorker.js"
+      - "solver/solver2x2.js"
+      - "solver-wasm/src/generated_2x2_moves.rs"
+      - "solver-wasm/src/ida.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver-wasm/src/parser.rs"
+      - "solver-wasm/src/state.rs"
+      - "solver-wasm/src/tables.rs"
+      - "solver-wasm/Cargo.toml"
+      - "tools/export-2x2-rust-moves.mjs"
+      - "tools/test-2x2-wasm-e2e.mjs"
+      - ".github/workflows/2x2-wasm-correctness.yml"
+  push:
+    branches:
+      - main
+      - "fix/2x2-wasm-correctness"
+    paths:
+      - "solver/solverWorker.js"
+      - "solver/solver2x2.js"
+      - "solver-wasm/src/generated_2x2_moves.rs"
+      - "solver-wasm/src/ida.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver-wasm/src/parser.rs"
+      - "solver-wasm/src/state.rs"
+      - "solver-wasm/src/tables.rs"
+      - "solver-wasm/Cargo.toml"
+      - "tools/export-2x2-rust-moves.mjs"
+      - "tools/test-2x2-wasm-e2e.mjs"
+      - ".github/workflows/2x2-wasm-correctness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  correctness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: solver-wasm
+
+      - name: Validate generated 2x2 move maps
+        run: |
+          node tools/export-2x2-rust-moves.mjs
+          git diff --exit-code -- solver-wasm/src/generated_2x2_moves.rs
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all -- --check
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path solver-wasm/Cargo.toml --lib
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check solver/solverWorker.js
+          node --check solver/solver2x2.js
+          node --check tools/test-2x2-wasm-e2e.mjs
+
+      - name: Install wasm-pack
+        shell: bash
+        run: |
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --locked
+          fi
+
+      - name: Build Node WASM package
+        run: wasm-pack build solver-wasm --target nodejs --out-dir ../target/wasm-node --release
+
+      - name: Run deterministic end-to-end validation
+        env:
+          WASM_CASES: "10000"
+          JS_CASES: "300"
+          SCRAMBLE_LENGTH: "11"
+        run: node tools/test-2x2-wasm-e2e.mjs
+
+      - name: Validate repository diff
+        run: git diff --check

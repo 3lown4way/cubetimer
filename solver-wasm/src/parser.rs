@@ -1,20 +1,20 @@
-use crate::tables::NMOVES;
-
-// Parser that accepts WCA-style 2x2 tokens (all faces) and ignores leading "x:" style prefixes sometimes used in UWR/scramble.
+// The legacy 2x2 WASM search currently uses the U/F/R generator set.
+// Reject unsupported face turns explicitly so a caller can fall back to the
+// full 18-move JavaScript solver instead of silently solving a different state.
 pub fn parse_scramble(scramble: &str) -> Option<Vec<usize>> {
-    let mut res = Vec::new();
+    let mut moves = Vec::new();
     for token in scramble.split_whitespace() {
-        let t = token.trim();
-        if t.is_empty() {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
             continue;
         }
-        // Ignore prefixes like "x:" if present
-        let core = if let Some(pos) = t.find(':') {
-            &t[pos + 1..]
+        // Accept optional prefixes such as "333:" used by some import formats.
+        let core = if let Some(pos) = trimmed.find(':') {
+            &trimmed[pos + 1..]
         } else {
-            t
+            trimmed
         };
-        let idx = match core {
+        let move_index = match core {
             "U" => 0,
             "U2" => 1,
             "U'" => 2,
@@ -24,29 +24,51 @@ pub fn parse_scramble(scramble: &str) -> Option<Vec<usize>> {
             "R" => 6,
             "R2" => 7,
             "R'" => 8,
-            "D" => 9,
-            "D2" => 10,
-            "D'" => 11,
-            "L" => 12,
-            "L2" => 13,
-            "L'" => 14,
-            "B" => 15,
-            "B2" => 16,
-            "B'" => 17,
+            // D/L/B are valid WCA moves but are not represented by this
+            // reduced Rust move table. Returning None is intentional: the
+            // worker must use the complete JS fallback for these scrambles.
             _ => return None,
         };
-        res.push(idx);
+        moves.push(move_index);
     }
-    Some(res)
+    Some(moves)
 }
 
 pub fn apply_scramble_to_solved(moves: &[usize]) -> crate::state::State {
     let mut state = crate::state::State::solved();
-    for &mv in moves {
-        if mv >= NMOVES {
-            continue;
-        }
-        state = state.apply_move(mv);
+    for &move_index in moves {
+        debug_assert!(move_index < crate::tables::NMOVES);
+        state = state.apply_move(move_index);
     }
     state
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_generator_moves() {
+        assert_eq!(
+            parse_scramble("U F2 R'"),
+            Some(vec![0usize, 4usize, 8usize])
+        );
+    }
+
+    #[test]
+    fn rejects_faces_not_present_in_reduced_move_table() {
+        for scramble in ["D", "L2", "B'", "U D R"] {
+            assert_eq!(parse_scramble(scramble), None);
+        }
+    }
+
+    #[test]
+    fn never_silently_skips_a_parsed_move() {
+        let moves = parse_scramble("U F R2").expect("supported scramble");
+        let expected = crate::state::State::solved()
+            .apply_move(0)
+            .apply_move(3)
+            .apply_move(7);
+        assert_eq!(apply_scramble_to_solved(&moves), expected);
+    }
 }

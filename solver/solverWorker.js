@@ -262,6 +262,20 @@ function countAlgorithmMoves(sequence) {
   return splitAlgorithmTokens(sequence).length;
 }
 
+async function verify2x2Solution(scramble, solution) {
+  try {
+    const { getDefaultPattern } = await import("./context.js");
+    const solvedPattern = await getDefaultPattern("222");
+    const scrambledPattern = scramble ? solvedPattern.applyAlg(scramble) : solvedPattern;
+    const afterSolution = solution ? scrambledPattern.applyAlg(solution) : scrambledPattern;
+    return typeof afterSolution.experimentalIsSolved === "function"
+      ? !!afterSolution.experimentalIsSolved({ ignorePuzzleOrientation: false })
+      : JSON.stringify(afterSolution.patternData) === JSON.stringify(solvedPattern.patternData);
+  } catch (_) {
+    return false;
+  }
+}
+
 async function verify3x3Solution(scramble, solution) {
   try {
     const { getDefaultPattern } = await import("./context.js");
@@ -347,7 +361,7 @@ function withTimeout(promise, timeoutMs) {
 
 async function solveWithInternal2x2(scramble) {
   const wasmResult = await solveWithWasmIfAvailableLazy(scramble, "222");
-  if (wasmResult?.ok) {
+  if (wasmResult?.ok && (await verify2x2Solution(scramble, wasmResult.solution))) {
     return {
       ok: true,
       solution: wasmResult.solution,
@@ -358,13 +372,20 @@ async function solveWithInternal2x2(scramble) {
     };
   }
 
+  const fallbackReason = wasmResult?.ok
+    ? "WASM_2X2_INVALID_SOLUTION"
+    : String(wasmResult?.reason || "WASM_2X2_UNAVAILABLE");
+
   if (!solver2x2ModulesPromise) {
     solver2x2ModulesPromise = import("./solver2x2.js");
   }
   const { solve2x2Scramble } = await solver2x2ModulesPromise;
   const result = await solve2x2Scramble(scramble);
   if (!result) {
-    return { ok: false, reason: "NO_SOLUTION" };
+    return { ok: false, reason: "NO_SOLUTION", fallbackReason };
+  }
+  if (!(await verify2x2Solution(scramble, result.solution))) {
+    return { ok: false, reason: "JS_2X2_INVALID_SOLUTION", fallbackReason };
   }
   return {
     ok: true,
@@ -372,6 +393,8 @@ async function solveWithInternal2x2(scramble) {
     moveCount: result.moveCount,
     nodes: result.nodes ?? 0,
     bound: result.bound ?? 0,
+    source: "JS_2X2_FALLBACK",
+    fallbackReason,
   };
 }
 
