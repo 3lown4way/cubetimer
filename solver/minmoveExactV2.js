@@ -29,6 +29,10 @@ function splitMoves(sequence) {
     .filter(Boolean);
 }
 
+function normalizeAlgorithm(sequence) {
+  return splitMoves(sequence).join(" ");
+}
+
 function invertMove(token) {
   const normalized = String(token || "").trim();
   if (!/^[URFDLB](2|'|2')?$/.test(normalized)) return "";
@@ -84,9 +88,15 @@ async function verifySolution(scramble, solution) {
   }
 }
 
-async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
+async function findTwoPhaseSeed(
+  scramble,
+  incumbentLength,
+  seedConfigs,
+  excludedSolution = "",
+) {
   let best = null;
   let totalNodes = 0;
+  const normalizedExcluded = normalizeAlgorithm(excludedSolution);
 
   for (const config of seedConfigs) {
     let searchId = null;
@@ -99,16 +109,16 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
       if (!prepared?.ok || !Number.isFinite(prepared.searchId)) continue;
       searchId = prepared.searchId;
       const searched = await searchTwophase333(searchId, {
-        incumbentLength,
+        incumbentLength: Number.isFinite(incumbentLength) ? incumbentLength + 1 : undefined,
         phase2MaxDepth: 20,
         phase2NodeLimit: config.phase2NodeLimit,
       });
       totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
       if (!searched?.ok || typeof searched.solution !== "string") continue;
 
-      const solution = searched.solution.trim();
+      const solution = normalizeAlgorithm(searched.solution);
       const moveCount = splitMoves(solution).length;
-      if (!solution || moveCount <= 0) continue;
+      if (!solution || moveCount <= 0 || solution === normalizedExcluded) continue;
       if (!best || moveCount < best.moveCount) {
         best = {
           ...searched,
@@ -133,19 +143,27 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
 }
 
 function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
+  const normalizedCandidate = normalizeAlgorithm(candidateSolution);
+  const normalizedCandidateMoveCount = normalizedCandidate && Number.isFinite(candidateMoveCount)
+    ? Math.max(0, Math.floor(candidateMoveCount))
+    : null;
   return {
     ok: false,
-    reason: "MINMOVE_NOT_PROVEN",
+    reason: String(meta.reason || "MINMOVE_NOT_PROVEN"),
     solution: "",
     moveCount: 0,
-    candidateSolution,
-    candidateMoveCount,
+    candidateSolution: normalizedCandidate,
+    candidateMoveCount: normalizedCandidateMoveCount,
     nodes: Number.isFinite(meta.nodes) ? meta.nodes : 0,
-    bound: Number.isFinite(meta.bound) ? meta.bound : Math.max(0, candidateMoveCount - 1),
+    bound: Number.isFinite(meta.bound)
+      ? meta.bound
+      : normalizedCandidateMoveCount === null
+        ? null
+        : Math.max(0, normalizedCandidateMoveCount - 1),
     source: "MINMOVE_333_EXACT_TWOPHASE_V2",
     metric: "HTM",
     optimalityProven: false,
-    upperBoundLength: candidateMoveCount,
+    upperBoundLength: normalizedCandidateMoveCount,
     proofSource: "exact_twophase_incomplete",
     fallbackReason: null,
     interruptedReason: meta.interruptedReason ? String(meta.interruptedReason) : null,
@@ -154,9 +172,9 @@ function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
 }
 
 export async function solveMinmoveExactV2(scramble, onProgress = null, options = {}) {
-  const normalizedScramble = splitMoves(scramble).join(" ");
-  const inverseScramble = invertAlgorithm(normalizedScramble);
-  if (!normalizedScramble || !inverseScramble) {
+  const normalizedScramble = normalizeAlgorithm(scramble);
+  const literalInverse = invertAlgorithm(normalizedScramble);
+  if (!normalizedScramble || !literalInverse) {
     return { ok: false, reason: "MINMOVE_BAD_SCRAMBLE" };
   }
 
@@ -175,42 +193,74 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const ready = await ensureTwophase333Ready().catch(() => null);
   if (!ready) return { ok: false, reason: "MINMOVE_TWOPHASE_UNAVAILABLE" };
 
-  let incumbentSolution = inverseScramble;
-  let incumbentLength = splitMoves(incumbentSolution).length;
-  let incumbentSource = "inverse_scramble";
+  // The literal inverse is only a numeric search ceiling. It is never stored as
+  // a candidate or incumbent and can never be returned to the caller.
+  const inverseLength = splitMoves(literalInverse).length;
+  let incumbentSolution = "";
+  let incumbentLength = inverseLength;
+  let incumbentSource = "";
   let totalNodes = 0;
 
   emitProgress(onProgress, {
     type: "upper_bound_start",
     stageName: "Exact minmove v2 seed",
-    upperBoundLength: incumbentLength,
+    upperBoundLength: inverseLength,
+    upperBoundSource: "inverse_length_ceiling_only",
   });
 
   for (const direction of [
-    { scramble: normalizedScramble, invert: false, source: "twophase_seed" },
-    { scramble: inverseScramble, invert: true, source: "inverse_twophase_seed" },
+    {
+      scramble: normalizedScramble,
+      invert: false,
+      source: "twophase_seed",
+      excludedSolution: literalInverse,
+    },
+    {
+      scramble: literalInverse,
+      invert: true,
+      source: "inverse_twophase_seed",
+      excludedSolution: normalizedScramble,
+    },
   ]) {
     if (Date.now() >= deadlineTs) break;
-    const seed = await findTwoPhaseSeed(direction.scramble, incumbentLength, seedConfigs);
+    const seed = await findTwoPhaseSeed(
+      direction.scramble,
+      incumbentLength,
+      seedConfigs,
+      direction.excludedSolution,
+    );
     if (!seed?.ok || typeof seed.solution !== "string") continue;
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
-    const candidateSolution = direction.invert ? invertAlgorithm(seed.solution) : seed.solution.trim();
+
+    const candidateSolution = normalizeAlgorithm(
+      direction.invert ? invertAlgorithm(seed.solution) : seed.solution,
+    );
     const candidateLength = splitMoves(candidateSolution).length;
-    if (!candidateSolution || candidateLength >= incumbentLength) continue;
+    if (
+      !candidateSolution
+      || candidateSolution === literalInverse
+      || candidateLength <= 0
+      || candidateLength > incumbentLength
+      || (incumbentSolution && candidateLength >= incumbentLength)
+    ) {
+      continue;
+    }
     if (!(await verifySolution(normalizedScramble, candidateSolution))) continue;
+
     incumbentSolution = candidateSolution;
     incumbentLength = candidateLength;
     incumbentSource = direction.source;
   }
 
-  if (!(await verifySolution(normalizedScramble, incumbentSolution))) {
+  if (incumbentSolution && !(await verifySolution(normalizedScramble, incumbentSolution))) {
     return { ok: false, reason: "MINMOVE_SEED_INVALID" };
   }
 
   emitProgress(onProgress, {
     type: "upper_bound_done",
     upperBoundLength: incumbentLength,
-    upperBoundSource: incumbentSource,
+    upperBoundSource: incumbentSource || "inverse_length_ceiling_only",
+    hasNontrivialCandidate: Boolean(incumbentSolution),
   });
   emitProgress(onProgress, {
     type: "exact_search_start",
@@ -246,10 +296,11 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       const exactState = normalizeExactSearchState(searched);
 
       if (exactState.found && typeof searched.solution === "string") {
-        const candidateSolution = searched.solution.trim();
+        const candidateSolution = normalizeAlgorithm(searched.solution);
         const candidateLength = splitMoves(candidateSolution).length;
         if (
           candidateSolution
+          && candidateSolution !== literalInverse
           && candidateLength <= targetBound
           && candidateLength < incumbentLength
           && await verifySolution(normalizedScramble, candidateSolution)
@@ -266,7 +317,12 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
           });
           break;
         }
-        return { ok: false, reason: "MINMOVE_EXACT_RESULT_INVALID" };
+        return {
+          ok: false,
+          reason: candidateSolution === literalInverse
+            ? "MINMOVE_TRIVIAL_INVERSE_REJECTED"
+            : "MINMOVE_EXACT_RESULT_INVALID",
+        };
       }
 
       if (exactState.exhausted) {
@@ -283,6 +339,23 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     if (improved) continue;
     if (exhausted) {
       const elapsedMs = Date.now() - startedAt;
+      if (!incumbentSolution) {
+        return notProvenResult("", null, {
+          reason: "MINMOVE_NONTRIVIAL_RESULT_NOT_FOUND",
+          nodes: totalNodes,
+          bound: targetBound,
+          interruptedReason: "LITERAL_INVERSE_FORBIDDEN",
+          elapsedMs,
+        });
+      }
+      if (incumbentSolution === literalInverse) {
+        return {
+          ok: false,
+          reason: "MINMOVE_TRIVIAL_INVERSE_REJECTED",
+          optimalityProven: false,
+        };
+      }
+
       emitProgress(onProgress, {
         type: "optimality_proven",
         moveCount: incumbentLength,
@@ -306,7 +379,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       };
     }
 
-    return notProvenResult(incumbentSolution, incumbentLength, {
+    return notProvenResult(incumbentSolution, incumbentSolution ? incumbentLength : null, {
       nodes: totalNodes,
       bound: targetBound,
       interruptedReason: lastReason || "MINMOVE_EXACT_SEARCH_LIMIT",
@@ -314,7 +387,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     });
   }
 
-  return notProvenResult(incumbentSolution, incumbentLength, {
+  return notProvenResult(incumbentSolution, incumbentSolution ? incumbentLength : null, {
     nodes: totalNodes,
     bound: Math.max(0, incumbentLength - 1),
     interruptedReason: "MINMOVE_EXACT_TIMEOUT",
