@@ -504,7 +504,7 @@ export async function solveTwophaseAdaptive333(scramble, options = {}) {
       preparedCandidateCount: prepared.candidateCount ?? null,
     };
     if (lastResult.ok) return lastResult;
-    if (!["TWOPHASE_NO_IMPROVING_SOLUTION", "PHASE2_NOT_FOUND"].includes(lastResult.reason)) break;
+    if (!["TWOPHASE_NO_IMPROVING_SOLUTION", "TWOPHASE_INVERSE_DERIVED_ONLY", "PHASE2_NOT_FOUND"].includes(lastResult.reason)) break;
   }
 
   return lastResult;

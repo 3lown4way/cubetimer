@@ -51,6 +51,55 @@ function invertAlgorithm(algorithm) {
     .join(" ");
 }
 
+
+function splitAlgorithm(algorithm) {
+  return String(algorithm || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function longestCommonSubsequenceLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      current[index + 1] = leftMove === right[index]
+        ? previous[index] + 1
+        : Math.max(current[index], previous[index + 1]);
+    }
+    [previous, current] = [current, previous];
+  }
+  return previous[right.length];
+}
+
+function longestCommonContiguousLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  let best = 0;
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      if (leftMove === right[index]) {
+        current[index + 1] = previous[index] + 1;
+        best = Math.max(best, current[index + 1]);
+      }
+    }
+    [previous, current] = [current, previous];
+  }
+  return best;
+}
+
+function isInverseDerived(solution, inverse) {
+  const path = splitAlgorithm(solution);
+  const excluded = splitAlgorithm(inverse);
+  if (path.join(" ") === excluded.join(" ")) return true;
+  const sharedLength = Math.min(path.length, excluded.length);
+  if (sharedLength < 10) return false;
+  const lcs = longestCommonSubsequenceLength(path, excluded);
+  if (lcs + 2 >= sharedLength && lcs * 100 >= sharedLength * 85) return true;
+  const contiguous = longestCommonContiguousLength(path, excluded);
+  return contiguous >= 10 && contiguous * 2 >= sharedLength;
+}
+
 const ready = await ensureTwophase333Ready();
 if (!ready) throw new Error("TWOPHASE_RELIABILITY_WASM_NOT_READY");
 
@@ -63,7 +112,7 @@ for (const [index, scramble] of scrambles.entries()) {
   const inverse = invertAlgorithm(scramble);
   const startedAt = performance.now();
   const result = await solveTwophaseAdaptive333(scramble, {
-    frontierLimits: [2, 12, 48],
+    frontierLimits: [2, 12, 48, 192, 768],
     prepareOptions: {
       phase1MaxDepth: 13,
       phase1NodeLimit: 0,
@@ -84,7 +133,7 @@ for (const [index, scramble] of scrambles.entries()) {
       .applyAlg(scramble)
       .applyAlg(solution)
       .experimentalIsSolved({ ignorePuzzleOrientation: false });
-  const nontrivial = solution !== inverse;
+  const nontrivial = !isInverseDerived(solution, inverse);
   rows.push({
     index,
     ok: solvedState && nontrivial,
@@ -93,6 +142,7 @@ for (const [index, scramble] of scrambles.entries()) {
     frontierLimit: result?.frontierLimit ?? null,
     frontierExpansionCount: result?.frontierExpansionCount ?? null,
     reason: result?.reason || null,
+    inverseDerived: isInverseDerived(solution, inverse),
   });
 }
 

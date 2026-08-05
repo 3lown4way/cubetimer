@@ -707,6 +707,58 @@ pub(crate) fn solve_phase2(
     }
 }
 
+fn longest_common_subsequence_len(a: &[u8], b: &[u8]) -> usize {
+    let mut previous = vec![0usize; b.len() + 1];
+    let mut current = vec![0usize; b.len() + 1];
+    for &left in a {
+        current.fill(0);
+        for (index, &right) in b.iter().enumerate() {
+            current[index + 1] = if left == right {
+                previous[index] + 1
+            } else {
+                current[index].max(previous[index + 1])
+            };
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[b.len()]
+}
+
+fn longest_common_contiguous_len(a: &[u8], b: &[u8]) -> usize {
+    let mut previous = vec![0usize; b.len() + 1];
+    let mut current = vec![0usize; b.len() + 1];
+    let mut best = 0usize;
+    for &left in a {
+        current.fill(0);
+        for (index, &right) in b.iter().enumerate() {
+            if left == right {
+                current[index + 1] = previous[index] + 1;
+                best = best.max(current[index + 1]);
+            }
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    best
+}
+
+fn is_inverse_derived_path(path: &[u8], excluded: &[u8]) -> bool {
+    if path == excluded {
+        return true;
+    }
+    let shared_length = path.len().min(excluded.len());
+    if shared_length < 10 {
+        return false;
+    }
+
+    let lcs = longest_common_subsequence_len(path, excluded);
+    if lcs.saturating_add(2) >= shared_length && lcs * 100 >= shared_length * 85 {
+        return true;
+    }
+
+    let contiguous = longest_common_contiguous_len(path, excluded);
+    contiguous >= 10 && contiguous * 2 >= shared_length
+}
+
 fn run_phase2_pass(
     candidates: &[Phase1Candidate],
     tables: &TwophaseTables,
@@ -718,6 +770,7 @@ fn run_phase2_pass(
     best_phase2_depth: &mut u8,
     phase2_nodes: &mut u64,
     excluded_path: Option<&[u8]>,
+    excluded_variant_count: &mut usize,
 ) {
     for candidate in candidates {
         let phase1_depth = candidate.moves.len();
@@ -761,7 +814,10 @@ fn run_phase2_pass(
             full_path.push(tables.phase2_move_indices[phase2_move as usize]);
         }
         let total = full_path.len();
-        if excluded_path.map_or(false, |excluded| full_path.as_slice() == excluded) {
+        if excluded_path.map_or(false, |excluded| {
+            is_inverse_derived_path(full_path.as_slice(), excluded)
+        }) {
+            *excluded_variant_count += 1;
             continue;
         }
         if best_found_total.map_or(true, |best_total| total < best_total) {
@@ -1077,6 +1133,7 @@ impl TwophaseSession {
         let mut best_phase2_depth = 0u8;
         let mut best_found_total: Option<usize> = None;
         let mut phase2_nodes = 0u64;
+        let mut excluded_variant_count = 0usize;
         let excluded_path = options
             .excluded_solution
             .as_deref()
@@ -1093,6 +1150,7 @@ impl TwophaseSession {
             &mut best_phase2_depth,
             &mut phase2_nodes,
             excluded_path.as_deref(),
+            &mut excluded_variant_count,
         );
         if best_found_total.is_none() && !options.strict_incumbent {
             run_phase2_pass(
@@ -1106,6 +1164,7 @@ impl TwophaseSession {
                 &mut best_phase2_depth,
                 &mut phase2_nodes,
                 excluded_path.as_deref(),
+                &mut excluded_variant_count,
             );
         }
 
@@ -1135,11 +1194,44 @@ impl TwophaseSession {
             phase1_depth: self.phase1_min_depth,
             phase2_depth: 0,
             candidate_count: self.candidates.len(),
-            reason: if options.strict_incumbent && options.incumbent_length.is_some() {
+            reason: if excluded_variant_count > 0 {
+                "TWOPHASE_INVERSE_DERIVED_ONLY".into()
+            } else if options.strict_incumbent && options.incumbent_length.is_some() {
                 "TWOPHASE_NO_IMPROVING_SOLUTION".into()
             } else {
                 "PHASE2_NOT_FOUND".into()
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod inverse_derived_tests {
+    use super::is_inverse_derived_path;
+
+    #[test]
+    fn rejects_exact_and_local_inverse_variants() {
+        let excluded: Vec<u8> = (0..21).collect();
+        assert!(is_inverse_derived_path(&excluded, &excluded));
+
+        let mut local_variant = excluded.clone();
+        local_variant.swap(7, 8);
+        local_variant.push(30);
+        assert!(is_inverse_derived_path(&local_variant, &excluded));
+    }
+
+    #[test]
+    fn rejects_long_copied_inverse_blocks() {
+        let excluded: Vec<u8> = (0..21).collect();
+        let mut copied_block = excluded[..11].to_vec();
+        copied_block.extend(30..40);
+        assert!(is_inverse_derived_path(&copied_block, &excluded));
+    }
+
+    #[test]
+    fn allows_independent_paths() {
+        let excluded: Vec<u8> = (0..21).collect();
+        let independent: Vec<u8> = (30..52).collect();
+        assert!(!is_inverse_derived_path(&independent, &excluded));
     }
 }
