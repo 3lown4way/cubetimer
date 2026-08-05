@@ -123,9 +123,24 @@ mod tests {
     }
 
     #[test]
-    fn pruning_tables_cover_every_coordinate() {
+    fn pruning_tables_cover_the_fixed_corner_state_space() {
         let prune = build_prune_tables();
-        assert!(prune.perm.iter().all(|&distance| distance != 255));
-        assert!(prune.ori.iter().all(|&distance| distance != 255));
+        let reachable_permutations = prune
+            .perm
+            .iter()
+            .filter(|&&distance| distance != 255)
+            .count();
+        let reachable_orientations = prune
+            .ori
+            .iter()
+            .filter(|&&distance| distance != 255)
+            .count();
+
+        // The reduced U/F/R generator set fixes one reference corner. It
+        // therefore reaches 7! corner permutations and 3^6 orientations,
+        // which is the standard 2x2 state space with cube rotations factored
+        // out. Coordinates outside that subgroup intentionally remain 255.
+        assert_eq!(reachable_permutations, 5040);
+        assert_eq!(reachable_orientations, 729);
     }
 }
