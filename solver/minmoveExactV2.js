@@ -352,6 +352,10 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         return {
           ok: false,
           reason: "MINMOVE_TRIVIAL_INVERSE_REJECTED",
+          solution: "",
+          moveCount: 0,
+          candidateSolution: "",
+          candidateMoveCount: null,
           optimalityProven: false,
         };
       }
