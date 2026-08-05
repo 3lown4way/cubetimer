@@ -99,8 +99,11 @@ jobs:
 
           workflow_path = Path(".github/workflows/apply-twophase-trivial-inverse-root.yml")
           workflow = workflow_path.read_text()
-          old_check = '          grep -q \'TWOPHASE_STRICT_EXCLUSION_VIOLATION\' solver/solverWorker.js\n'
-          new_check = old_check + '          grep -q \'strictIncumbent: true\' solver/solverWorker.js\n          if workflow.count(old_check) != 1:
+          old_check = """          grep -q 'TWOPHASE_STRICT_EXCLUSION_VIOLATION' solver/solverWorker.js
+          """
+          new_check = old_check + """          grep -q 'strictIncumbent: true' solver/solverWorker.js
+          """
+          if workflow.count(old_check) != 1:
               raise SystemExit("persistent workflow guard insertion point missing")
           workflow = workflow.replace(old_check, new_check, 1)
           workflow_path.write_text(workflow)
@@ -125,6 +128,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/solverWorker.js benchmark-twophase-nontrivial-reliability.mjs .github/workflows/apply-twophase-trivial-inverse-root.yml .github/workflows/apply-twophase-strict-incumbent-once.yml
+          git add -A solver/solverWorker.js benchmark-twophase-nontrivial-reliability.mjs .github/workflows/apply-twophase-trivial-inverse-root.yml .github/workflows/apply-twophase-strict-incumbent-once.yml
           git commit -m "Enforce strict two-phase incumbent bounds"
           git push origin HEAD:fix/twophase-strict-incumbent
