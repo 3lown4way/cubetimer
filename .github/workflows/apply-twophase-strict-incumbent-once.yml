@@ -1,4 +1,4 @@
-name: Apply strict two-phase incumbent fix once
+name: Apply inverse-derived two-phase fix once
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
   apply:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,7 +25,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Apply bounded two-phase contract
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Apply inverse-derived candidate filter
         shell: bash
         run: |
           python - <<'PY'
@@ -43,67 +47,226 @@ jobs:
               worker,
               'const v2Strict = noFallback && normalizeSolverVersion(solverVersion) === "v2";',
               'const v2Adaptive = normalizeSolverVersion(solverVersion) === "v2";',
-              "v2 mode",
+              "v2 adaptive mode",
           )
           worker = replace_once(
               worker,
               'const frontierLimits = v2Strict',
               'const frontierLimits = v2Adaptive',
-              "frontier selector",
+              "v2 frontier selector",
           )
           worker = replace_once(
               worker,
               'excludedSolution: noFallback ? inverseSolution : undefined,',
               'excludedSolution: inverseSolution || undefined,',
-              "inverse exclusion",
-          )
-          worker = replace_once(
-              worker,
-              'strictIncumbent: false,',
-              'strictIncumbent: true,',
-              "strict incumbent",
-          )
-          worker = replace_once(
-              worker,
-              '  const solution = String(phaseResult.solution || "").trim();\n',
-              '  const solution = String(phaseResult.solution || "").trim();\n'
-              '  const solutionMoveCount = Number.isFinite(phaseResult.moveCount)\n'
-              '    ? phaseResult.moveCount\n'
-              '    : countAlgorithmMoves(solution);\n',
-              "solution count",
+              "always-on inverse exclusion",
           )
           worker = replace_once(
               worker,
               '  if (noFallback && inverseSolution && solution === inverseSolution) {',
               '  if (inverseSolution && solution === inverseSolution) {',
-              "exact inverse guard",
-          )
-          inverse_guard = (
-              '  if (inverseSolution && solution === inverseSolution) {\n'
-              '    return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };\n'
-              '  }\n'
-          )
-          non_improving_guard = (
-              '  if (inverseLength > 0 && solutionMoveCount >= inverseLength) {\n'
-              '    return {\n'
-              '      ok: false,\n'
-              '      reason: "TWOPHASE_NON_IMPROVING_RESULT_REJECTED",\n'
-              '      source: phaseSource,\n'
-              '      moveCount: solutionMoveCount,\n'
-              '      upperBoundLength: inverseLength,\n'
-              '    };\n'
-              '  }\n'
-          )
-          worker = replace_once(
-              worker,
-              inverse_guard,
-              inverse_guard + non_improving_guard,
-              "anchored non-improving guard",
+              "final inverse guard",
           )
           worker_path.write_text(worker)
 
+          wasm_path = Path("solver/wasmSolver.js")
+          wasm = wasm_path.read_text()
+          wasm = replace_once(
+              wasm,
+              '["TWOPHASE_NO_IMPROVING_SOLUTION", "PHASE2_NOT_FOUND"].includes(lastResult.reason)',
+              '["TWOPHASE_NO_IMPROVING_SOLUTION", "TWOPHASE_INVERSE_DERIVED_ONLY", "PHASE2_NOT_FOUND"].includes(lastResult.reason)',
+              "adaptive retry reasons",
+          )
+          wasm_path.write_text(wasm)
+
+          rust_path = Path("solver-wasm/src/twophase_search.rs")
+          rust = rust_path.read_text()
+          helper = r'''
+fn longest_common_subsequence_len(a: &[u8], b: &[u8]) -> usize {
+    let mut previous = vec![0usize; b.len() + 1];
+    let mut current = vec![0usize; b.len() + 1];
+    for &left in a {
+        current.fill(0);
+        for (index, &right) in b.iter().enumerate() {
+            current[index + 1] = if left == right {
+                previous[index] + 1
+            } else {
+                current[index].max(previous[index + 1])
+            };
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[b.len()]
+}
+
+fn longest_common_contiguous_len(a: &[u8], b: &[u8]) -> usize {
+    let mut previous = vec![0usize; b.len() + 1];
+    let mut current = vec![0usize; b.len() + 1];
+    let mut best = 0usize;
+    for &left in a {
+        current.fill(0);
+        for (index, &right) in b.iter().enumerate() {
+            if left == right {
+                current[index + 1] = previous[index] + 1;
+                best = best.max(current[index + 1]);
+            }
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    best
+}
+
+fn is_inverse_derived_path(path: &[u8], excluded: &[u8]) -> bool {
+    if path == excluded {
+        return true;
+    }
+    let shared_length = path.len().min(excluded.len());
+    if shared_length < 10 {
+        return false;
+    }
+
+    let lcs = longest_common_subsequence_len(path, excluded);
+    if lcs.saturating_add(2) >= shared_length && lcs * 100 >= shared_length * 85 {
+        return true;
+    }
+
+    let contiguous = longest_common_contiguous_len(path, excluded);
+    contiguous >= 10 && contiguous * 2 >= shared_length
+}
+
+'''
+          rust = replace_once(
+              rust,
+              'fn run_phase2_pass(\n',
+              helper + 'fn run_phase2_pass(\n',
+              "inverse-derived helper insertion",
+          )
+          rust = replace_once(
+              rust,
+              '    excluded_path: Option<&[u8]>,\n) {',
+              '    excluded_path: Option<&[u8]>,\n    excluded_variant_count: &mut usize,\n) {',
+              "phase2 pass signature",
+          )
+          rust = replace_once(
+              rust,
+              '        if excluded_path.map_or(false, |excluded| full_path.as_slice() == excluded) {\n            continue;\n        }',
+              '        if excluded_path.map_or(false, |excluded| {\n            is_inverse_derived_path(full_path.as_slice(), excluded)\n        }) {\n            *excluded_variant_count += 1;\n            continue;\n        }',
+              "candidate exclusion",
+          )
+          rust = replace_once(
+              rust,
+              '        let mut phase2_nodes = 0u64;\n',
+              '        let mut phase2_nodes = 0u64;\n        let mut excluded_variant_count = 0usize;\n',
+              "exclusion counter",
+          )
+          call_tail = '            excluded_path.as_deref(),\n        );'
+          call_tail_replacement = (
+              '            excluded_path.as_deref(),\n'
+              '            &mut excluded_variant_count,\n'
+              '        );'
+          )
+          if rust.count(call_tail) != 2:
+              raise SystemExit(f"expected two phase2 call tails, found {rust.count(call_tail)}")
+          rust = rust.replace(call_tail, call_tail_replacement)
+          rust = replace_once(
+              rust,
+              '            reason: if options.strict_incumbent && options.incumbent_length.is_some() {\n                "TWOPHASE_NO_IMPROVING_SOLUTION".into()\n            } else {\n                "PHASE2_NOT_FOUND".into()\n            },',
+              '            reason: if excluded_variant_count > 0 {\n                "TWOPHASE_INVERSE_DERIVED_ONLY".into()\n            } else if options.strict_incumbent && options.incumbent_length.is_some() {\n                "TWOPHASE_NO_IMPROVING_SOLUTION".into()\n            } else {\n                "PHASE2_NOT_FOUND".into()\n            },',
+              "search failure reason",
+          )
+          rust += r'''
+
+#[cfg(test)]
+mod inverse_derived_tests {
+    use super::is_inverse_derived_path;
+
+    #[test]
+    fn rejects_exact_and_local_inverse_variants() {
+        let excluded: Vec<u8> = (0..21).collect();
+        assert!(is_inverse_derived_path(&excluded, &excluded));
+
+        let mut local_variant = excluded.clone();
+        local_variant.swap(7, 8);
+        local_variant.push(30);
+        assert!(is_inverse_derived_path(&local_variant, &excluded));
+    }
+
+    #[test]
+    fn rejects_long_copied_inverse_blocks() {
+        let excluded: Vec<u8> = (0..21).collect();
+        let mut copied_block = excluded[..11].to_vec();
+        copied_block.extend(30..40);
+        assert!(is_inverse_derived_path(&copied_block, &excluded));
+    }
+
+    #[test]
+    fn allows_independent_paths() {
+        let excluded: Vec<u8> = (0..21).collect();
+        let independent: Vec<u8> = (30..52).collect();
+        assert!(!is_inverse_derived_path(&independent, &excluded));
+    }
+}
+'''
+          rust_path.write_text(rust)
+
           benchmark_path = Path("benchmark-twophase-nontrivial-reliability.mjs")
           benchmark = benchmark_path.read_text()
+          similarity_helpers = r'''
+function splitAlgorithm(algorithm) {
+  return String(algorithm || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function longestCommonSubsequenceLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      current[index + 1] = leftMove === right[index]
+        ? previous[index] + 1
+        : Math.max(current[index], previous[index + 1]);
+    }
+    [previous, current] = [current, previous];
+  }
+  return previous[right.length];
+}
+
+function longestCommonContiguousLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  let best = 0;
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      if (leftMove === right[index]) {
+        current[index + 1] = previous[index] + 1;
+        best = Math.max(best, current[index + 1]);
+      }
+    }
+    [previous, current] = [current, previous];
+  }
+  return best;
+}
+
+function isInverseDerived(solution, inverse) {
+  const path = splitAlgorithm(solution);
+  const excluded = splitAlgorithm(inverse);
+  if (path.join(" ") === excluded.join(" ")) return true;
+  const sharedLength = Math.min(path.length, excluded.length);
+  if (sharedLength < 10) return false;
+  const lcs = longestCommonSubsequenceLength(path, excluded);
+  if (lcs + 2 >= sharedLength && lcs * 100 >= sharedLength * 85) return true;
+  const contiguous = longestCommonContiguousLength(path, excluded);
+  return contiguous >= 10 && contiguous * 2 >= sharedLength;
+}
+
+'''
+          benchmark = replace_once(
+              benchmark,
+              'const ready = await ensureTwophase333Ready();\n',
+              similarity_helpers + 'const ready = await ensureTwophase333Ready();\n',
+              "benchmark similarity helpers",
+          )
           benchmark = replace_once(
               benchmark,
               'frontierLimits: [2, 12, 48],',
@@ -112,39 +275,51 @@ jobs:
           )
           benchmark = replace_once(
               benchmark,
-              'strictIncumbent: false,',
-              'strictIncumbent: true,',
-              "benchmark strict incumbent",
+              '  const nontrivial = solution !== inverse;',
+              '  const nontrivial = !isInverseDerived(solution, inverse);',
+              "benchmark structural assertion",
           )
           benchmark = replace_once(
               benchmark,
-              '  const nontrivial = solution !== inverse;',
-              '  const nontrivial = solution !== inverse && Number(result?.moveCount) < 20;',
-              "benchmark quality assertion",
+              '    reason: result?.reason || null,\n',
+              '    reason: result?.reason || null,\n    inverseDerived: isInverseDerived(solution, inverse),\n',
+              "benchmark diagnostic",
           )
           benchmark_path.write_text(benchmark)
 
           Path(".github/workflows/apply-twophase-strict-incumbent-once.yml").unlink()
           PY
 
-      - name: Validate source contract
+      - name: Validate source
         run: |
           node --check solver/solverWorker.js
+          node --check solver/wasmSolver.js
           node --check benchmark-twophase-nontrivial-reliability.mjs
-          grep -q 'const v2Adaptive' solver/solverWorker.js
-          grep -q 'strictIncumbent: true' solver/solverWorker.js
+          grep -q 'is_inverse_derived_path' solver-wasm/src/twophase_search.rs
+          grep -q 'TWOPHASE_INVERSE_DERIVED_ONLY' solver-wasm/src/twophase_search.rs
           grep -q 'excludedSolution: inverseSolution || undefined' solver/solverWorker.js
-          grep -q 'TWOPHASE_NON_IMPROVING_RESULT_REJECTED' solver/solverWorker.js
-          ! grep -q 'strictIncumbent: false' benchmark-twophase-nontrivial-reliability.mjs
           git diff --check
 
-      - name: Verify bounded nontrivial reliability
+      - name: Format and test Rust
+        working-directory: solver-wasm
+        run: |
+          cargo fmt
+          cargo test --lib
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Rebuild browser WASM
+        working-directory: solver-wasm
+        run: wasm-pack build --release --target web --out-dir ../public/solver-wasm
+
+      - name: Verify 100-case structural reliability
         run: node benchmark-twophase-nontrivial-reliability.mjs
 
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A solver/solverWorker.js benchmark-twophase-nontrivial-reliability.mjs .github/workflows/apply-twophase-strict-incumbent-once.yml
-          git commit -m "Enforce strict two-phase incumbent bounds"
+          git add -A
+          git commit -m "Reject inverse-derived two-phase solutions"
           git push origin HEAD:fix/twophase-strict-incumbent
