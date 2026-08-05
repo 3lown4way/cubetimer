@@ -1,4 +1,4 @@
-use crate::tables::{apply_cycle, MOVE_TABLE, QUARTER_CYCLES, QUARTER_ORI_DELTA};
+use crate::tables::{MOVE_ORI_DELTA, MOVE_PERM_MAP, MOVE_TABLE};
 
 // 2x2 state packed into u64: lower 32 bits for permutation (factorial base),
 // upper 32 bits for orientation base-3 (7 corners, last determined).
@@ -53,22 +53,14 @@ fn encode_ori(ori: &[u8; 8]) -> u32 {
 }
 
 fn apply_ori(ori_index: u32, mv: usize) -> u32 {
-    debug_assert!(mv < 9);
-    let face = mv / 3;
-    let turns = match mv % 3 {
-        0 => 1,
-        1 => 2,
-        _ => 3,
-    };
-
-    let mut ori = decode_ori(ori_index);
-    for _ in 0..turns {
-        apply_cycle(&mut ori, QUARTER_CYCLES[face]);
-        for (value, delta) in ori.iter_mut().zip(QUARTER_ORI_DELTA[face]) {
-            *value = (*value + delta) % 3;
-        }
+    debug_assert!(mv < MOVE_PERM_MAP.len());
+    let ori = decode_ori(ori_index);
+    let mut next = [0u8; 8];
+    for new_position in 0..8 {
+        let old_position = MOVE_PERM_MAP[mv][new_position];
+        next[new_position] = (ori[old_position] + MOVE_ORI_DELTA[mv][new_position]) % 3;
     }
-    encode_ori(&ori)
+    encode_ori(&next)
 }
 
 #[cfg(test)]
