@@ -30,8 +30,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use twophase_bundle::{load_bundle as load_twophase_bundle, TwophaseTables};
 use twophase_search::{
-    search_twophase_exact_bound, solve_phase2, Phase2Input, TwophaseExactOptions,
-    TwophasePrepareOptions, TwophaseSearchOptions, TwophaseSession,
+    activate_twophase_deadline, search_twophase_exact_bound, solve_phase2, Phase2Input,
+    TwophaseExactOptions, TwophasePrepareOptions, TwophaseSearchOptions, TwophaseSession,
 };
 use wasm_bindgen::prelude::*;
 
@@ -373,9 +373,11 @@ pub fn prepare_twophase_333(scramble: &str, options_json: &str) -> String {
             max_phase1_solutions: 12,
             phase1_max_depth: 13,
             phase1_node_limit: 0,
+            deadline_ts: f64::INFINITY,
         },
     );
 
+    let _deadline_guard = activate_twophase_deadline(options.deadline_ts);
     match TwophaseSession::prepare(scramble, tables, &options) {
         Ok(session) => {
             let mut store = TWOPHASE_SEARCHES.lock().unwrap();
@@ -526,6 +528,7 @@ pub fn search_twophase_333(search_id: u32, options_json: &str) -> String {
             strict_incumbent: false,
             phase2_max_depth: 20,
             phase2_node_limit: 0,
+            deadline_ts: f64::INFINITY,
         },
     );
     let store = TWOPHASE_SEARCHES.lock().unwrap();
@@ -544,6 +547,7 @@ pub fn search_twophase_333(search_id: u32, options_json: &str) -> String {
         })
         .unwrap();
     };
+    let _deadline_guard = activate_twophase_deadline(options.deadline_ts);
     let result = session.search(tables, &options);
     serde_json::to_string(&TwophaseSearchResponse {
         ok: result.ok,
@@ -601,11 +605,14 @@ pub fn search_twophase_exact_333(scramble: &str, options_json: &str) -> String {
         }
     };
 
+    let _deadline_guard = activate_twophase_deadline(options.deadline_ts);
     let result = search_twophase_exact_bound(scramble, tables, &options);
     let status = if !result.ok {
         "error"
     } else if result.found {
         "found"
+    } else if result.reason == "TWOPHASE_DEADLINE_REACHED" {
+        "timeout"
     } else if result.interrupted {
         "interrupted"
     } else {

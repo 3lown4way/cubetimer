@@ -1,5 +1,8 @@
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
 
@@ -20,6 +23,57 @@ const FAIL_TT_SLOTS: usize = FAIL_TT_SET_COUNT * FAIL_TT_WAYS;
 const FOUND_SENTINEL: u16 = u16::MAX;
 const STOP_SENTINEL: u16 = u16::MAX - 1;
 const FACTORIAL_4: [usize; 5] = [1, 1, 2, 6, 24];
+const DEADLINE_CHECK_MASK: u64 = 2_047;
+const TWOPHASE_DEADLINE_REASON: &str = "TWOPHASE_DEADLINE_REACHED";
+
+thread_local! {
+    static ACTIVE_TWOPHASE_DEADLINE_TS: Cell<f64> = Cell::new(f64::INFINITY);
+}
+
+pub struct TwophaseDeadlineGuard {
+    previous: f64,
+}
+
+impl Drop for TwophaseDeadlineGuard {
+    fn drop(&mut self) {
+        ACTIVE_TWOPHASE_DEADLINE_TS.with(|deadline| deadline.set(self.previous));
+    }
+}
+
+pub fn activate_twophase_deadline(deadline_ts: f64) -> TwophaseDeadlineGuard {
+    let normalized = if deadline_ts.is_finite() && deadline_ts > 0.0 {
+        deadline_ts
+    } else {
+        f64::INFINITY
+    };
+    let previous = ACTIVE_TWOPHASE_DEADLINE_TS.with(|deadline| {
+        let previous = deadline.get();
+        deadline.set(normalized);
+        previous
+    });
+    TwophaseDeadlineGuard { previous }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn wall_clock_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn wall_clock_ms() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64() * 1_000.0)
+        .unwrap_or(0.0)
+}
+
+#[inline(always)]
+fn twophase_deadline_reached() -> bool {
+    ACTIVE_TWOPHASE_DEADLINE_TS.with(|deadline| {
+        let deadline_ts = deadline.get();
+        deadline_ts.is_finite() && wall_clock_ms() >= deadline_ts
+    })
+}
 
 /// Exact-tagged two-way fail table. Hash collisions only evict entries and
 /// therefore cannot create false pruning. Epochs make solve reset O(1).
@@ -115,6 +169,10 @@ fn default_phase2_max_depth() -> u8 {
     20
 }
 
+fn default_deadline_ts() -> f64 {
+    f64::INFINITY
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct TwophasePrepareOptions {
     #[serde(
@@ -126,6 +184,8 @@ pub struct TwophasePrepareOptions {
     pub phase1_max_depth: u8,
     #[serde(rename = "phase1NodeLimit", default)]
     pub phase1_node_limit: u64,
+    #[serde(rename = "deadlineTs", default = "default_deadline_ts")]
+    pub deadline_ts: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -140,6 +200,8 @@ pub struct TwophaseSearchOptions {
     pub phase2_max_depth: u8,
     #[serde(rename = "phase2NodeLimit", default)]
     pub phase2_node_limit: u64,
+    #[serde(rename = "deadlineTs", default = "default_deadline_ts")]
+    pub deadline_ts: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -152,6 +214,8 @@ pub struct TwophaseExactOptions {
     pub phase1_node_limit: u64,
     #[serde(rename = "phase2NodeLimit", default)]
     pub phase2_node_limit: u64,
+    #[serde(rename = "deadlineTs", default = "default_deadline_ts")]
+    pub deadline_ts: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -309,6 +373,7 @@ struct Phase1SearchCtx<'a, 'b> {
     nodes: u64,
     node_limit: u64,
     node_limit_hit: bool,
+    timed_out: bool,
     fail_cache: &'b mut FixedFailTable,
 }
 
@@ -322,7 +387,11 @@ impl<'a, 'b> Phase1SearchCtx<'a, 'b> {
         bound: u8,
         last_face: u8,
     ) -> u16 {
-        if self.node_limit_hit {
+        if self.node_limit_hit || self.timed_out {
+            return STOP_SENTINEL;
+        }
+        if twophase_deadline_reached() {
+            self.timed_out = true;
             return STOP_SENTINEL;
         }
         let h = phase1_joint_lower_bound(self.tables, co, eo, slice);
@@ -346,6 +415,10 @@ impl<'a, 'b> Phase1SearchCtx<'a, 'b> {
         let mut min_next: Option<u16> = None;
         for &move_index in &self.tables.phase1_allowed_moves_by_last_face[last_face as usize] {
             self.nodes += 1;
+            if (self.nodes & DEADLINE_CHECK_MASK) == 0 && twophase_deadline_reached() {
+                self.timed_out = true;
+                return STOP_SENTINEL;
+            }
             if self.node_limit > 0 && self.nodes >= self.node_limit {
                 self.node_limit_hit = true;
                 return STOP_SENTINEL;
@@ -394,6 +467,7 @@ fn solve_phase1(input: &Phase1Input, tables: &TwophaseTables) -> Phase1SolveResu
         nodes: 0,
         node_limit: input.node_limit,
         node_limit_hit: false,
+        timed_out: false,
         fail_cache: &mut fail_cache,
     };
 
@@ -430,7 +504,9 @@ fn solve_phase1(input: &Phase1Input, tables: &TwophaseTables) -> Phase1SolveResu
         moves: Vec::new(),
         depth: 0,
         nodes: ctx.nodes,
-        reason: if ctx.node_limit_hit {
+        reason: if ctx.timed_out {
+            TWOPHASE_DEADLINE_REASON.into()
+        } else if ctx.node_limit_hit {
             "PHASE1_SEARCH_LIMIT".into()
         } else {
             "PHASE1_NOT_FOUND".into()
@@ -481,8 +557,13 @@ fn solve_phase1_multi(
         solutions: &mut Vec<Vec<u8>>,
         max_count: usize,
         nodes: &mut u64,
+        timed_out: &mut bool,
     ) {
-        if solutions.len() >= max_count {
+        if *timed_out || solutions.len() >= max_count {
+            return;
+        }
+        if twophase_deadline_reached() {
+            *timed_out = true;
             return;
         }
         let h = phase1_joint_lower_bound(tables, co, eo, slice);
@@ -506,6 +587,10 @@ fn solve_phase1_multi(
                 return;
             }
             *nodes += 1;
+            if (*nodes & DEADLINE_CHECK_MASK) == 0 && twophase_deadline_reached() {
+                *timed_out = true;
+                return;
+            }
             let next_co = tables.co_move.get(co, move_index as usize) as usize;
             let next_eo = tables.eo_move.get(eo, move_index as usize) as usize;
             let next_slice = tables.slice_move.get(slice, move_index as usize) as usize;
@@ -524,13 +609,15 @@ fn solve_phase1_multi(
                 solutions,
                 max_count,
                 nodes,
+                timed_out,
             );
             path.pop();
         }
     }
 
     let mut target = first.depth;
-    while solutions.len() < max_count && target <= input.max_depth {
+    let mut timed_out = false;
+    while !timed_out && solutions.len() < max_count && target <= input.max_depth {
         enumerate(
             tables,
             input.co_idx,
@@ -544,8 +631,18 @@ fn solve_phase1_multi(
             &mut solutions,
             max_count,
             &mut enum_nodes,
+            &mut timed_out,
         );
         target += 1;
+    }
+
+    if timed_out {
+        return Phase1MultiResult {
+            solutions: Vec::new(),
+            min_depth: first.depth,
+            nodes: first.nodes + enum_nodes,
+            reason: TWOPHASE_DEADLINE_REASON.into(),
+        };
     }
 
     Phase1MultiResult {
@@ -562,6 +659,7 @@ struct Phase2SearchCtx<'a, 'b> {
     nodes: u64,
     node_limit: u64,
     node_limit_hit: bool,
+    timed_out: bool,
     excluded_global_path: Option<Vec<u8>>,
     fail_cache: &'b mut FixedFailTable,
 }
@@ -576,7 +674,11 @@ impl<'a, 'b> Phase2SearchCtx<'a, 'b> {
         bound: u8,
         last_face: u8,
     ) -> u16 {
-        if self.node_limit_hit {
+        if self.node_limit_hit || self.timed_out {
+            return STOP_SENTINEL;
+        }
+        if twophase_deadline_reached() {
+            self.timed_out = true;
             return STOP_SENTINEL;
         }
         let h = self
@@ -623,6 +725,10 @@ impl<'a, 'b> Phase2SearchCtx<'a, 'b> {
         let mut min_next: Option<u16> = None;
         for &move_index in &self.tables.phase2_allowed_moves_by_last_face[last_face as usize] {
             self.nodes += 1;
+            if (self.nodes & DEADLINE_CHECK_MASK) == 0 && twophase_deadline_reached() {
+                self.timed_out = true;
+                return STOP_SENTINEL;
+            }
             if self.node_limit > 0 && self.nodes >= self.node_limit {
                 self.node_limit_hit = true;
                 return STOP_SENTINEL;
@@ -665,6 +771,15 @@ fn solve_phase2_excluding(
     node_limit: u64,
     excluded_global_path: Option<&[u8]>,
 ) -> Phase2SolveResult {
+    if twophase_deadline_reached() {
+        return Phase2SolveResult {
+            ok: false,
+            moves: Vec::new(),
+            depth: 0,
+            nodes: 0,
+            reason: TWOPHASE_DEADLINE_REASON.into(),
+        };
+    }
     if input.cp_idx == 0
         && input.ep_idx == 0
         && input.sep_idx == 0
@@ -692,6 +807,7 @@ fn solve_phase2_excluding(
         nodes: 0,
         node_limit,
         node_limit_hit: false,
+        timed_out: false,
         excluded_global_path: excluded_global_path.map(|path| path.to_vec()),
         fail_cache: &mut fail_cache,
     };
@@ -729,7 +845,9 @@ fn solve_phase2_excluding(
         moves: Vec::new(),
         depth: 0,
         nodes: ctx.nodes,
-        reason: if ctx.node_limit_hit {
+        reason: if ctx.timed_out {
+            TWOPHASE_DEADLINE_REASON.into()
+        } else if ctx.node_limit_hit {
             "PHASE2_SEARCH_LIMIT".into()
         } else {
             "PHASE2_NOT_FOUND".into()
@@ -757,8 +875,11 @@ fn run_phase2_pass(
     best_phase2_depth: &mut u8,
     phase2_nodes: &mut u64,
     excluded_path: Option<&[u8]>,
-) {
+) -> bool {
     for candidate in candidates {
+        if twophase_deadline_reached() {
+            return true;
+        }
         let phase1_depth = candidate.moves.len();
         if let Some(target_total) = target_total {
             if phase1_depth >= target_total {
@@ -791,6 +912,9 @@ fn run_phase2_pass(
             options.phase2_node_limit,
         );
         *phase2_nodes += phase2.nodes;
+        if phase2.reason == TWOPHASE_DEADLINE_REASON {
+            return true;
+        }
         if !phase2.ok {
             continue;
         }
@@ -810,6 +934,7 @@ fn run_phase2_pass(
             *best_path = Some(full_path);
         }
     }
+    false
 }
 
 struct ExactPhase1SearchCtx<'a> {
@@ -860,6 +985,11 @@ impl<'a> ExactPhase1SearchCtx<'a> {
         if self.interrupted || self.found_path.is_some() {
             return self.found_path.is_some();
         }
+        if twophase_deadline_reached() {
+            self.interrupted = true;
+            self.interrupt_reason = TWOPHASE_DEADLINE_REASON.into();
+            return false;
+        }
 
         let phase1_h = phase1_joint_lower_bound(self.tables, co, eo, slice);
         if depth.saturating_add(phase1_h) > target_phase1_depth {
@@ -909,7 +1039,7 @@ impl<'a> ExactPhase1SearchCtx<'a> {
                 self.found_path = Some(full_path);
                 return true;
             }
-            if phase2.reason == "PHASE2_SEARCH_LIMIT" {
+            if phase2.reason == "PHASE2_SEARCH_LIMIT" || phase2.reason == TWOPHASE_DEADLINE_REASON {
                 self.interrupted = true;
                 self.interrupt_reason = phase2.reason;
                 return false;
@@ -919,6 +1049,11 @@ impl<'a> ExactPhase1SearchCtx<'a> {
 
         for &move_index in &self.tables.phase1_allowed_moves_by_last_face[last_face as usize] {
             self.phase1_nodes += 1;
+            if (self.phase1_nodes & DEADLINE_CHECK_MASK) == 0 && twophase_deadline_reached() {
+                self.interrupted = true;
+                self.interrupt_reason = TWOPHASE_DEADLINE_REASON.into();
+                return false;
+            }
             if self.phase1_node_limit > 0 && self.phase1_nodes >= self.phase1_node_limit {
                 self.interrupted = true;
                 self.interrupt_reason = "PHASE1_SEARCH_LIMIT".into();
@@ -1135,7 +1270,7 @@ impl TwophaseSession {
             .as_deref()
             .and_then(|solution| parse_scramble(solution, &tables.move_data).ok());
 
-        run_phase2_pass(
+        let mut timed_out = run_phase2_pass(
             &self.candidates,
             tables,
             options,
@@ -1147,8 +1282,8 @@ impl TwophaseSession {
             &mut phase2_nodes,
             excluded_path.as_deref(),
         );
-        if best_found_total.is_none() && !options.strict_incumbent {
-            run_phase2_pass(
+        if !timed_out && best_found_total.is_none() && !options.strict_incumbent {
+            timed_out = run_phase2_pass(
                 &self.candidates,
                 tables,
                 options,
@@ -1160,6 +1295,21 @@ impl TwophaseSession {
                 &mut phase2_nodes,
                 excluded_path.as_deref(),
             );
+        }
+
+        if timed_out {
+            return TwophaseSearchResult {
+                ok: false,
+                solution: String::new(),
+                move_count: 0,
+                nodes: self.phase1_nodes + phase2_nodes,
+                phase1_nodes: self.phase1_nodes,
+                phase2_nodes,
+                phase1_depth: self.phase1_min_depth,
+                phase2_depth: 0,
+                candidate_count: self.candidates.len(),
+                reason: TWOPHASE_DEADLINE_REASON.into(),
+            };
         }
 
         if let Some(path) = best_path {
@@ -1194,5 +1344,28 @@ impl TwophaseSession {
                 "PHASE2_NOT_FOUND".into()
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_deadline_never_expires() {
+        let _guard = activate_twophase_deadline(f64::INFINITY);
+        assert!(!twophase_deadline_reached());
+    }
+
+    #[test]
+    fn expired_deadline_is_detected() {
+        let _guard = activate_twophase_deadline(1.0);
+        assert!(twophase_deadline_reached());
+    }
+
+    #[test]
+    fn future_deadline_remains_active() {
+        let _guard = activate_twophase_deadline(wall_clock_ms() + 60_000.0);
+        assert!(!twophase_deadline_reached());
     }
 }

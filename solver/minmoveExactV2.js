@@ -78,7 +78,13 @@ async function verifySolution(scramble, solution) {
   }
 }
 
-async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs, excludedSolution = "") {
+async function findTwoPhaseSeed(
+  scramble,
+  incumbentLength,
+  seedConfigs,
+  excludedSolution = "",
+  deadlineTs = null,
+) {
   const normalizedExcluded = normalizeOuterAlgorithm(excludedSolution);
   for (const config of seedConfigs) {
     let searchId = null;
@@ -87,6 +93,7 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs, excluded
         maxPhase1Solutions: config.maxPhase1Solutions,
         phase1MaxDepth: config.phase1MaxDepth,
         phase1NodeLimit: config.phase1NodeLimit,
+        ...(Number.isFinite(deadlineTs) ? { deadlineTs } : {}),
       });
       if (!prepared?.ok || !Number.isFinite(prepared.searchId)) continue;
       searchId = prepared.searchId;
@@ -96,6 +103,7 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs, excluded
         strictIncumbent: false,
         phase2MaxDepth: 20,
         phase2NodeLimit: config.phase2NodeLimit,
+        ...(Number.isFinite(deadlineTs) ? { deadlineTs } : {}),
       });
       if (searched?.ok && typeof searched.solution === "string") {
         const normalizedSolution = normalizeOuterAlgorithm(searched.solution);
@@ -195,6 +203,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       incumbentLength,
       seedConfigs,
       direction.excludedSolution,
+      deadlineTs,
     );
     if (!seed?.ok || typeof seed.solution !== "string") continue;
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
@@ -258,6 +267,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         excludedSolution: rejectLiteralInverse ? inverseScramble : undefined,
         phase1NodeLimit: profile.phase1NodeLimit,
         phase2NodeLimit: profile.phase2NodeLimit,
+        deadlineTs,
       }).catch(() => null);
       if (!searched?.ok) {
         lastReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";

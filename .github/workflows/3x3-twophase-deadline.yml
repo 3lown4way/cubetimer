@@ -1,0 +1,87 @@
+name: 3x3 Two-Phase deadline
+
+on:
+  pull_request:
+    paths:
+      - "solver-wasm/src/twophase_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/minmoveExactV2.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-twophase-deadline.mjs"
+      - ".github/workflows/3x3-twophase-deadline.yml"
+  push:
+    branches:
+      - main
+      - "fix/3x3-twophase-deadline"
+    paths:
+      - "solver-wasm/src/twophase_search.rs"
+      - "solver-wasm/src/lib.rs"
+      - "solver/wasmSolver.js"
+      - "solver/minmoveExactV2.js"
+      - "public/solver-wasm/solver_wasm.js"
+      - "public/solver-wasm/solver_wasm.d.ts"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "public/solver-wasm/solver_wasm_bg.wasm.d.ts"
+      - "tools/verify-3x3-twophase-deadline.mjs"
+      - ".github/workflows/3x3-twophase-deadline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deadline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: solver-wasm
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path solver-wasm/Cargo.toml --all -- --check
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path solver-wasm/Cargo.toml --lib
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check solver/wasmSolver.js
+          node --check solver/minmoveExactV2.js
+          node --check tools/verify-3x3-twophase-deadline.mjs
+
+      - name: Install wasm-pack
+        shell: bash
+        run: |
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --locked
+          fi
+
+      - name: Rebuild browser WASM package
+        run: wasm-pack build solver-wasm --target web --out-dir ../target/wasm-web --release
+
+      - name: Verify checked-in WASM package
+        run: |
+          cmp target/wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
+          cmp target/wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
+          cmp target/wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
+          cmp target/wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
+
+      - name: Verify deadline and no-fallback contract
+        run: node tools/verify-3x3-twophase-deadline.mjs
+
+      - name: Validate repository diff
+        run: git diff --check

@@ -462,7 +462,15 @@ export async function searchTwophaseExact333(scramble, options = {}) {
   } catch (_) {
     return null;
   }
-  return parseJsonResponse(rawResponse);
+  const parsed = parseJsonResponse(rawResponse);
+  if (!parsed) return null;
+  const status = String(parsed.status || "");
+  return {
+    ...parsed,
+    found: parsed.found === true || status === "found",
+    interrupted: parsed.interrupted === true || status === "interrupted" || status === "timeout",
+    timedOut: parsed.timedOut === true || status === "timeout" || parsed.reason === "TWOPHASE_DEADLINE_REACHED",
+  };
 }
 
 export async function dropTwophase333Search(searchId) {
@@ -481,8 +489,17 @@ export async function solveTwophaseAdaptive333(scramble, options = {}) {
       .map((value) => Math.max(1, Math.floor(Number(value) || 0)))
       .filter((value) => value > 0),
   ));
-  const prepareOptions = options.prepareOptions || {};
-  const searchOptions = options.searchOptions || {};
+  const deadlineTs = Number.isFinite(Number(options.deadlineTs))
+    ? Number(options.deadlineTs)
+    : null;
+  const prepareOptions = {
+    ...(options.prepareOptions || {}),
+    ...(deadlineTs !== null ? { deadlineTs } : {}),
+  };
+  const searchOptions = {
+    ...(options.searchOptions || {}),
+    ...(deadlineTs !== null ? { deadlineTs } : {}),
+  };
   let lastResult = { ok: false, reason: "TWOPHASE_NOT_ATTEMPTED" };
 
   for (let index = 0; index < frontierLimits.length; index += 1) {
