@@ -30,6 +30,7 @@ jobs:
         run: |
           python tools/apply-short-inverse-exemption.py
           python tools/fix-short-inverse-benchmark-markers.py
+          python tools/fix-exact-patcher-cache-target.py
           python tools/apply-exact-inverse-exclusion.py
       - name: Format and test Rust
         working-directory: solver-wasm
