@@ -132,6 +132,8 @@ for (const testCase of cases) {
       "MINMOVE_NONTRIVIAL_RESULT_NOT_FOUND",
       `${testCase.name} failed for an unexpected reason`,
     );
+    assert.equal(returnedSolution, "", `${testCase.name} exposed a solution on nontrivial miss`);
+    assert.equal(returnedCandidate, "", `${testCase.name} exposed a candidate on nontrivial miss`);
     continue;
   }
 
