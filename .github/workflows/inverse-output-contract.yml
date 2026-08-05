@@ -1,0 +1,43 @@
+name: Verify inverse output contract
+
+on:
+  pull_request:
+    paths:
+      - "solver/inverseSolutionPolicy.js"
+      - "solver/minmoveExactV2.js"
+      - "solver/solverWorker.js"
+      - "solver/wasmSolver.js"
+      - "solver-wasm/src/twophase_search.rs"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "benchmark-inverse-output-contract.mjs"
+      - ".github/workflows/inverse-output-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "solver/inverseSolutionPolicy.js"
+      - "solver/minmoveExactV2.js"
+      - "solver/solverWorker.js"
+      - "solver/wasmSolver.js"
+      - "solver-wasm/src/twophase_search.rs"
+      - "public/solver-wasm/solver_wasm_bg.wasm"
+      - "benchmark-inverse-output-contract.mjs"
+      - ".github/workflows/inverse-output-contract.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check source syntax
+        run: |
+          node --check solver/inverseSolutionPolicy.js
+          node --check solver/minmoveExactV2.js
+          node --check solver/solverWorker.js
+          node --check benchmark-inverse-output-contract.mjs
+      - name: Run reported inverse regressions
+        run: node benchmark-inverse-output-contract.mjs
