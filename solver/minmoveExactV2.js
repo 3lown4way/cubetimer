@@ -85,6 +85,9 @@ async function verifySolution(scramble, solution) {
 }
 
 async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
+  let best = null;
+  let totalNodes = 0;
+
   for (const config of seedConfigs) {
     let searchId = null;
     try {
@@ -100,8 +103,22 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
         phase2MaxDepth: 20,
         phase2NodeLimit: config.phase2NodeLimit,
       });
-      if (searched?.ok && typeof searched.solution === "string") {
-        return searched;
+      totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
+      if (!searched?.ok || typeof searched.solution !== "string") continue;
+
+      const solution = searched.solution.trim();
+      const moveCount = splitMoves(solution).length;
+      if (!solution || moveCount <= 0) continue;
+      if (!best || moveCount < best.moveCount) {
+        best = {
+          ...searched,
+          solution,
+          moveCount,
+          seedProfile: {
+            maxPhase1Solutions: config.maxPhase1Solutions,
+            phase1MaxDepth: config.phase1MaxDepth,
+          },
+        };
       }
     } catch (_) {
       // Try the next bounded profile.
@@ -111,7 +128,8 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
       }
     }
   }
-  return null;
+
+  return best ? { ...best, nodes: totalNodes } : null;
 }
 
 function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
@@ -197,7 +215,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   emitProgress(onProgress, {
     type: "exact_search_start",
     upperBoundLength: incumbentLength,
-    proofEngine: "exact_twophase_v2_bidirectional",
+    proofEngine: "exact_twophase_v3",
   });
 
   while (incumbentLength > 0 && Date.now() < deadlineTs) {
@@ -205,7 +223,6 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     let exhausted = false;
     let improved = false;
     let lastReason = "";
-    let proofDirection = "normal";
 
     emitProgress(onProgress, {
       type: "bound_update",
@@ -214,65 +231,53 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       nodes: totalNodes,
     });
 
-    const exactDirections = [
-      { scramble: normalizedScramble, invert: false, source: "exact_twophase_bound", direction: "normal" },
-      { scramble: inverseScramble, invert: true, source: "inverse_exact_twophase_bound", direction: "inverse" },
-    ];
-
-    exactProfileLoop:
     for (const profile of exactProfiles) {
-      for (const direction of exactDirections) {
-        if (Date.now() >= deadlineTs) break exactProfileLoop;
-        const searched = await searchTwophaseExact333(direction.scramble, {
-          maxTotalDepth: targetBound,
-          phase1NodeLimit: profile.phase1NodeLimit,
-          phase2NodeLimit: profile.phase2NodeLimit,
-        }).catch(() => null);
-        if (!searched?.ok) {
-          lastReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";
-          continue;
-        }
-        totalNodes += Number.isFinite(searched.nodes) ? searched.nodes : 0;
-        const exactState = normalizeExactSearchState(searched);
-
-        if (exactState.found && typeof searched.solution === "string") {
-          const candidateSolution = direction.invert
-            ? invertAlgorithm(searched.solution)
-            : searched.solution.trim();
-          const candidateLength = splitMoves(candidateSolution).length;
-          if (
-            candidateSolution
-            && candidateLength <= targetBound
-            && candidateLength < incumbentLength
-            && await verifySolution(normalizedScramble, candidateSolution)
-          ) {
-            incumbentSolution = candidateSolution;
-            incumbentLength = candidateLength;
-            incumbentSource = direction.source;
-            improved = true;
-            emitProgress(onProgress, {
-              type: "exact_search_improved",
-              moveCount: incumbentLength,
-              bound: targetBound,
-              direction: direction.direction,
-              nodes: totalNodes,
-            });
-            break exactProfileLoop;
-          }
-          return { ok: false, reason: "MINMOVE_EXACT_RESULT_INVALID" };
-        }
-
-        if (exactState.exhausted) {
-          exhausted = true;
-          proofDirection = direction.direction;
-          break exactProfileLoop;
-        }
-        if (exactState.interrupted) {
-          lastReason = searched.reason || `MINMOVE_EXACT_${direction.direction.toUpperCase()}_SEARCH_LIMIT`;
-          continue;
-        }
-        lastReason = searched.reason || "MINMOVE_EXACT_STATUS_MISSING";
+      if (Date.now() >= deadlineTs) break;
+      const searched = await searchTwophaseExact333(normalizedScramble, {
+        maxTotalDepth: targetBound,
+        phase1NodeLimit: profile.phase1NodeLimit,
+        phase2NodeLimit: profile.phase2NodeLimit,
+      }).catch(() => null);
+      if (!searched?.ok) {
+        lastReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";
+        continue;
       }
+      totalNodes += Number.isFinite(searched.nodes) ? searched.nodes : 0;
+      const exactState = normalizeExactSearchState(searched);
+
+      if (exactState.found && typeof searched.solution === "string") {
+        const candidateSolution = searched.solution.trim();
+        const candidateLength = splitMoves(candidateSolution).length;
+        if (
+          candidateSolution
+          && candidateLength <= targetBound
+          && candidateLength < incumbentLength
+          && await verifySolution(normalizedScramble, candidateSolution)
+        ) {
+          incumbentSolution = candidateSolution;
+          incumbentLength = candidateLength;
+          incumbentSource = "exact_twophase_bound";
+          improved = true;
+          emitProgress(onProgress, {
+            type: "exact_search_improved",
+            moveCount: incumbentLength,
+            bound: targetBound,
+            nodes: totalNodes,
+          });
+          break;
+        }
+        return { ok: false, reason: "MINMOVE_EXACT_RESULT_INVALID" };
+      }
+
+      if (exactState.exhausted) {
+        exhausted = true;
+        break;
+      }
+      if (exactState.interrupted) {
+        lastReason = searched.reason || "MINMOVE_EXACT_SEARCH_LIMIT";
+        continue;
+      }
+      lastReason = searched.reason || "MINMOVE_EXACT_STATUS_MISSING";
     }
 
     if (improved) continue;
@@ -282,7 +287,6 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         type: "optimality_proven",
         moveCount: incumbentLength,
         proofSource: "exact_twophase_exhaustion",
-        proofDirection,
         nodes: totalNodes,
       });
       return {
@@ -296,7 +300,6 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         optimalityProven: true,
         upperBoundLength: incumbentLength,
         proofSource: "exact_twophase_exhaustion",
-        proofDirection,
         fallbackReason: null,
         seedSource: incumbentSource,
         elapsedMs,
