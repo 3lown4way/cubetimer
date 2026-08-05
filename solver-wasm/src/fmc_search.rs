@@ -1412,17 +1412,88 @@ fn canonicalize_commuting_axis_blocks(input: &[u8]) -> Vec<u8> {
     canonical
 }
 
-fn is_trivial_reverse_solution(solution: &[u8], reverse_scramble_canonical: &[u8]) -> bool {
-    canonicalize_commuting_axis_blocks(solution) == reverse_scramble_canonical
+// WCA E2e++ gives a four-move inverse-scramble prefix as an explicit DNF example.
+// The longer-block and near-total checks are conservative software equivalents of
+// E2e+'s prohibition on sharing significant parts with the inverse scramble.
+const FMC_REVERSE_PREFIX_DNF_LEN: usize = 4;
+const FMC_REVERSE_CONTIGUOUS_DNF_LEN: usize = 6;
+const FMC_REVERSE_NEAR_TOTAL_SLACK: usize = 2;
+const FMC_REVERSE_NEAR_TOTAL_MIN_LEN: usize = 10;
+
+fn common_prefix_len(left: &[u8], right: &[u8]) -> usize {
+    left.iter()
+        .zip(right.iter())
+        .take_while(|(left_move, right_move)| left_move == right_move)
+        .count()
 }
 
-fn retain_nontrivial_reverse_candidates(
+fn longest_common_contiguous_len(left: &[u8], right: &[u8]) -> usize {
+    let mut previous = vec![0usize; right.len() + 1];
+    let mut current = vec![0usize; right.len() + 1];
+    let mut best = 0usize;
+    for &left_move in left {
+        current.fill(0);
+        for (index, &right_move) in right.iter().enumerate() {
+            if left_move == right_move {
+                current[index + 1] = previous[index] + 1;
+                best = best.max(current[index + 1]);
+            }
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    best
+}
+
+fn longest_common_subsequence_len(left: &[u8], right: &[u8]) -> usize {
+    let mut previous = vec![0usize; right.len() + 1];
+    let mut current = vec![0usize; right.len() + 1];
+    for &left_move in left {
+        current.fill(0);
+        for (index, &right_move) in right.iter().enumerate() {
+            current[index + 1] = if left_move == right_move {
+                previous[index] + 1
+            } else {
+                current[index].max(previous[index + 1])
+            };
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[right.len()]
+}
+
+fn is_disallowed_reverse_derived_solution(
+    solution: &[u8],
+    reverse_scramble_canonical: &[u8],
+) -> bool {
+    let canonical = canonicalize_commuting_axis_blocks(solution);
+    if canonical == reverse_scramble_canonical {
+        return true;
+    }
+    if common_prefix_len(&canonical, reverse_scramble_canonical) >= FMC_REVERSE_PREFIX_DNF_LEN {
+        return true;
+    }
+    if longest_common_contiguous_len(&canonical, reverse_scramble_canonical)
+        >= FMC_REVERSE_CONTIGUOUS_DNF_LEN
+    {
+        return true;
+    }
+
+    if canonical.len().min(reverse_scramble_canonical.len()) < FMC_REVERSE_NEAR_TOTAL_MIN_LEN {
+        return false;
+    }
+
+    let lcs = longest_common_subsequence_len(&canonical, reverse_scramble_canonical);
+    canonical.len().saturating_sub(lcs) <= FMC_REVERSE_NEAR_TOTAL_SLACK
+        && reverse_scramble_canonical.len().saturating_sub(lcs) <= FMC_REVERSE_NEAR_TOTAL_SLACK
+}
+
+fn retain_wca_legal_reverse_candidates(
     candidates: &mut Vec<FmcCandidate>,
     reverse_scramble_canonical: &[u8],
 ) -> usize {
     let before = candidates.len();
     candidates.retain(|candidate| {
-        !is_trivial_reverse_solution(&candidate.moves, reverse_scramble_canonical)
+        !is_disallowed_reverse_derived_solution(&candidate.moves, reverse_scramble_canonical)
     });
     before.saturating_sub(candidates.len())
 }
@@ -3853,7 +3924,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     // Completed-solution pruning is separate from the raw skeleton frontier.
     // Multi-switch can tighten this completed ceiling, but must never shrink
@@ -3893,7 +3964,8 @@ fn solve_fmc_with_eo_depth(
                 {
                     continue;
                 }
-                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                if is_disallowed_reverse_derived_solution(&simplified, &reverse_scramble_canonical)
+                {
                     reverse_scramble_rejected_count += 1;
                     continue;
                 }
@@ -3939,7 +4011,8 @@ fn solve_fmc_with_eo_depth(
                 {
                     continue;
                 }
-                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                if is_disallowed_reverse_derived_solution(&simplified, &reverse_scramble_canonical)
+                {
                     reverse_scramble_rejected_count += 1;
                     continue;
                 }
@@ -3967,7 +4040,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     // --- Phase 2c: complementary-frame short-P2 MITM rescue ---
     let completed_best_before_complementary = all_candidates
@@ -4075,7 +4148,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     // --- Phase 2d: complementary-frame normal EO→DR→P2 rescue ---
     // This is intentionally much narrower than a full six-frame replay: it is
@@ -4159,7 +4232,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     // --- Phase 2e: bounded pre-EO NISS switch rescue ---
     let completed_best_before_pre_eo = all_candidates
@@ -4201,7 +4274,8 @@ fn solve_fmc_with_eo_depth(
                 {
                     continue;
                 }
-                if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                if is_disallowed_reverse_derived_solution(&simplified, &reverse_scramble_canonical)
+                {
                     reverse_scramble_rejected_count += 1;
                     continue;
                 }
@@ -4259,7 +4333,10 @@ fn solve_fmc_with_eo_depth(
                     {
                         continue;
                     }
-                    if is_trivial_reverse_solution(&simplified, &reverse_scramble_canonical) {
+                    if is_disallowed_reverse_derived_solution(
+                        &simplified,
+                        &reverse_scramble_canonical,
+                    ) {
                         reverse_scramble_rejected_count += 1;
                         continue;
                     }
@@ -4295,7 +4372,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     completed_best = all_candidates
         .iter()
@@ -4517,7 +4594,7 @@ fn solve_fmc_with_eo_depth(
     }
 
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut all_candidates, &reverse_scramble_canonical);
 
     let multi_switch_niss_candidate_count = all_candidates
         .iter()
@@ -4544,7 +4621,7 @@ fn solve_fmc_with_eo_depth(
     let mut inserted_candidates =
         optimize_skeleton_insertions(&original_scramble_state, &skeletons, tables, fmc_tables);
     reverse_scramble_rejected_count +=
-        retain_nontrivial_reverse_candidates(&mut inserted_candidates, &reverse_scramble_canonical);
+        retain_wca_legal_reverse_candidates(&mut inserted_candidates, &reverse_scramble_canonical);
     let single_best = all_candidates
         .iter()
         .chain(inserted_candidates.iter())
@@ -4560,7 +4637,7 @@ fn solve_fmc_with_eo_depth(
     } else {
         (Vec::new(), 0, 0)
     };
-    reverse_scramble_rejected_count += retain_nontrivial_reverse_candidates(
+    reverse_scramble_rejected_count += retain_wca_legal_reverse_candidates(
         &mut multi_inserted_candidates,
         &reverse_scramble_canonical,
     );
@@ -5126,7 +5203,7 @@ mod skeleton_tests {
     fn recognizes_reverse_scramble_notation_under_axis_commutation() {
         let reverse = vec![3, 11, 2, 5]; // R D' U' R'
         let reverse_canonical = canonicalize_commuting_axis_blocks(&reverse);
-        assert!(is_trivial_reverse_solution(
+        assert!(is_disallowed_reverse_derived_solution(
             &[3, 2, 11, 5], // R U' D' R'
             &reverse_canonical,
         ));
@@ -5134,9 +5211,72 @@ mod skeleton_tests {
             canonicalize_commuting_axis_blocks(&[5, 0, 9, 2]), // R' U D U'
             canonicalize_commuting_axis_blocks(&[5, 9]),       // R' D
         );
-        assert!(!is_trivial_reverse_solution(
+        assert!(!is_disallowed_reverse_derived_solution(
             &[3, 2, 10, 5], // R U' D2 R'
             &reverse_canonical,
+        ));
+    }
+}
+
+#[cfg(test)]
+mod reverse_derivation_policy_tests {
+    use super::is_disallowed_reverse_derived_solution;
+
+    fn reverse_fixture() -> Vec<u8> {
+        // U R F D L B U2 R2 F2 D2 L2 B2: every neighboring move changes axis.
+        vec![0, 3, 6, 9, 12, 15, 1, 4, 7, 10, 13, 16]
+    }
+
+    #[test]
+    fn rejects_wca_four_move_inverse_prefix() {
+        let reverse = reverse_fixture();
+        assert!(is_disallowed_reverse_derived_solution(
+            &[0, 3, 6, 9, 5, 8, 2],
+            &reverse,
+        ));
+    }
+
+    #[test]
+    fn allows_three_move_prefix_without_other_significant_overlap() {
+        let reverse = reverse_fixture();
+        assert!(!is_disallowed_reverse_derived_solution(
+            &[0, 3, 6, 12, 15, 2, 5],
+            &reverse,
+        ));
+    }
+
+    #[test]
+    fn rejects_six_move_internal_inverse_block() {
+        let reverse = reverse_fixture();
+        assert!(is_disallowed_reverse_derived_solution(
+            &[4, 7, 3, 6, 9, 12, 15, 1, 14],
+            &reverse,
+        ));
+    }
+
+    #[test]
+    fn allows_five_move_internal_overlap() {
+        let reverse = reverse_fixture();
+        assert!(!is_disallowed_reverse_derived_solution(
+            &[4, 7, 3, 6, 9, 12, 15, 14],
+            &reverse,
+        ));
+    }
+
+    #[test]
+    fn rejects_near_total_inverse_derivation_without_long_block() {
+        let reverse = reverse_fixture();
+        let variant = vec![2, 3, 6, 9, 12, 15, 2, 4, 7, 10, 13, 16];
+        assert!(is_disallowed_reverse_derived_solution(&variant, &reverse));
+    }
+
+    #[test]
+    fn allows_independent_niss_style_path() {
+        let reverse = reverse_fixture();
+        let independent = vec![2, 5, 8, 11, 14, 17, 0, 4, 8, 10, 14, 16];
+        assert!(!is_disallowed_reverse_derived_solution(
+            &independent,
+            &reverse,
         ));
     }
 }
