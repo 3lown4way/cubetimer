@@ -154,7 +154,15 @@ async function loadWasmCandidate(specifier) {
       if (typeof mod.prepare_minmove_333 !== "function") return "";
       return mod.prepare_minmove_333(scramble);
     },
-    searchMinmoveBound(searchId, bound, maxNodes) {
+    searchMinmoveBound(searchId, bound, maxNodes, deadlineMs = 0) {
+      if (typeof mod.search_minmove_bound_with_deadline === "function") {
+        return mod.search_minmove_bound_with_deadline(
+          searchId,
+          bound,
+          maxNodes >>> 0,
+          Number(deadlineMs) || 0,
+        );
+      }
       if (typeof mod.search_minmove_bound !== "function") return "";
       return mod.search_minmove_bound(searchId, bound, maxNodes >>> 0);
     },
@@ -400,13 +408,18 @@ export async function prepareMinmove333(scramble) {
   return parseJsonResponse(rawResponse);
 }
 
-export async function searchMinmove333Bound(searchId, bound, maxNodes = 8000000) {
+export async function searchMinmove333Bound(
+  searchId,
+  bound,
+  maxNodes = 8000000,
+  deadlineMs = 0,
+) {
   const api = await ensureMinmove333Ready();
   if (!api || typeof api.searchMinmoveBound !== "function") return null;
 
   let rawResponse = "";
   try {
-    rawResponse = api.searchMinmoveBound(searchId, bound, maxNodes);
+    rawResponse = api.searchMinmoveBound(searchId, bound, maxNodes, deadlineMs);
   } catch (_) {
     return null;
   }

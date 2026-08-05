@@ -27,6 +27,8 @@ export function prepare_twophase_333(scramble: string, options_json: string): st
 
 export function search_minmove_bound(search_id: number, bound: number, max_nodes: number): string;
 
+export function search_minmove_bound_with_deadline(search_id: number, bound: number, max_nodes: number, deadline_ms: number): string;
+
 export function search_twophase_333(search_id: number, options_json: string): string;
 
 export function search_twophase_exact_333(scramble: string, options_json: string): string;
@@ -63,6 +65,7 @@ export interface InitOutput {
     readonly prepare_minmove_333: (a: number, b: number) => [number, number];
     readonly prepare_twophase_333: (a: number, b: number, c: number, d: number) => [number, number];
     readonly search_minmove_bound: (a: number, b: number, c: number) => [number, number];
+    readonly search_minmove_bound_with_deadline: (a: number, b: number, c: number, d: number) => [number, number];
     readonly search_twophase_333: (a: number, b: number, c: number) => [number, number];
     readonly search_twophase_exact_333: (a: number, b: number, c: number, d: number) => [number, number];
     readonly solve_fmc_wasm: (a: number, b: number, c: number, d: number) => [number, number];

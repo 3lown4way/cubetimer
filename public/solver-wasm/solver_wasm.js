@@ -179,6 +179,26 @@ export function search_minmove_bound(search_id, bound, max_nodes) {
 
 /**
  * @param {number} search_id
+ * @param {number} bound
+ * @param {number} max_nodes
+ * @param {number} deadline_ms
+ * @returns {string}
+ */
+export function search_minmove_bound_with_deadline(search_id, bound, max_nodes, deadline_ms) {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.search_minmove_bound_with_deadline(search_id, bound, max_nodes, deadline_ms);
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * @param {number} search_id
  * @param {string} options_json
  * @returns {string}
  */
@@ -322,6 +342,9 @@ export function warm_twophase_333() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_throw_81fc77679af83bc6: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
         __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
@@ -335,6 +358,10 @@ function __wbg_get_imports() {
         },
         __wbg_new_227d7c05414eb861: function() {
             const ret = new Error();
+            return ret;
+        },
+        __wbg_now_88621c9c9a4f3ffc: function() {
+            const ret = Date.now();
             return ret;
         },
         __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {
