@@ -1,4 +1,5 @@
 import { expose } from "../vendor/comlink/index.js";
+import { shouldRejectLiteralInverseSolution } from "./inverseSolutionPolicy.js";
 
 let solver2x2ModulesPromise = null;
 let solver3x3PhaseModulesPromise = null;
@@ -458,8 +459,8 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
   try {
     const wasmReady = await ensureTwophase333ReadyLazy().catch(() => null);
     if (wasmReady) {
-      const v2Strict = noFallback && normalizeSolverVersion(solverVersion) === "v2";
-      const frontierLimits = v2Strict
+      const v2Adaptive = normalizeSolverVersion(solverVersion) === "v2";
+      const frontierLimits = v2Adaptive
         ? [
             TWOPHASE_333_V2_MAX_FRONTIERS,
             TWOPHASE_333_V2_EXPANDED_FRONTIERS,
@@ -475,7 +476,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
           },
           searchOptions: {
             incumbentLength: inverseLength > 0 ? inverseLength : undefined,
-            excludedSolution: noFallback ? inverseSolution : undefined,
+            excludedSolution: countAlgorithmMoves(scramble) > 4 ? inverseSolution : undefined,
             strictIncumbent: false,
             phase2MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2MaxDepth,
             phase2NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2NodeLimit,
@@ -484,8 +485,18 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
         TWOPHASE_333_TIMEOUT_MS,
       ).catch(() => null);
       if (searched) {
-        phaseResult = searched;
-        if (searched.ok) phaseSource = "WASM_3X3_TWOPHASE";
+        if (searched.ok && shouldRejectLiteralInverseSolution(scramble, searched.solution)) {
+          phaseResult = {
+            ...searched,
+            ok: false,
+            solution: "",
+            moveCount: 0,
+            reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED",
+          };
+        } else {
+          phaseResult = searched;
+          if (searched.ok) phaseSource = "WASM_3X3_TWOPHASE";
+        }
       }
     }
   } catch (_) {}
@@ -525,8 +536,8 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
   }
 
   const solution = String(phaseResult.solution || "").trim();
-  if (noFallback && inverseSolution && solution === inverseSolution) {
-    return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };
+  if (inverseSolution && shouldRejectLiteralInverseSolution(scramble, solution)) {
+    return { ok: false, reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED", source: phaseSource };
   }
   if (!(await verify3x3Solution(scramble, solution))) {
     return { ok: false, reason: "TWOPHASE_FINAL_STATE_NOT_SOLVED" };
