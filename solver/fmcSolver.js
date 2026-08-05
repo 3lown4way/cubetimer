@@ -288,9 +288,65 @@ function canonicalizeAlg(algText) {
   return joinMoves(canonical);
 }
 
+const FMC_REVERSE_PREFIX_DNF_LEN = 4;
+const FMC_REVERSE_CONTIGUOUS_DNF_LEN = 6;
+const FMC_REVERSE_NEAR_TOTAL_SLACK = 2;
+const FMC_REVERSE_NEAR_TOTAL_MIN_LEN = 10;
+
+function commonPrefixLength(left, right) {
+  const limit = Math.min(left.length, right.length);
+  let length = 0;
+  while (length < limit && left[length] === right[length]) length += 1;
+  return length;
+}
+
+function longestCommonContiguousLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  let best = 0;
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      if (leftMove === right[index]) {
+        current[index + 1] = previous[index] + 1;
+        best = Math.max(best, current[index + 1]);
+      }
+    }
+    [previous, current] = [current, previous];
+  }
+  return best;
+}
+
+function longestCommonSubsequenceLength(left, right) {
+  let previous = new Array(right.length + 1).fill(0);
+  let current = new Array(right.length + 1).fill(0);
+  for (const leftMove of left) {
+    current.fill(0);
+    for (let index = 0; index < right.length; index += 1) {
+      current[index + 1] = leftMove === right[index]
+        ? previous[index] + 1
+        : Math.max(current[index], previous[index + 1]);
+    }
+    [previous, current] = [current, previous];
+  }
+  return previous[right.length];
+}
+
 function isReverseScrambleSolution(solutionText, reverseScrambleCanonical) {
   if (!solutionText || !reverseScrambleCanonical) return false;
-  return canonicalizeAlg(solutionText) === reverseScrambleCanonical;
+  const solution = splitMoves(canonicalizeAlg(solutionText));
+  const reverse = splitMoves(reverseScrambleCanonical);
+  if (solution.join(" ") === reverse.join(" ")) return true;
+  if (commonPrefixLength(solution, reverse) >= FMC_REVERSE_PREFIX_DNF_LEN) return true;
+  if (longestCommonContiguousLength(solution, reverse) >= FMC_REVERSE_CONTIGUOUS_DNF_LEN) {
+    return true;
+  }
+  if (Math.min(solution.length, reverse.length) < FMC_REVERSE_NEAR_TOTAL_MIN_LEN) {
+    return false;
+  }
+  const lcs = longestCommonSubsequenceLength(solution, reverse);
+  return solution.length - lcs <= FMC_REVERSE_NEAR_TOTAL_SLACK
+    && reverse.length - lcs <= FMC_REVERSE_NEAR_TOTAL_SLACK;
 }
 
 export function isTrivialReverseScrambleSolution(scrambleText, solutionText) {
@@ -2332,7 +2388,7 @@ export async function solveWithFMCSearch(scramble, onProgress, options = {}) {
   }
 
   const preferNonCfop = options.preferNonCfop === true;
-  // FMC rule: a solution that is simply the inverse scramble is not allowed.
+  // FMC rule: reject solutions directly derived from significant parts of the inverse scramble.
   const reverseAwareCandidates = validCandidates.filter(
     (candidate) => !isReverseScrambleSolution(candidate.solution, reverseScrambleCanonical),
   );

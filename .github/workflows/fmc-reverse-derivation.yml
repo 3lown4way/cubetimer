@@ -1,0 +1,61 @@
+name: Verify FMC reverse derivation policy
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "solver-wasm/src/fmc_search.rs"
+      - "solver/fmcSolver.js"
+      - "benchmark-fmc-reverse-scramble-guard.mjs"
+      - "public/solver-wasm/**"
+      - ".github/workflows/fmc-reverse-derivation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "solver-wasm/src/fmc_search.rs"
+      - "solver/fmcSolver.js"
+      - "benchmark-fmc-reverse-scramble-guard.mjs"
+      - "public/solver-wasm/**"
+      - ".github/workflows/fmc-reverse-derivation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Check JavaScript
+        run: |
+          node --check solver/fmcSolver.js
+          node --check benchmark-fmc-reverse-scramble-guard.mjs
+          node benchmark-fmc-reverse-scramble-guard.mjs
+
+      - name: Check Rust policy and tests
+        working-directory: solver-wasm
+        run: |
+          cargo fmt --check
+          cargo test --lib
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Verify committed browser WASM is reproducible
+        working-directory: solver-wasm
+        run: |
+          wasm-pack build --release --target web --out-dir ../public/solver-wasm
+          git diff --exit-code -- ../public/solver-wasm
