@@ -30,7 +30,9 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Apply WCA-style reverse derivation guard
-        run: python tools/apply-fmc-wca-reverse-guard.py
+        run: |
+          python tools/repair-fmc-wca-reverse-guard.py
+          python tools/apply-fmc-wca-reverse-guard.py
 
       - name: Validate source contracts
         run: |
@@ -38,8 +40,10 @@ jobs:
           node --check benchmark-fmc-reverse-scramble-guard.mjs
           grep -q 'FMC_REVERSE_PREFIX_DNF_LEN: usize = 4' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_REVERSE_CONTIGUOUS_DNF_LEN: usize = 6' solver-wasm/src/fmc_search.rs
+          grep -q 'FMC_REVERSE_NEAR_TOTAL_MIN_LEN: usize = 10' solver-wasm/src/fmc_search.rs
           grep -q 'is_disallowed_reverse_derived_solution' solver-wasm/src/fmc_search.rs
           grep -q 'FMC_REVERSE_PREFIX_DNF_LEN = 4' solver/fmcSolver.js
+          grep -q 'FMC_REVERSE_NEAR_TOTAL_MIN_LEN = 10' solver/fmcSolver.js
           git diff --check
 
       - name: Format and test Rust
