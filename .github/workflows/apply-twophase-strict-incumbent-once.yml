@@ -30,7 +30,9 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Apply inverse-derived candidate filter
-        run: python tools/apply-twophase-inverse-derived-fix.py
+        run: |
+          python tools/repair-twophase-patch-script.py
+          python tools/apply-twophase-inverse-derived-fix.py
 
       - name: Validate source
         run: |
