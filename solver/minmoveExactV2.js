@@ -1,3 +1,5 @@
+import { isLiteralInverseSolution, normalizeOuterAlgorithm } from "./inverseSolutionPolicy.js";
+
 import {
   dropTwophase333Search,
   ensureTwophase333Ready,
@@ -11,6 +13,7 @@ const DEFAULT_TIME_BUDGET_MS = 90_000;
 const DEFAULT_SEED_CONFIGS = [
   { maxPhase1Solutions: 96, phase1MaxDepth: 15, phase1NodeLimit: 2_000_000, phase2NodeLimit: 12_000_000 },
   { maxPhase1Solutions: 384, phase1MaxDepth: 18, phase1NodeLimit: 8_000_000, phase2NodeLimit: 40_000_000 },
+  { maxPhase1Solutions: 768, phase1MaxDepth: 18, phase1NodeLimit: 16_000_000, phase2NodeLimit: 80_000_000 },
 ];
 const DEFAULT_EXACT_PROFILES = [
   { phase1NodeLimit: 1_000_000, phase2NodeLimit: 8_000_000 },
@@ -71,7 +74,8 @@ async function verifySolution(scramble, solution) {
   }
 }
 
-async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
+async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs, excludedSolution = "") {
+  const normalizedExcluded = normalizeOuterAlgorithm(excludedSolution);
   for (const config of seedConfigs) {
     let searchId = null;
     try {
@@ -84,11 +88,22 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs) {
       searchId = prepared.searchId;
       const searched = await searchTwophase333(searchId, {
         incumbentLength,
+        excludedSolution: normalizedExcluded || undefined,
+        strictIncumbent: false,
         phase2MaxDepth: 20,
         phase2NodeLimit: config.phase2NodeLimit,
       });
       if (searched?.ok && typeof searched.solution === "string") {
-        return searched;
+        const normalizedSolution = normalizeOuterAlgorithm(searched.solution);
+        const candidateLength = splitMoves(normalizedSolution).length;
+        if (!normalizedSolution) continue;
+        if (normalizedExcluded && normalizedSolution === normalizedExcluded) continue;
+        if (incumbentLength > 0 && candidateLength > incumbentLength) continue;
+        return {
+          ...searched,
+          solution: normalizedSolution,
+          moveCount: candidateLength,
+        };
       }
     } catch (_) {
       // Try the next bounded profile.
@@ -144,9 +159,10 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const ready = await ensureTwophase333Ready().catch(() => null);
   if (!ready) return { ok: false, reason: "MINMOVE_TWOPHASE_UNAVAILABLE" };
 
-  let incumbentSolution = inverseScramble;
-  let incumbentLength = splitMoves(incumbentSolution).length;
-  let incumbentSource = "inverse_scramble";
+  const inverseUpperBoundLength = splitMoves(inverseScramble).length;
+  let incumbentSolution = "";
+  let incumbentLength = inverseUpperBoundLength;
+  let incumbentSource = "inverse_upper_bound_only";
   let totalNodes = 0;
 
   emitProgress(onProgress, {
@@ -156,23 +172,54 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   });
 
   for (const direction of [
-    { scramble: normalizedScramble, invert: false, source: "twophase_seed" },
-    { scramble: inverseScramble, invert: true, source: "inverse_twophase_seed" },
+    {
+      scramble: normalizedScramble,
+      invert: false,
+      source: "twophase_seed",
+      excludedSolution: inverseScramble,
+    },
+    {
+      scramble: inverseScramble,
+      invert: true,
+      source: "inverse_twophase_seed",
+      excludedSolution: normalizedScramble,
+    },
   ]) {
     if (Date.now() >= deadlineTs) break;
-    const seed = await findTwoPhaseSeed(direction.scramble, incumbentLength, seedConfigs);
+    const seed = await findTwoPhaseSeed(
+      direction.scramble,
+      incumbentLength,
+      seedConfigs,
+      direction.excludedSolution,
+    );
     if (!seed?.ok || typeof seed.solution !== "string") continue;
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
     const candidateSolution = direction.invert ? invertAlgorithm(seed.solution) : seed.solution.trim();
     const candidateLength = splitMoves(candidateSolution).length;
-    if (!candidateSolution || candidateLength >= incumbentLength) continue;
+    if (!candidateSolution || candidateLength > incumbentLength) continue;
+    if (isLiteralInverseSolution(normalizedScramble, candidateSolution)) continue;
     if (!(await verifySolution(normalizedScramble, candidateSolution))) continue;
     incumbentSolution = candidateSolution;
     incumbentLength = candidateLength;
     incumbentSource = direction.source;
   }
 
-  if (!(await verifySolution(normalizedScramble, incumbentSolution))) {
+  if (!incumbentSolution) {
+    return {
+      ok: false,
+      reason: "MINMOVE_NONTRIVIAL_SEED_NOT_FOUND",
+      solution: "",
+      moveCount: 0,
+      inverseUpperBoundLength,
+      optimalityProven: false,
+      fallbackReason: null,
+      elapsedMs: Date.now() - startedAt,
+    };
+  }
+  if (
+    isLiteralInverseSolution(normalizedScramble, incumbentSolution)
+    || !(await verifySolution(normalizedScramble, incumbentSolution))
+  ) {
     return { ok: false, reason: "MINMOVE_SEED_INVALID" };
   }
 
@@ -220,6 +267,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
           candidateSolution
           && candidateLength <= targetBound
           && candidateLength < incumbentLength
+          && !isLiteralInverseSolution(normalizedScramble, candidateSolution)
           && await verifySolution(normalizedScramble, candidateSolution)
         ) {
           incumbentSolution = candidateSolution;
@@ -253,6 +301,9 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         proofSource: "exact_twophase_exhaustion",
         nodes: totalNodes,
       });
+      if (isLiteralInverseSolution(normalizedScramble, incumbentSolution)) {
+        return { ok: false, reason: "MINMOVE_LITERAL_INVERSE_REJECTED" };
+      }
       return {
         ok: true,
         solution: incumbentSolution,
