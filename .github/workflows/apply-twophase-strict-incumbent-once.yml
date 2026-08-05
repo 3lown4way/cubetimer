@@ -1,0 +1,130 @@
+name: Apply strict two-phase incumbent fix once
+
+on:
+  push:
+    branches:
+      - fix/twophase-strict-incumbent
+    paths:
+      - ".github/workflows/apply-twophase-strict-incumbent-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/twophase-strict-incumbent
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply bounded two-phase contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          worker_path = Path("solver/solverWorker.js")
+          worker = worker_path.read_text()
+
+          replacements = [
+              (
+                  'const v2Strict = noFallback && normalizeSolverVersion(solverVersion) === "v2";',
+                  'const v2Adaptive = normalizeSolverVersion(solverVersion) === "v2";',
+              ),
+              ('const frontierLimits = v2Strict', 'const frontierLimits = v2Adaptive'),
+              (
+                  'excludedSolution: noFallback ? inverseSolution : undefined,',
+                  'excludedSolution: inverseSolution || undefined,',
+              ),
+              ('strictIncumbent: false,', 'strictIncumbent: true,'),
+          ]
+          for old, new in replacements:
+              count = worker.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one worker match for {old!r}, found {count}")
+              worker = worker.replace(old, new, 1)
+
+          old_guard = '''  const solution = String(phaseResult.solution || "").trim();
+          if (noFallback && inverseSolution && solution === inverseSolution) {
+            return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };
+          }
+          if (!(await verify3x3Solution(scramble, solution))) {'''
+          new_guard = '''  const solution = String(phaseResult.solution || "").trim();
+          const solutionMoveCount = Number.isFinite(phaseResult.moveCount)
+            ? phaseResult.moveCount
+            : countAlgorithmMoves(solution);
+          if (inverseSolution && solution === inverseSolution) {
+            return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };
+          }
+          if (inverseLength > 0 && solutionMoveCount >= inverseLength) {
+            return {
+              ok: false,
+              reason: "TWOPHASE_NON_IMPROVING_RESULT_REJECTED",
+              source: phaseSource,
+              moveCount: solutionMoveCount,
+              upperBoundLength: inverseLength,
+            };
+          }
+          if (!(await verify3x3Solution(scramble, solution))) {'''
+          count = worker.count(old_guard)
+          if count != 1:
+              raise SystemExit(f"expected one final guard block, found {count}")
+          worker = worker.replace(old_guard, new_guard, 1)
+          worker_path.write_text(worker)
+
+          benchmark_path = Path("benchmark-twophase-nontrivial-reliability.mjs")
+          benchmark = benchmark_path.read_text()
+          benchmark_replacements = [
+              ('frontierLimits: [2, 12, 48],', 'frontierLimits: [2, 12, 48, 192, 768],'),
+              ('strictIncumbent: false,', 'strictIncumbent: true,'),
+              (
+                  '  const nontrivial = solution !== inverse;',
+                  '  const nontrivial = solution !== inverse && Number(result?.moveCount) < 20;',
+              ),
+          ]
+          for old, new in benchmark_replacements:
+              count = benchmark.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one benchmark match for {old!r}, found {count}")
+              benchmark = benchmark.replace(old, new, 1)
+          benchmark_path.write_text(benchmark)
+
+          workflow_path = Path(".github/workflows/apply-twophase-trivial-inverse-root.yml")
+          workflow = workflow_path.read_text()
+          old_check = '          grep -q \'TWOPHASE_STRICT_EXCLUSION_VIOLATION\' solver/solverWorker.js\n'
+          new_check = old_check + '          grep -q \'strictIncumbent: true\' solver/solverWorker.js\n          if workflow.count(old_check) != 1:
+              raise SystemExit("persistent workflow guard insertion point missing")
+          workflow = workflow.replace(old_check, new_check, 1)
+          workflow_path.write_text(workflow)
+
+          Path(".github/workflows/apply-twophase-strict-incumbent-once.yml").unlink()
+          PY
+
+      - name: Validate source contract
+        run: |
+          node --check solver/solverWorker.js
+          node --check benchmark-twophase-nontrivial-reliability.mjs
+          grep -q 'strictIncumbent: true' solver/solverWorker.js
+          grep -q 'excludedSolution: inverseSolution || undefined' solver/solverWorker.js
+          grep -q 'TWOPHASE_NON_IMPROVING_RESULT_REJECTED' solver/solverWorker.js
+          ! grep -q 'strictIncumbent: false' benchmark-twophase-nontrivial-reliability.mjs
+          git diff --check
+
+      - name: Verify bounded nontrivial reliability
+        run: node benchmark-twophase-nontrivial-reliability.mjs
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js benchmark-twophase-nontrivial-reliability.mjs .github/workflows/apply-twophase-trivial-inverse-root.yml .github/workflows/apply-twophase-strict-incumbent-once.yml
+          git commit -m "Enforce strict two-phase incumbent bounds"
+          git push origin HEAD:fix/twophase-strict-incumbent
