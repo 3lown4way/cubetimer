@@ -49,7 +49,7 @@ pub struct SolveResponse {
     pub reason: Option<String>,
 }
 
-static mut PRUNE: Option<ida::PruneTables> = None;
+static PRUNE: Lazy<ida::PruneTables> = Lazy::new(build_prune_tables);
 static MINMOVE_TABLES: Lazy<Mutex<Option<MinmoveTables>>> = Lazy::new(|| Mutex::new(None));
 static MINMOVE_BIDIRECTIONAL_CONTEXT: Lazy<Mutex<Option<Arc<MinmoveBidirectionalContext>>>> =
     Lazy::new(|| Mutex::new(None));
@@ -833,20 +833,26 @@ pub fn verify_fmc_solution_wasm(scramble: &str, solution: &str) -> String {
     }
 }
 
-fn solve_2x2(_scramble: String) -> String {
-    let prune = unsafe { PRUNE.get_or_insert_with(|| build_prune_tables()) };
+fn solve_2x2(scramble: String) -> String {
+    let prune = &*PRUNE;
 
-    let moves = match parser::parse_scramble(&_scramble) {
-        Some(v) => v,
-        None => return error_resp("BAD_SCRAMBLE".into()),
+    let moves = match parser::parse_scramble(&scramble) {
+        Some(value) => value,
+        None => return error_resp("BAD_SCRAMBLE_OR_UNSUPPORTED_2X2_MOVE".into()),
     };
     let state = parser::apply_scramble_to_solved(&moves);
     if let Some(path) = ida_solve(state, 11, prune) {
-        let moves = path_to_strings(path);
+        let final_state = path
+            .iter()
+            .fold(state, |current, &move_index| current.apply_move(move_index));
+        if final_state != state::State::solved() {
+            return error_resp("INTERNAL_2X2_INVALID_SOLUTION".into());
+        }
+        let solution_moves = path_to_strings(path);
         return serde_json::to_string(&SolveResponse {
             ok: true,
-            solution: moves.join(" "),
-            move_count: moves.len() as u32,
+            solution: solution_moves.join(" "),
+            move_count: solution_moves.len() as u32,
             reason: None,
         })
         .unwrap();
