@@ -1,4 +1,8 @@
-import { isLiteralInverseSolution, normalizeOuterAlgorithm } from "./inverseSolutionPolicy.js";
+import {
+  LITERAL_INVERSE_EXEMPT_MOVE_COUNT,
+  normalizeOuterAlgorithm,
+  shouldRejectLiteralInverseSolution,
+} from "./inverseSolutionPolicy.js";
 
 import {
   dropTwophase333Search,
@@ -98,7 +102,6 @@ async function findTwoPhaseSeed(scramble, incumbentLength, seedConfigs, excluded
         const candidateLength = splitMoves(normalizedSolution).length;
         if (!normalizedSolution) continue;
         if (normalizedExcluded && normalizedSolution === normalizedExcluded) continue;
-        if (incumbentLength > 0 && candidateLength > incumbentLength) continue;
         return {
           ...searched,
           solution: normalizedSolution,
@@ -160,9 +163,10 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   if (!ready) return { ok: false, reason: "MINMOVE_TWOPHASE_UNAVAILABLE" };
 
   const inverseUpperBoundLength = splitMoves(inverseScramble).length;
-  let incumbentSolution = "";
+  const rejectLiteralInverse = inverseUpperBoundLength > LITERAL_INVERSE_EXEMPT_MOVE_COUNT;
+  let incumbentSolution = rejectLiteralInverse ? "" : inverseScramble;
   let incumbentLength = inverseUpperBoundLength;
-  let incumbentSource = "inverse_upper_bound_only";
+  let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound_only" : "short_inverse_exception";
   let totalNodes = 0;
 
   emitProgress(onProgress, {
@@ -176,13 +180,13 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       scramble: normalizedScramble,
       invert: false,
       source: "twophase_seed",
-      excludedSolution: inverseScramble,
+      excludedSolution: rejectLiteralInverse ? inverseScramble : "",
     },
     {
       scramble: inverseScramble,
       invert: true,
       source: "inverse_twophase_seed",
-      excludedSolution: normalizedScramble,
+      excludedSolution: rejectLiteralInverse ? normalizedScramble : "",
     },
   ]) {
     if (Date.now() >= deadlineTs) break;
@@ -196,8 +200,8 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
     const candidateSolution = direction.invert ? invertAlgorithm(seed.solution) : seed.solution.trim();
     const candidateLength = splitMoves(candidateSolution).length;
-    if (!candidateSolution || candidateLength > incumbentLength) continue;
-    if (isLiteralInverseSolution(normalizedScramble, candidateSolution)) continue;
+    if (!candidateSolution || (incumbentSolution && candidateLength > incumbentLength)) continue;
+    if (shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)) continue;
     if (!(await verifySolution(normalizedScramble, candidateSolution))) continue;
     incumbentSolution = candidateSolution;
     incumbentLength = candidateLength;
@@ -217,7 +221,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     };
   }
   if (
-    isLiteralInverseSolution(normalizedScramble, incumbentSolution)
+    shouldRejectLiteralInverseSolution(normalizedScramble, incumbentSolution)
     || !(await verifySolution(normalizedScramble, incumbentSolution))
   ) {
     return { ok: false, reason: "MINMOVE_SEED_INVALID" };
@@ -251,6 +255,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       if (Date.now() >= deadlineTs) break;
       const searched = await searchTwophaseExact333(normalizedScramble, {
         maxTotalDepth: targetBound,
+        excludedSolution: rejectLiteralInverse ? inverseScramble : undefined,
         phase1NodeLimit: profile.phase1NodeLimit,
         phase2NodeLimit: profile.phase2NodeLimit,
       }).catch(() => null);
@@ -267,7 +272,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
           candidateSolution
           && candidateLength <= targetBound
           && candidateLength < incumbentLength
-          && !isLiteralInverseSolution(normalizedScramble, candidateSolution)
+          && !shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)
           && await verifySolution(normalizedScramble, candidateSolution)
         ) {
           incumbentSolution = candidateSolution;
@@ -301,7 +306,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         proofSource: "exact_twophase_exhaustion",
         nodes: totalNodes,
       });
-      if (isLiteralInverseSolution(normalizedScramble, incumbentSolution)) {
+      if (shouldRejectLiteralInverseSolution(normalizedScramble, incumbentSolution)) {
         return { ok: false, reason: "MINMOVE_LITERAL_INVERSE_REJECTED" };
       }
       return {

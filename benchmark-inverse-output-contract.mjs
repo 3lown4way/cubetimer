@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   invertOuterAlgorithm,
   isLiteralInverseSolution,
+  shouldRejectLiteralInverseSolution,
 } from "./solver/inverseSolutionPolicy.js";
 import { solveMinmoveExactV2 } from "./solver/minmoveExactV2.js";
 import {
@@ -16,11 +17,16 @@ const REPORTED_INVERSE = "B' R U2 F' U L U' F B D2 F' L2 B U2 R2 L2 B2 U2 D' F2"
 const inverse = invertOuterAlgorithm(SCRAMBLE);
 assert.equal(inverse, REPORTED_INVERSE, "regression fixture must be the literal inverse");
 assert.equal(isLiteralInverseSolution(SCRAMBLE, REPORTED_INVERSE), true);
+assert.equal(shouldRejectLiteralInverseSolution(SCRAMBLE, REPORTED_INVERSE), true);
+const shortScramble = "R U R' U'";
+const shortInverse = invertOuterAlgorithm(shortScramble);
+assert.equal(isLiteralInverseSolution(shortScramble, shortInverse), true);
+assert.equal(shouldRejectLiteralInverseSolution(shortScramble, shortInverse), false);
 
 const workerSource = fs.readFileSync(new URL("./solver/solverWorker.js", import.meta.url), "utf8");
-assert.match(workerSource, /excludedSolution:\s*inverseSolution\s*\|\|\s*undefined/);
-assert.match(workerSource, /isLiteralInverseSolution\(scramble,\s*searched\.solution\)/);
-assert.match(workerSource, /isLiteralInverseSolution\(scramble,\s*solution\)/);
+assert.match(workerSource, /excludedSolution:\s*countAlgorithmMoves\(scramble\)\s*>\s*4\s*\?\s*inverseSolution\s*:\s*undefined/);
+assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*searched\.solution\)/);
+assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*solution\)/);
 assert.doesNotMatch(workerSource, /excludedSolution:\s*noFallback\s*\?/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {

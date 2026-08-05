@@ -1,5 +1,5 @@
 import { expose } from "../vendor/comlink/index.js";
-import { isLiteralInverseSolution } from "./inverseSolutionPolicy.js";
+import { shouldRejectLiteralInverseSolution } from "./inverseSolutionPolicy.js";
 
 let solver2x2ModulesPromise = null;
 let solver3x3PhaseModulesPromise = null;
@@ -476,7 +476,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
           },
           searchOptions: {
             incumbentLength: inverseLength > 0 ? inverseLength : undefined,
-            excludedSolution: inverseSolution || undefined,
+            excludedSolution: countAlgorithmMoves(scramble) > 4 ? inverseSolution : undefined,
             strictIncumbent: false,
             phase2MaxDepth: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2MaxDepth,
             phase2NodeLimit: INTERNAL_PHASE_FALLBACK_OPTIONS.phase2NodeLimit,
@@ -485,7 +485,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
         TWOPHASE_333_TIMEOUT_MS,
       ).catch(() => null);
       if (searched) {
-        if (searched.ok && isLiteralInverseSolution(scramble, searched.solution)) {
+        if (searched.ok && shouldRejectLiteralInverseSolution(scramble, searched.solution)) {
           phaseResult = {
             ...searched,
             ok: false,
@@ -536,7 +536,7 @@ async function solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion 
   }
 
   const solution = String(phaseResult.solution || "").trim();
-  if (inverseSolution && isLiteralInverseSolution(scramble, solution)) {
+  if (inverseSolution && shouldRejectLiteralInverseSolution(scramble, solution)) {
     return { ok: false, reason: "TWOPHASE_TRIVIAL_INVERSE_REJECTED", source: phaseSource };
   }
   if (!(await verify3x3Solution(scramble, solution))) {

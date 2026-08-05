@@ -1,3 +1,5 @@
+export const LITERAL_INVERSE_EXEMPT_MOVE_COUNT = 4;
+
 function splitOuterMoves(sequence) {
   return String(sequence || "")
     .trim()
@@ -42,4 +44,12 @@ export function isSameOuterAlgorithm(left, right) {
 export function isLiteralInverseSolution(scramble, solution) {
   const inverse = invertOuterAlgorithm(scramble);
   return Boolean(inverse && isSameOuterAlgorithm(solution, inverse));
+}
+
+export function shouldRejectLiteralInverseSolution(scramble, solution) {
+  const scrambleLength = splitOuterMoves(scramble).length;
+  return (
+    scrambleLength > LITERAL_INVERSE_EXEMPT_MOVE_COUNT
+    && isLiteralInverseSolution(scramble, solution)
+  );
 }

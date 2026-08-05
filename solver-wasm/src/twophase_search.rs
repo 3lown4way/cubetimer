@@ -146,6 +146,8 @@ pub struct TwophaseSearchOptions {
 pub struct TwophaseExactOptions {
     #[serde(rename = "maxTotalDepth")]
     pub max_total_depth: u8,
+    #[serde(rename = "excludedSolution", default)]
+    pub excluded_solution: Option<String>,
     #[serde(rename = "phase1NodeLimit", default)]
     pub phase1_node_limit: u64,
     #[serde(rename = "phase2NodeLimit", default)]
@@ -560,6 +562,7 @@ struct Phase2SearchCtx<'a, 'b> {
     nodes: u64,
     node_limit: u64,
     node_limit_hit: bool,
+    excluded_global_path: Option<Vec<u8>>,
     fail_cache: &'b mut FixedFailTable,
 }
 
@@ -586,13 +589,32 @@ impl<'a, 'b> Phase2SearchCtx<'a, 'b> {
             return f as u16;
         }
         if cp == 0 && ep == 0 && sep == 0 {
-            return FOUND_SENTINEL;
+            let is_excluded = self
+                .excluded_global_path
+                .as_ref()
+                .map_or(false, |excluded| {
+                    excluded.len() == self.path.len()
+                        && self.path.iter().zip(excluded.iter()).all(
+                            |(&local_index, &global_index)| {
+                                self.tables.phase2_move_indices[local_index as usize]
+                                    == global_index
+                            },
+                        )
+                });
+            if !is_excluded {
+                return FOUND_SENTINEL;
+            }
+            return (bound as u16) + 1;
         }
 
         let remaining = (bound - depth) as u32;
         let cache_key = ((((cp as u64) * 40320 + ep as u64) * SEP_SIZE as u64 + sep as u64) * 7)
             + last_face as u64;
-        let seen_mask = self.fail_cache.get(cache_key);
+        let seen_mask = if self.excluded_global_path.is_none() {
+            self.fail_cache.get(cache_key)
+        } else {
+            0
+        };
         let bit = 1u32 << remaining.min(31);
         if (seen_mask & bit) != 0 {
             return STOP_SENTINEL - 1;
@@ -629,18 +651,25 @@ impl<'a, 'b> Phase2SearchCtx<'a, 'b> {
             }
         }
 
-        self.fail_cache.insert_or(cache_key, bit);
+        if self.excluded_global_path.is_none() {
+            self.fail_cache.insert_or(cache_key, bit);
+        }
         min_next.unwrap_or((bound as u16) + 1)
     }
 }
 
-pub(crate) fn solve_phase2(
+fn solve_phase2_excluding(
     input: &Phase2Input,
     tables: &TwophaseTables,
     max_depth: u8,
     node_limit: u64,
+    excluded_global_path: Option<&[u8]>,
 ) -> Phase2SolveResult {
-    if input.cp_idx == 0 && input.ep_idx == 0 && input.sep_idx == 0 {
+    if input.cp_idx == 0
+        && input.ep_idx == 0
+        && input.sep_idx == 0
+        && !excluded_global_path.map_or(false, |path| path.is_empty())
+    {
         return Phase2SolveResult {
             ok: true,
             moves: Vec::new(),
@@ -663,6 +692,7 @@ pub(crate) fn solve_phase2(
         nodes: 0,
         node_limit,
         node_limit_hit: false,
+        excluded_global_path: excluded_global_path.map(|path| path.to_vec()),
         fail_cache: &mut fail_cache,
     };
 
@@ -705,6 +735,15 @@ pub(crate) fn solve_phase2(
             "PHASE2_NOT_FOUND".into()
         },
     }
+}
+
+pub(crate) fn solve_phase2(
+    input: &Phase2Input,
+    tables: &TwophaseTables,
+    max_depth: u8,
+    node_limit: u64,
+) -> Phase2SolveResult {
+    solve_phase2_excluding(input, tables, max_depth, node_limit, None)
 }
 
 fn run_phase2_pass(
@@ -783,6 +822,7 @@ struct ExactPhase1SearchCtx<'a> {
     interrupted: bool,
     interrupt_reason: String,
     fail_cache: HashMap<u128, u32>,
+    excluded_path: Option<Vec<u8>>,
     found_path: Option<Vec<u8>>,
 }
 
@@ -828,9 +868,11 @@ impl<'a> ExactPhase1SearchCtx<'a> {
 
         let remaining_phase1 = (target_phase1_depth - depth) as u32;
         let cache_key = self.cache_key(state, co, eo, last_face);
-        if let Some(mask) = self.fail_cache.get(&cache_key) {
-            if remaining_phase1 < 32 && (mask & (1u32 << remaining_phase1)) != 0 {
-                return false;
+        if self.excluded_path.is_none() {
+            if let Some(mask) = self.fail_cache.get(&cache_key) {
+                if remaining_phase1 < 32 && (mask & (1u32 << remaining_phase1)) != 0 {
+                    return false;
+                }
             }
         }
 
@@ -846,11 +888,17 @@ impl<'a> ExactPhase1SearchCtx<'a> {
                 self.interrupt_reason = "PHASE2_SEARCH_LIMIT".into();
                 return false;
             }
-            let phase2 = solve_phase2(
+            let excluded_suffix = self.excluded_path.as_ref().and_then(|excluded| {
+                excluded
+                    .starts_with(&self.path)
+                    .then(|| excluded[self.path.len()..].to_vec())
+            });
+            let phase2 = solve_phase2_excluding(
                 &phase2_input,
                 self.tables,
                 total_bound - target_phase1_depth,
                 self.remaining_phase2_budget(),
+                excluded_suffix.as_deref(),
             );
             self.phase2_nodes += phase2.nodes;
             if phase2.ok {
@@ -901,7 +949,7 @@ impl<'a> ExactPhase1SearchCtx<'a> {
             }
         }
 
-        if remaining_phase1 < 32 {
+        if self.excluded_path.is_none() && remaining_phase1 < 32 {
             if self.fail_cache.len() >= PHASE1_EXACT_FAIL_CACHE_LIMIT {
                 self.fail_cache.clear();
             }
@@ -937,6 +985,10 @@ pub fn search_twophase_exact_bound(
         }
     };
 
+    let excluded_path = options
+        .excluded_solution
+        .as_deref()
+        .and_then(|solution| parse_scramble(solution, &tables.move_data).ok());
     let initial_state = CubeState::solved().apply_moves(&moves, &tables.move_data);
     let co_idx = encode_co(&initial_state.co);
     let eo_idx = encode_eo(&initial_state.eo);
@@ -951,6 +1003,7 @@ pub fn search_twophase_exact_bound(
         interrupted: false,
         interrupt_reason: String::new(),
         fail_cache: HashMap::new(),
+        excluded_path,
         found_path: None,
     };
 
