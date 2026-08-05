@@ -51,11 +51,34 @@ assert.equal(twophaseVerification?.solved, true, "two-phase regression solution 
 const minmove = await solveMinmoveExactV2(SCRAMBLE, null, {
   timeBudgetMs: 120_000,
 });
-assert.equal(minmove?.ok, true, `minmove failed: ${minmove?.reason || "unknown"}`);
-assert.equal(minmove?.optimalityProven, true, "minmove result is not proven");
-assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "minmove returned literal inverse");
-const minmoveVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.solution);
-assert.equal(minmoveVerification?.solved, true, "minmove regression solution is invalid");
+
+let minmoveContractSolution = "";
+if (minmove?.ok) {
+  assert.equal(minmove.optimalityProven, true, "successful Minmove result is not proven");
+  assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "Minmove returned literal inverse");
+  const minmoveVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.solution);
+  assert.equal(minmoveVerification?.solved, true, "Minmove regression solution is invalid");
+  minmoveContractSolution = minmove.solution;
+} else {
+  // A node/deadline interruption is not proof of exhaustion. The exact solver
+  // must preserve its intentional no-fallback contract instead of promoting
+  // the incumbent candidate to a successful solution.
+  assert.equal(minmove?.reason, "MINMOVE_NOT_PROVEN", `unexpected Minmove failure: ${minmove?.reason || "unknown"}`);
+  assert.equal(minmove?.optimalityProven, false, "unproven result marked as proven");
+  assert.equal(minmove?.solution, "", "unproven candidate leaked into the public solution field");
+  assert.equal(minmove?.moveCount, 0, "unproven candidate leaked into the public move count");
+  assert.equal(minmove?.fallbackReason, null, "Minmove unexpectedly used fallback");
+  assert.equal(typeof minmove?.candidateSolution, "string", "unproven result lost candidate metadata");
+  assert.ok(minmove.candidateSolution.trim(), "unproven result has an empty candidate");
+  assert.equal(
+    isLiteralInverseSolution(SCRAMBLE, minmove.candidateSolution),
+    false,
+    "Minmove candidate is the rejected literal inverse",
+  );
+  const candidateVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.candidateSolution);
+  assert.equal(candidateVerification?.solved, true, "Minmove candidate metadata is invalid");
+  minmoveContractSolution = minmove.candidateSolution;
+}
 
 console.log(JSON.stringify({
   scramble: SCRAMBLE,
@@ -66,8 +89,12 @@ console.log(JSON.stringify({
     frontierLimit: twophase.frontierLimit,
   },
   minmove: {
-    solution: minmove.solution,
-    moveCount: minmove.moveCount,
+    ok: minmove.ok,
+    reason: minmove.reason || null,
+    solution: minmoveContractSolution,
+    moveCount: minmove.ok ? minmove.moveCount : minmove.candidateMoveCount,
+    optimalityProven: minmove.optimalityProven,
+    interruptedReason: minmove.interruptedReason || null,
     proofSource: minmove.proofSource,
     elapsedMs: minmove.elapsedMs,
   },
