@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "solver/solverWorker.js"
+      - "solver-wasm/src/generated_2x2_moves.rs"
       - "solver-wasm/src/ida.rs"
       - "solver-wasm/src/lib.rs"
       - "solver-wasm/src/parser.rs"
@@ -11,6 +12,7 @@ on:
       - "solver-wasm/src/tables.rs"
       - "solver-wasm/Cargo.toml"
       - "tools/apply-2x2-safety-patch.mjs"
+      - "tools/export-2x2-rust-moves.mjs"
       - ".github/workflows/2x2-wasm-correctness.yml"
   push:
     branches:
@@ -18,6 +20,7 @@ on:
       - "fix/2x2-wasm-correctness"
     paths:
       - "solver/solverWorker.js"
+      - "solver-wasm/src/generated_2x2_moves.rs"
       - "solver-wasm/src/ida.rs"
       - "solver-wasm/src/lib.rs"
       - "solver-wasm/src/parser.rs"
@@ -25,6 +28,7 @@ on:
       - "solver-wasm/src/tables.rs"
       - "solver-wasm/Cargo.toml"
       - "tools/apply-2x2-safety-patch.mjs"
+      - "tools/export-2x2-rust-moves.mjs"
       - ".github/workflows/2x2-wasm-correctness.yml"
 
 permissions:
@@ -50,6 +54,9 @@ jobs:
         with:
           workspaces: solver-wasm
 
+      - name: Generate 2x2 move maps from cubing.js
+        run: node tools/export-2x2-rust-moves.mjs
+
       - name: Apply 2x2 safety patch
         run: node tools/apply-2x2-safety-patch.mjs
 
@@ -61,6 +68,12 @@ jobs:
 
       - name: Validate worker JavaScript syntax
         run: node --check solver/solverWorker.js
+
+      - name: Validate generated move data is stable
+        run: |
+          cp solver-wasm/src/generated_2x2_moves.rs /tmp/generated_2x2_moves.rs
+          node tools/export-2x2-rust-moves.mjs
+          cmp /tmp/generated_2x2_moves.rs solver-wasm/src/generated_2x2_moves.rs
 
       - name: Validate patch formatting
         run: git diff --check
@@ -75,6 +88,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/solverWorker.js solver-wasm/src/lib.rs solver-wasm/src/*.rs
-          git commit -m "Verify 2x2 WASM solutions and remove unsafe prune init"
+          git add solver/solverWorker.js solver-wasm/src/generated_2x2_moves.rs solver-wasm/src/lib.rs solver-wasm/src/*.rs
+          git commit -m "Generate verified 2x2 move maps and safety checks"
           git push origin HEAD:fix/2x2-wasm-correctness
