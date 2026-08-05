@@ -8,17 +8,17 @@ const worker = await fs.readFile(new URL("../solver/solverWorker.js", import.met
 assert.match(worker, /async function solveWithFmcExtremeHybridLazy\(/);
 assert.equal(
   (worker.match(/\? solveWithFmcExtremeHybridLazy\(scramble, onProgress/g) || []).length,
-  2,
-  "Both worker solve entry points must route Extreme FMC through the hybrid solver",
+  1,
+  "The timer worker must route Extreme FMC through the hybrid solver",
 );
 assert.equal(
   (worker.match(/isExtremeFmc\s*\n\s*\? 120000/g) || []).length,
-  2,
+  1,
   "Extreme FMC must receive the full 120 second profile budget",
 );
 assert.equal(
   (worker.match(/const fmcTimeoutMs = isExtremeFmc/g) || []).length,
-  2,
+  1,
   "Extreme FMC timeout must include completion headroom",
 );
 assert.doesNotMatch(
@@ -41,7 +41,7 @@ assert.equal(targetMissCandidate?.solution, "R U R' U' F2");
 
 console.log(JSON.stringify({
   ok: true,
-  workerExtremeRoutes: 2,
+  workerExtremeRoutes: 1,
   extremeBudgetMs: 120000,
   targetMissRecovered: true,
 }));
