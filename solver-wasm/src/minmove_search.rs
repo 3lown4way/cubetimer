@@ -16,6 +16,34 @@ const FAIL_CACHE_LIMIT: usize = 4_000_000;
 const REVERSE_FRONTIER_MAX_DEPTH: u8 = 5;
 const REVERSE_FRONTIER_MAX_STATES: usize = 1_000_000;
 const MOVE_BITS: u64 = 5;
+const DEADLINE_CHECK_INTERVAL: u64 = 2_048;
+
+#[inline(always)]
+fn current_time_ms() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0)
+    }
+}
+
+#[inline(always)]
+fn deadline_reached(nodes: u64, deadline_ms: f64) -> bool {
+    if !deadline_ms.is_finite() || deadline_ms <= 0.0 {
+        return false;
+    }
+    if nodes != 1 && nodes % DEADLINE_CHECK_INTERVAL != 0 {
+        return false;
+    }
+    current_time_ms() >= deadline_ms
+}
 
 /// Lightweight DFS node that tracks coordinate indices for fast move/pruning
 /// plus incrementally maintained edge-subset states for heuristic lookups.
@@ -318,6 +346,8 @@ pub struct SearchBoundResult {
     /// True when the DFS was stopped early because the node budget was exhausted.
     /// In this case `found` is always false and the bound is unproven.
     pub interrupted: bool,
+    /// True when the search stopped because its absolute deadline elapsed.
+    pub timed_out: bool,
     pub bound: u8,
     pub nodes: u64,
     pub path: Vec<u8>,
@@ -349,9 +379,20 @@ impl SearchSession {
         bound: u8,
         max_nodes: u64,
     ) -> SearchBoundResult {
+        self.search_bound_with_deadline(tables, bound, max_nodes, f64::INFINITY)
+    }
+
+    pub fn search_bound_with_deadline(
+        &mut self,
+        tables: &MinmoveTables,
+        bound: u8,
+        max_nodes: u64,
+        deadline_ms: f64,
+    ) -> SearchBoundResult {
         let mut nodes = 0u64;
         let mut path = Vec::with_capacity(bound as usize);
         let mut interrupted = false;
+        let mut timed_out = false;
         let initial = self.initial_node;
         let found = self.dfs(
             initial,
@@ -362,11 +403,14 @@ impl SearchSession {
             &mut path,
             &mut nodes,
             max_nodes,
+            deadline_ms,
             &mut interrupted,
+            &mut timed_out,
         );
         SearchBoundResult {
             found,
             interrupted,
+            timed_out,
             bound,
             nodes,
             path,
@@ -383,9 +427,16 @@ impl SearchSession {
         path: &mut Vec<u8>,
         nodes: &mut u64,
         max_nodes: u64,
+        deadline_ms: f64,
         interrupted: &mut bool,
+        timed_out: &mut bool,
     ) -> bool {
         *nodes += 1;
+        if deadline_reached(*nodes, deadline_ms) {
+            *interrupted = true;
+            *timed_out = true;
+            return false;
+        }
         if *nodes >= max_nodes {
             *interrupted = true;
             return false;
@@ -441,7 +492,9 @@ impl SearchSession {
                 path,
                 nodes,
                 max_nodes,
+                deadline_ms,
                 interrupted,
+                timed_out,
             ) {
                 return true;
             }
@@ -487,4 +540,20 @@ impl SearchSession {
 
 pub fn search_to_string(result: &SearchBoundResult, tables: &MinmoveTables) -> String {
     solution_string_from_path(&result.path, &tables.move_data)
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::{current_time_ms, deadline_reached, DEADLINE_CHECK_INTERVAL};
+
+    #[test]
+    fn disabled_deadline_never_interrupts() {
+        assert!(!deadline_reached(1, 0.0));
+        assert!(!deadline_reached(DEADLINE_CHECK_INTERVAL, f64::INFINITY));
+    }
+
+    #[test]
+    fn expired_deadline_is_detected_immediately() {
+        assert!(deadline_reached(1, current_time_ms() - 1.0));
+    }
 }

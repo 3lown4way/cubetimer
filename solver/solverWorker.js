@@ -143,9 +143,9 @@ async function prepareTwophase333Lazy(scramble, options) {
   return prepareTwophase333(scramble, options);
 }
 
-async function searchMinmove333BoundLazy(searchId, bound, maxNodes) {
+async function searchMinmove333BoundLazy(searchId, bound, maxNodes, deadlineTs = 0) {
   const { searchMinmove333Bound } = await getWasmSolverModule();
-  return searchMinmove333Bound(searchId, bound, maxNodes);
+  return searchMinmove333Bound(searchId, bound, maxNodes, deadlineTs);
 }
 
 async function searchTwophase333Lazy(searchId, options) {
@@ -1060,12 +1060,33 @@ async function solveWithInternal3x3Minmove(scramble, onProgress) {
           }
           return fallbackResult;
         }
-        const searchResult = await searchMinmove333BoundLazy(searchId, bound, NODES_PER_BOUND);
+        const searchResult = await searchMinmove333BoundLazy(
+          searchId,
+          bound,
+          NODES_PER_BOUND,
+          exactSearchDeadlineTs,
+        );
         if (!searchResult?.ok) {
           return { ok: false, reason: searchResult?.reason || "MINMOVE_SEARCH_FAILED" };
         }
         if (Number.isFinite(searchResult.nodes)) {
           totalNodes += searchResult.nodes;
+        }
+        if (
+          searchResult.status === "timeout" ||
+          searchResult.reason === "MINMOVE_DEADLINE_REACHED"
+        ) {
+          const fallbackResult = buildIncumbentFallbackResult("MINMOVE_TIMEOUT", { bound });
+          if (typeof onProgress === "function") {
+            try {
+              void onProgress({
+                type: "exact_search_fallback",
+                reason: "timeout",
+                moveCount: incumbentLength,
+              });
+            } catch (_) {}
+          }
+          return fallbackResult;
         }
         if (searchResult.status === "found" && typeof searchResult.solution === "string") {
           foundSearchResult = searchResult;

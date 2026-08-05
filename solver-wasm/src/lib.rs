@@ -409,6 +409,25 @@ pub fn prepare_twophase_333(scramble: &str, options_json: &str) -> String {
 
 #[wasm_bindgen]
 pub fn search_minmove_bound(search_id: u32, bound: u32, max_nodes: u32) -> String {
+    search_minmove_bound_impl(search_id, bound, max_nodes, f64::INFINITY)
+}
+
+#[wasm_bindgen]
+pub fn search_minmove_bound_with_deadline(
+    search_id: u32,
+    bound: u32,
+    max_nodes: u32,
+    deadline_ms: f64,
+) -> String {
+    search_minmove_bound_impl(search_id, bound, max_nodes, deadline_ms)
+}
+
+fn search_minmove_bound_impl(
+    search_id: u32,
+    bound: u32,
+    max_nodes: u32,
+    deadline_ms: f64,
+) -> String {
     utils::set_panic_hook();
     let guard = MINMOVE_TABLES.lock().unwrap();
     let Some(tables) = guard.as_ref() else {
@@ -437,13 +456,17 @@ pub fn search_minmove_bound(search_id: u32, bound: u32, max_nodes: u32) -> Strin
         .unwrap();
     };
 
-    // 0 means unlimited; otherwise use the caller-supplied budget.
     let node_budget: u64 = if max_nodes == 0 {
         u64::MAX
     } else {
         max_nodes as u64
     };
-    let result = session.search_bound(tables, bound.min(u8::MAX as u32) as u8, node_budget);
+    let result = session.search_bound_with_deadline(
+        tables,
+        bound.min(u8::MAX as u32) as u8,
+        node_budget,
+        deadline_ms,
+    );
     let solution = if result.found {
         search_to_string(&result, tables)
     } else {
@@ -451,10 +474,19 @@ pub fn search_minmove_bound(search_id: u32, bound: u32, max_nodes: u32) -> Strin
     };
     let status = if result.found {
         "found"
+    } else if result.timed_out {
+        "timeout"
     } else if result.interrupted {
         "interrupted"
     } else {
         "exhausted"
+    };
+    let reason = if result.timed_out {
+        Some("MINMOVE_DEADLINE_REACHED".into())
+    } else if result.interrupted {
+        Some("MINMOVE_NODE_LIMIT_REACHED".into())
+    } else {
+        None
     };
     serde_json::to_string(&MinmoveSearchResponse {
         ok: true,
@@ -463,7 +495,7 @@ pub fn search_minmove_bound(search_id: u32, bound: u32, max_nodes: u32) -> Strin
         nodes: result.nodes,
         move_count: result.path.len() as u32,
         solution,
-        reason: None,
+        reason,
     })
     .unwrap()
 }
