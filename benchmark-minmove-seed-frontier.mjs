@@ -5,6 +5,7 @@ import {
   ensureTwophase333Ready,
   prepareTwophase333,
   searchTwophase333,
+  searchTwophaseExact333,
   verifyFmcSolutionWasm,
 } from "./solver/wasmSolver.js";
 
@@ -15,8 +16,6 @@ const profiles = [
   { maxPhase1Solutions: 384, phase1MaxDepth: 18, phase1NodeLimit: 8_000_000, phase2NodeLimit: 40_000_000 },
   { maxPhase1Solutions: 2_048, phase1MaxDepth: 18, phase1NodeLimit: 80_000_000, phase2NodeLimit: 100_000_000 },
   { maxPhase1Solutions: 8_192, phase1MaxDepth: 19, phase1NodeLimit: 250_000_000, phase2NodeLimit: 250_000_000 },
-  { maxPhase1Solutions: 32_768, phase1MaxDepth: 19, phase1NodeLimit: 500_000_000, phase2NodeLimit: 500_000_000 },
-  { maxPhase1Solutions: 65_536, phase1MaxDepth: 20, phase1NodeLimit: 750_000_000, phase2NodeLimit: 750_000_000 },
 ];
 
 const ready = await ensureTwophase333Ready();
@@ -45,6 +44,7 @@ for (const profile of profiles) {
       ? await verifyFmcSolutionWasm(scramble, solution)
       : null;
     const row = {
+      type: "seed",
       maxPhase1Solutions: profile.maxPhase1Solutions,
       phase1MaxDepth: profile.phase1MaxDepth,
       preparedCandidateCount: prepared.candidateCount,
@@ -68,8 +68,40 @@ for (const profile of profiles) {
 
 const improving = rows.filter((row) => row.ok && row.solved && row.moveCount < incumbentLength);
 console.log(JSON.stringify({
-  summary: true,
+  type: "seed-summary",
   profiles: rows.length,
   firstImprovingFrontier: improving[0]?.maxPhase1Solutions ?? null,
   bestMoveCount: improving.length ? Math.min(...improving.map((row) => row.moveCount)) : null,
 }));
+
+const proofScramble = "U2 L' F' R U' F2 L D L2 F' B R2 F' U2 R2 F' U2 F U'";
+const proofBound = 18;
+const exactProfiles = [
+  { phase1NodeLimit: 64_000_000, phase2NodeLimit: 512_000_000 },
+  { phase1NodeLimit: 128_000_000, phase2NodeLimit: 1_000_000_000 },
+  { phase1NodeLimit: 256_000_000, phase2NodeLimit: 2_000_000_000 },
+];
+
+for (const profile of exactProfiles) {
+  const startedAt = performance.now();
+  const searched = await searchTwophaseExact333(proofScramble, {
+    maxTotalDepth: proofBound,
+    phase1NodeLimit: profile.phase1NodeLimit,
+    phase2NodeLimit: profile.phase2NodeLimit,
+  });
+  const row = {
+    type: "exact-profile",
+    phase1NodeLimit: profile.phase1NodeLimit,
+    phase2NodeLimit: profile.phase2NodeLimit,
+    status: searched?.status || null,
+    ok: searched?.ok === true,
+    reason: searched?.reason || null,
+    moveCount: searched?.moveCount ?? null,
+    phase1Nodes: searched?.phase1Nodes ?? null,
+    phase2Nodes: searched?.phase2Nodes ?? null,
+    totalNodes: searched?.nodes ?? null,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  };
+  console.log(JSON.stringify(row));
+  if (row.status === "found" || row.status === "exhausted") break;
+}
