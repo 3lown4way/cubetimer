@@ -24,6 +24,31 @@ const DEFAULT_EXACT_PROFILES = [
   { phase1NodeLimit: 4_000_000, phase2NodeLimit: 32_000_000 },
   { phase1NodeLimit: 16_000_000, phase2NodeLimit: 128_000_000 },
 ];
+const DEADLINE_ONLY_EXACT_PROFILE = Object.freeze({
+  phase1NodeLimit: 0,
+  phase2NodeLimit: 0,
+  deadlineOnly: true,
+});
+
+function normalizeNodeLimit(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+function buildExactProfiles(configuredProfiles, useFullProofBudget) {
+  const profiles = configuredProfiles.map((profile) => ({
+    phase1NodeLimit: normalizeNodeLimit(profile?.phase1NodeLimit),
+    phase2NodeLimit: normalizeNodeLimit(profile?.phase2NodeLimit),
+    deadlineOnly: profile?.deadlineOnly === true,
+  }));
+  if (
+    useFullProofBudget
+    && !profiles.some((profile) => profile.phase1NodeLimit === 0 && profile.phase2NodeLimit === 0)
+  ) {
+    profiles.push({ ...DEADLINE_ONLY_EXACT_PROFILE });
+  }
+  return profiles;
+}
 
 function splitMoves(sequence) {
   return String(sequence || "")
@@ -144,6 +169,9 @@ function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
     proofSource: "exact_twophase_incomplete",
     fallbackReason: null,
     interruptedReason: meta.interruptedReason ? String(meta.interruptedReason) : null,
+    proofAttempts: Number.isFinite(meta.proofAttempts) ? Math.max(0, Math.floor(meta.proofAttempts)) : 0,
+    timeBudgetMs: Number.isFinite(meta.timeBudgetMs) ? Math.max(0, Math.floor(meta.timeBudgetMs)) : 0,
+    budgetExhausted: meta.budgetExhausted === true,
     elapsedMs: Number.isFinite(meta.elapsedMs) ? meta.elapsedMs : 0,
   };
 }
@@ -163,9 +191,11 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const seedConfigs = Array.isArray(options.seedConfigs) && options.seedConfigs.length
     ? options.seedConfigs
     : DEFAULT_SEED_CONFIGS;
-  const exactProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
+  const configuredExactProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
     ? options.exactProfiles
     : DEFAULT_EXACT_PROFILES;
+  const useFullProofBudget = options.useFullProofBudget !== false;
+  const exactProfiles = buildExactProfiles(configuredExactProfiles, useFullProofBudget);
 
   const ready = await ensureTwophase333Ready().catch(() => null);
   if (!ready) return { ok: false, reason: "MINMOVE_TWOPHASE_UNAVAILABLE" };
@@ -176,6 +206,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   let incumbentLength = inverseUpperBoundLength;
   let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound_only" : "short_inverse_exception";
   let totalNodes = 0;
+  let proofAttempts = 0;
 
   emitProgress(onProgress, {
     type: "upper_bound_start",
@@ -260,8 +291,20 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       nodes: totalNodes,
     });
 
-    for (const profile of exactProfiles) {
+    for (let profileIndex = 0; profileIndex < exactProfiles.length; profileIndex += 1) {
       if (Date.now() >= deadlineTs) break;
+      const profile = exactProfiles[profileIndex];
+      proofAttempts += 1;
+      emitProgress(onProgress, {
+        type: "proof_profile_start",
+        bound: targetBound,
+        profileIndex,
+        phase1NodeLimit: profile.phase1NodeLimit,
+        phase2NodeLimit: profile.phase2NodeLimit,
+        deadlineOnly: profile.deadlineOnly === true,
+        remainingMs: Math.max(0, deadlineTs - Date.now()),
+      });
+
       const searched = await searchTwophaseExact333(normalizedScramble, {
         maxTotalDepth: targetBound,
         excludedSolution: rejectLiteralInverse ? inverseScramble : undefined,
@@ -269,12 +312,34 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         phase2NodeLimit: profile.phase2NodeLimit,
         deadlineTs,
       }).catch(() => null);
+      const searchedReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";
+      const searchedNodes = Number.isFinite(searched?.nodes) ? searched.nodes : 0;
+      totalNodes += searchedNodes;
+      const timedOut = searched?.timedOut === true || searchedReason === "TWOPHASE_DEADLINE_REACHED";
+      if (timedOut) {
+        lastReason = "TWOPHASE_DEADLINE_REACHED";
+        emitProgress(onProgress, {
+          type: "proof_profile_done",
+          bound: targetBound,
+          profileIndex,
+          status: "timeout",
+          reason: lastReason,
+          nodes: searchedNodes,
+        });
+        break;
+      }
       if (!searched?.ok) {
-        lastReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";
+        lastReason = searchedReason;
+        emitProgress(onProgress, {
+          type: "proof_profile_done",
+          bound: targetBound,
+          profileIndex,
+          status: "failed",
+          reason: lastReason,
+          nodes: searchedNodes,
+        });
         continue;
       }
-      totalNodes += Number.isFinite(searched.nodes) ? searched.nodes : 0;
-
       if (searched.found && typeof searched.solution === "string") {
         const candidateSolution = searched.solution.trim();
         const candidateLength = splitMoves(candidateSolution).length;
@@ -290,6 +355,14 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
           incumbentSource = "exact_twophase_bound";
           improved = true;
           emitProgress(onProgress, {
+            type: "proof_profile_done",
+            bound: targetBound,
+            profileIndex,
+            status: "improved",
+            moveCount: incumbentLength,
+            nodes: searchedNodes,
+          });
+          emitProgress(onProgress, {
             type: "exact_search_improved",
             moveCount: incumbentLength,
             bound: targetBound,
@@ -302,9 +375,24 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
 
       if (!searched.interrupted) {
         exhausted = true;
+        emitProgress(onProgress, {
+          type: "proof_profile_done",
+          bound: targetBound,
+          profileIndex,
+          status: "exhausted",
+          nodes: searchedNodes,
+        });
         break;
       }
-      lastReason = searched.reason || "MINMOVE_EXACT_SEARCH_LIMIT";
+      lastReason = searchedReason || "MINMOVE_EXACT_SEARCH_LIMIT";
+      emitProgress(onProgress, {
+        type: "proof_profile_done",
+        bound: targetBound,
+        profileIndex,
+        status: "interrupted",
+        reason: lastReason,
+        nodes: searchedNodes,
+      });
     }
 
     if (improved) continue;
@@ -332,6 +420,8 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         proofSource: "exact_twophase_exhaustion",
         fallbackReason: null,
         seedSource: incumbentSource,
+        proofAttempts,
+        timeBudgetMs,
         elapsedMs,
       };
     }
@@ -340,6 +430,9 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       nodes: totalNodes,
       bound: targetBound,
       interruptedReason: lastReason || "MINMOVE_EXACT_SEARCH_LIMIT",
+      proofAttempts,
+      timeBudgetMs,
+      budgetExhausted: Date.now() >= deadlineTs || lastReason === "TWOPHASE_DEADLINE_REACHED",
       elapsedMs: Date.now() - startedAt,
     });
   }
@@ -348,6 +441,9 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     nodes: totalNodes,
     bound: Math.max(0, incumbentLength - 1),
     interruptedReason: "MINMOVE_EXACT_TIMEOUT",
+    proofAttempts,
+    timeBudgetMs,
+    budgetExhausted: true,
     elapsedMs: Date.now() - startedAt,
   });
 }
