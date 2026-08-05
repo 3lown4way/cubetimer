@@ -5,7 +5,7 @@ use crate::minmove_core::{
 };
 
 const BUNDLE_MAGIC: &[u8; 8] = b"TP3BNDL1";
-const BUNDLE_VERSION: u32 = 2;
+const BUNDLE_VERSION: u32 = 3;
 const PHASE2_MOVE_COUNT: usize = 10;
 const PHASE2_MOVE_NAMES: [&str; PHASE2_MOVE_COUNT] =
     ["U", "U2", "U'", "D", "D2", "D'", "R2", "L2", "F2", "B2"];
@@ -27,6 +27,7 @@ pub enum TableKind {
     Phase2SepMove = 11,
     CoSliceJoint = 12,
     EoSliceJoint = 13,
+    CoEoJoint = 14,
 }
 
 impl TableKind {
@@ -45,6 +46,7 @@ impl TableKind {
             11 => Some(Self::Phase2SepMove),
             12 => Some(Self::CoSliceJoint),
             13 => Some(Self::EoSliceJoint),
+            14 => Some(Self::CoEoJoint),
             _ => None,
         }
     }
@@ -70,6 +72,7 @@ pub struct TwophaseTables {
     pub co: PackedTable,
     pub eo: PackedTable,
     pub slice: PackedTable,
+    pub co_eo_joint: PackedTable,
     pub co_slice_joint: PackedTable,
     pub eo_slice_joint: PackedTable,
     pub phase2_ep: PackedTable,
@@ -235,6 +238,7 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
     let mut co: Option<PackedTable> = None;
     let mut eo: Option<PackedTable> = None;
     let mut slice: Option<PackedTable> = None;
+    let mut co_eo_joint: Option<PackedTable> = None;
     let mut co_slice_joint: Option<PackedTable> = None;
     let mut eo_slice_joint: Option<PackedTable> = None;
     let mut phase2_ep: Option<PackedTable> = None;
@@ -307,6 +311,7 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
                 Some(TableKind::Phase2CpSepJoint) => phase2_cp_sep_joint = Some(table),
                 Some(TableKind::CoSliceJoint) => co_slice_joint = Some(table),
                 Some(TableKind::EoSliceJoint) => eo_slice_joint = Some(table),
+                Some(TableKind::CoEoJoint) => co_eo_joint = Some(table),
                 _ => {}
             }
         }
@@ -322,6 +327,8 @@ pub fn load_bundle(bytes: &[u8]) -> Result<TwophaseTables, String> {
         co: co.ok_or_else(|| "twophase bundle missing CO table".to_string())?,
         eo: eo.ok_or_else(|| "twophase bundle missing EO table".to_string())?,
         slice: slice.ok_or_else(|| "twophase bundle missing Slice table".to_string())?,
+        co_eo_joint: co_eo_joint
+            .ok_or_else(|| "twophase bundle missing COxEO table".to_string())?,
         co_slice_joint: co_slice_joint
             .ok_or_else(|| "twophase bundle missing COxSlice table".to_string())?,
         eo_slice_joint: eo_slice_joint

@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let move_data_file: MoveDataFile = serde_json::from_slice(&fs::read(&move_data_path)?)?;
     let move_data = MoveData::try_from(move_data_file.clone())?;
 
-    eprintln!("[twophase] generating v2 joint pruning tables...");
+    eprintln!("[twophase] generating v3 joint pruning tables...");
     let tables = build_all_tables(&move_data)?;
     let inputs = vec![
         BundleInput::Dist {
@@ -59,6 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             values: &tables.phase2_sep_move,
         },
         BundleInput::Dist {
+            kind: TableKind::CoEoJoint,
+            values: &tables.co_eo_joint,
+        },
+        BundleInput::Dist {
             kind: TableKind::CoSliceJoint,
             values: &tables.co_slice_joint,
         },
@@ -70,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bundle = build_bundle_bytes(&move_data_file, &inputs)?;
     let output_dir = manifest_dir.join("../public/solver-wasm/twophase");
     fs::create_dir_all(&output_dir)?;
-    let output_path = output_dir.join("twophase-333-v2.bin");
+    let output_path = output_dir.join("twophase-333-v3.bin");
     fs::write(&output_path, &bundle)?;
     eprintln!(
         "[twophase] wrote {} bytes to {}",

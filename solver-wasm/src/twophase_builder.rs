@@ -17,6 +17,7 @@ pub struct GeneratedTwophaseTables {
     pub co: Vec<u8>,
     pub eo: Vec<u8>,
     pub slice: Vec<u8>,
+    pub co_eo_joint: Vec<u8>,
     pub co_slice_joint: Vec<u8>,
     pub eo_slice_joint: Vec<u8>,
     pub phase2_ep: Vec<u8>,
@@ -327,6 +328,7 @@ pub fn build_all_tables(move_data: &MoveData) -> Result<GeneratedTwophaseTables,
     solved_slice_occupancy[11] = 1;
     let solved_slice = encode_slice_from_occupancy(&solved_slice_occupancy);
 
+    let co_eo_joint = build_joint_dist(&co_move, CO_SIZE, &eo_move, EO_SIZE, 0, 0);
     let co_slice_joint =
         build_joint_dist(&co_move, CO_SIZE, &slice_move, SLICE_SIZE, 0, solved_slice);
     let eo_slice_joint =
@@ -341,6 +343,7 @@ pub fn build_all_tables(move_data: &MoveData) -> Result<GeneratedTwophaseTables,
         co: bfs_from_move_table_u16(&co_move, CO_SIZE, 0, MOVE_COUNT),
         eo: bfs_from_move_table_u16(&eo_move, EO_SIZE, 0, MOVE_COUNT),
         slice: bfs_from_move_table_u16(&slice_move, SLICE_SIZE, solved_slice, MOVE_COUNT),
+        co_eo_joint,
         co_slice_joint,
         eo_slice_joint,
         phase2_ep: bfs_from_move_table_u16(&phase2_ep_move, EP_SIZE, 0, PHASE2_MOVE_COUNT),

@@ -248,8 +248,13 @@ fn encode_perm4(perm: &[u8; 4]) -> usize {
 #[inline(always)]
 fn phase1_joint_lower_bound(tables: &TwophaseTables, co: usize, eo: usize, slice: usize) -> u8 {
     tables
-        .co_slice_joint
-        .get(co * crate::minmove_core::SLICE_SIZE + slice)
+        .co_eo_joint
+        .get(co * crate::minmove_core::EO_SIZE + eo)
+        .max(
+            tables
+                .co_slice_joint
+                .get(co * crate::minmove_core::SLICE_SIZE + slice),
+        )
         .max(
             tables
                 .eo_slice_joint
