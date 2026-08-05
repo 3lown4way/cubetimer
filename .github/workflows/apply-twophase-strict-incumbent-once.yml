@@ -78,9 +78,12 @@ jobs:
               '  if (inverseSolution && solution === inverseSolution) {',
               "exact inverse guard",
           )
-          worker = replace_once(
-              worker,
-              '  if (!(await verify3x3Solution(scramble, solution))) {\n',
+          inverse_guard = (
+              '  if (inverseSolution && solution === inverseSolution) {\n'
+              '    return { ok: false, reason: "TWOPHASE_STRICT_EXCLUSION_VIOLATION", source: phaseSource };\n'
+              '  }\n'
+          )
+          non_improving_guard = (
               '  if (inverseLength > 0 && solutionMoveCount >= inverseLength) {\n'
               '    return {\n'
               '      ok: false,\n'
@@ -90,8 +93,12 @@ jobs:
               '      upperBoundLength: inverseLength,\n'
               '    };\n'
               '  }\n'
-              '  if (!(await verify3x3Solution(scramble, solution))) {\n',
-              "non-improving guard",
+          )
+          worker = replace_once(
+              worker,
+              inverse_guard,
+              inverse_guard + non_improving_guard,
+              "anchored non-improving guard",
           )
           worker_path.write_text(worker)
 
