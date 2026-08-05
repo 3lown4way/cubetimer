@@ -1,14 +1,16 @@
 // Precomputed move tables for 2x2 corners.
 // Move order: U, U2, U', F, F2, F', R, R2, R'.
-// Tables are generated from the three quarter-turn definitions so half turns
-// and inverse turns cannot accidentally be interpreted as unrelated 4-cycles.
+// The raw position maps and orientation deltas are generated from the vendored
+// cubing.js cube2x2x2 definition by tools/export-2x2-rust-moves.mjs.
 
 use crate::permutation::permutation_to_index;
 use once_cell::sync::Lazy;
 
+include!("generated_2x2_moves.rs");
+
 pub const NMOVES: usize = 9;
-pub const NPERM: usize = 40320; // 8!
-pub const NORI: usize = 2187; // 3^7
+pub const NPERM: usize = 40320; // 8!, with only the fixed-corner subgroup reachable.
+pub const NORI: usize = 2187; // 3^7, with only the fixed-corner subgroup reachable.
 
 pub struct MoveTable {
     pub perm: Vec<[u32; NMOVES]>,
@@ -16,48 +18,20 @@ pub struct MoveTable {
 
 pub static MOVE_TABLE: Lazy<MoveTable> = Lazy::new(build_move_table);
 
-// Destination-position orientation deltas for one clockwise quarter turn.
-// Corner order is shared with the permutation cycles below.
-pub const QUARTER_ORI_DELTA: [[u8; 8]; 3] = [
-    [0, 0, 0, 0, 0, 0, 0, 0], // U
-    [2, 0, 0, 1, 1, 2, 0, 0], // F
-    [1, 2, 0, 0, 2, 1, 0, 0], // R
-];
-
-// Clockwise quarter-turn cycles for U, F and R.
-pub const QUARTER_CYCLES: [[usize; 4]; 3] = [
-    [0, 1, 2, 3], // U
-    [0, 4, 5, 3], // F
-    [0, 1, 4, 5], // R
-];
-
 fn build_move_table() -> MoveTable {
     let mut perm = vec![[0u32; NMOVES]; NPERM];
     for idx in 0..NPERM {
         let original = index_to_perm(idx as u32);
         for mv in 0..NMOVES {
-            let mut moved = original;
-            let face = mv / 3;
-            let turns = match mv % 3 {
-                0 => 1,
-                1 => 2,
-                _ => 3,
-            };
-            for _ in 0..turns {
-                apply_cycle(&mut moved, QUARTER_CYCLES[face]);
+            let mut moved = [0u8; 8];
+            for new_position in 0..8 {
+                let old_position = MOVE_PERM_MAP[mv][new_position];
+                moved[new_position] = original[old_position];
             }
             perm[idx][mv] = perm_to_index(&moved);
         }
     }
     MoveTable { perm }
-}
-
-pub fn apply_cycle<T: Copy>(values: &mut [T; 8], cyc: [usize; 4]) {
-    let tmp = values[cyc[0]];
-    values[cyc[0]] = values[cyc[3]];
-    values[cyc[3]] = values[cyc[2]];
-    values[cyc[2]] = values[cyc[1]];
-    values[cyc[1]] = tmp;
 }
 
 fn index_to_perm(mut idx: u32) -> [u8; 8] {
@@ -68,11 +42,11 @@ fn index_to_perm(mut idx: u32) -> [u8; 8] {
         let pos = (idx / fact) as usize;
         idx %= fact;
         let mut count = 0;
-        for n in 0..8 {
-            if !used[n] {
+        for (n, is_used) in used.iter_mut().enumerate() {
+            if !*is_used {
                 if count == pos {
                     elems[7 - i] = n as u8;
-                    used[n] = true;
+                    *is_used = true;
                     break;
                 }
                 count += 1;
@@ -93,6 +67,15 @@ fn factorial(n: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_move_maps_are_permutations() {
+        for map in MOVE_PERM_MAP {
+            let mut sorted = map;
+            sorted.sort_unstable();
+            assert_eq!(sorted, [0usize, 1, 2, 3, 4, 5, 6, 7]);
+        }
+    }
 
     #[test]
     fn half_turns_square_to_identity() {
