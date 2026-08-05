@@ -93,6 +93,11 @@ async function solveWithFMCSearchLazy(scramble, onProgress, options) {
   return solveWithFMCSearch(scramble, onProgress, options);
 }
 
+async function solveWithFmcExtremeHybridLazy(scramble, onProgress, options) {
+  const { solveWithFmcExtremeHybrid } = await import("./fmcExtremeHybrid.js");
+  return solveWithFmcExtremeHybrid(scramble, onProgress, options);
+}
+
 async function solveWithExternalSearchLazy(scramble, eventId) {
   const { solveWithExternalSearch } = await getExternalSolverModule();
   return solveWithExternalSearch(scramble, eventId);
@@ -1577,27 +1582,36 @@ const api = {
           const effectiveFmcTimeBudgetMs = Number.isFinite(fmcTimeBudgetMs)
             ? fmcTimeBudgetMs
             : isExtremeFmc
-              ? 90000
+              ? 120000
               : 8000;
           const effectiveFmcTargetMoveCount = Number.isFinite(fmcTargetMoveCount)
             ? fmcTargetMoveCount
             : isExtremeFmc
               ? 20
               : 24;
-          const fmcResult = await withTimeout(
-            solveWithFMCSearchLazy(scramble, onProgress, {
-              qualityMode: isExtremeFmc ? "extreme" : "sweetSpot",
-              timeBudgetMs: effectiveFmcTimeBudgetMs,
-              targetMoveCount: effectiveFmcTargetMoveCount,
-              allowCfopFallback: false,
-              premoveAllowCfopFallback: false,
-              preferNonCfop: true,
-              verifyLimit: isExtremeFmc ? 32 : 18,
-              enableInsertions: true,
-              crossColors: normalizeCrossColorList(crossColor),
-            }),
-            Math.min(FMC_333_TIMEOUT_MS, effectiveFmcTimeBudgetMs + 15000),
-          ).catch(() => ({ ok: false, reason: "FMC_TIMEOUT" }));
+          const crossColors = normalizeCrossColorList(crossColor);
+          const fmcPromise = isExtremeFmc
+            ? solveWithFmcExtremeHybridLazy(scramble, onProgress, {
+                timeBudgetMs: effectiveFmcTimeBudgetMs,
+                targetMoveCount: effectiveFmcTargetMoveCount,
+                crossColors,
+              })
+            : solveWithFMCSearchLazy(scramble, onProgress, {
+                qualityMode: "sweetSpot",
+                timeBudgetMs: effectiveFmcTimeBudgetMs,
+                targetMoveCount: effectiveFmcTargetMoveCount,
+                allowCfopFallback: false,
+                premoveAllowCfopFallback: false,
+                preferNonCfop: true,
+                verifyLimit: 18,
+                enableInsertions: true,
+                crossColors,
+              });
+          const fmcTimeoutMs = isExtremeFmc
+            ? effectiveFmcTimeBudgetMs + 15000
+            : Math.min(FMC_333_TIMEOUT_MS, effectiveFmcTimeBudgetMs + 15000);
+          const fmcResult = await withTimeout(fmcPromise, fmcTimeoutMs)
+            .catch(() => ({ ok: false, reason: "FMC_TIMEOUT" }));
           if (fmcResult?.ok) {
             return fmcResult;
           }
