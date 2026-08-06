@@ -1568,7 +1568,6 @@ const api = {
     if (!scramble) {
       return { ok: false, reason: "NO_SCRAMBLE" };
     }
-    startBackgroundWarmups();
     if (normalizedEventId === "444") {
       const effective444DeadlineTs = deadlineTs > 0
         ? deadlineTs
