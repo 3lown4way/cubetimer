@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{parse_alg444, solve_centers, CenterSolveError, Cube444};
+use crate::{
+    parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444, EdgeSolveError,
+};
 
-const API_VERSION: &str = "444-centers-v1";
+const API_VERSION: &str = "444-edges-v1";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +27,10 @@ struct BoundaryState {
     center_move_count: usize,
     center_table_build_ms: f64,
     center_search_ms: f64,
+    edges_paired: bool,
+    edge_move_count: usize,
+    edge_table_build_ms: f64,
+    edge_search_ms: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,6 +45,10 @@ struct Solve444Meta {
     center_move_count: usize,
     center_table_build_ms: f64,
     center_search_ms: f64,
+    edges_paired: bool,
+    edge_move_count: usize,
+    edge_table_build_ms: f64,
+    edge_search_ms: f64,
     deadline_ts: f64,
 }
 
@@ -54,6 +64,10 @@ impl From<BoundaryState> for Solve444Meta {
             center_move_count: state.center_move_count,
             center_table_build_ms: state.center_table_build_ms,
             center_search_ms: state.center_search_ms,
+            edges_paired: state.edges_paired,
+            edge_move_count: state.edge_move_count,
+            edge_table_build_ms: state.edge_table_build_ms,
+            edge_search_ms: state.edge_search_ms,
             deadline_ts: state.deadline_ts,
         }
     }
@@ -135,7 +149,7 @@ fn empty_response(
 
 fn serialize_response(value: &Solve444Response) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| {
-        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-centers-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"centersSolved":false,"centerMoveCount":0,"centerTableBuildMs":0,"centerSearchMs":0,"deadlineTs":0}}"#.to_string()
+        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-edges-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"centersSolved":false,"centerMoveCount":0,"centerTableBuildMs":0,"centerSearchMs":0,"edgesPaired":false,"edgeMoveCount":0,"edgeTableBuildMs":0,"edgeSearchMs":0,"deadlineTs":0}}"#.to_string()
     })
 }
 
@@ -229,9 +243,9 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         }
     };
 
-    let mut verified_state = state.clone();
-    verified_state.apply_moves(&center_result.moves);
-    if !verified_state.centers_solved() || verified_state.validate().is_err() {
+    let mut reduced_state = state.clone();
+    reduced_state.apply_moves(&center_result.moves);
+    if !reduced_state.centers_solved() || reduced_state.validate().is_err() {
         return serialize_response(&empty_response(
             "error",
             "444_CENTER_VERIFICATION_FAILED",
@@ -245,22 +259,73 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.center_table_build_ms = center_result.table_build_ms;
     boundary.center_search_ms = center_result.search_ms;
 
-    let stage = Solve444Stage {
+    let center_stage = Solve444Stage {
         id: "centers",
         name: "Centers",
         solution: format_moves(&center_result.moves),
         move_count: center_result.moves.len(),
         verified: true,
     };
+    let mut stages = vec![center_stage];
 
-    // The verified center stage is safe to expose for development and diagnostics,
-    // but the full solution remains empty until edges, parity, and the virtual 3x3
-    // bridge are independently implemented and verified.
+    let edge_result = match solve_edges(&reduced_state, boundary.deadline_ts) {
+        Ok(result) => result,
+        Err(EdgeSolveError::DeadlineReached) => {
+            return serialize_response(&response(
+                "partial",
+                "444_EDGE_DEADLINE_REACHED",
+                None,
+                stages,
+                boundary,
+            ));
+        }
+        Err(error) => {
+            return serialize_response(&response(
+                "partial",
+                "444_EDGE_SOLVER_FAILED",
+                Some(error.to_string()),
+                stages,
+                boundary,
+            ));
+        }
+    };
+
+    let mut edge_verified_state = reduced_state.clone();
+    edge_verified_state.apply_moves(&edge_result.moves);
+    if !edge_verified_state.centers_solved()
+        || !edge_verified_state.edges_paired()
+        || edge_verified_state.validate().is_err()
+    {
+        return serialize_response(&response(
+            "partial",
+            "444_EDGE_VERIFICATION_FAILED",
+            None,
+            stages,
+            boundary,
+        ));
+    }
+
+    boundary.edges_paired = true;
+    boundary.edge_move_count = edge_result.moves.len();
+    boundary.edge_table_build_ms = edge_result.table_build_ms;
+    boundary.edge_search_ms = edge_result.search_ms;
+
+    stages.push(Solve444Stage {
+        id: "edges",
+        name: "Edge Pairing",
+        solution: format_moves(&edge_result.moves),
+        move_count: edge_result.moves.len(),
+        verified: true,
+    });
+
+    // Centers and all twelve edge pairs are independently verified. The final
+    // solution remains empty until parity normalization, virtual 3x3 conversion,
+    // the existing Two-Phase bridge, and full-solution verification are complete.
     serialize_response(&response(
         "partial",
         "444_REDUCTION_INCOMPLETE",
         None,
-        vec![stage],
+        stages,
         boundary,
     ))
 }
@@ -284,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_scramble_returns_only_a_verified_center_stage() {
+    fn valid_scramble_returns_verified_center_and_edge_stages() {
         let scramble = "Rw U2 F' Lw D B2";
         let result = solve(serde_json::json!({
             "scramble": scramble,
@@ -296,34 +361,49 @@ mod tests {
         assert_eq!(result["solution"], "");
         assert_eq!(result["moveCount"], 0);
         assert_eq!(result["verified"], false);
-        assert_eq!(result["stages"].as_array().unwrap().len(), 1);
+        assert_eq!(result["stages"].as_array().unwrap().len(), 2);
         assert_eq!(result["stages"][0]["id"], "centers");
         assert_eq!(result["stages"][0]["name"], "Centers");
         assert_eq!(result["stages"][0]["verified"], true);
+        assert_eq!(result["stages"][1]["id"], "edges");
+        assert_eq!(result["stages"][1]["name"], "Edge Pairing");
+        assert_eq!(result["stages"][1]["verified"], true);
+        assert_eq!(result["meta"]["apiVersion"], API_VERSION);
         assert_eq!(result["meta"]["parsedMoveCount"], 6);
         assert_eq!(result["meta"]["scrambleValid"], true);
         assert_eq!(result["meta"]["stateValid"], true);
         assert_eq!(result["meta"]["centersSolved"], true);
+        assert_eq!(result["meta"]["edgesPaired"], true);
         assert_eq!(
             result["stages"][0]["moveCount"],
             result["meta"]["centerMoveCount"]
         );
+        assert_eq!(
+            result["stages"][1]["moveCount"],
+            result["meta"]["edgeMoveCount"]
+        );
 
-        let center_solution = result["stages"][0]["solution"].as_str().unwrap();
         let mut state = Cube444::solved();
         state.apply_alg(scramble).unwrap();
-        state.apply_alg(center_solution).unwrap();
+        for stage in result["stages"].as_array().unwrap() {
+            state.apply_alg(stage["solution"].as_str().unwrap()).unwrap();
+        }
         assert!(state.centers_solved());
+        assert!(state.edges_paired());
         assert_eq!(state.validate(), Ok(()));
     }
 
     #[test]
-    fn solved_scramble_returns_a_zero_move_center_stage() {
+    fn solved_scramble_returns_two_zero_move_stages() {
         let result = solve(serde_json::json!({ "scramble": "" }));
         assert_eq!(result["status"], "partial");
+        assert_eq!(result["stages"].as_array().unwrap().len(), 2);
         assert_eq!(result["stages"][0]["solution"], "");
         assert_eq!(result["stages"][0]["moveCount"], 0);
+        assert_eq!(result["stages"][1]["solution"], "");
+        assert_eq!(result["stages"][1]["moveCount"], 0);
         assert_eq!(result["meta"]["centersSolved"], true);
+        assert_eq!(result["meta"]["edgesPaired"], true);
     }
 
     #[test]
