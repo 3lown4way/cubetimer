@@ -57,7 +57,13 @@ assert.match(workerSource, /async function solve444Lazy\(scramble, onProgress, o
 assert.match(workerSource, /if \(normalizedEventId === "444"\)/);
 assert.match(workerSource, /deadlineTs: effective444DeadlineTs/);
 assert.match(workerSource, /444_BOUNDARY_TIMEOUT_MS/);
-assert.doesNotMatch(workerSource, /444.*solveWithExternalSearchLazy/s);
+
+const routeStart = workerSource.indexOf('if (normalizedEventId === "444")');
+const routeEnd = workerSource.indexOf('if (normalizedEventId === "333" && mode === "twophase")', routeStart);
+assert.ok(routeStart >= 0 && routeEnd > routeStart, "missing isolated 4x4 route");
+const routeSource = workerSource.slice(routeStart, routeEnd);
+assert.doesNotMatch(routeSource, /solveWithExternalSearchLazy|fallback/i);
+assert.match(routeSource, /build444WorkerFailure\("444_DEADLINE_REACHED", "timeout"/);
 
 const mainSource = fs.readFileSync(new URL("../main.js", import.meta.url), "utf8");
 assert.doesNotMatch(mainSource, /ensureSolver444Ready|solve444Lazy|444_NOT_IMPLEMENTED/);
