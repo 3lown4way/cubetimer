@@ -13,7 +13,6 @@ assert.deepEqual({ ...NXN_SOLVER_EVENT_TO_PUZZLE }, {
   "333oh": "3x3x3",
   "333bf": "3x3x3",
   "333fm": "3x3x3",
-  "333mbf": "3x3x3",
   "444": "4x4x4",
   "444bf": "4x4x4",
   "555": "5x5x5",
@@ -24,6 +23,7 @@ assert.deepEqual({ ...NXN_SOLVER_EVENT_TO_PUZZLE }, {
 assert.equal(resolveNxNSolverPuzzle("222"), "2x2x2");
 assert.equal(resolveNxNSolverPuzzle("444"), "4x4x4");
 assert.equal(resolveNxNSolverPuzzle("777"), "7x7x7");
+assert.equal(resolveNxNSolverPuzzle("333mbf"), null);
 assert.equal(resolveNxNSolverPuzzle("clock"), null);
 assert.equal(isNxNSolverPreviewEvent("555bf"), true);
 assert.equal(isNxNSolverPreviewEvent("minx"), false);
