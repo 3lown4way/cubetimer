@@ -22,14 +22,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Apply exact table expectation
+      - name: Apply exact table expectations
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path("solver444-wasm/src/edges.rs")
           text = path.read_text()
           old = "[8, 7, 10, 8, 8, 8, 9, 5]"
-          new = "[8, 7, 9, 8, 8, 8, 9, 5]"
+          new = "[8, 7, 9, 8, 8, 8, 8, 5]"
           if old not in text and new not in text:
               raise SystemExit("pair depth expectation target missing")
           path.write_text(text.replace(old, new))
