@@ -1,25 +1,19 @@
-# 4×4 solver engine
+# 4×4 solver browser package
 
-This crate is the correctness-first foundation and browser boundary for the cubetimer 4×4 reduction solver.
+This directory contains the checked-in browser package generated from `solver444-wasm`.
 
 ## Available now
 
-- 96-facelet reference state in `U R F D L B` order
-- outer and two-layer wide turns for all six faces
-- WCA-style `Rw` notation and lowercase wide aliases
-- color, corner, wing, and center inventory validation
-- four exact center pruning coordinates with 753,311 total abstract states
-- independently verified Centers stage generation
-- oriented 24-wing coordinate derived from the 96-facelet geometry
-- eight sequential exact edge-pair distance tables
-- an exact 40,320-state last-four-edge table, including L2E handling
-- independently verified Edge Pairing stage generation
-- `wasm-bindgen` browser exports and absolute-deadline checks
-- lazy worker routing, progress, and readiness reporting
+- lazy loading only for `eventId === "444"`
+- WCA-style 4×4 parsing and 96-facelet physical validation
+- exact and independently verified Centers stage
+- exact sequential edge pairing with a 40,320-state last-four-edge table
+- independently verified Edge Pairing stage, including L2E handling
+- absolute deadline, readiness, and progress reporting
 
 ## Boundary contract
 
-The engine solves and independently verifies all centers and all twelve edge pairs. It does not claim a complete 4×4 solution until parity normalization and the virtual 3×3 bridge are implemented. A valid request returns `ok: false`, an empty final `solution`, and two verified partial stages:
+The package returns two verified partial stages while keeping the final 4×4 result closed:
 
 ```json
 {
@@ -36,16 +30,16 @@ The engine solves and independently verifies all centers and all twelve edge pai
 }
 ```
 
-Each stage is reapplied to the independent 96-facelet model before exposure. Expired deadlines and invalid notation preserve the empty final-result contract. No stage is promoted to a complete solution or fallback.
+The partial stages are never promoted to a complete solution or fallback. Parity normalization, virtual 3×3 conversion, the Two-Phase bridge, and final full-solution verification remain closed.
 
-## Still to implement
+## Exports
 
-- parity normalization
-- virtual 3×3 conversion and existing Two-Phase bridge
-- final independent full-solution verification
-- user-facing 4×4 solver activation
+```js
+solve_444_json(requestJson)
+solver_444_api_version()
+```
 
-## Build
+## Rebuild
 
 ```bash
 wasm-pack build solver444-wasm \
