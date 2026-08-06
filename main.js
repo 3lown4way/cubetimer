@@ -1,6 +1,7 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
 import { TwistyPlayer } from "cubing/twisty";
+import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js";
 import { experimentalCountMetricMoves } from "cubing/notation";
 import { cube3x3x3 } from "cubing/puzzles";
 import { Alg } from "cubing/alg";
@@ -117,6 +118,8 @@ let solverProgressRunId = 0;
 let solverProfileWarmupInFlightKey = "";
 const solverProfileWarmedKeys = new Set();
 let solverTwistyPlayer = null;
+let solverTwistyPuzzleId = "";
+let solverPlaybackEventId = "333";
 let solverPlaybackScramble = "";
 let solverPlaybackMoves = [];
 let solverPlaybackIndex = 0;
@@ -1467,19 +1470,23 @@ function stopSolverPlayback() {
   }
 }
 
-function ensureSolverTwistyPlayer() {
-  if (solverTwistyPlayer) return solverTwistyPlayer;
-  if (!solverTwistyHost) return null;
+function ensureSolverTwistyPlayer(puzzleId = resolveNxNSolverPuzzle(solverPlaybackEventId)) {
+  if (!puzzleId || !solverTwistyHost) return null;
+  if (solverTwistyPlayer && solverTwistyPuzzleId === puzzleId) return solverTwistyPlayer;
+  if (solverTwistyPlayer) solverTwistyPlayer.pause();
+  solverTwistyPlayer = null;
+  solverTwistyPuzzleId = "";
+  solverTwistyHost.textContent = "";
   solverTwistyPlayer = new TwistyPlayer({
-    puzzle: "3x3x3",
+    puzzle: puzzleId,
     visualization: "3D",
     background: "none",
     controlPanel: "none",
     hintFacelets: "none",
     experimentalSetupAnchor: "start",
   });
+  solverTwistyPuzzleId = puzzleId;
   solverTwistyPlayer.tempoScale = 0.75;
-  solverTwistyHost.textContent = "";
   solverTwistyHost.appendChild(solverTwistyPlayer);
   return solverTwistyPlayer;
 }
@@ -1616,13 +1623,16 @@ function playSingleForwardStep() {
   updateSolverPlaybackControls();
 }
 
-function showSolverVisualResult(scramble, solution, stages) {
+function showSolverVisualResult(scramble, solution, stages, eventId = appState.settings.eventId) {
   if (!solverVisualPanel) return;
-  if (!scramble || !solution || !isThreeByThreeFamilyEvent(appState.settings.eventId)) {
+  const puzzleId = resolveNxNSolverPuzzle(eventId);
+  if (!scramble || !solution || !puzzleId) {
     clearSolverVisualResult();
     return;
   }
   stopSolverPlayback();
+  solverPlaybackEventId = String(eventId || "");
+  ensureSolverTwistyPlayer(puzzleId);
   solverPlaybackScramble = scramble;
   solverPlaybackMoves = splitAlgTokens(solution);
   solverPlaybackIndex = 0;
@@ -2625,6 +2635,7 @@ async function solveCurrentScramble() {
   solverBusy = true;
   const runId = ++solverProgressRunId;
   const eventId = appState.settings.eventId;
+  const solverScramble = currentScramble;
   if (solverStatus) {
     const solverMode = appState.settings.solverMode || "strict";
     const solverVersion = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
@@ -2791,7 +2802,7 @@ async function solveCurrentScramble() {
       : DEFAULT_OLL_PLL_PREDICTION_WEIGHT;
     const result = await Promise.race([
       solverApi.solve({
-        scramble: currentScramble,
+        scramble: solverScramble,
         eventId,
         crossColor,
         mode: solverMode,
@@ -2939,7 +2950,7 @@ async function solveCurrentScramble() {
       if (solverCopyBtn) {
         solverCopyBtn.disabled = !rawSolutionText;
       }
-      showSolverVisualResult(currentScramble, rawSolutionText, result.stages);
+      showSolverVisualResult(solverScramble, rawSolutionText, result.stages, eventId);
     } else {
       lastSolution = "";
       lastSolutionDisplay = "";
