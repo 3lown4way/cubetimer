@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444, EdgeSolveError};
+use crate::{
+    normalize_parity, parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444,
+    EdgeSolveError, ReductionError, Virtual333State,
+};
 
-const API_VERSION: &str = "444-edges-v1";
+const API_VERSION: &str = "444-reduction-v1";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +32,12 @@ struct BoundaryState {
     edge_move_count: usize,
     edge_table_build_ms: f64,
     edge_search_ms: f64,
+    oll_parity_detected: bool,
+    pll_parity_detected: bool,
+    parity_normalized: bool,
+    parity_move_count: usize,
+    virtual_333_ready: bool,
+    virtual_333: Option<Virtual333State>,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +56,12 @@ struct Solve444Meta {
     edge_move_count: usize,
     edge_table_build_ms: f64,
     edge_search_ms: f64,
+    oll_parity_detected: bool,
+    pll_parity_detected: bool,
+    parity_normalized: bool,
+    parity_move_count: usize,
+    virtual_333_ready: bool,
+    virtual_333: Option<Virtual333State>,
     deadline_ts: f64,
 }
 
@@ -66,6 +81,12 @@ impl From<BoundaryState> for Solve444Meta {
             edge_move_count: state.edge_move_count,
             edge_table_build_ms: state.edge_table_build_ms,
             edge_search_ms: state.edge_search_ms,
+            oll_parity_detected: state.oll_parity_detected,
+            pll_parity_detected: state.pll_parity_detected,
+            parity_normalized: state.parity_normalized,
+            parity_move_count: state.parity_move_count,
+            virtual_333_ready: state.virtual_333_ready,
+            virtual_333: state.virtual_333,
             deadline_ts: state.deadline_ts,
         }
     }
@@ -147,7 +168,7 @@ fn empty_response(
 
 fn serialize_response(value: &Solve444Response) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| {
-        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-edges-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"centersSolved":false,"centerMoveCount":0,"centerTableBuildMs":0,"centerSearchMs":0,"edgesPaired":false,"edgeMoveCount":0,"edgeTableBuildMs":0,"edgeSearchMs":0,"deadlineTs":0}}"#.to_string()
+        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-reduction-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"centersSolved":false,"centerMoveCount":0,"centerTableBuildMs":0,"centerSearchMs":0,"edgesPaired":false,"edgeMoveCount":0,"edgeTableBuildMs":0,"edgeSearchMs":0,"ollParityDetected":false,"pllParityDetected":false,"parityNormalized":false,"parityMoveCount":0,"virtual333Ready":false,"virtual333":null,"deadlineTs":0}}"#.to_string()
     })
 }
 
@@ -157,6 +178,10 @@ fn format_moves(moves: &[crate::Move444]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn parity_error_detail(error: ReductionError) -> String {
+    error.to_string()
 }
 
 pub fn solve_444_boundary(request_json: &str) -> String {
@@ -316,9 +341,65 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         verified: true,
     });
 
-    // Centers and all twelve edge pairs are independently verified. The final
-    // solution remains empty until parity normalization, virtual 3x3 conversion,
-    // the existing Two-Phase bridge, and full-solution verification are complete.
+    if deadline_reached(boundary.deadline_ts) {
+        return serialize_response(&response(
+            "partial",
+            "444_PARITY_DEADLINE_REACHED",
+            None,
+            stages,
+            boundary,
+        ));
+    }
+
+    let parity_result = match normalize_parity(&edge_verified_state) {
+        Ok(result) => result,
+        Err(error) => {
+            return serialize_response(&response(
+                "partial",
+                "444_PARITY_NORMALIZATION_FAILED",
+                Some(parity_error_detail(error)),
+                stages,
+                boundary,
+            ));
+        }
+    };
+
+    let mut parity_verified_state = edge_verified_state.clone();
+    parity_verified_state.apply_moves(&parity_result.moves);
+    let independently_projected = parity_verified_state.virtual333_state();
+    if !parity_verified_state.centers_solved()
+        || !parity_verified_state.edges_paired()
+        || parity_verified_state.validate().is_err()
+        || independently_projected.as_ref() != Ok(&parity_result.virtual_state)
+        || !parity_result.virtual_state.is_legal()
+    {
+        return serialize_response(&response(
+            "partial",
+            "444_PARITY_VERIFICATION_FAILED",
+            None,
+            stages,
+            boundary,
+        ));
+    }
+
+    boundary.oll_parity_detected = parity_result.before.oll;
+    boundary.pll_parity_detected = parity_result.before.pll;
+    boundary.parity_normalized = true;
+    boundary.parity_move_count = parity_result.moves.len();
+    boundary.virtual_333_ready = true;
+    boundary.virtual_333 = Some(parity_result.virtual_state);
+
+    stages.push(Solve444Stage {
+        id: "parity",
+        name: "Parity Normalization",
+        solution: format_moves(&parity_result.moves),
+        move_count: parity_result.moves.len(),
+        verified: true,
+    });
+
+    // The reduction is now a legal virtual 3x3 cubie state. The top-level
+    // solution remains empty until the Two-Phase cubie bridge and final
+    // independent 96-facelet verification are complete.
     serialize_response(&response(
         "partial",
         "444_REDUCTION_INCOMPLETE",
@@ -347,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_scramble_returns_verified_center_and_edge_stages() {
+    fn valid_scramble_returns_three_verified_reduction_stages() {
         let scramble = "Rw U2 F' Lw D B2";
         let result = solve(serde_json::json!({
             "scramble": scramble,
@@ -359,26 +440,41 @@ mod tests {
         assert_eq!(result["solution"], "");
         assert_eq!(result["moveCount"], 0);
         assert_eq!(result["verified"], false);
-        assert_eq!(result["stages"].as_array().unwrap().len(), 2);
+        assert_eq!(result["stages"].as_array().unwrap().len(), 3);
         assert_eq!(result["stages"][0]["id"], "centers");
-        assert_eq!(result["stages"][0]["name"], "Centers");
-        assert_eq!(result["stages"][0]["verified"], true);
         assert_eq!(result["stages"][1]["id"], "edges");
-        assert_eq!(result["stages"][1]["name"], "Edge Pairing");
-        assert_eq!(result["stages"][1]["verified"], true);
+        assert_eq!(result["stages"][2]["id"], "parity");
+        assert_eq!(result["stages"][2]["name"], "Parity Normalization");
+        for stage in result["stages"].as_array().unwrap() {
+            assert_eq!(stage["verified"], true);
+        }
         assert_eq!(result["meta"]["apiVersion"], API_VERSION);
         assert_eq!(result["meta"]["parsedMoveCount"], 6);
         assert_eq!(result["meta"]["scrambleValid"], true);
         assert_eq!(result["meta"]["stateValid"], true);
         assert_eq!(result["meta"]["centersSolved"], true);
         assert_eq!(result["meta"]["edgesPaired"], true);
+        assert_eq!(result["meta"]["parityNormalized"], true);
+        assert_eq!(result["meta"]["virtual333Ready"], true);
         assert_eq!(
-            result["stages"][0]["moveCount"],
-            result["meta"]["centerMoveCount"]
+            result["meta"]["virtual333"]["cp"].as_array().unwrap().len(),
+            8
         );
         assert_eq!(
-            result["stages"][1]["moveCount"],
-            result["meta"]["edgeMoveCount"]
+            result["meta"]["virtual333"]["co"].as_array().unwrap().len(),
+            8
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["ep"].as_array().unwrap().len(),
+            12
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["eo"].as_array().unwrap().len(),
+            12
+        );
+        assert_eq!(
+            result["stages"][2]["moveCount"],
+            result["meta"]["parityMoveCount"]
         );
 
         let mut state = Cube444::solved();
@@ -391,19 +487,36 @@ mod tests {
         assert!(state.centers_solved());
         assert!(state.edges_paired());
         assert_eq!(state.validate(), Ok(()));
+        let projected = state.virtual333_state().unwrap();
+        assert!(projected.is_legal());
+        assert_eq!(
+            serde_json::to_value(projected).unwrap(),
+            result["meta"]["virtual333"]
+        );
     }
 
     #[test]
-    fn solved_scramble_returns_two_zero_move_stages() {
+    fn solved_scramble_returns_three_zero_move_stages() {
         let result = solve(serde_json::json!({ "scramble": "" }));
         assert_eq!(result["status"], "partial");
-        assert_eq!(result["stages"].as_array().unwrap().len(), 2);
-        assert_eq!(result["stages"][0]["solution"], "");
-        assert_eq!(result["stages"][0]["moveCount"], 0);
-        assert_eq!(result["stages"][1]["solution"], "");
-        assert_eq!(result["stages"][1]["moveCount"], 0);
+        assert_eq!(result["stages"].as_array().unwrap().len(), 3);
+        for stage in result["stages"].as_array().unwrap() {
+            assert_eq!(stage["solution"], "");
+            assert_eq!(stage["moveCount"], 0);
+            assert_eq!(stage["verified"], true);
+        }
         assert_eq!(result["meta"]["centersSolved"], true);
         assert_eq!(result["meta"]["edgesPaired"], true);
+        assert_eq!(result["meta"]["parityNormalized"], true);
+        assert_eq!(result["meta"]["virtual333Ready"], true);
+        assert_eq!(
+            result["meta"]["virtual333"]["cp"],
+            serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7])
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["ep"],
+            serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+        );
     }
 
     #[test]

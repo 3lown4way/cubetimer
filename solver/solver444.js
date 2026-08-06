@@ -274,6 +274,31 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     });
   }
 
+  const parityStage = Array.isArray(result.stages)
+    ? result.stages.find((stage) => stage?.id === "parity" && stage?.verified === true)
+    : null;
+  if (parityStage && result.meta?.parityNormalized === true) {
+    emitProgress(onProgress, {
+      type: "444_stage_done",
+      eventId: "444",
+      stage: "PARITY",
+      stageName: "Parity Normalization",
+      moveCount: Number(parityStage.moveCount) || 0,
+      ollParityDetected: result.meta.ollParityDetected === true,
+      pllParityDetected: result.meta.pllParityDetected === true,
+    });
+  }
+
+  if (result.meta?.virtual333Ready === true && result.meta?.virtual333) {
+    emitProgress(onProgress, {
+      type: "444_stage_done",
+      eventId: "444",
+      stage: "VIRTUAL_333",
+      stageName: "Virtual 3x3",
+      cubieState: result.meta.virtual333,
+    });
+  }
+
   emitProgress(onProgress, {
     type: result.ok
       ? "444_stage_done"
