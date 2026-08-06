@@ -6,6 +6,9 @@ on:
       - "main.js"
       - "index.html"
       - "solver/nxnTwistyPreview.js"
+      - "solver/solver444UiActivation.js"
+      - "solver/solverWorker.js"
+      - "solver/solver444.js"
       - "tools/verify-nxn-solver-preview.mjs"
       - ".github/workflows/nxn-solver-preview.yml"
   push:
@@ -15,6 +18,9 @@ on:
       - "main.js"
       - "index.html"
       - "solver/nxnTwistyPreview.js"
+      - "solver/solver444UiActivation.js"
+      - "solver/solverWorker.js"
+      - "solver/solver444.js"
       - "tools/verify-nxn-solver-preview.mjs"
       - ".github/workflows/nxn-solver-preview.yml"
 
@@ -34,6 +40,7 @@ jobs:
         run: |
           node --check main.js
           node --check solver/nxnTwistyPreview.js
+          node --check solver/solver444UiActivation.js
           node --check tools/verify-nxn-solver-preview.mjs
-      - name: Verify solver-only NxNxN 3D preview
+      - name: Verify solver-only NxNxN 3D preview and 4x4 activation
         run: node tools/verify-nxn-solver-preview.mjs
