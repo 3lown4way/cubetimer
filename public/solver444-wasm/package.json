@@ -1,0 +1,17 @@
+{
+  "name": "solver444-wasm",
+  "type": "module",
+  "description": "4x4x4 cube state, validation, and solver boundary for cubetimer",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "solver444_wasm_bg.wasm",
+    "solver444_wasm.js",
+    "solver444_wasm.d.ts"
+  ],
+  "main": "solver444_wasm.js",
+  "types": "solver444_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
