@@ -21,11 +21,53 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Rewrite indexed loops
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          geometry_path = Path("solver444-wasm/src/geometry.rs")
+          geometry = geometry_path.read_text()
+          geometry = geometry.replace(
+              '''    for old_index in 0..FACELET_COUNT {
+                  let mut geometry = sticker_geometry(old_index);
+                  if layer_selected(geometry.pos, base) {
+                      geometry.pos = geometry.pos.rotate_quarter(base.face());
+                      geometry.normal = geometry.normal.rotate_quarter(base.face());
+                  }
+                  permutation[old_index] = geometry_index(geometry) as u8;
+              }''',
+              '''    for (old_index, target_index) in permutation.iter_mut().enumerate() {
+                  let mut geometry = sticker_geometry(old_index);
+                  if layer_selected(geometry.pos, base) {
+                      geometry.pos = geometry.pos.rotate_quarter(base.face());
+                      geometry.normal = geometry.normal.rotate_quarter(base.face());
+                  }
+                  *target_index = geometry_index(geometry) as u8;
+              }''',
+          )
+          geometry = geometry.replace(
+              '''        for old_index in 0..FACELET_COUNT {
+                      result[old_index] = quarter[previous[old_index] as usize];
+                  }''',
+              '''        for (old_index, target_index) in result.iter_mut().enumerate() {
+                      *target_index = quarter[previous[old_index] as usize];
+                  }''',
+          )
+          geometry_path.write_text(geometry)
+
+          state_path = Path("solver444-wasm/src/state.rs")
+          state = state_path.read_text().replace(
+              '''        for old_index in 0..FACELET_COUNT {
+                      self.stickers[permutation[old_index] as usize] = previous[old_index];
+                  }''',
+              '''        for (old_index, &target_index) in permutation.iter().enumerate() {
+                      self.stickers[target_index as usize] = previous[old_index];
+                  }''',
+          )
+          state_path.write_text(state)
+          PY
       - name: Format
-        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml
-      - name: Apply Clippy fixes
-        run: cargo clippy --fix --allow-dirty --allow-staged --manifest-path solver444-wasm/Cargo.toml --lib --tests
-      - name: Format fixed source
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml
       - name: Test
         run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib
