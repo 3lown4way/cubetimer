@@ -15,24 +15,34 @@ This crate is the correctness-first foundation and browser boundary for the cube
 - absolute-deadline checks around parsing and state validation
 - lazy worker routing for `eventId === "444"`
 - progress and readiness reporting
+- four exact center pruning coordinates with 753,311 total abstract states
+- independently verified Centers stage generation
 
 ## Boundary contract
 
-The current engine validates the request and scrambled 4×4 state, but it does not claim to solve it yet. A valid request returns:
+The current engine solves and verifies all 24 centers, but it does not claim to solve the full 4×4 yet. A valid request returns `ok: false`, an empty final `solution`, and one verified partial stage:
 
 ```json
 {
   "ok": false,
-  "status": "not_implemented",
-  "reason": "444_NOT_IMPLEMENTED",
+  "status": "partial",
+  "reason": "444_REDUCTION_INCOMPLETE",
   "solution": "",
   "moveCount": 0,
   "verified": false,
-  "stages": []
+  "stages": [
+    {
+      "id": "centers",
+      "name": "Centers",
+      "solution": "...",
+      "moveCount": 24,
+      "verified": true
+    }
+  ]
 }
 ```
 
-Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_INVALID_SCRAMBLE`. No candidate or fallback solution is exposed.
+Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_INVALID_SCRAMBLE`. The verified center stage is never promoted to a complete solution or fallback.
 
 ## Still to implement
 

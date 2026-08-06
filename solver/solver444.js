@@ -65,6 +65,7 @@ function normalizeBoundaryResponse(raw) {
   }
 
   const ok = value.ok === true;
+  const partial = !ok && String(value.status || "") === "partial";
   const solution = ok ? String(value.solution || "").trim() : "";
   const moveCountValue = Number(value.moveCount ?? value.move_count ?? 0);
   const moveCount = ok && Number.isFinite(moveCountValue)
@@ -79,7 +80,7 @@ function normalizeBoundaryResponse(raw) {
     solution,
     moveCount,
     verified: ok && value.verified === true,
-    stages: ok && Array.isArray(value.stages) ? value.stages : [],
+    stages: (ok || partial) && Array.isArray(value.stages) ? value.stages : [],
     source: "WASM_444_BOUNDARY",
     meta: value.meta && typeof value.meta === "object" ? { ...value.meta } : {},
   };
@@ -243,10 +244,29 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     });
   }
 
+  const centerStage = Array.isArray(result.stages)
+    ? result.stages.find((stage) => stage?.id === "centers" && stage?.verified === true)
+    : null;
+  if (centerStage && result.meta?.centersSolved === true) {
+    emitProgress(onProgress, {
+      type: "444_stage_done",
+      eventId: "444",
+      stage: "CENTERS",
+      stageName: "Centers",
+      moveCount: Number(centerStage.moveCount) || 0,
+      tableBuildMs: Number(result.meta.centerTableBuildMs) || 0,
+      searchMs: Number(result.meta.centerSearchMs) || 0,
+    });
+  }
+
   emitProgress(onProgress, {
-    type: result.ok ? "444_stage_done" : "444_stage_fail",
+    type: result.ok
+      ? "444_stage_done"
+      : result.status === "partial"
+        ? "444_stage_update"
+        : "444_stage_fail",
     eventId: "444",
-    stage: "BOUNDARY",
+    stage: "REDUCTION",
     reason: result.reason,
     status: result.status,
   });

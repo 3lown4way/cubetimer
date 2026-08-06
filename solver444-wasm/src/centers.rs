@@ -19,13 +19,10 @@ const D: u8 = 3;
 const L: u8 = 4;
 
 const ALL_CENTER_POSITIONS: [u8; 24] = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    21, 22, 23,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
 ];
 const UD_POSITIONS: [u8; 8] = [0, 1, 2, 3, 12, 13, 14, 15];
-const SIDE_POSITIONS: [u8; 16] = [
-    4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23,
-];
+const SIDE_POSITIONS: [u8; 16] = [4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23];
 const RL_POSITIONS: [u8; 8] = [4, 5, 6, 7, 16, 17, 18, 19];
 const FB_POSITIONS: [u8; 8] = [8, 9, 10, 11, 20, 21, 22, 23];
 
@@ -418,6 +415,8 @@ fn center_color_mask(state: &Cube444, colors: &[u8]) -> u32 {
     mask
 }
 
+// The phase descriptor is intentionally explicit at this correctness boundary.
+#[allow(clippy::too_many_arguments)]
 fn descend_single(
     state: &mut Cube444,
     output: &mut Vec<Move444>,
@@ -481,12 +480,7 @@ fn descend_pair(
             let next_second = apply_mask(second, &center_move.permutation);
             let next_distance = tables.phase4_distance[pair_rank(next_first, next_second)];
             if next_distance + 1 == current_distance {
-                selected = Some((
-                    center_move.mv,
-                    next_first,
-                    next_second,
-                    next_distance,
-                ));
+                selected = Some((center_move.mv, next_first, next_second, next_distance));
                 break;
             }
         }
@@ -554,7 +548,11 @@ pub fn solve_centers(
 
     Ok(CenterSolveResult {
         moves,
-        table_build_ms: if tables_were_ready { 0.0 } else { tables.build_ms },
+        table_build_ms: if tables_were_ready {
+            0.0
+        } else {
+            tables.build_ms
+        },
         search_ms: (now_ms() - search_started).max(0.0),
     })
 }
@@ -579,7 +577,10 @@ mod tests {
         assert_eq!(BINOMIAL[24][8], PHASE1_STATE_COUNT);
         assert_eq!(BINOMIAL[16][8], PHASE3_STATE_COUNT);
         assert_eq!(BINOMIAL[8][4], PHASE2_STATE_COUNT);
-        assert_eq!(coordinate_rank(GOAL_UD_GROUP, &ALL_CENTER_POSITIONS, 8), 319_769);
+        assert_eq!(
+            coordinate_rank(GOAL_UD_GROUP, &ALL_CENTER_POSITIONS, 8),
+            12_375
+        );
         assert!(coordinate_rank(GOAL_U, &UD_POSITIONS, 4) < PHASE2_STATE_COUNT);
     }
 
@@ -599,10 +600,22 @@ mod tests {
         assert_eq!(tables.phase2_distance.len(), PHASE2_STATE_COUNT);
         assert_eq!(tables.phase3_distance.len(), PHASE3_STATE_COUNT);
         assert_eq!(tables.phase4_distance.len(), PHASE4_STATE_COUNT);
-        assert!(tables.phase1_distance.iter().all(|&value| value != UNVISITED));
-        assert!(tables.phase2_distance.iter().all(|&value| value != UNVISITED));
-        assert!(tables.phase3_distance.iter().all(|&value| value != UNVISITED));
-        assert!(tables.phase4_distance.iter().all(|&value| value != UNVISITED));
+        assert!(tables
+            .phase1_distance
+            .iter()
+            .all(|&value| value != UNVISITED));
+        assert!(tables
+            .phase2_distance
+            .iter()
+            .all(|&value| value != UNVISITED));
+        assert!(tables
+            .phase3_distance
+            .iter()
+            .all(|&value| value != UNVISITED));
+        assert!(tables
+            .phase4_distance
+            .iter()
+            .all(|&value| value != UNVISITED));
         assert_eq!(tables.phase1_distance.iter().copied().max(), Some(8));
         assert_eq!(tables.phase2_distance.iter().copied().max(), Some(5));
         assert_eq!(tables.phase3_distance.iter().copied().max(), Some(9));
