@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - agent/444-parity-virtual333
-    paths:
-      - "solver444-wasm/**"
-      - ".github/workflows/test-444-parity.yml"
 
 jobs:
   parity:
@@ -20,60 +17,7 @@ jobs:
         with:
           components: rustfmt
       - name: Add PLL generator probe
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path("solver444-wasm/src/reduction.rs")
-          text = path.read_text()
-          insert_at = text.rfind("\n}\n")
-          probe = r'''
-
-    #[test]
-    fn probe_pll_parity_generators() {
-        fn inner(face: Face) -> Vec<Move444> {
-            vec![mv(face, true, 2), mv(face, false, 2)]
-        }
-        let mut inner_r_uw = inner(Face::R);
-        inner_r_uw.push(mv(Face::U, false, 2));
-        inner_r_uw.extend(inner(Face::R));
-        inner_r_uw.push(mv(Face::U, true, 2));
-        inner_r_uw.extend(inner(Face::R));
-        inner_r_uw.push(mv(Face::U, true, 2));
-
-        let wide_r_uw = vec![
-            mv(Face::R, true, 2),
-            mv(Face::U, false, 2),
-            mv(Face::R, true, 2),
-            mv(Face::U, true, 2),
-            mv(Face::R, true, 2),
-            mv(Face::U, true, 2),
-        ];
-
-        let mut inner_r_inner_u = inner(Face::R);
-        inner_r_inner_u.push(mv(Face::U, false, 2));
-        inner_r_inner_u.extend(inner(Face::R));
-        inner_r_inner_u.extend(inner(Face::U));
-        inner_r_inner_u.extend(inner(Face::R));
-        inner_r_inner_u.extend(inner(Face::U));
-
-        for (name, moves) in [
-            ("inner-r-uw", inner_r_uw),
-            ("wide-r-uw", wide_r_uw),
-            ("inner-r-inner-u", inner_r_inner_u),
-        ] {
-            let mut state = Cube444::solved();
-            state.apply_moves(&moves);
-            println!(
-                "{name}: centers={} paired={} virtual={:?}",
-                state.centers_solved(),
-                state.edges_paired(),
-                state.virtual333_state()
-            );
-        }
-    }
-'''
-          path.write_text(text[:insert_at] + probe + text[insert_at:])
-          PY
+        run: python -c 'from pathlib import Path; import base64; p=Path("solver444-wasm/src/reduction.rs"); t=p.read_text(); i=t.rfind("\n}\n"); s=base64.b64decode("CiAgICAjW3Rlc3RdCiAgICBmbiBwcm9iZV9wbGxfcGFyaXR5X2dlbmVyYXRvcnMoKSB7CiAgICAgICAgZm4gaW5uZXIoZmFjZTogRmFjZSkgLT4gVmVjPE1vdmU0NDQ+IHsKICAgICAgICAgICAgdmVjIVttdihmYWNlLCB0cnVlLCAyKSwgbXYoZmFjZSwgZmFsc2UsIDIpXQogICAgICAgIH0KICAgICAgICBsZXQgbXV0IGlubmVyX3JfdXcgPSBpbm5lcihGYWNlOjpSKTsKICAgICAgICBpbm5lcl9yX3V3LnB1c2gobXYoRmFjZTo6VSwgZmFsc2UsIDIpKTsKICAgICAgICBpbm5lcl9yX3V3LmV4dGVuZChpbm5lcihGYWNlOjpSKSk7CiAgICAgICAgaW5uZXJfcl91dy5wdXNoKG12KEZhY2U6OlUsIHRydWUsIDIpKTsKICAgICAgICBpbm5lcl9yX3V3LmV4dGVuZChpbm5lcihGYWNlOjpSKSk7CiAgICAgICAgaW5uZXJfcl91dy5wdXNoKG12KEZhY2U6OlUsIHRydWUsIDIpKTsKCiAgICAgICAgbGV0IHdpZGVfcl91dyA9IHZlYyFbCiAgICAgICAgICAgIG12KEZhY2U6OlIsIHRydWUsIDIpLAogICAgICAgICAgICBtdihGYWNlOjpVLCBmYWxzZSwgMiksCiAgICAgICAgICAgIG12KEZhY2U6OlIsIHRydWUsIDIpLAogICAgICAgICAgICBtdihGYWNlOjpVLCB0cnVlLCAyKSwKICAgICAgICAgICAgbXYoRmFjZTo6UiwgdHJ1ZSwgMiksCiAgICAgICAgICAgIG12KEZhY2U6OlUsIHRydWUsIDIpLAogICAgICAgIF07CgogICAgICAgIGxldCBtdXQgaW5uZXJfcl9pbm5lcl91ID0gaW5uZXIoRmFjZTo6Uik7CiAgICAgICAgaW5uZXJfcl9pbm5lcl91LnB1c2gobXYoRmFjZTo6VSwgZmFsc2UsIDIpKTsKICAgICAgICBpbm5lcl9yX2lubmVyX3UuZXh0ZW5kKGlubmVyKEZhY2U6OlIpKTsKICAgICAgICBpbm5lcl9yX2lubmVyX3UuZXh0ZW5kKGlubmVyKEZhY2U6OlUpKTsKICAgICAgICBpbm5lcl9yX2lubmVyX3UuZXh0ZW5kKGlubmVyKEZhY2U6OlIpKTsKICAgICAgICBpbm5lcl9yX2lubmVyX3UuZXh0ZW5kKGlubmVyKEZhY2U6OlUpKTsKCiAgICAgICAgZm9yIChuYW1lLCBtb3ZlcykgaW4gWwogICAgICAgICAgICAoImlubmVyLXItdXciLCBpbm5lcl9yX3V3KSwKICAgICAgICAgICAgKCJ3aWRlLXItdXciLCB3aWRlX3JfdXcpLAogICAgICAgICAgICAoImlubmVyLXItaW5uZXItdSIsIGlubmVyX3JfaW5uZXJfdSksCiAgICAgICAgXSB7CiAgICAgICAgICAgIGxldCBtdXQgc3RhdGUgPSBDdWJlNDQ0Ojpzb2x2ZWQoKTsKICAgICAgICAgICAgc3RhdGUuYXBwbHlfbW92ZXMoJm1vdmVzKTsKICAgICAgICAgICAgcHJpbnRsbiEoCiAgICAgICAgICAgICAgICAie25hbWV9OiBjZW50ZXJzPXt9IHBhaXJlZD17fSB2aXJ0dWFsPXs6P30iLAogICAgICAgICAgICAgICAgc3RhdGUuY2VudGVyc19zb2x2ZWQoKSwKICAgICAgICAgICAgICAgIHN0YXRlLmVkZ2VzX3BhaXJlZCgpLAogICAgICAgICAgICAgICAgc3RhdGUudmlydHVhbDMzM19zdGF0ZSgpCiAgICAgICAgICAgICk7CiAgICAgICAgfQogICAgfQo=").decode(); p.write_text(t[:i]+s+t[i:])'
       - name: Format Rust
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
       - name: Probe PLL generators
