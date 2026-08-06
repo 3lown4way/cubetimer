@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+
+import { puzzles } from "../vendor/cubing/puzzles/index.js";
+import {
+  solve444,
+  translate444MoveConvention,
+} from "../solver/solver444.js";
+
+const representativeScrambles = [
+  "Rw U2 F' Lw D B2",
+  "Rw U2 F2 Rw' D2 Lw2 B2 U' Fw R2 Uw' B' Rw2 D F2 Lw' U2 B2 Dw R' Fw2 U L2 Bw' D2 Rw U' F2 Dw2 Lw B U2 R2 Fw' D' L2 Uw2 B2 Rw'",
+];
+
+assert.equal(
+  translate444MoveConvention("U U' U2 Rw Rw' Rw2 F F' Fw Fw' r r'"),
+  "U' U U2 Rw' Rw Rw2 F F' Fw Fw' Rw' Rw",
+);
+for (const scramble of representativeScrambles) {
+  assert.equal(
+    translate444MoveConvention(translate444MoveConvention(scramble)),
+    scramble,
+    "the public/internal 4x4 notation conversion must be involutive",
+  );
+}
+
+const puzzle444 = await puzzles["4x4x4"].kpuzzle();
+const solved444 = puzzle444.defaultPattern();
+const centerOrbitNames = Object.keys(solved444.patternData).filter((name) => /center/i.test(name));
+assert.ok(centerOrbitNames.length > 0, "4x4 center orbit was not found");
+
+function patternIsSolved(pattern) {
+  if (typeof pattern.experimentalIsSolved === "function") {
+    return pattern.experimentalIsSolved({ ignorePuzzleOrientation: false });
+  }
+  return JSON.stringify(pattern.patternData) === JSON.stringify(solved444.patternData);
+}
+
+for (const scramble of representativeScrambles) {
+  const result = await solve444(scramble, null, { deadlineTs: Date.now() + 60_000 });
+  assert.equal(result.ok, true, `solver failed for ${scramble}: ${result.reason}`);
+  assert.equal(result.verified, true, `unverified result for ${scramble}`);
+  assert.equal(result.stages.length, 4);
+
+  const centerStage = result.stages.find((stage) => stage.id === "centers");
+  assert.ok(centerStage?.verified, "verified Centers stage is missing");
+  const afterCenters = solved444.applyAlg(scramble).applyAlg(centerStage.solution);
+  for (const orbitName of centerOrbitNames) {
+    assert.deepEqual(
+      afterCenters.patternData[orbitName],
+      solved444.patternData[orbitName],
+      `public Centers stage did not solve ${orbitName} for ${scramble}`,
+    );
+  }
+
+  let stagePattern = solved444.applyAlg(scramble);
+  for (const stage of result.stages) {
+    stagePattern = stage.solution ? stagePattern.applyAlg(stage.solution) : stagePattern;
+  }
+  assert.equal(patternIsSolved(stagePattern), true, `public stage sequence did not solve ${scramble}`);
+
+  const afterFullSolution = solved444.applyAlg(scramble).applyAlg(result.solution);
+  assert.equal(
+    patternIsSolved(afterFullSolution),
+    true,
+    `public WCA-notation solution did not solve ${scramble}`,
+  );
+}
+
+console.log("4x4 public WCA notation and Centers-stage regression passed");
