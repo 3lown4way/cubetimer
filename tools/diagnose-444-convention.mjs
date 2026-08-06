@@ -22,7 +22,7 @@ const replacement = `  let conventionProbe = null;
           if (!match) return token;
           const [, face, suffix = ""] = match;
           if (suffix === "2" || (directionMask & (1 << faceBits[face])) === 0) return token;
-          return suffix === "'" ? face : \\`\${face}'\\`;
+          return suffix === "'" ? face : face + "'";
         });
         const transformed = transformedTokens.join(" ");
         const candidate = [prefixSolution, transformed].filter(Boolean).join(" ");
