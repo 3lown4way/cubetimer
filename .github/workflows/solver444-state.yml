@@ -1,0 +1,34 @@
+name: 4x4 state engine
+
+on:
+  pull_request:
+    paths:
+      - "solver444-wasm/**"
+      - ".github/workflows/solver444-state.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "solver444-wasm/**"
+      - ".github/workflows/solver444-state.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  state-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml -- --check
+      - name: Run state and move tests
+        run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib
+      - name: Reject compiler warnings
+        run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
+      - name: Build release library
+        run: cargo build --manifest-path solver444-wasm/Cargo.toml --release
