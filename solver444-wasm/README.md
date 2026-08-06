@@ -14,12 +14,17 @@ This crate is the correctness-first foundation and browser boundary for the cube
 - eight sequential exact edge-pair distance tables
 - an exact 40,320-state last-four-edge table, including L2E handling
 - independently verified Edge Pairing stage generation
+- OLL and PLL parity detection from projected cubie invariants
+- two independently verified center- and pairing-preserving parity generators
+- legal virtual 3×3 export in `cp/co/ep/eo` cubie coordinates
 - `wasm-bindgen` browser exports and absolute-deadline checks
 - lazy worker routing, progress, and readiness reporting
 
 ## Boundary contract
 
-The engine solves and independently verifies all centers and all twelve edge pairs. It does not claim a complete 4×4 solution until parity normalization and the virtual 3×3 bridge are implemented. A valid request returns `ok: false`, an empty final `solution`, and two verified partial stages:
+The engine solves and independently verifies all centers, all twelve edge pairs, parity normalization, and the legal virtual 3×3 projection. It does not claim a complete 4×4 solution until the virtual cubie state is solved through the existing Two-Phase engine and the complete move sequence is independently verified on the original 96-facelet state.
+
+A valid request therefore returns `ok: false`, an empty final `solution`, and three verified partial stages:
 
 ```json
 {
@@ -31,18 +36,29 @@ The engine solves and independently verifies all centers and all twelve edge pai
   "verified": false,
   "stages": [
     { "id": "centers", "name": "Centers", "solution": "...", "verified": true },
-    { "id": "edges", "name": "Edge Pairing", "solution": "...", "verified": true }
-  ]
+    { "id": "edges", "name": "Edge Pairing", "solution": "...", "verified": true },
+    { "id": "parity", "name": "Parity Normalization", "solution": "...", "verified": true }
+  ],
+  "meta": {
+    "apiVersion": "444-reduction-v1",
+    "virtual333Ready": true,
+    "virtual333": {
+      "cp": [0, 1, 2, 3, 4, 5, 6, 7],
+      "co": [0, 0, 0, 0, 0, 0, 0, 0],
+      "ep": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      "eo": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+  }
 }
 ```
 
-Each stage is reapplied to the independent 96-facelet model before exposure. Expired deadlines and invalid notation preserve the empty final-result contract. No stage is promoted to a complete solution or fallback.
+Each stage is reapplied to the independent 96-facelet model before exposure. The exported cubie state is projected again from that verified state and must satisfy corner orientation, edge orientation, and permutation-parity invariants. Expired deadlines and invalid notation preserve the empty final-result contract. No stage is promoted to a complete solution or fallback.
 
 ## Still to implement
 
-- parity normalization
-- virtual 3×3 conversion and existing Two-Phase bridge
-- final independent full-solution verification
+- existing Two-Phase search from the exported cubie coordinates
+- complete 4×4 move-sequence assembly
+- final independent 96-facelet solved-state verification
 - user-facing 4×4 solver activation
 
 ## Build
