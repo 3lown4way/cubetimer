@@ -1,0 +1,41 @@
+name: Remove pre-4x4 warmup
+
+on:
+  push:
+    branches:
+      - agent/444-wasm-worker-boundary
+    paths:
+      - "tools/remove-444-prewarm.mjs"
+      - ".github/workflows/remove-444-prewarm.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/444-wasm-worker-boundary
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove early warmup
+        run: node tools/remove-444-prewarm.mjs
+      - name: Validate contract
+        run: |
+          node --check solver/solverWorker.js
+          node tools/verify-444-worker-boundary.mjs
+      - name: Remove one-time files
+        run: |
+          rm tools/remove-444-prewarm.mjs
+          rm .github/workflows/remove-444-prewarm.yml
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/solverWorker.js tools/remove-444-prewarm.mjs .github/workflows/remove-444-prewarm.yml
+          git commit -m "Route 4x4 before background warmups"
+          git push
