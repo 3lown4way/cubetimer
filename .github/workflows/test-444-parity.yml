@@ -22,7 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Apply rotation-free OLL parity notation
+      - name: Apply fixed-frame OLL parity notation
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -31,27 +31,30 @@ jobs:
           start = text.index("fn oll_parity_macro() -> Vec<Move444> {")
           end = text.index("\n}\n\nfn pll_parity_macro()", start) + 2
           new = '''fn oll_parity_macro() -> Vec<Move444> {
-              // Standard Rw U2 x ... parity algorithm with the x viewpoint
-              // change eliminated. In the fixed 96-facelet frame, relative U
-              // after x addresses the original F face.
+              // Standard Rw U2 x ... OLL parity algorithm. Whole-cube x is
+              // expanded as Rw Lw' and x' restores the fixed color frame.
               vec![
                   mv(Face::R, true, 1),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::F, false, 2),
+                  mv(Face::L, true, 3),
                   mv(Face::R, true, 1),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
+                  mv(Face::R, true, 1),
+                  mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
                   mv(Face::L, true, 1),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::F, false, 2),
+                  mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
+                  mv(Face::R, true, 3),
+                  mv(Face::L, true, 1),
               ]
           }'''
           path.write_text(text[:start] + new + text[end:])
