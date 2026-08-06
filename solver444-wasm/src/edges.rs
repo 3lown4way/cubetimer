@@ -45,9 +45,8 @@ const EDGE_SLOTS: [[u8; 2]; EDGE_TYPE_COUNT] = [
 ];
 
 const LAST_POSITIONS: [u8; LAST_POSITION_COUNT] = [0, 1, 2, 3, 4, 5, 8, 12];
-const EXPECTED_PAIR_REACHABLE: [usize; PAIR_PHASE_COUNT] =
-    [552, 462, 380, 306, 240, 182, 132, 90];
-const EXPECTED_PAIR_MAX_DEPTH: [u8; PAIR_PHASE_COUNT] = [8, 7, 10, 8, 8, 8, 9, 5];
+const EXPECTED_PAIR_REACHABLE: [usize; PAIR_PHASE_COUNT] = [552, 462, 380, 306, 240, 182, 132, 90];
+const EXPECTED_PAIR_MAX_DEPTH: [u8; PAIR_PHASE_COUNT] = [8, 7, 9, 8, 8, 8, 8, 5];
 const EXPECTED_LAST_REACHABLE: usize = 40_320;
 const EXPECTED_LAST_MAX_DEPTH: u8 = 10;
 
@@ -56,66 +55,318 @@ const fn m(face: Face, wide: bool, amount: u8) -> Move444 {
 }
 
 const PHASE0_MACROS: [[Move444; MACRO_LEN]; 5] = [
-    [m(Face::R, false, 2), m(Face::U, true, 1), m(Face::L, false, 1), m(Face::U, false, 3), m(Face::L, false, 3), m(Face::U, true, 3)],
-    [m(Face::R, false, 2), m(Face::L, true, 2), m(Face::U, false, 2), m(Face::L, false, 1), m(Face::U, false, 2), m(Face::L, true, 2)],
-    [m(Face::F, false, 2), m(Face::U, true, 1), m(Face::L, false, 2), m(Face::D, false, 3), m(Face::L, false, 2), m(Face::U, true, 3)],
-    [m(Face::B, true, 2), m(Face::R, false, 1), m(Face::F, false, 2), m(Face::R, false, 3), m(Face::B, true, 2), m(Face::R, false, 3)],
-    [m(Face::D, true, 3), m(Face::L, false, 3), m(Face::D, false, 2), m(Face::L, false, 1), m(Face::D, true, 1), m(Face::L, false, 2)],
+    [
+        m(Face::R, false, 2),
+        m(Face::U, true, 1),
+        m(Face::L, false, 1),
+        m(Face::U, false, 3),
+        m(Face::L, false, 3),
+        m(Face::U, true, 3),
+    ],
+    [
+        m(Face::R, false, 2),
+        m(Face::L, true, 2),
+        m(Face::U, false, 2),
+        m(Face::L, false, 1),
+        m(Face::U, false, 2),
+        m(Face::L, true, 2),
+    ],
+    [
+        m(Face::F, false, 2),
+        m(Face::U, true, 1),
+        m(Face::L, false, 2),
+        m(Face::D, false, 3),
+        m(Face::L, false, 2),
+        m(Face::U, true, 3),
+    ],
+    [
+        m(Face::B, true, 2),
+        m(Face::R, false, 1),
+        m(Face::F, false, 2),
+        m(Face::R, false, 3),
+        m(Face::B, true, 2),
+        m(Face::R, false, 3),
+    ],
+    [
+        m(Face::D, true, 3),
+        m(Face::L, false, 3),
+        m(Face::D, false, 2),
+        m(Face::L, false, 1),
+        m(Face::D, true, 1),
+        m(Face::L, false, 2),
+    ],
 ];
 
 const PHASE1_MACROS: [[Move444; MACRO_LEN]; 5] = [
-    [m(Face::B, true, 1), m(Face::D, false, 2), m(Face::F, false, 1), m(Face::D, false, 2), m(Face::F, false, 1), m(Face::B, true, 3)],
-    [m(Face::D, true, 3), m(Face::F, false, 3), m(Face::D, false, 3), m(Face::F, false, 1), m(Face::D, true, 1), m(Face::F, false, 2)],
-    [m(Face::D, true, 1), m(Face::R, false, 3), m(Face::U, false, 1), m(Face::R, false, 1), m(Face::D, true, 3), m(Face::B, false, 3)],
-    [m(Face::F, true, 3), m(Face::B, false, 1), m(Face::U, false, 2), m(Face::F, false, 1), m(Face::U, false, 2), m(Face::F, true, 1)],
-    [m(Face::D, true, 3), m(Face::L, false, 3), m(Face::D, false, 3), m(Face::L, false, 1), m(Face::D, true, 1), m(Face::F, false, 3)],
+    [
+        m(Face::B, true, 1),
+        m(Face::D, false, 2),
+        m(Face::F, false, 1),
+        m(Face::D, false, 2),
+        m(Face::F, false, 1),
+        m(Face::B, true, 3),
+    ],
+    [
+        m(Face::D, true, 3),
+        m(Face::F, false, 3),
+        m(Face::D, false, 3),
+        m(Face::F, false, 1),
+        m(Face::D, true, 1),
+        m(Face::F, false, 2),
+    ],
+    [
+        m(Face::D, true, 1),
+        m(Face::R, false, 3),
+        m(Face::U, false, 1),
+        m(Face::R, false, 1),
+        m(Face::D, true, 3),
+        m(Face::B, false, 3),
+    ],
+    [
+        m(Face::F, true, 3),
+        m(Face::B, false, 1),
+        m(Face::U, false, 2),
+        m(Face::F, false, 1),
+        m(Face::U, false, 2),
+        m(Face::F, true, 1),
+    ],
+    [
+        m(Face::D, true, 3),
+        m(Face::L, false, 3),
+        m(Face::D, false, 3),
+        m(Face::L, false, 1),
+        m(Face::D, true, 1),
+        m(Face::F, false, 3),
+    ],
 ];
 
 const PHASE2_MACROS: [[Move444; MACRO_LEN]; 4] = [
-    [m(Face::L, false, 1), m(Face::F, true, 3), m(Face::U, false, 2), m(Face::B, false, 3), m(Face::U, false, 2), m(Face::F, true, 1)],
-    [m(Face::R, true, 3), m(Face::L, false, 2), m(Face::F, false, 2), m(Face::L, false, 3), m(Face::F, false, 2), m(Face::R, true, 1)],
-    [m(Face::F, true, 3), m(Face::R, false, 1), m(Face::B, false, 1), m(Face::R, false, 3), m(Face::F, true, 1), m(Face::L, false, 3)],
-    [m(Face::B, true, 1), m(Face::U, false, 2), m(Face::F, false, 3), m(Face::U, false, 2), m(Face::B, true, 3), m(Face::D, false, 2)],
+    [
+        m(Face::L, false, 1),
+        m(Face::F, true, 3),
+        m(Face::U, false, 2),
+        m(Face::B, false, 3),
+        m(Face::U, false, 2),
+        m(Face::F, true, 1),
+    ],
+    [
+        m(Face::R, true, 3),
+        m(Face::L, false, 2),
+        m(Face::F, false, 2),
+        m(Face::L, false, 3),
+        m(Face::F, false, 2),
+        m(Face::R, true, 1),
+    ],
+    [
+        m(Face::F, true, 3),
+        m(Face::R, false, 1),
+        m(Face::B, false, 1),
+        m(Face::R, false, 3),
+        m(Face::F, true, 1),
+        m(Face::L, false, 3),
+    ],
+    [
+        m(Face::B, true, 1),
+        m(Face::U, false, 2),
+        m(Face::F, false, 3),
+        m(Face::U, false, 2),
+        m(Face::B, true, 3),
+        m(Face::D, false, 2),
+    ],
 ];
 
 const PHASE3_MACROS: [[Move444; MACRO_LEN]; 4] = [
-    [m(Face::F, true, 1), m(Face::D, false, 1), m(Face::B, false, 1), m(Face::D, false, 3), m(Face::F, true, 3), m(Face::B, false, 1)],
-    [m(Face::D, false, 3), m(Face::B, true, 3), m(Face::U, false, 2), m(Face::F, false, 2), m(Face::U, false, 2), m(Face::B, true, 1)],
-    [m(Face::U, true, 2), m(Face::D, false, 2), m(Face::B, false, 3), m(Face::D, false, 1), m(Face::B, false, 1), m(Face::U, true, 2)],
-    [m(Face::F, true, 1), m(Face::R, false, 2), m(Face::F, false, 3), m(Face::R, false, 2), m(Face::F, true, 3), m(Face::B, false, 1)],
+    [
+        m(Face::F, true, 1),
+        m(Face::D, false, 1),
+        m(Face::B, false, 1),
+        m(Face::D, false, 3),
+        m(Face::F, true, 3),
+        m(Face::B, false, 1),
+    ],
+    [
+        m(Face::D, false, 3),
+        m(Face::B, true, 3),
+        m(Face::U, false, 2),
+        m(Face::F, false, 2),
+        m(Face::U, false, 2),
+        m(Face::B, true, 1),
+    ],
+    [
+        m(Face::U, true, 2),
+        m(Face::D, false, 2),
+        m(Face::B, false, 3),
+        m(Face::D, false, 1),
+        m(Face::B, false, 1),
+        m(Face::U, true, 2),
+    ],
+    [
+        m(Face::F, true, 1),
+        m(Face::R, false, 2),
+        m(Face::F, false, 3),
+        m(Face::R, false, 2),
+        m(Face::F, true, 3),
+        m(Face::B, false, 1),
+    ],
 ];
 
 const PHASE4_MACROS: [[Move444; MACRO_LEN]; 4] = [
-    [m(Face::U, true, 2), m(Face::L, false, 1), m(Face::D, false, 1), m(Face::L, false, 3), m(Face::U, true, 2), m(Face::D, false, 2)],
-    [m(Face::D, true, 3), m(Face::F, false, 2), m(Face::L, false, 1), m(Face::F, false, 2), m(Face::L, false, 3), m(Face::D, true, 1)],
-    [m(Face::F, true, 2), m(Face::U, false, 2), m(Face::B, false, 3), m(Face::U, false, 2), m(Face::F, true, 2), m(Face::D, false, 3)],
-    [m(Face::U, true, 1), m(Face::R, false, 1), m(Face::D, false, 2), m(Face::R, false, 3), m(Face::U, true, 3), m(Face::D, false, 2)],
+    [
+        m(Face::U, true, 2),
+        m(Face::L, false, 1),
+        m(Face::D, false, 1),
+        m(Face::L, false, 3),
+        m(Face::U, true, 2),
+        m(Face::D, false, 2),
+    ],
+    [
+        m(Face::D, true, 3),
+        m(Face::F, false, 2),
+        m(Face::L, false, 1),
+        m(Face::F, false, 2),
+        m(Face::L, false, 3),
+        m(Face::D, true, 1),
+    ],
+    [
+        m(Face::F, true, 2),
+        m(Face::U, false, 2),
+        m(Face::B, false, 3),
+        m(Face::U, false, 2),
+        m(Face::F, true, 2),
+        m(Face::D, false, 3),
+    ],
+    [
+        m(Face::U, true, 1),
+        m(Face::R, false, 1),
+        m(Face::D, false, 2),
+        m(Face::R, false, 3),
+        m(Face::U, true, 3),
+        m(Face::D, false, 2),
+    ],
 ];
 
 const PHASE5_MACROS: [[Move444; MACRO_LEN]; 3] = [
-    [m(Face::R, true, 1), m(Face::U, false, 2), m(Face::L, false, 2), m(Face::U, false, 2), m(Face::R, true, 3), m(Face::D, false, 1)],
-    [m(Face::D, false, 3), m(Face::F, true, 1), m(Face::U, false, 2), m(Face::B, false, 1), m(Face::U, false, 2), m(Face::F, true, 3)],
-    [m(Face::R, true, 3), m(Face::L, false, 1), m(Face::F, false, 1), m(Face::L, false, 3), m(Face::F, false, 3), m(Face::R, true, 1)],
+    [
+        m(Face::R, true, 1),
+        m(Face::U, false, 2),
+        m(Face::L, false, 2),
+        m(Face::U, false, 2),
+        m(Face::R, true, 3),
+        m(Face::D, false, 1),
+    ],
+    [
+        m(Face::D, false, 3),
+        m(Face::F, true, 1),
+        m(Face::U, false, 2),
+        m(Face::B, false, 1),
+        m(Face::U, false, 2),
+        m(Face::F, true, 3),
+    ],
+    [
+        m(Face::R, true, 3),
+        m(Face::L, false, 1),
+        m(Face::F, false, 1),
+        m(Face::L, false, 3),
+        m(Face::F, false, 3),
+        m(Face::R, true, 1),
+    ],
 ];
 
 const PHASE6_MACROS: [[Move444; MACRO_LEN]; 4] = [
-    [m(Face::F, false, 1), m(Face::B, true, 2), m(Face::L, false, 2), m(Face::F, false, 3), m(Face::L, false, 2), m(Face::B, true, 2)],
-    [m(Face::U, true, 2), m(Face::D, false, 1), m(Face::B, false, 3), m(Face::D, false, 3), m(Face::B, false, 1), m(Face::U, true, 2)],
-    [m(Face::U, true, 3), m(Face::D, false, 1), m(Face::B, false, 3), m(Face::D, false, 3), m(Face::B, false, 1), m(Face::U, true, 1)],
-    [m(Face::R, true, 3), m(Face::L, false, 1), m(Face::D, false, 1), m(Face::L, false, 3), m(Face::D, false, 3), m(Face::R, true, 1)],
+    [
+        m(Face::F, false, 1),
+        m(Face::B, true, 2),
+        m(Face::L, false, 2),
+        m(Face::F, false, 3),
+        m(Face::L, false, 2),
+        m(Face::B, true, 2),
+    ],
+    [
+        m(Face::U, true, 2),
+        m(Face::D, false, 1),
+        m(Face::B, false, 3),
+        m(Face::D, false, 3),
+        m(Face::B, false, 1),
+        m(Face::U, true, 2),
+    ],
+    [
+        m(Face::U, true, 3),
+        m(Face::D, false, 1),
+        m(Face::B, false, 3),
+        m(Face::D, false, 3),
+        m(Face::B, false, 1),
+        m(Face::U, true, 1),
+    ],
+    [
+        m(Face::R, true, 3),
+        m(Face::L, false, 1),
+        m(Face::D, false, 1),
+        m(Face::L, false, 3),
+        m(Face::D, false, 3),
+        m(Face::R, true, 1),
+    ],
 ];
 
 const PHASE7_MACROS: [[Move444; MACRO_LEN]; 4] = [
-    [m(Face::U, true, 1), m(Face::F, false, 1), m(Face::L, false, 1), m(Face::F, false, 3), m(Face::L, false, 3), m(Face::U, true, 3)],
-    [m(Face::U, true, 3), m(Face::D, false, 1), m(Face::L, false, 1), m(Face::D, false, 3), m(Face::L, false, 3), m(Face::U, true, 1)],
-    [m(Face::R, true, 3), m(Face::F, false, 1), m(Face::L, false, 2), m(Face::F, false, 3), m(Face::R, true, 1), m(Face::L, false, 2)],
-    [m(Face::U, true, 1), m(Face::D, false, 2), m(Face::F, false, 3), m(Face::D, false, 2), m(Face::F, false, 1), m(Face::U, true, 3)],
+    [
+        m(Face::U, true, 1),
+        m(Face::F, false, 1),
+        m(Face::L, false, 1),
+        m(Face::F, false, 3),
+        m(Face::L, false, 3),
+        m(Face::U, true, 3),
+    ],
+    [
+        m(Face::U, true, 3),
+        m(Face::D, false, 1),
+        m(Face::L, false, 1),
+        m(Face::D, false, 3),
+        m(Face::L, false, 3),
+        m(Face::U, true, 1),
+    ],
+    [
+        m(Face::R, true, 3),
+        m(Face::F, false, 1),
+        m(Face::L, false, 2),
+        m(Face::F, false, 3),
+        m(Face::R, true, 1),
+        m(Face::L, false, 2),
+    ],
+    [
+        m(Face::U, true, 1),
+        m(Face::D, false, 2),
+        m(Face::F, false, 3),
+        m(Face::D, false, 2),
+        m(Face::F, false, 1),
+        m(Face::U, true, 3),
+    ],
 ];
 
 const LAST4_MACROS: [[Move444; MACRO_LEN]; 3] = [
-    [m(Face::U, true, 3), m(Face::D, false, 1), m(Face::B, false, 1), m(Face::D, false, 3), m(Face::B, false, 3), m(Face::U, true, 1)],
-    [m(Face::U, true, 1), m(Face::L, false, 3), m(Face::D, false, 3), m(Face::L, false, 1), m(Face::U, true, 3), m(Face::D, false, 1)],
-    [m(Face::F, true, 3), m(Face::D, false, 2), m(Face::B, false, 1), m(Face::D, false, 2), m(Face::F, true, 1), m(Face::B, false, 3)],
+    [
+        m(Face::U, true, 3),
+        m(Face::D, false, 1),
+        m(Face::B, false, 1),
+        m(Face::D, false, 3),
+        m(Face::B, false, 3),
+        m(Face::U, true, 1),
+    ],
+    [
+        m(Face::U, true, 1),
+        m(Face::L, false, 3),
+        m(Face::D, false, 3),
+        m(Face::L, false, 1),
+        m(Face::U, true, 3),
+        m(Face::D, false, 1),
+    ],
+    [
+        m(Face::F, true, 3),
+        m(Face::D, false, 2),
+        m(Face::B, false, 1),
+        m(Face::D, false, 2),
+        m(Face::F, true, 1),
+        m(Face::B, false, 3),
+    ],
 ];
 
 fn phase_macro_specs(phase: usize) -> &'static [[Move444; MACRO_LEN]] {
@@ -243,6 +494,7 @@ impl LastState {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug)]
 struct PairPhase {
     target_type: u8,
@@ -253,6 +505,7 @@ struct PairPhase {
     max_depth: u8,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug)]
 struct LastPhase {
     macros: Vec<WingMacro>,
@@ -575,9 +828,7 @@ fn pair_rank(state: PairState, local_by_global: &[u8; WING_COUNT]) -> usize {
     debug_assert_ne!(second, u8::MAX);
     debug_assert!(first < second);
     let pair = (second as usize * (second as usize - 1)) / 2 + first as usize;
-    pair * 4
-        + state.first_orientation as usize * 2
-        + state.second_orientation as usize
+    pair * 4 + state.first_orientation as usize * 2 + state.second_orientation as usize
 }
 
 fn pair_state_for_type(
@@ -605,13 +856,13 @@ fn build_pair_phase(phase: usize, deadline_ts: f64) -> Result<PairPhase, EdgeSol
 
     let mut local_by_global = [u8::MAX; WING_COUNT];
     let mut remaining = Vec::with_capacity(WING_COUNT - phase * 2);
-    for position in 0..WING_COUNT {
+    for (position, local) in local_by_global.iter_mut().enumerate() {
         let locked = EDGE_SLOTS
             .iter()
             .take(phase)
             .any(|pair| pair.contains(&(position as u8)));
         if !locked {
-            local_by_global[position] = remaining.len() as u8;
+            *local = remaining.len() as u8;
             remaining.push(position as u8);
         }
     }
@@ -954,10 +1205,7 @@ fn descend_last_phase(
     Ok(())
 }
 
-pub fn solve_edges(
-    state: &Cube444,
-    deadline_ts: f64,
-) -> Result<EdgeSolveResult, EdgeSolveError> {
+pub fn solve_edges(state: &Cube444, deadline_ts: f64) -> Result<EdgeSolveResult, EdgeSolveError> {
     check_deadline(deadline_ts)?;
     if !state.centers_solved() {
         return Err(EdgeSolveError::CentersNotSolved);
@@ -978,12 +1226,7 @@ pub fn solve_edges(
             deadline_ts,
         )?;
     }
-    descend_last_phase(
-        &mut working,
-        &mut moves,
-        &tables.last_phase,
-        deadline_ts,
-    )?;
+    descend_last_phase(&mut working, &mut moves, &tables.last_phase, deadline_ts)?;
     check_deadline(deadline_ts)?;
 
     let mut verified = state.clone();
