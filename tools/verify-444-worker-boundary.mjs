@@ -20,26 +20,46 @@ assert.equal(valid.reason, "444_REDUCTION_INCOMPLETE");
 assert.equal(valid.solution, "");
 assert.equal(valid.moveCount, 0);
 assert.equal(valid.verified, false);
-assert.equal(valid.stages.length, 2);
+assert.equal(valid.stages.length, 3);
+
 assert.equal(valid.stages[0].id, "centers");
 assert.equal(valid.stages[0].name, "Centers");
 assert.equal(valid.stages[0].verified, true);
 assert.equal(valid.stages[0].moveCount, valid.meta.centerMoveCount);
+
 assert.equal(valid.stages[1].id, "edges");
 assert.equal(valid.stages[1].name, "Edge Pairing");
 assert.equal(valid.stages[1].verified, true);
 assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
+
+assert.equal(valid.stages[2].id, "parity");
+assert.equal(valid.stages[2].name, "Parity Normalization");
+assert.equal(valid.stages[2].verified, true);
+assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);
+
 assert.equal(valid.meta.centersSolved, true);
 assert.equal(valid.meta.edgesPaired, true);
+assert.equal(valid.meta.parityNormalized, true);
+assert.equal(valid.meta.virtual333Ready, true);
 assert.equal(valid.meta.scrambleValid, true);
 assert.equal(valid.meta.stateValid, true);
 assert.equal(valid.meta.parsedMoveCount, 6);
-assert.equal(valid.meta.apiVersion, "444-edges-v1");
+assert.equal(valid.meta.apiVersion, "444-reduction-v1");
+assert.equal(typeof valid.meta.ollParityDetected, "boolean");
+assert.equal(typeof valid.meta.pllParityDetected, "boolean");
+assert.deepEqual(Object.keys(valid.meta.virtual333).sort(), ["co", "cp", "eo", "ep"]);
+assert.equal(valid.meta.virtual333.cp.length, 8);
+assert.equal(valid.meta.virtual333.co.length, 8);
+assert.equal(valid.meta.virtual333.ep.length, 12);
+assert.equal(valid.meta.virtual333.eo.length, 12);
+
 assert.ok(progress.some((update) => update.type === "444_stage_start"));
 assert.ok(progress.some((update) => update.type === "444_stage_update" && update.phase === "wasm_ready"));
 assert.ok(progress.some((update) => update.type === "444_state_validated"));
 assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "CENTERS"));
 assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "EDGES"));
+assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "PARITY"));
+assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "VIRTUAL_333"));
 assert.ok(progress.some((update) => update.type === "444_stage_update" && update.stage === "REDUCTION" && update.reason === "444_REDUCTION_INCOMPLETE"));
 
 const invalid = await solve444("3Rw U", null, { deadlineTs: Date.now() + 10_000 });
@@ -60,7 +80,7 @@ assert.deepEqual(expired.stages, []);
 const readiness = getSolver444ReadinessStatus();
 assert.equal(readiness.ready, true);
 assert.equal(readiness.loading, false);
-assert.equal(readiness.apiVersion, "444-edges-v1");
+assert.equal(readiness.apiVersion, "444-reduction-v1");
 
 const workerSource = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
 assert.match(workerSource, /let solver444ModulePromise = null;/);
@@ -106,4 +126,4 @@ for (const path of [
   assert.equal(fs.existsSync(new URL(`../${path}`, import.meta.url)), true, `missing ${path}`);
 }
 
-console.log("4x4 WASM and worker boundary contract passed");
+console.log("4x4 parity-normalized WASM and worker boundary contract passed");
