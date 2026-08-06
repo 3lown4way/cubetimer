@@ -17,6 +17,7 @@ This crate is the correctness-first foundation and browser boundary for the cube
 - progress and readiness reporting
 - four exact center pruning coordinates with 753,311 total abstract states
 - independently verified Centers stage generation
+- a deterministic center-stage upper bound of 31 HTM moves
 
 ## Boundary contract
 
@@ -46,14 +47,13 @@ Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_I
 
 ## Still to implement
 
-- center search
 - edge pairing
 - parity normalization
 - virtual 3×3 conversion and existing Two-Phase bridge
 - final independent solution verification
 - user-facing 4×4 solver activation
 
-The reference facelet model remains the independent verifier when later search code introduces compact center, wing, and corner coordinates.
+The reference facelet model remains the independent verifier when later search code introduces compact wing and corner coordinates.
 
 ## Build
 
