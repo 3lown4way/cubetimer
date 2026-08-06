@@ -1,0 +1,30 @@
+name: Test 4x4 edge pairing
+
+on:
+  push:
+    branches:
+      - agent/444-edge-pairing
+    paths:
+      - "solver444-wasm/**"
+      - ".github/workflows/test-444-edge-pairing.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  edge-pairing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/444-edge-pairing
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all -- --check
+      - name: Run 4x4 Rust tests
+        run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib -- --nocapture
+      - name: Reject compiler warnings
+        run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
