@@ -45,6 +45,7 @@ jobs:
       - name: Format and validate Rust
         run: |
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
+          cargo fmt --manifest-path solver444-wasm/Cargo.toml --all -- --check
           cargo test --manifest-path solver444-wasm/Cargo.toml --lib
           cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
 
@@ -67,8 +68,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/solverWorker.js solver444-wasm Cargo.lock 2>/dev/null || true
-          git add solver444-wasm/Cargo.lock
+          git add solver/solverWorker.js solver444-wasm
           git add -f public/solver444-wasm
           git add tools/apply-444-worker-boundary.mjs .github/workflows/apply-444-worker-boundary.yml
           git commit -m "Connect the 4x4 WASM worker boundary"
