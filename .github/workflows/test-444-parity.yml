@@ -22,7 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Apply fixed-frame OLL parity notation
+      - name: Apply rotation-free OLL parity notation
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -31,30 +31,23 @@ jobs:
           start = text.index("fn oll_parity_macro() -> Vec<Move444> {")
           end = text.index("\n}\n\nfn pll_parity_macro()", start) + 2
           new = '''fn oll_parity_macro() -> Vec<Move444> {
-              // Standard Rw U2 x ... OLL parity algorithm. A viewpoint x
-              // rotation is Rw' Lw in the fixed facelet frame; x' restores it.
+              // Rotation-free OLL parity normalizer.
               vec![
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 3),
-                  mv(Face::L, true, 1),
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 3),
-                  mv(Face::U, false, 2),
-                  mv(Face::L, true, 1),
-                  mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 1),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
+                  mv(Face::F, false, 2),
+                  mv(Face::R, true, 2),
+                  mv(Face::U, false, 2),
+                  mv(Face::R, true, 1),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::R, true, 1),
-                  mv(Face::L, true, 3),
+                  mv(Face::U, false, 2),
+                  mv(Face::F, false, 2),
+                  mv(Face::R, true, 2),
+                  mv(Face::F, false, 2),
               ]
           }'''
           path.write_text(text[:start] + new + text[end:])
