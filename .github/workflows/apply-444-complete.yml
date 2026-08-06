@@ -6,7 +6,7 @@ on:
       - agent/444-twophase-complete
     paths:
       - "tools/apply-444-complete.mjs"
-      - "tools/diagnose-444-convention.mjs"
+      - "tools/compare-444-333-cubies.mjs"
       - "solver-wasm/src/cubie_bridge.rs"
       - ".github/workflows/apply-444-complete.yml"
 
@@ -28,10 +28,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Apply source patch and convention probe
-        run: |
-          node tools/apply-444-complete.mjs
-          node tools/diagnose-444-convention.mjs
+      - name: Apply source patch
+        run: node tools/apply-444-complete.mjs
       - name: Format and test Rust
         run: |
           cargo fmt --manifest-path solver-wasm/Cargo.toml --all
@@ -45,6 +43,7 @@ jobs:
           node --check solver/wasmSolver.js
           node --check solver/solver444.js
           node --check solver/solverWorker.js
+          node --check tools/compare-444-333-cubies.mjs
       - name: Install wasm-pack
         run: |
           if ! command -v wasm-pack >/dev/null 2>&1; then
@@ -71,8 +70,7 @@ jobs:
           cp target/solver444-wasm-web/solver444_wasm.d.ts public/solver444-wasm/solver444_wasm.d.ts
           cp target/solver444-wasm-web/solver444_wasm_bg.wasm public/solver444-wasm/solver444_wasm_bg.wasm
           cp target/solver444-wasm-web/solver444_wasm_bg.wasm.d.ts public/solver444-wasm/solver444_wasm_bg.wasm.d.ts
-      - name: Probe complete-solve convention
-        run: |
-          node -e 'import("./solver/solver444.js").then(async ({solve444}) => { const r = await solve444("Rw U2 F\x27 Lw D B2", null, {deadlineTs: Date.now()+60000}); console.log(JSON.stringify({ok:r.ok,reason:r.reason,moveCount:r.moveCount,verified:r.verified,stages:r.stages?.map(s=>[s.id,s.moveCount,s.verified]),meta:r.meta},null,2)); if(r.ok) process.exit(0); if(!r.meta?.conventionProbe) process.exit(1); process.exit(2); })'
+      - name: Compare exact cubie states
+        run: node tools/compare-444-333-cubies.mjs
       - name: Stop before committing diagnostics
         run: exit 1
