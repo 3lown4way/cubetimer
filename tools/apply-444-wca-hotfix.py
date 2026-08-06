@@ -1,0 +1,191 @@
+from pathlib import Path
+
+solver = Path("solver/solver444.js")
+text = solver.read_text()
+
+old_translation = '''function translateTwophaseSolutionFor444(solution) {
+  return String(solution || "")
+    .trim()
+    .split(/\\s+/)
+    .filter(Boolean)
+    .map((token) => {
+      const match = /^([URFDLB])(2|')?$/.exec(token);
+      if (!match) return token;
+      const [, face, suffix = ""] = match;
+      if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) return token;
+      return suffix === "'" ? face : face + "'";
+    })
+    .join(" ");
+}
+'''
+new_translation = '''const REVERSED_WCA_FACES_444 = new Set(["U", "R", "D", "L"]);
+
+export function translate444NotationConvention(algorithm) {
+  return String(algorithm || "")
+    .trim()
+    .split(/\\s+/)
+    .filter(Boolean)
+    .map((token) => {
+      const match = /^([URFDLBurfdlb])([wW]?)(2|')?$/.exec(token);
+      if (!match) return token;
+      const [, rawFace, explicitWide = "", suffix = ""] = match;
+      const face = rawFace.toUpperCase();
+      const wide = rawFace === rawFace.toLowerCase() || explicitWide ? "w" : "";
+      const normalized = `${face}${wide}${suffix}`;
+      if (suffix === "2" || !REVERSED_WCA_FACES_444.has(face)) return normalized;
+      return suffix === "'" ? `${face}${wide}` : `${face}${wide}'`;
+    })
+    .join(" ");
+}
+'''
+if "export function translate444NotationConvention" not in text:
+    if old_translation not in text:
+        raise SystemExit("translation function anchor not found")
+    text = text.replace(old_translation, new_translation, 1)
+
+solve_anchor = '''export async function solve444(scramble, onProgress = null, options = {}) {
+  const deadlineTs = Number(options?.deadlineTs) || 0;
+'''
+solve_replacement = '''export async function solve444(scramble, onProgress = null, options = {}) {
+  const deadlineTs = Number(options?.deadlineTs) || 0;
+  const wcaScramble = String(scramble || "").trim();
+  const internalScramble = translate444NotationConvention(wcaScramble);
+'''
+if "const internalScramble = translate444NotationConvention(wcaScramble);" not in text:
+    if solve_anchor not in text:
+        raise SystemExit("solve start anchor not found")
+    text = text.replace(solve_anchor, solve_replacement, 1)
+
+old_call = '''    result = normalizeBoundaryResponse(api.solve({
+      scramble: String(scramble || "").trim(),
+      deadlineTs,
+    }));'''
+new_call = '''    result = normalizeBoundaryResponse(api.solve({
+      scramble: internalScramble,
+      deadlineTs,
+    }));'''
+if old_call in text:
+    text = text.replace(old_call, new_call, 1)
+elif new_call not in text:
+    raise SystemExit("api solve anchor not found")
+
+text = text.replace(
+    "const translatedTwophaseSolution = translateTwophaseSolutionFor444(twophase.solution);",
+    "const translatedTwophaseSolution = translate444NotationConvention(twophase.solution);",
+    1,
+)
+
+old_verify = '''    verification = JSON.parse(String(api.verify({
+      scramble: String(scramble || "").trim(),
+      solution: completeSolution,
+    }) || ""));'''
+new_verify = '''    verification = JSON.parse(String(api.verify({
+      scramble: internalScramble,
+      solution: completeSolution,
+    }) || ""));'''
+if old_verify in text:
+    text = text.replace(old_verify, new_verify, 1)
+elif new_verify not in text:
+    raise SystemExit("verification anchor not found")
+
+old_success = '''  threeByThreeStage.verified = true;
+  const moveCount = completeSolution ? completeSolution.split(/\\s+/).filter(Boolean).length : 0;
+'''
+new_success = '''  threeByThreeStage.verified = true;
+  const publicStages = completeStages.map((stage) => {
+    const publicSolution = translate444NotationConvention(stage.solution);
+    return {
+      ...stage,
+      solution: publicSolution,
+      moveCount: publicSolution ? publicSolution.split(/\\s+/).filter(Boolean).length : 0,
+    };
+  });
+  const publicSolution = publicStages
+    .map((stage) => String(stage.solution || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const moveCount = publicSolution ? publicSolution.split(/\\s+/).filter(Boolean).length : 0;
+'''
+if "const publicStages = completeStages.map" not in text:
+    if old_success not in text:
+        raise SystemExit("success conversion anchor not found")
+    text = text.replace(old_success, new_success, 1)
+
+text = text.replace(
+    '''    solution: completeSolution,
+    moveCount,
+    verified: true,
+    stages: completeStages,''',
+    '''    solution: publicSolution,
+    moveCount,
+    verified: true,
+    stages: publicStages,''',
+    1,
+)
+if 'notationConvention: "WCA"' not in text:
+    text = text.replace(
+        "      fullVerificationSolved: true,\n",
+        '      fullVerificationSolved: true,\n      notationConvention: "WCA",\n',
+        1,
+    )
+solver.write_text(text)
+
+test = Path("tools/verify-444-worker-boundary.mjs")
+t = test.read_text()
+if "translate444NotationConvention," not in t:
+    t = t.replace(
+        '''import {
+  getSolver444ReadinessStatus,
+  solve444,
+} from "../solver/solver444.js";
+''',
+        '''import {
+  getSolver444ReadinessStatus,
+  solve444,
+  translate444NotationConvention,
+} from "../solver/solver444.js";
+import { puzzles } from "../vendor/cubing/puzzles/index.js";
+''',
+        1,
+    )
+
+if 'assert.equal(valid.meta.notationConvention, "WCA");' not in t:
+    marker = "assert.equal(valid.meta.fullVerificationSolved, true);\n"
+    addition = '''assert.equal(valid.meta.fullVerificationSolved, true);
+assert.equal(valid.meta.notationConvention, "WCA");
+
+for (const token of ["U", "U'", "U2", "Rw", "Rw'", "Rw2", "F", "F'", "Bw", "Bw'"]) {
+  assert.equal(
+    translate444NotationConvention(translate444NotationConvention(token)),
+    token,
+    `notation translation must be an involution for ${token}`,
+  );
+}
+assert.equal(translate444NotationConvention("U Rw F D' Lw2 B'"), "U' Rw' F D Lw2 B'");
+
+const kpuzzle444 = await puzzles["4x4x4"].kpuzzle();
+const solved444 = kpuzzle444.defaultPattern();
+const scrambled444 = solved444.applyAlg("Rw U2 F' Lw D B2");
+const centersAfterStage = scrambled444.applyAlg(valid.stages[0].solution);
+const solvedCenterPieces = solved444.patternData.CENTERS.pieces;
+const centerColorByPiece = new Map(
+  solvedCenterPieces.map((piece, position) => [piece, Math.floor(position / 4)]),
+);
+for (let position = 0; position < centersAfterStage.patternData.CENTERS.pieces.length; position += 1) {
+  const actualPiece = centersAfterStage.patternData.CENTERS.pieces[position];
+  assert.equal(
+    centerColorByPiece.get(actualPiece),
+    Math.floor(position / 4),
+    `public Centers stage leaves center position ${position} on the wrong face`,
+  );
+}
+const externallySolved = scrambled444.applyAlg(valid.solution);
+const externallyVerified = typeof externallySolved.experimentalIsSolved === "function"
+  ? externallySolved.experimentalIsSolved({ ignorePuzzleOrientation: false })
+  : JSON.stringify(externallySolved.patternData) === JSON.stringify(solved444.patternData);
+assert.equal(externallyVerified, true, "the public solution must solve the cubing.js 4x4 state");
+'''
+    if marker not in t:
+        raise SystemExit("test insertion anchor not found")
+    t = t.replace(marker, addition, 1)
+test.write_text(t)
