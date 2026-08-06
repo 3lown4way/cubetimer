@@ -1,5 +1,7 @@
 use core::fmt;
 
+use serde::Serialize;
+
 use crate::{Cube444, Face, Move444};
 
 const CORNER_COUNT: usize = 8;
@@ -60,7 +62,7 @@ const EDGE_COLORS: [[u8; 2]; EDGE_COUNT] = [
     [5, 1],
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct Virtual333State {
     pub cp: [u8; CORNER_COUNT],
     pub co: [u8; CORNER_COUNT],
@@ -89,28 +91,14 @@ impl Virtual333State {
 
     pub fn is_legal(&self) -> bool {
         self.co.iter().map(|&value| value as usize).sum::<usize>() % 3 == 0
-            && !self.parity_signature().oll
-            && !self.parity_signature().pll
+            && self.parity_signature() == ParitySignature::default()
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ParitySignature {
     pub oll: bool,
     pub pll: bool,
-}
-
-impl ParitySignature {
-    fn bits(self) -> u8 {
-        u8::from(self.oll) | (u8::from(self.pll) << 1)
-    }
-
-    fn xor(self, other: Self) -> Self {
-        Self {
-            oll: self.oll ^ other.oll,
-            pll: self.pll ^ other.pll,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -118,6 +106,8 @@ pub struct ParityNormalizeResult {
     pub moves: Vec<Move444>,
     pub before: ParitySignature,
     pub after: ParitySignature,
+    pub applied_oll: bool,
+    pub applied_pll: bool,
     pub virtual_state: Virtual333State,
 }
 
@@ -128,12 +118,12 @@ pub enum ReductionError {
     InvalidVirtualCornerInventory,
     InvalidVirtualEdgeInventory,
     InvalidCornerOrientation,
-    ParityMacroBreaksCenters(&'static str),
-    ParityMacroBreaksEdges(&'static str),
-    ParityBasisIncomplete {
-        oll_signature: ParitySignature,
-        pll_signature: ParitySignature,
-        target: ParitySignature,
+    ParityGeneratorBreaksCenters(&'static str),
+    ParityGeneratorBreaksEdges(&'static str),
+    ParityGeneratorSignatureMismatch {
+        name: &'static str,
+        expected: ParitySignature,
+        actual: ParitySignature,
     },
     ParityNormalizationFailed {
         before: ParitySignature,
@@ -146,18 +136,28 @@ impl fmt::Display for ReductionError {
         match self {
             Self::CentersNotSolved => write!(formatter, "4x4 centers are not solved"),
             Self::EdgesNotPaired => write!(formatter, "4x4 edges are not paired"),
-            Self::InvalidVirtualCornerInventory => write!(formatter, "invalid virtual 3x3 corner inventory"),
-            Self::InvalidVirtualEdgeInventory => write!(formatter, "invalid virtual 3x3 edge inventory"),
-            Self::InvalidCornerOrientation => write!(formatter, "invalid virtual 3x3 corner orientation sum"),
-            Self::ParityMacroBreaksCenters(name) => write!(formatter, "parity macro {name} breaks centers"),
-            Self::ParityMacroBreaksEdges(name) => write!(formatter, "parity macro {name} breaks paired edges"),
-            Self::ParityBasisIncomplete {
-                oll_signature,
-                pll_signature,
-                target,
+            Self::InvalidVirtualCornerInventory => {
+                write!(formatter, "invalid virtual 3x3 corner inventory")
+            }
+            Self::InvalidVirtualEdgeInventory => {
+                write!(formatter, "invalid virtual 3x3 edge inventory")
+            }
+            Self::InvalidCornerOrientation => {
+                write!(formatter, "invalid virtual 3x3 corner orientation sum")
+            }
+            Self::ParityGeneratorBreaksCenters(name) => {
+                write!(formatter, "parity generator {name} breaks centers")
+            }
+            Self::ParityGeneratorBreaksEdges(name) => {
+                write!(formatter, "parity generator {name} breaks paired edges")
+            }
+            Self::ParityGeneratorSignatureMismatch {
+                name,
+                expected,
+                actual,
             } => write!(
                 formatter,
-                "parity basis incomplete: oll={oll_signature:?}, pll={pll_signature:?}, target={target:?}"
+                "parity generator {name} has signature {actual:?}, expected {expected:?}"
             ),
             Self::ParityNormalizationFailed { before, after } => write!(
                 formatter,
@@ -198,7 +198,9 @@ fn virtual_facelets(state: &Cube444) -> [u8; VIRTUAL_FACELET_COUNT] {
     result
 }
 
-fn decode_corners(facelets: &[u8; VIRTUAL_FACELET_COUNT]) -> Result<([u8; 8], [u8; 8]), ReductionError> {
+fn decode_corners(
+    facelets: &[u8; VIRTUAL_FACELET_COUNT],
+) -> Result<([u8; CORNER_COUNT], [u8; CORNER_COUNT]), ReductionError> {
     let mut cp = [u8::MAX; CORNER_COUNT];
     let mut co = [0u8; CORNER_COUNT];
     let mut seen = [false; CORNER_COUNT];
@@ -233,7 +235,9 @@ fn decode_corners(facelets: &[u8; VIRTUAL_FACELET_COUNT]) -> Result<([u8; 8], [u
     Ok((cp, co))
 }
 
-fn decode_edges(facelets: &[u8; VIRTUAL_FACELET_COUNT]) -> Result<([u8; 12], [u8; 12]), ReductionError> {
+fn decode_edges(
+    facelets: &[u8; VIRTUAL_FACELET_COUNT],
+) -> Result<([u8; EDGE_COUNT], [u8; EDGE_COUNT]), ReductionError> {
     let mut ep = [u8::MAX; EDGE_COUNT];
     let mut eo = [0u8; EDGE_COUNT];
     let mut seen = [false; EDGE_COUNT];
@@ -304,26 +308,31 @@ const fn mv(face: Face, wide: bool, amount: u8) -> Move444 {
     Move444::new(face, wide, amount)
 }
 
-fn oll_parity_macro() -> Vec<Move444> {
+fn oll_parity_generator() -> Vec<Move444> {
+    // The repository's fixed-facelet turn direction is the inverse of the
+    // common Rw quarter-turn convention used by the published algorithm.
+    // This mirrored form was derived and then verified on the 96-facelet model.
     vec![
         mv(Face::R, true, 1),
         mv(Face::U, false, 2),
-        mv(Face::R, true, 1),
-        mv(Face::U, false, 2),
         mv(Face::R, true, 3),
+        mv(Face::U, false, 2),
+        mv(Face::R, true, 1),
         mv(Face::F, false, 2),
-        mv(Face::R, true, 1),
-        mv(Face::U, false, 2),
-        mv(Face::R, true, 1),
+        mv(Face::R, true, 2),
         mv(Face::U, false, 2),
         mv(Face::R, true, 3),
+        mv(Face::U, false, 2),
+        mv(Face::R, true, 1),
+        mv(Face::U, false, 2),
+        mv(Face::F, false, 2),
+        mv(Face::R, true, 2),
         mv(Face::F, false, 2),
     ]
 }
 
-fn pll_parity_macro() -> Vec<Move444> {
-    // 2R2 U2 2R2 2U2 2R2 2U2, expanded with 2R = Rw R'
-    // and 2U = Uw U'. For half turns the outer layers cancel.
+fn pll_parity_generator() -> Vec<Move444> {
+    // 2R2 U2 2R2 Uw2 2R2 Uw2, with inner 2R2 represented as Rw2 R2.
     vec![
         mv(Face::R, true, 2),
         mv(Face::R, false, 2),
@@ -331,27 +340,34 @@ fn pll_parity_macro() -> Vec<Move444> {
         mv(Face::R, true, 2),
         mv(Face::R, false, 2),
         mv(Face::U, true, 2),
-        mv(Face::U, false, 2),
         mv(Face::R, true, 2),
         mv(Face::R, false, 2),
         mv(Face::U, true, 2),
-        mv(Face::U, false, 2),
     ]
 }
 
-fn verified_macro_signature(
+fn verify_generator(
     name: &'static str,
     moves: &[Move444],
-) -> Result<ParitySignature, ReductionError> {
+    expected: ParitySignature,
+) -> Result<(), ReductionError> {
     let mut state = Cube444::solved();
     state.apply_moves(moves);
     if !state.centers_solved() {
-        return Err(ReductionError::ParityMacroBreaksCenters(name));
+        return Err(ReductionError::ParityGeneratorBreaksCenters(name));
     }
     if !state.edges_paired() {
-        return Err(ReductionError::ParityMacroBreaksEdges(name));
+        return Err(ReductionError::ParityGeneratorBreaksEdges(name));
     }
-    Ok(state.virtual333_state()?.parity_signature())
+    let actual = state.virtual333_state()?.parity_signature();
+    if actual != expected {
+        return Err(ReductionError::ParityGeneratorSignatureMismatch {
+            name,
+            expected,
+            actual,
+        });
+    }
+    Ok(())
 }
 
 pub fn normalize_parity(state: &Cube444) -> Result<ParityNormalizeResult, ReductionError> {
@@ -362,54 +378,50 @@ pub fn normalize_parity(state: &Cube444) -> Result<ParityNormalizeResult, Reduct
             moves: Vec::new(),
             before,
             after: before,
+            applied_oll: false,
+            applied_pll: false,
             virtual_state: initial_virtual,
         });
     }
 
-    let oll_moves = oll_parity_macro();
-    let pll_moves = pll_parity_macro();
-    let oll_signature = verified_macro_signature("oll", &oll_moves)?;
-    let pll_signature = verified_macro_signature("pll", &pll_moves)?;
+    let oll_moves = oll_parity_generator();
+    let pll_moves = pll_parity_generator();
+    verify_generator(
+        "oll",
+        &oll_moves,
+        ParitySignature {
+            oll: true,
+            pll: false,
+        },
+    )?;
+    verify_generator(
+        "pll",
+        &pll_moves,
+        ParitySignature {
+            oll: false,
+            pll: true,
+        },
+    )?;
 
-    let candidates: [(u8, Vec<Move444>); 4] = [
-        (0, Vec::new()),
-        (1, oll_moves.clone()),
-        (2, pll_moves.clone()),
-        (3, {
-            let mut both = oll_moves.clone();
-            both.extend_from_slice(&pll_moves);
-            both
-        }),
-    ];
-    let selected = candidates.into_iter().find(|(mask, _)| {
-        let mut signature = ParitySignature::default();
-        if mask & 1 != 0 {
-            signature = signature.xor(oll_signature);
-        }
-        if mask & 2 != 0 {
-            signature = signature.xor(pll_signature);
-        }
-        signature == before
-    });
-    let Some((_, moves)) = selected else {
-        return Err(ReductionError::ParityBasisIncomplete {
-            oll_signature,
-            pll_signature,
-            target: before,
-        });
-    };
+    let mut moves = Vec::new();
+    if before.oll {
+        moves.extend_from_slice(&oll_moves);
+    }
+    if before.pll {
+        moves.extend_from_slice(&pll_moves);
+    }
 
     let mut normalized = state.clone();
     normalized.apply_moves(&moves);
     if !normalized.centers_solved() {
-        return Err(ReductionError::ParityMacroBreaksCenters("selected"));
+        return Err(ReductionError::ParityGeneratorBreaksCenters("selected"));
     }
     if !normalized.edges_paired() {
-        return Err(ReductionError::ParityMacroBreaksEdges("selected"));
+        return Err(ReductionError::ParityGeneratorBreaksEdges("selected"));
     }
     let virtual_state = normalized.virtual333_state()?;
     let after = virtual_state.parity_signature();
-    if after != ParitySignature::default() {
+    if after != ParitySignature::default() || !virtual_state.is_legal() {
         return Err(ReductionError::ParityNormalizationFailed { before, after });
     }
 
@@ -417,6 +429,8 @@ pub fn normalize_parity(state: &Cube444) -> Result<ParityNormalizeResult, Reduct
         moves,
         before,
         after,
+        applied_oll: before.oll,
+        applied_pll: before.pll,
         virtual_state,
     })
 }
@@ -440,7 +454,10 @@ mod tests {
 
     #[test]
     fn solved_state_maps_to_solved_virtual_333() {
-        assert_eq!(Cube444::solved().virtual333_state().unwrap(), Virtual333State::solved());
+        assert_eq!(
+            Cube444::solved().virtual333_state().unwrap(),
+            Virtual333State::solved()
+        );
     }
 
     #[test]
@@ -450,40 +467,60 @@ mod tests {
                 let mut state = Cube444::solved();
                 state.apply_move(Move444::new(face, false, amount));
                 let virtual_state = state.virtual333_state().unwrap();
-                assert!(virtual_state.is_legal(), "illegal virtual state after {face:?}{amount}");
+                assert!(
+                    virtual_state.is_legal(),
+                    "illegal virtual state after {face:?}{amount}"
+                );
             }
         }
     }
 
     #[test]
-    fn parity_macros_form_a_two_bit_basis() {
-        let oll_moves = oll_parity_macro();
-        let pll_moves = pll_parity_macro();
-        let oll_signature = verified_macro_signature("oll", &oll_moves).unwrap();
-        let pll_signature = verified_macro_signature("pll", &pll_moves).unwrap();
-        println!("OLL macro signature: {oll_signature:?}");
-        println!("PLL macro signature: {pll_signature:?}");
-        assert_ne!(oll_signature.bits(), 0);
-        assert_ne!(pll_signature.bits(), 0);
-        assert_ne!(oll_signature, pll_signature);
+    fn parity_generators_have_exact_independent_signatures() {
+        let cases = [
+            (
+                "oll",
+                oll_parity_generator(),
+                ParitySignature {
+                    oll: true,
+                    pll: false,
+                },
+            ),
+            (
+                "pll",
+                pll_parity_generator(),
+                ParitySignature {
+                    oll: false,
+                    pll: true,
+                },
+            ),
+        ];
+        for (name, moves, expected) in cases {
+            verify_generator(name, &moves, expected).unwrap();
+        }
     }
 
     #[test]
-    fn normalization_cancels_each_generated_parity_class() {
-        let oll = oll_parity_macro();
-        let pll = pll_parity_macro();
+    fn normalization_cancels_all_generated_parity_classes() {
         for mask in 0..4u8 {
             let mut state = Cube444::solved();
             if mask & 1 != 0 {
-                state.apply_moves(&oll);
+                state.apply_moves(&oll_parity_generator());
             }
             if mask & 2 != 0 {
-                state.apply_moves(&pll);
+                state.apply_moves(&pll_parity_generator());
             }
+            let before = state.virtual333_state().unwrap().parity_signature();
             let result = normalize_parity(&state).unwrap();
+            assert_eq!(result.before, before);
             assert_eq!(result.after, ParitySignature::default());
+            assert_eq!(result.applied_oll, before.oll);
+            assert_eq!(result.applied_pll, before.pll);
+
             let mut verified = state.clone();
             verified.apply_moves(&result.moves);
+            assert!(verified.centers_solved());
+            assert!(verified.edges_paired());
             assert!(verified.virtual333_state().unwrap().is_legal());
         }
     }
@@ -500,11 +537,15 @@ mod tests {
         ];
         for scramble in corpus {
             let state = reduced_state(scramble);
-            let before = state.virtual333_state().unwrap().parity_signature();
             let result = normalize_parity(&state).unwrap();
-            assert_eq!(result.before, before);
-            assert_eq!(result.after, ParitySignature::default());
-            assert!(result.virtual_state.is_legal());
+            let mut verified = state.clone();
+            verified.apply_moves(&result.moves);
+            assert!(verified.centers_solved(), "centers broken for {scramble}");
+            assert!(verified.edges_paired(), "edges broken for {scramble}");
+            assert!(
+                verified.virtual333_state().unwrap().is_legal(),
+                "illegal virtual state for {scramble}"
+            );
         }
     }
 }
