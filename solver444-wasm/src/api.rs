@@ -6,7 +6,7 @@ use crate::{
     EdgeSolveError, ReductionError, Virtual333State,
 };
 
-const API_VERSION: &str = "444-reduction-v1";
+const API_VERSION: &str = "444-complete-v1";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -407,6 +407,84 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         stages,
         boundary,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Verify444Request {
+    #[serde(default)]
+    scramble: String,
+    #[serde(default)]
+    solution: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Verify444Response {
+    ok: bool,
+    solved: bool,
+    reason: Option<String>,
+    scramble_move_count: usize,
+    solution_move_count: usize,
+}
+
+pub fn verify_444_solution_boundary(request_json: &str) -> String {
+    let request = match serde_json::from_str::<Verify444Request>(request_json) {
+        Ok(request) => request,
+        Err(error) => {
+            return serde_json::to_string(&Verify444Response {
+                ok: false,
+                solved: false,
+                reason: Some(format!("444_VERIFY_INVALID_REQUEST:{error}")),
+                scramble_move_count: 0,
+                solution_move_count: 0,
+            })
+            .unwrap();
+        }
+    };
+    let scramble_moves = match parse_alg444(&request.scramble) {
+        Ok(moves) => moves,
+        Err(error) => {
+            return serde_json::to_string(&Verify444Response {
+                ok: false,
+                solved: false,
+                reason: Some(format!("444_VERIFY_INVALID_SCRAMBLE:{error}")),
+                scramble_move_count: 0,
+                solution_move_count: 0,
+            })
+            .unwrap();
+        }
+    };
+    let solution_moves = match parse_alg444(&request.solution) {
+        Ok(moves) => moves,
+        Err(error) => {
+            return serde_json::to_string(&Verify444Response {
+                ok: false,
+                solved: false,
+                reason: Some(format!("444_VERIFY_INVALID_SOLUTION:{error}")),
+                scramble_move_count: scramble_moves.len(),
+                solution_move_count: 0,
+            })
+            .unwrap();
+        }
+    };
+    let mut state = Cube444::solved();
+    state.apply_moves(&scramble_moves);
+    state.apply_moves(&solution_moves);
+    let valid = state.validate().is_ok();
+    serde_json::to_string(&Verify444Response {
+        ok: valid,
+        solved: valid && state.is_solved(),
+        reason: (!valid).then(|| "444_VERIFY_STATE_INVALID".to_string()),
+        scramble_move_count: scramble_moves.len(),
+        solution_move_count: solution_moves.len(),
+    })
+    .unwrap()
+}
+
+#[wasm_bindgen]
+pub fn verify_444_solution_json(request_json: &str) -> String {
+    verify_444_solution_boundary(request_json)
 }
 
 #[wasm_bindgen]

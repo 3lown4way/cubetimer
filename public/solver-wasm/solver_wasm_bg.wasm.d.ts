@@ -12,6 +12,7 @@ export const load_twophase_333_bundle: (a: number, b: number) => [number, number
 export const optimize_insertion_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
 export const prepare_minmove_333: (a: number, b: number) => [number, number];
 export const prepare_twophase_333: (a: number, b: number, c: number, d: number) => [number, number];
+export const prepare_twophase_333_from_cubie_json: (a: number, b: number, c: number, d: number) => [number, number];
 export const search_minmove_bound: (a: number, b: number, c: number) => [number, number];
 export const search_minmove_bound_with_deadline: (a: number, b: number, c: number, d: number) => [number, number];
 export const search_twophase_333: (a: number, b: number, c: number) => [number, number];

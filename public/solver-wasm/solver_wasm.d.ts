@@ -25,6 +25,8 @@ export function prepare_minmove_333(scramble: string): string;
 
 export function prepare_twophase_333(scramble: string, options_json: string): string;
 
+export function prepare_twophase_333_from_cubie_json(cubie_json: string, options_json: string): string;
+
 export function search_minmove_bound(search_id: number, bound: number, max_nodes: number): string;
 
 export function search_minmove_bound_with_deadline(search_id: number, bound: number, max_nodes: number, deadline_ms: number): string;
@@ -64,6 +66,7 @@ export interface InitOutput {
     readonly optimize_insertion_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly prepare_minmove_333: (a: number, b: number) => [number, number];
     readonly prepare_twophase_333: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly prepare_twophase_333_from_cubie_json: (a: number, b: number, c: number, d: number) => [number, number];
     readonly search_minmove_bound: (a: number, b: number, c: number) => [number, number];
     readonly search_minmove_bound_with_deadline: (a: number, b: number, c: number, d: number) => [number, number];
     readonly search_twophase_333: (a: number, b: number, c: number) => [number, number];

@@ -1210,6 +1210,15 @@ pub fn solve_edges(state: &Cube444, deadline_ts: f64) -> Result<EdgeSolveResult,
     if !state.centers_solved() {
         return Err(EdgeSolveError::CentersNotSolved);
     }
+    // Reduction requires twelve paired dedges, not each dedge in its home slot.
+    // Outer turns preserve pairing and must therefore require no pairing macros.
+    if state.edges_paired() {
+        return Ok(EdgeSolveResult {
+            moves: Vec::new(),
+            table_build_ms: 0.0,
+            search_ms: 0.0,
+        });
+    }
 
     let tables_were_ready = EDGE_TABLES.get().is_some();
     let tables = get_tables(deadline_ts)?;
@@ -1275,6 +1284,23 @@ mod tests {
         assert!(Cube444::solved().edges_paired());
         let result = solve_edges(&Cube444::solved(), 0.0).unwrap();
         assert!(result.moves.is_empty());
+    }
+
+    #[test]
+    fn outer_turns_keep_all_edges_paired_without_reduction_moves() {
+        for face in Face::ALL {
+            for amount in 1..=3 {
+                let mut state = Cube444::solved();
+                state.apply_move(Move444::new(face, false, amount));
+                assert!(state.centers_solved());
+                assert!(state.edges_paired());
+                let result = solve_edges(&state, 0.0).unwrap();
+                assert!(
+                    result.moves.is_empty(),
+                    "unexpected pairing moves for {face:?}{amount}"
+                );
+            }
+        }
     }
 
     #[test]
