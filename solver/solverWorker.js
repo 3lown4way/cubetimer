@@ -2,12 +2,14 @@ import { expose } from "../vendor/comlink/index.js";
 import { shouldRejectLiteralInverseSolution } from "./inverseSolutionPolicy.js";
 
 let solver2x2ModulesPromise = null;
+let solver444ModulePromise = null;
 let solver3x3PhaseModulesPromise = null;
 let fmcSolverModulePromise = null;
 let externalSolverModulePromise = null;
 let profileSupportModulesPromise = null;
 let wasmSolverModulePromise = null;
 const FMC_333_TIMEOUT_MS = 120000;
+const SOLVER_444_BOUNDARY_TIMEOUT_MS = 5000;
 const STRICT_CFOP_TIMEOUT_MS = 10000;
 const STRICT_CFOP_RETRY_TIMEOUT_MS = 6000;
 const ROUX_333_TIMEOUT_MS = 45000;
@@ -86,6 +88,34 @@ function getWasmSolverModule() {
     wasmSolverModulePromise = import("./wasmSolver.js");
   }
   return wasmSolverModulePromise;
+}
+
+function getSolver444Module() {
+  if (!solver444ModulePromise) {
+    solver444ModulePromise = import("./solver444.js");
+  }
+  return solver444ModulePromise;
+}
+
+async function solve444Lazy(scramble, onProgress, options) {
+  const { solve444 } = await getSolver444Module();
+  return solve444(scramble, onProgress, options);
+}
+
+function build444WorkerFailure(reason, status = "error", meta = {}) {
+  return {
+    ok: false,
+    eventId: "444",
+    status,
+    reason: String(reason || "444_FAILED"),
+    detail: null,
+    solution: "",
+    moveCount: 0,
+    verified: false,
+    stages: [],
+    source: "WASM_444_BOUNDARY",
+    meta: meta && typeof meta === "object" ? { ...meta } : {},
+  };
 }
 
 async function solveWithFMCSearchLazy(scramble, onProgress, options) {
@@ -1460,6 +1490,7 @@ const api = {
     let fmcTargetMoveCount = null;
     let fmcTimeBudgetMs = null;
     let benchmarkNoFallback = false;
+    let deadlineTs = 0;
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
       scramble = arg1.scramble;
       eventId = arg1.eventId;
@@ -1500,6 +1531,9 @@ const api = {
       if (Number.isFinite(Number(arg1.fmcTimeBudgetMs))) {
         fmcTimeBudgetMs = Math.max(1000, Math.floor(Number(arg1.fmcTimeBudgetMs)));
       }
+      if (Number.isFinite(Number(arg1.deadlineTs))) {
+        deadlineTs = Math.max(0, Number(arg1.deadlineTs));
+      }
       benchmarkNoFallback = arg1.benchmarkNoFallback === true;
     } else {
       scramble = arg1;
@@ -1535,6 +1569,43 @@ const api = {
       return { ok: false, reason: "NO_SCRAMBLE" };
     }
     startBackgroundWarmups();
+    if (normalizedEventId === "444") {
+      const effective444DeadlineTs = deadlineTs > 0
+        ? deadlineTs
+        : Date.now() + SOLVER_444_BOUNDARY_TIMEOUT_MS;
+      if (Date.now() >= effective444DeadlineTs) {
+        return build444WorkerFailure("444_DEADLINE_REACHED", "timeout", {
+          deadlineTs: effective444DeadlineTs,
+        });
+      }
+      const remaining444Ms = Math.max(
+        1,
+        Math.min(
+          SOLVER_444_BOUNDARY_TIMEOUT_MS,
+          Math.ceil(effective444DeadlineTs - Date.now()),
+        ),
+      );
+      return withTimeout(
+        solve444Lazy(scramble, onProgress, {
+          deadlineTs: effective444DeadlineTs,
+        }),
+        remaining444Ms,
+      ).catch(() => {
+        if (typeof onProgress === "function") {
+          try {
+            void onProgress({
+              type: "444_stage_fail",
+              eventId: "444",
+              stage: "BOUNDARY",
+              reason: "444_DEADLINE_REACHED",
+            });
+          } catch (_) {}
+        }
+        return build444WorkerFailure("444_DEADLINE_REACHED", "timeout", {
+          deadlineTs: effective444DeadlineTs,
+        });
+      });
+    }
     if (normalizedEventId === "333" && mode === "twophase") {
       return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion, { noFallback: benchmarkNoFallback });
     }

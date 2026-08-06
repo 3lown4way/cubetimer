@@ -125,12 +125,7 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         ..BoundaryState::default()
     };
     if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response(
-            "timeout",
-            "444_DEADLINE_REACHED",
-            None,
-            boundary,
-        ));
+        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
     }
 
     let moves = match parse_alg444(&request.scramble) {
@@ -148,12 +143,7 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.parsed_move_count = moves.len();
 
     if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response(
-            "timeout",
-            "444_DEADLINE_REACHED",
-            None,
-            boundary,
-        ));
+        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
     }
 
     let mut state = Cube444::solved();
@@ -170,12 +160,7 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.solved_state = state.is_solved();
 
     if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response(
-            "timeout",
-            "444_DEADLINE_REACHED",
-            None,
-            boundary,
-        ));
+        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
     }
 
     // Search stages are deliberately not exposed until centers, edge pairing,
