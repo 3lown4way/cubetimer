@@ -1,0 +1,53 @@
+name: Minmove proof budget
+
+on:
+  pull_request:
+    paths:
+      - "solver/minmoveExactV2.js"
+      - "solver/wasmSolver.js"
+      - "tools/test-minmove-proof-budget.mjs"
+      - "tools/benchmark-minmove-proof-budget.mjs"
+      - ".github/workflows/minmove-proof-budget.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "solver/minmoveExactV2.js"
+      - "solver/wasmSolver.js"
+      - "tools/test-minmove-proof-budget.mjs"
+      - "tools/benchmark-minmove-proof-budget.mjs"
+      - ".github/workflows/minmove-proof-budget.yml"
+  workflow_dispatch:
+    inputs:
+      run_benchmark:
+        description: "Run the 30s/60s/90s proof benchmark"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check source syntax
+        run: |
+          node --check solver/minmoveExactV2.js
+          node --check tools/test-minmove-proof-budget.mjs
+          node --check tools/benchmark-minmove-proof-budget.mjs
+      - name: Verify proof-budget and no-fallback contract
+        env:
+          MINMOVE_PROOF_TEST_BUDGET_MS: "6000"
+        run: node tools/test-minmove-proof-budget.mjs
+      - name: Run 30s/60s/90s proof benchmark
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_benchmark }}
+        env:
+          MINMOVE_BENCHMARK_BUDGETS_MS: "30000,60000,90000"
+        run: node tools/benchmark-minmove-proof-budget.mjs
