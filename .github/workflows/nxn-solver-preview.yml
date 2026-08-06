@@ -1,0 +1,39 @@
+name: NxNxN solver preview
+
+on:
+  pull_request:
+    paths:
+      - "main.js"
+      - "index.html"
+      - "solver/nxnTwistyPreview.js"
+      - "tools/verify-nxn-solver-preview.mjs"
+      - ".github/workflows/nxn-solver-preview.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "main.js"
+      - "index.html"
+      - "solver/nxnTwistyPreview.js"
+      - "tools/verify-nxn-solver-preview.mjs"
+      - ".github/workflows/nxn-solver-preview.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check main.js
+          node --check solver/nxnTwistyPreview.js
+          node --check tools/verify-nxn-solver-preview.mjs
+      - name: Verify solver-only NxNxN 3D preview
+        run: node tools/verify-nxn-solver-preview.mjs
