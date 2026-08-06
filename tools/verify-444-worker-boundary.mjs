@@ -68,6 +68,11 @@ assert.ok(
   "4x4 must route before 3x3 background warmups",
 );
 const routeSource = workerSource.slice(routeStart, routeEnd);
+assert.equal(
+  routeSource.match(/startBackgroundWarmups\(\);/g)?.length || 0,
+  1,
+  "non-4x4 warmups must start exactly once after the 4x4 return path",
+);
 assert.doesNotMatch(routeSource, /solveWithExternalSearchLazy|fallback/i);
 assert.match(routeSource, /build444WorkerFailure\("444_DEADLINE_REACHED", "timeout"/);
 assert.match(routeSource, /\^TIMEOUT_\\d\+MS\$\/\.test\(errorMessage\)/);
