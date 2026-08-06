@@ -107,13 +107,13 @@ fn layer_selected(pos: Vec3, mv: Move444) -> bool {
 pub fn quarter_turn_permutation(mv: Move444) -> [u8; FACELET_COUNT] {
     let base = mv.with_amount(1);
     let mut permutation = [0u8; FACELET_COUNT];
-    for old_index in 0..FACELET_COUNT {
+    for (old_index, target_index) in permutation.iter_mut().enumerate() {
         let mut geometry = sticker_geometry(old_index);
         if layer_selected(geometry.pos, base) {
             geometry.pos = geometry.pos.rotate_quarter(base.face());
             geometry.normal = geometry.normal.rotate_quarter(base.face());
         }
-        permutation[old_index] = geometry_index(geometry) as u8;
+        *target_index = geometry_index(geometry) as u8;
     }
     permutation
 }
@@ -123,8 +123,8 @@ pub fn move_permutation(mv: Move444) -> [u8; FACELET_COUNT] {
     let mut result = core::array::from_fn(|index| index as u8);
     for _ in 0..mv.amount() {
         let previous = result;
-        for old_index in 0..FACELET_COUNT {
-            result[old_index] = quarter[previous[old_index] as usize];
+        for (old_index, target_index) in result.iter_mut().enumerate() {
+            *target_index = quarter[previous[old_index] as usize];
         }
     }
     result

@@ -38,8 +38,8 @@ impl Cube444 {
     pub fn apply_move(&mut self, mv: Move444) {
         let permutation = move_permutation(mv);
         let previous = self.stickers;
-        for old_index in 0..FACELET_COUNT {
-            self.stickers[permutation[old_index] as usize] = previous[old_index];
+        for (old_index, &target_index) in permutation.iter().enumerate() {
+            self.stickers[target_index as usize] = previous[old_index];
         }
     }
 
@@ -160,10 +160,7 @@ fn piece_kind(position: Vec3) -> usize {
         .count()
 }
 
-fn multiset_by_piece_kind(
-    stickers: &[u8; FACELET_COUNT],
-    kind: usize,
-) -> BTreeMap<Vec<u8>, usize> {
+fn multiset_by_piece_kind(stickers: &[u8; FACELET_COUNT], kind: usize) -> BTreeMap<Vec<u8>, usize> {
     let mut result = BTreeMap::new();
     for (position, colors) in piece_inventory(stickers) {
         if piece_kind(position) == kind {
