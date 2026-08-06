@@ -6,6 +6,7 @@ on:
       - agent/444-twophase-complete
     paths:
       - "tools/apply-444-complete.mjs"
+      - "tools/diagnose-444-convention.mjs"
       - "solver-wasm/src/cubie_bridge.rs"
       - ".github/workflows/apply-444-complete.yml"
 
@@ -27,8 +28,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Apply source patch
-        run: node tools/apply-444-complete.mjs
+      - name: Apply source patch and convention probe
+        run: |
+          node tools/apply-444-complete.mjs
+          node tools/diagnose-444-convention.mjs
       - name: Format and test Rust
         run: |
           cargo fmt --manifest-path solver-wasm/Cargo.toml --all
@@ -68,19 +71,8 @@ jobs:
           cp target/solver444-wasm-web/solver444_wasm.d.ts public/solver444-wasm/solver444_wasm.d.ts
           cp target/solver444-wasm-web/solver444_wasm_bg.wasm public/solver444-wasm/solver444_wasm_bg.wasm
           cp target/solver444-wasm-web/solver444_wasm_bg.wasm.d.ts public/solver444-wasm/solver444_wasm_bg.wasm.d.ts
-      - name: Smoke-test complete solve
+      - name: Probe complete-solve convention
         run: |
-          node -e 'import("./solver/solver444.js").then(async ({solve444}) => { const r = await solve444("Rw U2 F\x27 Lw D B2", null, {deadlineTs: Date.now()+60000}); console.log(JSON.stringify({ok:r.ok,reason:r.reason,moveCount:r.moveCount,verified:r.verified,stages:r.stages?.map(s=>[s.id,s.moveCount,s.verified])},null,2)); if(!r.ok || !r.verified || !r.solution) process.exit(1); })'
-      - name: Remove one-time integration files
-        run: |
-          rm tools/apply-444-complete.mjs
-          rm .github/workflows/apply-444-complete.yml
-      - name: Validate diff
-        run: git diff --check
-      - name: Commit verified integration
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Connect the 4x4 solver to Two-Phase"
-          git push
+          node -e 'import("./solver/solver444.js").then(async ({solve444}) => { const r = await solve444("Rw U2 F\x27 Lw D B2", null, {deadlineTs: Date.now()+60000}); console.log(JSON.stringify({ok:r.ok,reason:r.reason,moveCount:r.moveCount,verified:r.verified,stages:r.stages?.map(s=>[s.id,s.moveCount,s.verified]),meta:r.meta},null,2)); if(r.ok) process.exit(0); if(!r.meta?.conventionProbe) process.exit(1); process.exit(2); })'
+      - name: Stop before committing diagnostics
+        run: exit 1
