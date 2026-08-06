@@ -134,6 +134,37 @@ pub fn move_permutation(mv: Move444) -> [u8; FACELET_COUNT] {
 mod tests {
     use super::*;
 
+    const U: usize = 0;
+    const R: usize = 16;
+    const F: usize = 32;
+    const D: usize = 48;
+    const L: usize = 64;
+    const B: usize = 80;
+
+    fn row(face: usize, row: usize) -> [usize; N] {
+        core::array::from_fn(|col| face + row * N + col)
+    }
+
+    fn col(face: usize, col: usize) -> [usize; N] {
+        core::array::from_fn(|row| face + row * N + col)
+    }
+
+    fn assert_strip(
+        permutation: &[u8; FACELET_COUNT],
+        source: [usize; N],
+        target: [usize; N],
+        reversed: bool,
+    ) {
+        for (offset, source_index) in source.into_iter().enumerate() {
+            let target_offset = if reversed { N - 1 - offset } else { offset };
+            assert_eq!(
+                permutation[source_index] as usize, target[target_offset],
+                "facelet {source_index} mapped to {}, expected {}",
+                permutation[source_index], target[target_offset]
+            );
+        }
+    }
+
     #[test]
     fn all_facelets_have_unique_geometry() {
         let mut geometries = Vec::new();
@@ -159,5 +190,79 @@ mod tests {
             }
             assert!(seen.into_iter().all(|value| value));
         }
+    }
+
+    #[test]
+    fn outer_and_wide_turns_move_the_expected_number_of_facelets() {
+        for face in Face::ALL {
+            let outer = quarter_turn_permutation(Move444::new(face, false, 1));
+            let wide = quarter_turn_permutation(Move444::new(face, true, 1));
+            let outer_moved = outer
+                .iter()
+                .enumerate()
+                .filter(|(index, target)| *index != **target as usize)
+                .count();
+            let wide_moved = wide
+                .iter()
+                .enumerate()
+                .filter(|(index, target)| *index != **target as usize)
+                .count();
+            assert_eq!(outer_moved, 32, "outer move count mismatch for {face:?}");
+            assert_eq!(wide_moved, 48, "wide move count mismatch for {face:?}");
+        }
+    }
+
+    #[test]
+    fn u_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::U, false, 1));
+        assert_strip(&permutation, row(F, 0), row(R, 0), false);
+        assert_strip(&permutation, row(R, 0), row(B, 0), false);
+        assert_strip(&permutation, row(B, 0), row(L, 0), false);
+        assert_strip(&permutation, row(L, 0), row(F, 0), false);
+    }
+
+    #[test]
+    fn d_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::D, false, 1));
+        assert_strip(&permutation, row(F, 3), row(L, 3), false);
+        assert_strip(&permutation, row(L, 3), row(B, 3), false);
+        assert_strip(&permutation, row(B, 3), row(R, 3), false);
+        assert_strip(&permutation, row(R, 3), row(F, 3), false);
+    }
+
+    #[test]
+    fn f_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::F, false, 1));
+        assert_strip(&permutation, row(U, 3), col(R, 0), false);
+        assert_strip(&permutation, col(R, 0), row(D, 0), true);
+        assert_strip(&permutation, row(D, 0), col(L, 3), false);
+        assert_strip(&permutation, col(L, 3), row(U, 3), true);
+    }
+
+    #[test]
+    fn b_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::B, false, 1));
+        assert_strip(&permutation, row(U, 0), col(L, 0), true);
+        assert_strip(&permutation, col(L, 0), row(D, 3), false);
+        assert_strip(&permutation, row(D, 3), col(R, 3), true);
+        assert_strip(&permutation, col(R, 3), row(U, 0), false);
+    }
+
+    #[test]
+    fn r_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::R, false, 1));
+        assert_strip(&permutation, col(U, 3), col(F, 3), false);
+        assert_strip(&permutation, col(F, 3), col(D, 3), false);
+        assert_strip(&permutation, col(D, 3), col(B, 0), true);
+        assert_strip(&permutation, col(B, 0), col(U, 3), true);
+    }
+
+    #[test]
+    fn l_clockwise_strip_cycle_matches_wca_notation() {
+        let permutation = quarter_turn_permutation(Move444::new(Face::L, false, 1));
+        assert_strip(&permutation, col(U, 0), col(B, 3), true);
+        assert_strip(&permutation, col(B, 3), col(D, 0), true);
+        assert_strip(&permutation, col(D, 0), col(F, 0), false);
+        assert_strip(&permutation, col(F, 0), col(U, 0), false);
     }
 }
