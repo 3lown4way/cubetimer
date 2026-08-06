@@ -19,9 +19,62 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Add published algorithm probe
-        run: python -c 'from pathlib import Path; import base64; p=Path("solver444-wasm/src/reduction.rs"); t=p.read_text(); i=t.rfind("\n}\n"); s=base64.b64decode("CiAgICAjW3Rlc3RdCiAgICBmbiBwcm9iZV9wdWJsaXNoZWRfb2xsX3Bhcml0eV9hbGdvcml0aG1zKCkgewogICAgICAgIGxldCBhbGdvcml0aG1zID0gWwogICAgICAgICAgICAoCiAgICAgICAgICAgICAgICAic3BlZWRjdWJlZGIiLAogICAgICAgICAgICAgICAgIlJ3JyBVMiBSdyBVMiBSdycgRjIgUncyIFUyIFJ3IFUyIFJ3JyBVMiBGMiBSdzIgRjIiLAogICAgICAgICAgICApLAogICAgICAgICAgICAoCiAgICAgICAgICAgICAgICAic3BlZWRjdWJlZGItbWlycm9yZWQiLAogICAgICAgICAgICAgICAgIlJ3IFUyIFJ3JyBVMiBSdyBGMiBSdzIgVTIgUncnIFUyIFJ3IFUyIEYyIFJ3MiBGMiIsCiAgICAgICAgICAgICksCiAgICAgICAgICAgICgKICAgICAgICAgICAgICAgICJzcGVlZGN1YmVyZXZpZXciLAogICAgICAgICAgICAgICAgIlJ3JyBVMiBSdyBVMiBSdyBVMiBSdzIgRjIgUncnIFUyIFJ3JyBVMiBGMiBSdzIgRjIiLAogICAgICAgICAgICApLAogICAgICAgICAgICAoCiAgICAgICAgICAgICAgICAic3BlZWRjdWJlcmV2aWV3LW1pcnJvcmVkIiwKICAgICAgICAgICAgICAgICJSdyBVMiBSdycgVTIgUncnIFUyIFJ3MiBGMiBSdyBVMiBSdyBVMiBGMiBSdzIgRjIiLAogICAgICAgICAgICApLAogICAgICAgICAgICAoCiAgICAgICAgICAgICAgICAia2V3YnoiLAogICAgICAgICAgICAgICAgIlJ3MiBCMiBVMiBMdyBVMiBSdycgVTIgUncgVTIgRjIgUncgRjIgTHcnIEIyIFJ3MiIsCiAgICAgICAgICAgICksCiAgICAgICAgICAgICgKICAgICAgICAgICAgICAgICJrZXdiei1taXJyb3JlZCIsCiAgICAgICAgICAgICAgICAiUncyIEIyIFUyIEx3JyBVMiBSdyBVMiBSdycgVTIgRjIgUncnIEYyIEx3IEIyIFJ3MiIsCiAgICAgICAgICAgICksCiAgICAgICAgXTsKCiAgICAgICAgZm9yIChuYW1lLCBhbGdvcml0aG0pIGluIGFsZ29yaXRobXMgewogICAgICAgICAgICBsZXQgbW92ZXMgPSBwYXJzZV9hbGc0NDQoYWxnb3JpdGhtKS51bndyYXAoKTsKICAgICAgICAgICAgbGV0IG11dCBzdGF0ZSA9IEN1YmU0NDQ6OnNvbHZlZCgpOwogICAgICAgICAgICBzdGF0ZS5hcHBseV9tb3ZlcygmbW92ZXMpOwogICAgICAgICAgICBsZXQgY2VudGVycyA9IHN0YXRlLmNlbnRlcnNfc29sdmVkKCk7CiAgICAgICAgICAgIGxldCBwYWlyZWQgPSBzdGF0ZS5lZGdlc19wYWlyZWQoKTsKICAgICAgICAgICAgbGV0IHZpcnR1YWxfcmVzdWx0ID0gc3RhdGUudmlydHVhbDMzM19zdGF0ZSgpOwogICAgICAgICAgICBwcmludGxuISgKICAgICAgICAgICAgICAgICJ7bmFtZX06IGNlbnRlcnM9e2NlbnRlcnN9IHBhaXJlZD17cGFpcmVkfSB2aXJ0dWFsPXt2aXJ0dWFsX3Jlc3VsdDo/fSIKICAgICAgICAgICAgKTsKICAgICAgICB9CiAgICB9Cg==").decode(); p.write_text(t[:i]+s+t[i:])'
+      - name: Add PLL generator probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("solver444-wasm/src/reduction.rs")
+          text = path.read_text()
+          insert_at = text.rfind("\n}\n")
+          probe = r'''
+
+    #[test]
+    fn probe_pll_parity_generators() {
+        fn inner(face: Face) -> Vec<Move444> {
+            vec![mv(face, true, 2), mv(face, false, 2)]
+        }
+        let mut inner_r_uw = inner(Face::R);
+        inner_r_uw.push(mv(Face::U, false, 2));
+        inner_r_uw.extend(inner(Face::R));
+        inner_r_uw.push(mv(Face::U, true, 2));
+        inner_r_uw.extend(inner(Face::R));
+        inner_r_uw.push(mv(Face::U, true, 2));
+
+        let wide_r_uw = vec![
+            mv(Face::R, true, 2),
+            mv(Face::U, false, 2),
+            mv(Face::R, true, 2),
+            mv(Face::U, true, 2),
+            mv(Face::R, true, 2),
+            mv(Face::U, true, 2),
+        ];
+
+        let mut inner_r_inner_u = inner(Face::R);
+        inner_r_inner_u.push(mv(Face::U, false, 2));
+        inner_r_inner_u.extend(inner(Face::R));
+        inner_r_inner_u.extend(inner(Face::U));
+        inner_r_inner_u.extend(inner(Face::R));
+        inner_r_inner_u.extend(inner(Face::U));
+
+        for (name, moves) in [
+            ("inner-r-uw", inner_r_uw),
+            ("wide-r-uw", wide_r_uw),
+            ("inner-r-inner-u", inner_r_inner_u),
+        ] {
+            let mut state = Cube444::solved();
+            state.apply_moves(&moves);
+            println!(
+                "{name}: centers={} paired={} virtual={:?}",
+                state.centers_solved(),
+                state.edges_paired(),
+                state.virtual333_state()
+            );
+        }
+    }
+'''
+          path.write_text(text[:insert_at] + probe + text[insert_at:])
+          PY
       - name: Format Rust
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
-      - name: Probe algorithms
-        run: cargo test --manifest-path solver444-wasm/Cargo.toml probe_published_oll_parity_algorithms -- --nocapture
+      - name: Probe PLL generators
+        run: cargo test --manifest-path solver444-wasm/Cargo.toml probe_pll_parity_generators -- --nocapture
