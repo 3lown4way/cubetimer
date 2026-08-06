@@ -1590,22 +1590,29 @@ const api = {
           deadlineTs: effective444DeadlineTs,
         }),
         remaining444Ms,
-      ).catch(() => {
+      ).catch((error) => {
+        const errorMessage = String(error?.message || error || "444_WORKER_FAILED");
+        const timedOut =
+          Date.now() >= effective444DeadlineTs || /^TIMEOUT_\d+MS$/.test(errorMessage);
+        const reason = timedOut ? "444_DEADLINE_REACHED" : "444_WORKER_FAILED";
+        const status = timedOut ? "timeout" : "error";
         if (typeof onProgress === "function") {
           try {
             void onProgress({
               type: "444_stage_fail",
               eventId: "444",
               stage: "BOUNDARY",
-              reason: "444_DEADLINE_REACHED",
+              reason,
             });
           } catch (_) {}
         }
-        return build444WorkerFailure("444_DEADLINE_REACHED", "timeout", {
+        return build444WorkerFailure(reason, status, {
           deadlineTs: effective444DeadlineTs,
+          ...(timedOut ? {} : { workerError: errorMessage }),
         });
       });
     }
+    startBackgroundWarmups();
     if (normalizedEventId === "333" && mode === "twophase") {
       return await solveWithInternal3x3TwoPhase(scramble, onProgress, solverVersion, { noFallback: benchmarkNoFallback });
     }
