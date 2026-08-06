@@ -2635,6 +2635,7 @@ async function solveCurrentScramble() {
   solverBusy = true;
   const runId = ++solverProgressRunId;
   const eventId = appState.settings.eventId;
+  const solverScramble = currentScramble;
   if (solverStatus) {
     const solverMode = appState.settings.solverMode || "strict";
     const solverVersion = VALID_SOLVER_VERSIONS.has(appState.settings.solverVersion)
@@ -2801,7 +2802,7 @@ async function solveCurrentScramble() {
       : DEFAULT_OLL_PLL_PREDICTION_WEIGHT;
     const result = await Promise.race([
       solverApi.solve({
-        scramble: currentScramble,
+        scramble: solverScramble,
         eventId,
         crossColor,
         mode: solverMode,
@@ -2949,7 +2950,7 @@ async function solveCurrentScramble() {
       if (solverCopyBtn) {
         solverCopyBtn.disabled = !rawSolutionText;
       }
-      showSolverVisualResult(currentScramble, rawSolutionText, result.stages);
+      showSolverVisualResult(solverScramble, rawSolutionText, result.stages, eventId);
     } else {
       lastSolution = "";
       lastSolutionDisplay = "";

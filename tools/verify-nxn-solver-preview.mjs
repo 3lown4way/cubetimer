@@ -43,6 +43,9 @@ assert.match(mainSource, /puzzle: puzzleId/);
 assert.match(mainSource, /solverTwistyPuzzleId === puzzleId/);
 assert.match(mainSource, /function showSolverVisualResult\(scramble, solution, stages, eventId = appState\.settings\.eventId\)/);
 assert.match(mainSource, /const puzzleId = resolveNxNSolverPuzzle\(eventId\)/);
+assert.match(mainSource, /const solverScramble = currentScramble/);
+assert.match(mainSource, /scramble: solverScramble/);
+assert.match(mainSource, /showSolverVisualResult\(solverScramble, rawSolutionText, result\.stages, eventId\)/);
 assert.doesNotMatch(mainSource, /!isThreeByThreeFamilyEvent\(appState\.settings\.eventId\)/);
 
 console.log("NxNxN solver-only 3D preview contract passed");
