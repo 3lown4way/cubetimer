@@ -8,9 +8,6 @@ on:
       - "solver444-wasm/**"
       - ".github/workflows/test-444-parity.yml"
 
-permissions:
-  contents: write
-
 jobs:
   parity:
     runs-on: ubuntu-latest
@@ -21,58 +18,51 @@ jobs:
           ref: agent/444-parity-virtual333
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-      - name: Apply inner-slice OLL parity notation
+          components: rustfmt
+      - name: Add exact re-reduction parity probe
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path("solver444-wasm/src/reduction.rs")
           text = path.read_text()
-          start = text.index("fn oll_parity_macro() -> Vec<Move444> {")
-          end = text.index("\n}\n\nfn pll_parity_macro()", start) + 2
-          new = '''fn oll_parity_macro() -> Vec<Move444> {
-              // r' U2 l F2 l' F2 r2 U2 r U2 r' U2 F2 r2 F2.
-              // Lowercase r/l denote the inner slice only.
-              vec![
-                  mv(Face::R, true, 3),
-                  mv(Face::R, false, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::L, true, 1),
-                  mv(Face::L, false, 3),
-                  mv(Face::F, false, 2),
-                  mv(Face::L, true, 3),
-                  mv(Face::L, false, 1),
-                  mv(Face::F, false, 2),
-                  mv(Face::R, true, 2),
-                  mv(Face::R, false, 2),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::R, false, 3),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 3),
-                  mv(Face::R, false, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::F, false, 2),
-                  mv(Face::R, true, 2),
-                  mv(Face::R, false, 2),
-                  mv(Face::F, false, 2),
-              ]
-          }'''
-          path.write_text(text[:start] + new + text[end:])
+          marker = "\n}\n"
+          insert_at = text.rfind(marker)
+          probe = r'''
+
+    #[test]
+    fn seed_reduction_signatures() {
+        fn reduce(seed: &[Move444]) -> ParitySignature {
+            let mut state = Cube444::solved();
+            state.apply_moves(seed);
+            let centers = solve_centers(&state, 0.0).unwrap();
+            state.apply_moves(&centers.moves);
+            let edges = solve_edges(&state, 0.0).unwrap();
+            state.apply_moves(&edges.moves);
+            assert!(state.centers_solved());
+            assert!(state.edges_paired());
+            state.virtual333_state().unwrap().parity_signature()
+        }
+
+        let seeds: [(&str, Vec<Move444>); 10] = [
+            ("identity", vec![]),
+            ("r", vec![mv(Face::R, true, 1), mv(Face::R, false, 3)]),
+            ("r-prime", vec![mv(Face::R, true, 3), mv(Face::R, false, 1)]),
+            ("r2", vec![mv(Face::R, true, 2), mv(Face::R, false, 2)]),
+            ("u", vec![mv(Face::U, true, 1), mv(Face::U, false, 3)]),
+            ("u-prime", vec![mv(Face::U, true, 3), mv(Face::U, false, 1)]),
+            ("u2", vec![mv(Face::U, true, 2), mv(Face::U, false, 2)]),
+            ("r-u", vec![mv(Face::R, true, 1), mv(Face::R, false, 3), mv(Face::U, true, 1), mv(Face::U, false, 3)]),
+            ("r-u2", vec![mv(Face::R, true, 1), mv(Face::R, false, 3), mv(Face::U, true, 2), mv(Face::U, false, 2)]),
+            ("r2-u", vec![mv(Face::R, true, 2), mv(Face::R, false, 2), mv(Face::U, true, 1), mv(Face::U, false, 3)]),
+        ];
+        for (name, seed) in seeds {
+            println!("seed {name}: {:?}", reduce(&seed));
+        }
+    }
+'''
+          path.write_text(text[:insert_at] + probe + text[insert_at:])
           PY
       - name: Format Rust
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
-      - name: Run parity and reduction tests
-        run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib -- --nocapture
-      - name: Reject compiler warnings
-        run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
-      - name: Commit validated parity model
-        run: |
-          if git diff --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver444-wasm/src/reduction.rs solver444-wasm/src/lib.rs
-          git commit -m "Validate the 4x4 parity model"
-          git push
+      - name: Run parity seed probe
+        run: cargo test --manifest-path solver444-wasm/Cargo.toml seed_reduction_signatures -- --nocapture
