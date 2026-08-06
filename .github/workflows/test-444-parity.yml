@@ -32,24 +32,25 @@ jobs:
           end = text.index("\n}\n\nfn pll_parity_macro()", start) + 2
           new = '''fn oll_parity_macro() -> Vec<Move444> {
               // Standard Rw U2 x ... parity algorithm with the x viewpoint
-              // change eliminated. After x, relative U turns address fixed B.
+              // change eliminated. In the fixed 96-facelet frame, relative U
+              // after x addresses the original F face.
               vec![
                   mv(Face::R, true, 1),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::L, true, 1),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::B, false, 2),
+                  mv(Face::F, false, 2),
                   mv(Face::R, true, 3),
               ]
           }'''
