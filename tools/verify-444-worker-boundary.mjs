@@ -58,12 +58,24 @@ assert.match(workerSource, /if \(normalizedEventId === "444"\)/);
 assert.match(workerSource, /deadlineTs: effective444DeadlineTs/);
 assert.match(workerSource, /444_BOUNDARY_TIMEOUT_MS/);
 
-const routeStart = workerSource.indexOf('if (normalizedEventId === "444")');
+const solveBodyStart = workerSource.indexOf("async solve(arg1");
+const routeStart = workerSource.indexOf('if (normalizedEventId === "444")', solveBodyStart);
 const routeEnd = workerSource.indexOf('if (normalizedEventId === "333" && mode === "twophase")', routeStart);
+const firstSolveWarmup = workerSource.indexOf("startBackgroundWarmups();", solveBodyStart);
 assert.ok(routeStart >= 0 && routeEnd > routeStart, "missing isolated 4x4 route");
+assert.ok(
+  firstSolveWarmup > routeStart && firstSolveWarmup < routeEnd,
+  "4x4 must route before 3x3 background warmups",
+);
 const routeSource = workerSource.slice(routeStart, routeEnd);
 assert.doesNotMatch(routeSource, /solveWithExternalSearchLazy|fallback/i);
 assert.match(routeSource, /build444WorkerFailure\("444_DEADLINE_REACHED", "timeout"/);
+assert.match(routeSource, /\^TIMEOUT_\\d\+MS\$\/\.test\(errorMessage\)/);
+assert.match(
+  routeSource,
+  /const reason = timedOut \? "444_DEADLINE_REACHED" : "444_WORKER_FAILED"/,
+);
+assert.match(routeSource, /workerError: errorMessage/);
 
 const mainSource = fs.readFileSync(new URL("../main.js", import.meta.url), "utf8");
 assert.doesNotMatch(mainSource, /ensureSolver444Ready|solve444Lazy|444_NOT_IMPLEMENTED/);
