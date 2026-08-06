@@ -1,0 +1,37 @@
+name: 4x4 WCA notation boundary
+
+on:
+  pull_request:
+    paths:
+      - "solver/solver444.js"
+      - "solver/solver444Internal.js"
+      - "tools/verify-444-wca-boundary.mjs"
+      - ".github/workflows/444-wca-boundary.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "solver/solver444.js"
+      - "solver/solver444Internal.js"
+      - "tools/verify-444-wca-boundary.mjs"
+      - ".github/workflows/444-wca-boundary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check notation wrapper and test syntax
+        run: |
+          node --check solver/solver444.js
+          node --check solver/solver444Internal.js
+          node --check tools/verify-444-wca-boundary.mjs
+      - name: Verify Centers and final solution in cubing.js
+        run: node tools/verify-444-wca-boundary.mjs
