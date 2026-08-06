@@ -1,6 +1,6 @@
 # 4×4 solver engine
 
-This crate is the correctness-first foundation and browser boundary for the cubetimer 4×4 reduction solver.
+This crate is the correctness-first 96-facelet foundation and browser verification boundary for the cubetimer 4×4 solver.
 
 ## Available now
 
@@ -12,54 +12,66 @@ This crate is the correctness-first foundation and browser boundary for the cube
 - independently verified Centers stage generation
 - oriented 24-wing coordinate derived from the 96-facelet geometry
 - eight sequential exact edge-pair distance tables
-- an exact 40,320-state last-four-edge table, including L2E handling
+- exact 40,320-state last-four-edge handling
 - independently verified Edge Pairing stage generation
-- OLL and PLL parity detection from projected cubie invariants
-- two independently verified center- and pairing-preserving parity generators
-- legal virtual 3×3 export in `cp/co/ep/eo` cubie coordinates
+- zero-move return when all twelve dedges are already paired
+- OLL and PLL reduction-parity detection and normalization
+- virtual 3×3 export in cubing.js-compatible `cp/co/ep/eo` order
+- complete-solution verification against the original 96-facelet state
 - `wasm-bindgen` browser exports and absolute-deadline checks
-- lazy worker routing, progress, and readiness reporting
 
-## Boundary contract
+## Complete solver architecture
 
-The engine solves and independently verifies all centers, all twelve edge pairs, parity normalization, and the legal virtual 3×3 projection. It does not claim a complete 4×4 solution until the virtual cubie state is solved through the existing Two-Phase engine and the complete move sequence is independently verified on the original 96-facelet state.
+The full browser solver uses two lazy WASM modules:
 
-A valid request therefore returns `ok: false`, an empty final `solution`, and three verified partial stages:
+1. `solver444-wasm` produces and independently verifies Centers, Edge Pairing, Parity Normalization, and the virtual 3×3 cubie state.
+2. The existing `solver-wasm` Two-Phase engine accepts that validated cubie state directly and solves the virtual 3×3.
+3. JavaScript translates the fixed move-convention difference, assembles all four stages, and asks `solver444-wasm` to reapply the original scramble and complete solution.
+4. `ok: true` is returned only when all 96 facelets are solved.
+
+The public API version is `444-complete-v1`.
+
+A successful result has four verified stages:
 
 ```json
 {
-  "ok": false,
-  "status": "partial",
-  "reason": "444_REDUCTION_INCOMPLETE",
-  "solution": "",
-  "moveCount": 0,
-  "verified": false,
+  "ok": true,
+  "status": "ok",
+  "reason": null,
+  "solution": "...",
+  "moveCount": 275,
+  "verified": true,
   "stages": [
-    { "id": "centers", "name": "Centers", "solution": "...", "verified": true },
-    { "id": "edges", "name": "Edge Pairing", "solution": "...", "verified": true },
-    { "id": "parity", "name": "Parity Normalization", "solution": "...", "verified": true }
+    { "id": "centers", "name": "Centers", "verified": true },
+    { "id": "edges", "name": "Edge Pairing", "verified": true },
+    { "id": "parity", "name": "Parity Normalization", "verified": true },
+    { "id": "threeByThree", "name": "3x3 Stage", "verified": true }
   ],
   "meta": {
-    "apiVersion": "444-reduction-v1",
+    "apiVersion": "444-complete-v1",
     "virtual333Ready": true,
-    "virtual333": {
-      "cp": [0, 1, 2, 3, 4, 5, 6, 7],
-      "co": [0, 0, 0, 0, 0, 0, 0, 0],
-      "ep": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-      "eo": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    }
+    "fullVerificationSolved": true
   }
 }
 ```
 
-Each stage is reapplied to the independent 96-facelet model before exposure. The exported cubie state is projected again from that verified state and must satisfy corner orientation, edge orientation, and permutation-parity invariants. Expired deadlines and invalid notation preserve the empty final-result contract. No stage is promoted to a complete solution or fallback.
+Invalid notation, expired deadlines, Two-Phase failure, or final verification failure preserve the strict contract: no unverified final solution is exposed. The top-level `solution` remains empty and `verified` remains false.
+
+## Convention contract
+
+The virtual cubie arrays use the repository's cubing.js order:
+
+- corners: `URF UBR UBL UFL DFR DLF DBL DRB`
+- edges: `UF UR UB UL DF DR DB DL FR FL BR BL`
+
+The permanent cross-engine test checks all 18 outer turns. Physical 4×4 quarter turns on `U`, `R`, `D`, and `L` correspond to the inverse cubing.js turn; `F` and `B` use the same direction; half turns are unchanged. Two-Phase output is translated by this fixed mapping before final 96-facelet verification.
 
 ## Still to implement
 
-- existing Two-Phase search from the exported cubie coordinates
-- complete 4×4 move-sequence assembly
-- final independent 96-facelet solved-state verification
 - user-facing 4×4 solver activation
+- stage-oriented 4×4 solver UI and 3D playback polish
+- shorter center/edge reduction algorithms
+- broader performance and random-scramble benchmarking
 
 ## Build
 

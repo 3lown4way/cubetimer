@@ -185,6 +185,10 @@ async function loadWasmCandidate(specifier) {
       if (typeof mod.prepare_twophase_333 !== "function") return "";
       return mod.prepare_twophase_333(scramble, optionsJson);
     },
+    prepareTwophase333FromCubie(cubieJson, optionsJson) {
+      if (typeof mod.prepare_twophase_333_from_cubie_json !== "function") return "";
+      return mod.prepare_twophase_333_from_cubie_json(cubieJson, optionsJson);
+    },
     searchTwophase333(searchId, optionsJson) {
       if (typeof mod.search_twophase_333 !== "function") return "";
       return mod.search_twophase_333(searchId, optionsJson);
@@ -439,6 +443,19 @@ export async function prepareTwophase333(scramble, options = {}) {
   return parseJsonResponse(rawResponse);
 }
 
+export async function prepareTwophase333FromCubie(cubieState, options = {}) {
+  const api = await ensureTwophase333Ready();
+  if (!api || typeof api.prepareTwophase333FromCubie !== "function") return null;
+  try {
+    return parseJsonResponse(api.prepareTwophase333FromCubie(
+      JSON.stringify(cubieState || {}),
+      JSON.stringify(options || {}),
+    ));
+  } catch (_) {
+    return null;
+  }
+}
+
 export async function searchTwophase333(searchId, options = {}) {
   const api = await ensureTwophase333Ready();
   if (!api || typeof api.searchTwophase333 !== "function") return null;
@@ -537,6 +554,60 @@ export async function solveTwophaseAdaptive333(scramble, options = {}) {
     if (!["TWOPHASE_NO_IMPROVING_SOLUTION", "PHASE2_NOT_FOUND"].includes(lastResult.reason)) break;
   }
 
+  return lastResult;
+}
+
+export async function solveTwophaseAdaptive333FromCubie(cubieState, options = {}) {
+  const frontierLimits = Array.from(new Set(
+    (Array.isArray(options.frontierLimits) ? options.frontierLimits : [2, 12])
+      .map((value) => Math.max(1, Math.floor(Number(value) || 0)))
+      .filter((value) => value > 0),
+  ));
+  const deadlineTs = Number.isFinite(Number(options.deadlineTs))
+    ? Number(options.deadlineTs)
+    : null;
+  const prepareOptions = {
+    ...(options.prepareOptions || {}),
+    ...(deadlineTs !== null ? { deadlineTs } : {}),
+  };
+  const searchOptions = {
+    ...(options.searchOptions || {}),
+    ...(deadlineTs !== null ? { deadlineTs } : {}),
+  };
+  let lastResult = { ok: false, reason: "TWOPHASE_NOT_ATTEMPTED" };
+  for (let index = 0; index < frontierLimits.length; index += 1) {
+    const frontierLimit = frontierLimits[index];
+    const prepared = await prepareTwophase333FromCubie(cubieState, {
+      ...prepareOptions,
+      maxPhase1Solutions: frontierLimit,
+    });
+    if (!prepared?.ok || !Number.isFinite(prepared.searchId)) {
+      lastResult = {
+        ...(prepared || {}),
+        ok: false,
+        reason: prepared?.reason || "TWOPHASE_CUBIE_PREPARE_FAILED",
+        frontierLimit,
+        frontierExpansionCount: index,
+      };
+      continue;
+    }
+    let searched = null;
+    try {
+      searched = await searchTwophase333(prepared.searchId, searchOptions);
+    } finally {
+      await dropTwophase333Search(prepared.searchId);
+    }
+    lastResult = {
+      ...(searched || {}),
+      ok: searched?.ok === true,
+      reason: searched?.reason || null,
+      frontierLimit,
+      frontierExpansionCount: index,
+      preparedCandidateCount: prepared.candidateCount ?? null,
+    };
+    if (lastResult.ok) return lastResult;
+    if (!["TWOPHASE_NO_IMPROVING_SOLUTION", "PHASE2_NOT_FOUND"].includes(lastResult.reason)) break;
+  }
   return lastResult;
 }
 

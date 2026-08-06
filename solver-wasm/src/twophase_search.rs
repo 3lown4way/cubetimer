@@ -1207,6 +1207,14 @@ impl TwophaseSession {
     ) -> Result<Self, String> {
         let moves = parse_scramble(scramble, &tables.move_data)?;
         let initial_state = CubeState::solved().apply_moves(&moves, &tables.move_data);
+        Self::prepare_from_state(initial_state, tables, options)
+    }
+
+    pub fn prepare_from_state(
+        initial_state: CubeState,
+        tables: &TwophaseTables,
+        options: &TwophasePrepareOptions,
+    ) -> Result<Self, String> {
         let phase1_input = build_phase1_input(
             &initial_state,
             options.phase1_max_depth,

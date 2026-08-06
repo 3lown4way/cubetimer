@@ -1,39 +1,47 @@
-name: 4x4 WASM worker boundary
+name: 4x4 complete solver boundary
 
 on:
   pull_request:
     paths:
       - "solver444-wasm/**"
+      - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "public/solver444-wasm/**"
+      - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
   push:
     branches:
       - main
     paths:
       - "solver444-wasm/**"
+      - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "public/solver444-wasm/**"
+      - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
 
 permissions:
   contents: read
 
 jobs:
-  boundary-contract:
+  complete-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Reject tracked Rust build artifacts
         run: |
-          test -z "$(git ls-files solver444-wasm/target)"
+          test -z "$(git ls-files solver444-wasm/target solver-wasm/target)"
           grep -qx '/target/' solver444-wasm/.gitignore
 
       - name: Install Rust
@@ -45,22 +53,30 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: solver444-wasm
+          workspaces: |
+            solver444-wasm
+            solver-wasm
 
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all -- --check
+        run: |
+          cargo fmt --manifest-path solver444-wasm/Cargo.toml --all -- --check
+          cargo fmt --manifest-path solver-wasm/Cargo.toml --all -- --check
 
       - name: Run Rust unit tests
-        run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib
+        run: |
+          cargo test --manifest-path solver444-wasm/Cargo.toml --lib
+          cargo test --manifest-path solver-wasm/Cargo.toml --lib
 
-      - name: Reject compiler warnings
+      - name: Reject 4x4 compiler warnings
         run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
 
       - name: Validate JavaScript syntax
         run: |
           node --check solver/solver444.js
+          node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check tools/verify-444-worker-boundary.mjs
+          node --check tools/compare-444-333-cubies.mjs
 
       - name: Install wasm-pack
         shell: bash
@@ -69,17 +85,27 @@ jobs:
             cargo install wasm-pack --locked
           fi
 
-      - name: Rebuild 4x4 browser WASM package
-        run: wasm-pack build solver444-wasm --target web --out-dir ../target/solver444-wasm-web --out-name solver444_wasm --release
+      - name: Rebuild browser WASM packages
+        run: |
+          rm -rf target/solver444-wasm-web target/solver-wasm-web
+          wasm-pack build solver444-wasm --target web --out-dir ../target/solver444-wasm-web --out-name solver444_wasm --release
+          wasm-pack build solver-wasm --target web --out-dir ../target/solver-wasm-web --out-name solver_wasm --release
 
-      - name: Verify checked-in 4x4 WASM package
+      - name: Verify checked-in WASM packages
         run: |
           cmp target/solver444-wasm-web/solver444_wasm.js public/solver444-wasm/solver444_wasm.js
           cmp target/solver444-wasm-web/solver444_wasm.d.ts public/solver444-wasm/solver444_wasm.d.ts
           cmp target/solver444-wasm-web/solver444_wasm_bg.wasm public/solver444-wasm/solver444_wasm_bg.wasm
           cmp target/solver444-wasm-web/solver444_wasm_bg.wasm.d.ts public/solver444-wasm/solver444_wasm_bg.wasm.d.ts
+          cmp target/solver-wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
+          cmp target/solver-wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
+          cmp target/solver-wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
+          cmp target/solver-wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
 
-      - name: Verify no-fallback worker contract
+      - name: Verify 4x4 and 3x3 cubie convention
+        run: node tools/compare-444-333-cubies.mjs
+
+      - name: Verify complete no-fallback solver contract
         run: node tools/verify-444-worker-boundary.mjs
 
       - name: Validate repository diff

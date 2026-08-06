@@ -1,3 +1,4 @@
+mod cubie_bridge;
 pub mod fmc_insertion;
 pub mod fmc_search;
 mod ida;
@@ -14,6 +15,7 @@ pub mod twophase_bundle;
 pub mod twophase_search;
 mod utils;
 
+use cubie_bridge::parse_cubie_state_json;
 use flate2::read::GzDecoder;
 use fmc_insertion::optimize_insertion_wasm_impl;
 use fmc_search::{build_fmc_tables, candidate_to_json, skeleton_to_json, solve_fmc, FmcTables};
@@ -379,6 +381,75 @@ pub fn prepare_twophase_333(scramble: &str, options_json: &str) -> String {
 
     let _deadline_guard = activate_twophase_deadline(options.deadline_ts);
     match TwophaseSession::prepare(scramble, tables, &options) {
+        Ok(session) => {
+            let mut store = TWOPHASE_SEARCHES.lock().unwrap();
+            let search_id = store.next_id;
+            store.next_id = store.next_id.wrapping_add(1).max(1);
+            let phase1_depth = session.phase1_min_depth();
+            let phase1_nodes = session.phase1_nodes();
+            let candidate_count = session.candidate_count();
+            store.sessions.insert(search_id, session);
+            serde_json::to_string(&TwophasePrepareResponse {
+                ok: true,
+                search_id: Some(search_id),
+                phase1_depth: Some(phase1_depth),
+                phase1_nodes: Some(phase1_nodes),
+                candidate_count: Some(candidate_count),
+                reason: None,
+            })
+            .unwrap()
+        }
+        Err(reason) => serde_json::to_string(&TwophasePrepareResponse {
+            ok: false,
+            search_id: None,
+            phase1_depth: None,
+            phase1_nodes: None,
+            candidate_count: None,
+            reason: Some(reason),
+        })
+        .unwrap(),
+    }
+}
+
+#[wasm_bindgen]
+pub fn prepare_twophase_333_from_cubie_json(cubie_json: &str, options_json: &str) -> String {
+    utils::set_panic_hook();
+    let guard = TWOPHASE_TABLES.lock().unwrap();
+    let Some(tables) = guard.as_ref() else {
+        return serde_json::to_string(&TwophasePrepareResponse {
+            ok: false,
+            search_id: None,
+            phase1_depth: None,
+            phase1_nodes: None,
+            candidate_count: None,
+            reason: Some("TWOPHASE_TABLES_NOT_LOADED".into()),
+        })
+        .unwrap();
+    };
+    let initial_state = match parse_cubie_state_json(cubie_json) {
+        Ok(state) => state,
+        Err(reason) => {
+            return serde_json::to_string(&TwophasePrepareResponse {
+                ok: false,
+                search_id: None,
+                phase1_depth: None,
+                phase1_nodes: None,
+                candidate_count: None,
+                reason: Some(reason),
+            })
+            .unwrap();
+        }
+    };
+    let options = serde_json::from_str::<TwophasePrepareOptions>(options_json).unwrap_or(
+        TwophasePrepareOptions {
+            max_phase1_solutions: 12,
+            phase1_max_depth: 13,
+            phase1_node_limit: 0,
+            deadline_ts: f64::INFINITY,
+        },
+    );
+    let _deadline_guard = activate_twophase_deadline(options.deadline_ts);
+    match TwophaseSession::prepare_from_state(initial_state, tables, &options) {
         Ok(session) => {
             let mut store = TWOPHASE_SEARCHES.lock().unwrap();
             let search_id = store.next_id;

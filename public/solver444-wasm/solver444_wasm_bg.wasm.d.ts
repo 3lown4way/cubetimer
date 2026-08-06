@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const solve_444_json: (a: number, b: number) => [number, number];
 export const solver_444_api_version: () => [number, number];
+export const verify_444_solution_json: (a: number, b: number) => [number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

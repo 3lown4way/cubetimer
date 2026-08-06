@@ -35,6 +35,21 @@ function deadlineReached(deadlineTs) {
   return Number.isFinite(deadline) && deadline > 0 && Date.now() >= deadline;
 }
 
+function translateTwophaseSolutionFor444(solution) {
+  return String(solution || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => {
+      const match = /^([URFDLB])(2|')?$/.exec(token);
+      if (!match) return token;
+      const [, face, suffix = ""] = match;
+      if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) return token;
+      return suffix === "'" ? face : face + "'";
+    })
+    .join(" ");
+}
+
 function emptyFailure(reason, status = "error", detail = null, meta = {}) {
   return {
     ok: false,
@@ -119,14 +134,17 @@ async function loadModuleCandidate(specifier) {
     }
   }
 
-  if (typeof mod.solve_444_json !== "function") {
-    recordFailure("module-api", specifier, new Error("SOLVE_444_JSON_EXPORT_MISSING"));
+  if (typeof mod.solve_444_json !== "function" || typeof mod.verify_444_solution_json !== "function") {
+    recordFailure("module-api", specifier, new Error("SOLVER_444_EXPORT_MISSING"));
     return null;
   }
 
   return {
     solve(request) {
       return mod.solve_444_json(JSON.stringify(request));
+    },
+    verify(request) {
+      return mod.verify_444_solution_json(JSON.stringify(request));
     },
     version() {
       return typeof mod.solver_444_api_version === "function"
@@ -299,16 +317,154 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     });
   }
 
+  if (
+    result.status !== "partial" ||
+    result.reason !== "444_REDUCTION_INCOMPLETE" ||
+    result.meta?.virtual333Ready !== true ||
+    !result.meta?.virtual333
+  ) {
+    emitProgress(onProgress, {
+      type: result.ok ? "444_stage_done" : "444_stage_fail",
+      eventId: "444",
+      stage: "REDUCTION",
+      reason: result.reason,
+      status: result.status,
+    });
+    return result;
+  }
+
   emitProgress(onProgress, {
-    type: result.ok
-      ? "444_stage_done"
-      : result.status === "partial"
-        ? "444_stage_update"
-        : "444_stage_fail",
+    type: "444_stage_start",
     eventId: "444",
-    stage: "REDUCTION",
-    reason: result.reason,
-    status: result.status,
+    stage: "THREE_BY_THREE",
+    stageName: "3x3 Two-Phase",
   });
-  return result;
+
+  let twophase;
+  try {
+    const { solveTwophaseAdaptive333FromCubie } = await import("./wasmSolver.js");
+    twophase = await solveTwophaseAdaptive333FromCubie(result.meta.virtual333, {
+      deadlineTs,
+      frontierLimits: [2, 12],
+      prepareOptions: {
+        phase1MaxDepth: 13,
+        phase1NodeLimit: 0,
+      },
+      searchOptions: {
+        phase2MaxDepth: 20,
+        phase2NodeLimit: 0,
+        strictIncumbent: false,
+      },
+    });
+  } catch (error) {
+    twophase = { ok: false, reason: "TWOPHASE_CUBIE_BRIDGE_FAILED", detail: String(error?.message || error) };
+  }
+
+  if (!twophase?.ok || !String(twophase.solution || "").trim()) {
+    const timedOut = deadlineReached(deadlineTs) || twophase?.reason === "TWOPHASE_DEADLINE_REACHED";
+    emitProgress(onProgress, {
+      type: "444_stage_fail",
+      eventId: "444",
+      stage: "THREE_BY_THREE",
+      reason: twophase?.reason || "444_TWOPHASE_FAILED",
+    });
+    return {
+      ...result,
+      status: timedOut ? "timeout" : "partial",
+      reason: timedOut ? "444_DEADLINE_REACHED" : "444_TWOPHASE_FAILED",
+      detail: twophase?.reason || twophase?.detail || null,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      meta: {
+        ...result.meta,
+        twophaseReason: twophase?.reason || null,
+      },
+    };
+  }
+
+  const translatedTwophaseSolution = translateTwophaseSolutionFor444(twophase.solution);
+  const threeByThreeStage = {
+    id: "threeByThree",
+    name: "3x3 Stage",
+    solution: translatedTwophaseSolution,
+    moveCount: translatedTwophaseSolution ? translatedTwophaseSolution.split(/\s+/).length : 0,
+    verified: false,
+  };
+  const completeStages = [...result.stages, threeByThreeStage];
+  const completeSolution = completeStages
+    .map((stage) => String(stage.solution || "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  let verification;
+  try {
+    verification = JSON.parse(String(api.verify({
+      scramble: String(scramble || "").trim(),
+      solution: completeSolution,
+    }) || ""));
+  } catch (error) {
+    verification = { ok: false, solved: false, reason: String(error?.message || error) };
+  }
+
+  if (verification?.ok !== true || verification?.solved !== true) {
+    emitProgress(onProgress, {
+      type: "444_stage_fail",
+      eventId: "444",
+      stage: "VERIFY",
+      reason: verification?.reason || "444_FINAL_VERIFICATION_FAILED",
+    });
+    return {
+      ...result,
+      status: "error",
+      reason: "444_FINAL_VERIFICATION_FAILED",
+      detail: verification?.reason || null,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      meta: {
+        ...result.meta,
+        twophaseMoveCount: threeByThreeStage.moveCount,
+        fullVerificationSolved: false,
+      },
+    };
+  }
+
+  threeByThreeStage.verified = true;
+  const moveCount = completeSolution ? completeSolution.split(/\s+/).filter(Boolean).length : 0;
+  emitProgress(onProgress, {
+    type: "444_stage_done",
+    eventId: "444",
+    stage: "THREE_BY_THREE",
+    stageName: "3x3 Stage",
+    moveCount: threeByThreeStage.moveCount,
+  });
+  emitProgress(onProgress, {
+    type: "444_stage_done",
+    eventId: "444",
+    stage: "VERIFY",
+    stageName: "Final 96-facelet verification",
+    moveCount,
+  });
+  return {
+    ok: true,
+    eventId: "444",
+    status: "ok",
+    reason: null,
+    detail: null,
+    solution: completeSolution,
+    moveCount,
+    verified: true,
+    stages: completeStages,
+    source: "WASM_444_COMPLETE",
+    meta: {
+      ...result.meta,
+      apiVersion: api.version(),
+      twophaseMoveCount: threeByThreeStage.moveCount,
+      twophaseNodes: Number(twophase.nodes) || 0,
+      twophasePhase1Nodes: Number(twophase.phase1Nodes) || 0,
+      twophasePhase2Nodes: Number(twophase.phase2Nodes) || 0,
+      fullVerificationSolved: true,
+    },
+  };
 }
