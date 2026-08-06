@@ -456,10 +456,22 @@ mod tests {
         assert_eq!(result["meta"]["edgesPaired"], true);
         assert_eq!(result["meta"]["parityNormalized"], true);
         assert_eq!(result["meta"]["virtual333Ready"], true);
-        assert_eq!(result["meta"]["virtual333"]["cp"].as_array().unwrap().len(), 8);
-        assert_eq!(result["meta"]["virtual333"]["co"].as_array().unwrap().len(), 8);
-        assert_eq!(result["meta"]["virtual333"]["ep"].as_array().unwrap().len(), 12);
-        assert_eq!(result["meta"]["virtual333"]["eo"].as_array().unwrap().len(), 12);
+        assert_eq!(
+            result["meta"]["virtual333"]["cp"].as_array().unwrap().len(),
+            8
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["co"].as_array().unwrap().len(),
+            8
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["ep"].as_array().unwrap().len(),
+            12
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["eo"].as_array().unwrap().len(),
+            12
+        );
         assert_eq!(
             result["stages"][2]["moveCount"],
             result["meta"]["parityMoveCount"]
@@ -497,8 +509,14 @@ mod tests {
         assert_eq!(result["meta"]["edgesPaired"], true);
         assert_eq!(result["meta"]["parityNormalized"], true);
         assert_eq!(result["meta"]["virtual333Ready"], true);
-        assert_eq!(result["meta"]["virtual333"]["cp"], serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7]));
-        assert_eq!(result["meta"]["virtual333"]["ep"], serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]));
+        assert_eq!(
+            result["meta"]["virtual333"]["cp"],
+            serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7])
+        );
+        assert_eq!(
+            result["meta"]["virtual333"]["ep"],
+            serde_json::json!([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+        );
     }
 
     #[test]
