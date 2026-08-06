@@ -35,17 +35,30 @@ function deadlineReached(deadlineTs) {
   return Number.isFinite(deadline) && deadline > 0 && Date.now() >= deadline;
 }
 
-function translateTwophaseSolutionFor444(solution) {
-  return String(solution || "")
+export function translate444MoveConvention(sequence) {
+  return String(sequence || "")
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .map((token) => {
-      const match = /^([URFDLB])(2|')?$/.exec(token);
-      if (!match) return token;
-      const [, face, suffix = ""] = match;
-      if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) return token;
-      return suffix === "'" ? face : face + "'";
+      let match = /^([URFDLB])(w)?(2|')?$/.exec(token);
+      let face;
+      let wide;
+      let suffix;
+      if (match) {
+        [, face, wide = "", suffix = ""] = match;
+      } else {
+        match = /^([urfdlb])(2|')?$/.exec(token);
+        if (!match) return token;
+        face = match[1].toUpperCase();
+        wide = "w";
+        suffix = match[2] || "";
+      }
+      const normalized = `${face}${wide}${suffix}`;
+      if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) {
+        return normalized;
+      }
+      return `${face}${wide}${suffix === "'" ? "" : "'"}`;
     })
     .join(" ");
 }
@@ -188,6 +201,8 @@ export function getSolver444ReadinessStatus() {
 
 export async function solve444(scramble, onProgress = null, options = {}) {
   const deadlineTs = Number(options?.deadlineTs) || 0;
+  const publicScramble = String(scramble || "").trim();
+  const internalScramble = translate444MoveConvention(publicScramble);
   if (deadlineReached(deadlineTs)) {
     return emptyFailure("444_DEADLINE_REACHED", "timeout", null, { deadlineTs });
   }
@@ -241,7 +256,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   let result;
   try {
     result = normalizeBoundaryResponse(api.solve({
-      scramble: String(scramble || "").trim(),
+      scramble: internalScramble,
       deadlineTs,
     }));
   } catch (error) {
@@ -383,16 +398,16 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     };
   }
 
-  const translatedTwophaseSolution = translateTwophaseSolutionFor444(twophase.solution);
-  const threeByThreeStage = {
+  const internalTwophaseSolution = translate444MoveConvention(twophase.solution);
+  const internalThreeByThreeStage = {
     id: "threeByThree",
     name: "3x3 Stage",
-    solution: translatedTwophaseSolution,
-    moveCount: translatedTwophaseSolution ? translatedTwophaseSolution.split(/\s+/).length : 0,
+    solution: internalTwophaseSolution,
+    moveCount: internalTwophaseSolution ? internalTwophaseSolution.split(/\s+/).length : 0,
     verified: false,
   };
-  const completeStages = [...result.stages, threeByThreeStage];
-  const completeSolution = completeStages
+  const internalCompleteStages = [...result.stages, internalThreeByThreeStage];
+  const internalCompleteSolution = internalCompleteStages
     .map((stage) => String(stage.solution || "").trim())
     .filter(Boolean)
     .join(" ");
@@ -400,8 +415,8 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   let verification;
   try {
     verification = JSON.parse(String(api.verify({
-      scramble: String(scramble || "").trim(),
-      solution: completeSolution,
+      scramble: internalScramble,
+      solution: internalCompleteSolution,
     }) || ""));
   } catch (error) {
     verification = { ok: false, solved: false, reason: String(error?.message || error) };
@@ -424,20 +439,28 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       verified: false,
       meta: {
         ...result.meta,
-        twophaseMoveCount: threeByThreeStage.moveCount,
+        twophaseMoveCount: internalThreeByThreeStage.moveCount,
         fullVerificationSolved: false,
       },
     };
   }
 
-  threeByThreeStage.verified = true;
+  internalThreeByThreeStage.verified = true;
+  const publicStages = internalCompleteStages.map((stage) => ({
+    ...stage,
+    solution: translate444MoveConvention(stage.solution),
+  }));
+  const completeSolution = publicStages
+    .map((stage) => String(stage.solution || "").trim())
+    .filter(Boolean)
+    .join(" ");
   const moveCount = completeSolution ? completeSolution.split(/\s+/).filter(Boolean).length : 0;
   emitProgress(onProgress, {
     type: "444_stage_done",
     eventId: "444",
     stage: "THREE_BY_THREE",
     stageName: "3x3 Stage",
-    moveCount: threeByThreeStage.moveCount,
+    moveCount: internalThreeByThreeStage.moveCount,
   });
   emitProgress(onProgress, {
     type: "444_stage_done",
@@ -455,12 +478,12 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     solution: completeSolution,
     moveCount,
     verified: true,
-    stages: completeStages,
+    stages: publicStages,
     source: "WASM_444_COMPLETE",
     meta: {
       ...result.meta,
       apiVersion: api.version(),
-      twophaseMoveCount: threeByThreeStage.moveCount,
+      twophaseMoveCount: internalThreeByThreeStage.moveCount,
       twophaseNodes: Number(twophase.nodes) || 0,
       twophasePhase1Nodes: Number(twophase.phase1Nodes) || 0,
       twophasePhase2Nodes: Number(twophase.phase2Nodes) || 0,
