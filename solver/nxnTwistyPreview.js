@@ -1,3 +1,4 @@
+// A solver preview owns one TwistyPlayer, so multi-blind is intentionally excluded.
 export const NXN_SOLVER_EVENT_TO_PUZZLE = Object.freeze({
   "222": "2x2x2",
   "333": "3x3x3",
