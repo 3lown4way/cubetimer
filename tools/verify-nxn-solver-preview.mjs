@@ -30,6 +30,11 @@ assert.equal(isNxNSolverPreviewEvent("minx"), false);
 
 const mainSource = fs.readFileSync(new URL("../main.js", import.meta.url), "utf8");
 const indexSource = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const nxnSource = fs.readFileSync(new URL("../solver/nxnTwistyPreview.js", import.meta.url), "utf8");
+const solver444UiSource = fs.readFileSync(
+  new URL("../solver/solver444UiActivation.js", import.meta.url),
+  "utf8",
+);
 
 // The timer/dashboard scramble preview must remain the existing 2D component.
 assert.match(mainSource, /scramblePreview\.setAttribute\("visualization", "2D"\)/);
@@ -48,4 +53,29 @@ assert.match(mainSource, /scramble: solverScramble/);
 assert.match(mainSource, /showSolverVisualResult\(solverScramble, rawSolutionText, result\.stages, eventId\)/);
 assert.doesNotMatch(mainSource, /!isThreeByThreeFamilyEvent\(appState\.settings\.eventId\)/);
 
-console.log("NxNxN solver-only 3D preview contract passed");
+// Browser-only activation must not change Node imports or timer behavior.
+assert.match(nxnSource, /typeof window !== "undefined" && typeof document !== "undefined"/);
+assert.match(nxnSource, /import\("\.\/solver444UiActivation\.js"\)/);
+assert.match(nxnSource, /DOMContentLoaded/);
+
+// Standard 4x4 is routed through the existing worker and only verified complete results are exposed.
+assert.match(solver444UiSource, /const EVENT_ID = "444"/);
+assert.match(solver444UiSource, /const PUZZLE_ID = "4x4x4"/);
+assert.match(
+  solver444UiSource,
+  /new Worker\(new URL\("\.\/solverWorker\.js", import\.meta\.url\), \{ type: "module" \}\)/,
+);
+assert.match(solver444UiSource, /eventId: EVENT_ID/);
+assert.match(
+  solver444UiSource,
+  /result\?\.ok === true && result\?\.verified === true && String\(result\.solution \|\| ""\)\.trim\(\)/,
+);
+assert.match(solver444UiSource, /puzzle: PUZZLE_ID/);
+assert.match(solver444UiSource, /experimentalSetupAlg = scramble/);
+assert.match(solver444UiSource, /setThreeByThreeControlsHidden\(true\)/);
+assert.match(solver444UiSource, /findSolutionBtn\.addEventListener\("click", solveCurrent444, true\)/);
+assert.match(solver444UiSource, /event\.stopImmediatePropagation\(\)/);
+assert.match(solver444UiSource, /96-facelet 검증 완료/);
+assert.doesNotMatch(solver444UiSource, /444bf|EXTERNAL_CUBING_SEARCH|reverse-scramble/i);
+
+console.log("NxNxN solver preview and verified 4x4 UI activation contract passed");
