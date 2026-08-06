@@ -1,0 +1,187 @@
+name: Apply 4x4 public notation fix
+
+on:
+  push:
+    branches:
+      - fix/444-public-move-notation
+    paths:
+      - ".github/workflows/apply-444-public-notation-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/444-public-move-notation
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Patch public/internal 4x4 notation boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("solver/solver444.js")
+          text = path.read_text()
+
+          old = '''function translateTwophaseSolutionFor444(solution) {
+            return String(solution || "")
+              .trim()
+              .split(/\\s+/)
+              .filter(Boolean)
+              .map((token) => {
+                const match = /^([URFDLB])(2|')?$/.exec(token);
+                if (!match) return token;
+                const [, face, suffix = ""] = match;
+                if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) return token;
+                return suffix === "'" ? face : face + "'";
+              })
+              .join(" ");
+          }
+          '''
+          new = '''export function translate444MoveConvention(sequence) {
+            return String(sequence || "")
+              .trim()
+              .split(/\\s+/)
+              .filter(Boolean)
+              .map((token) => {
+                let match = /^([URFDLB])(w)?(2|')?$/.exec(token);
+                let face;
+                let wide;
+                let suffix;
+                if (match) {
+                  [, face, wide = "", suffix = ""] = match;
+                } else {
+                  match = /^([urfdlb])(2|')?$/.exec(token);
+                  if (!match) return token;
+                  face = match[1].toUpperCase();
+                  wide = "w";
+                  suffix = match[2] || "";
+                }
+                const normalized = `${face}${wide}${suffix}`;
+                if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) {
+                  return normalized;
+                }
+                return `${face}${wide}${suffix === "'" ? "" : "'"}`;
+              })
+              .join(" ");
+          }
+          '''
+          if old not in text:
+            raise SystemExit("old notation helper not found")
+          text = text.replace(old, new, 1)
+
+          old = '''export async function solve444(scramble, onProgress = null, options = {}) {
+            const deadlineTs = Number(options?.deadlineTs) || 0;
+          '''
+          new = '''export async function solve444(scramble, onProgress = null, options = {}) {
+            const deadlineTs = Number(options?.deadlineTs) || 0;
+            const publicScramble = String(scramble || "").trim();
+            const internalScramble = translate444MoveConvention(publicScramble);
+          '''
+          if old not in text:
+            raise SystemExit("solve header not found")
+          text = text.replace(old, new, 1)
+
+          old = '''result = normalizeBoundaryResponse(api.solve({
+                scramble: String(scramble || "").trim(),
+                deadlineTs,
+              }));'''
+          new = '''result = normalizeBoundaryResponse(api.solve({
+                scramble: internalScramble,
+                deadlineTs,
+              }));'''
+          if old not in text:
+            raise SystemExit("solve request not found")
+          text = text.replace(old, new, 1)
+
+          old = '''const translatedTwophaseSolution = translateTwophaseSolutionFor444(twophase.solution);
+            const threeByThreeStage = {
+              id: "threeByThree",
+              name: "3x3 Stage",
+              solution: translatedTwophaseSolution,
+              moveCount: translatedTwophaseSolution ? translatedTwophaseSolution.split(/\\s+/).length : 0,
+              verified: false,
+            };
+            const completeStages = [...result.stages, threeByThreeStage];
+            const completeSolution = completeStages
+              .map((stage) => String(stage.solution || "").trim())
+              .filter(Boolean)
+              .join(" ");'''
+          new = '''const internalTwophaseSolution = translate444MoveConvention(twophase.solution);
+            const internalThreeByThreeStage = {
+              id: "threeByThree",
+              name: "3x3 Stage",
+              solution: internalTwophaseSolution,
+              moveCount: internalTwophaseSolution ? internalTwophaseSolution.split(/\\s+/).length : 0,
+              verified: false,
+            };
+            const internalCompleteStages = [...result.stages, internalThreeByThreeStage];
+            const internalCompleteSolution = internalCompleteStages
+              .map((stage) => String(stage.solution || "").trim())
+              .filter(Boolean)
+              .join(" ");'''
+          if old not in text:
+            raise SystemExit("three-by-three assembly block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''verification = JSON.parse(String(api.verify({
+                scramble: String(scramble || "").trim(),
+                solution: completeSolution,
+              }) || ""));'''
+          new = '''verification = JSON.parse(String(api.verify({
+                scramble: internalScramble,
+                solution: internalCompleteSolution,
+              }) || ""));'''
+          if old not in text:
+            raise SystemExit("verification request not found")
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+            "twophaseMoveCount: threeByThreeStage.moveCount,",
+            "twophaseMoveCount: internalThreeByThreeStage.moveCount,",
+          )
+
+          old = '''threeByThreeStage.verified = true;
+            const moveCount = completeSolution ? completeSolution.split(/\\s+/).filter(Boolean).length : 0;'''
+          new = '''internalThreeByThreeStage.verified = true;
+            const publicStages = internalCompleteStages.map((stage) => ({
+              ...stage,
+              solution: translate444MoveConvention(stage.solution),
+            }));
+            const completeSolution = publicStages
+              .map((stage) => String(stage.solution || "").trim())
+              .filter(Boolean)
+              .join(" ");
+            const moveCount = completeSolution ? completeSolution.split(/\\s+/).filter(Boolean).length : 0;'''
+          if old not in text:
+            raise SystemExit("success conversion block not found")
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+            "moveCount: threeByThreeStage.moveCount,",
+            "moveCount: internalThreeByThreeStage.moveCount,",
+          )
+          text = text.replace("stages: completeStages,", "stages: publicStages,")
+
+          path.write_text(text)
+          PY
+      - name: Validate patched JavaScript
+        run: |
+          node --check solver/solver444.js
+          grep -q 'const internalScramble = translate444MoveConvention(publicScramble);' solver/solver444.js
+          grep -q 'stages: publicStages' solver/solver444.js
+      - name: Remove temporary workflow
+        run: rm .github/workflows/apply-444-public-notation-fix.yml
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix 4x4 public move notation"
+          git push
