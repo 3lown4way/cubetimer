@@ -16,9 +16,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/fix-444-wca-notation
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
       - name: Patch notation boundary and external verification
         run: |
           python - <<'PY'
@@ -164,11 +161,18 @@ jobs:
           const solved444 = kpuzzle444.defaultPattern();
           const scrambled444 = solved444.applyAlg("Rw U2 F' Lw D B2");
           const centersAfterStage = scrambled444.applyAlg(valid.stages[0].solution);
-          assert.deepEqual(
-            centersAfterStage.patternData.CENTERS.pieces,
-            solved444.patternData.CENTERS.pieces,
-            "the public Centers stage must solve centers in cubing.js/WCA notation",
+          const solvedCenterPieces = solved444.patternData.CENTERS.pieces;
+          const centerColorByPiece = new Map(
+            solvedCenterPieces.map((piece, position) => [piece, Math.floor(position / 4)]),
           );
+          for (let position = 0; position < centersAfterStage.patternData.CENTERS.pieces.length; position += 1) {
+            const actualPiece = centersAfterStage.patternData.CENTERS.pieces[position];
+            assert.equal(
+              centerColorByPiece.get(actualPiece),
+              Math.floor(position / 4),
+              `public Centers stage leaves center position ${position} on the wrong face`,
+            );
+          }
           const externallySolved = scrambled444.applyAlg(valid.solution);
           const externallyVerified = typeof externallySolved.experimentalIsSolved === "function"
             ? externallySolved.experimentalIsSolved({ ignorePuzzleOrientation: false })
