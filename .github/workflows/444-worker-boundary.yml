@@ -11,6 +11,7 @@ on:
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/verify-444-public-notation.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
   push:
@@ -25,6 +26,7 @@ on:
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/verify-444-public-notation.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
 
@@ -76,6 +78,7 @@ jobs:
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check tools/verify-444-worker-boundary.mjs
+          node --check tools/verify-444-public-notation.mjs
           node --check tools/compare-444-333-cubies.mjs
 
       - name: Install wasm-pack
@@ -107,6 +110,9 @@ jobs:
 
       - name: Verify complete no-fallback solver contract
         run: node tools/verify-444-worker-boundary.mjs
+
+      - name: Verify public WCA notation and Centers stage
+        run: node tools/verify-444-public-notation.mjs
 
       - name: Validate repository diff
         run: git diff --check
