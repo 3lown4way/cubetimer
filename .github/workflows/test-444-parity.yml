@@ -35,6 +35,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver444-wasm/src/reduction.rs solver444-wasm/src/lib.rs
-          git commit -m "Format the verified 4x4 parity model"
+          git add solver444-wasm/src/api.rs solver444-wasm/src/reduction.rs solver444-wasm/src/lib.rs
+          git commit -m "Format the verified 4x4 reduction bridge"
           git push
