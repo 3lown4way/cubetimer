@@ -31,6 +31,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Reject tracked Rust build artifacts
+        run: |
+          test -z "$(git ls-files solver444-wasm/target)"
+          grep -qx '/target/' solver444-wasm/.gitignore
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
