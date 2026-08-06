@@ -20,3 +20,19 @@ export function resolveNxNSolverPuzzle(eventId) {
 export function isNxNSolverPreviewEvent(eventId) {
   return resolveNxNSolverPuzzle(eventId) !== null;
 }
+
+function loadSolver444UiActivation() {
+  void import("./solver444UiActivation.js")
+    .then(({ installSolver444UiActivation }) => installSolver444UiActivation())
+    .catch((error) => {
+      console.warn("[444 UI] activation failed", error);
+    });
+}
+
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadSolver444UiActivation, { once: true });
+  } else {
+    queueMicrotask(loadSolver444UiActivation);
+  }
+}
