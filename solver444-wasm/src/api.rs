@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{parse_alg444, Cube444};
+use crate::{parse_alg444, solve_centers, CenterSolveError, Cube444};
 
-const API_VERSION: &str = "444-boundary-v1";
+const API_VERSION: &str = "444-centers-v1";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +21,10 @@ struct BoundaryState {
     scramble_valid: bool,
     state_valid: bool,
     solved_state: bool,
+    centers_solved: bool,
+    center_move_count: usize,
+    center_table_build_ms: f64,
+    center_search_ms: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +35,10 @@ struct Solve444Meta {
     scramble_valid: bool,
     state_valid: bool,
     solved_state: bool,
+    centers_solved: bool,
+    center_move_count: usize,
+    center_table_build_ms: f64,
+    center_search_ms: f64,
     deadline_ts: f64,
 }
 
@@ -42,9 +50,23 @@ impl From<BoundaryState> for Solve444Meta {
             scramble_valid: state.scramble_valid,
             state_valid: state.state_valid,
             solved_state: state.solved_state,
+            centers_solved: state.centers_solved,
+            center_move_count: state.center_move_count,
+            center_table_build_ms: state.center_table_build_ms,
+            center_search_ms: state.center_search_ms,
             deadline_ts: state.deadline_ts,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Solve444Stage {
+    id: &'static str,
+    name: &'static str,
+    solution: String,
+    move_count: usize,
+    verified: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,7 +80,7 @@ struct Solve444Response {
     solution: &'static str,
     move_count: usize,
     verified: bool,
-    stages: Vec<serde_json::Value>,
+    stages: Vec<Solve444Stage>,
     meta: Solve444Meta,
 }
 
@@ -85,6 +107,7 @@ fn response(
     status: &'static str,
     reason: &'static str,
     detail: Option<String>,
+    stages: Vec<Solve444Stage>,
     state: BoundaryState,
 ) -> Solve444Response {
     Solve444Response {
@@ -96,22 +119,39 @@ fn response(
         solution: "",
         move_count: 0,
         verified: false,
-        stages: Vec::new(),
+        stages,
         meta: state.into(),
     }
 }
 
+fn empty_response(
+    status: &'static str,
+    reason: &'static str,
+    detail: Option<String>,
+    state: BoundaryState,
+) -> Solve444Response {
+    response(status, reason, detail, Vec::new(), state)
+}
+
 fn serialize_response(value: &Solve444Response) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| {
-        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-boundary-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"deadlineTs":0}}"#.to_string()
+        r#"{"ok":false,"eventId":"444","status":"error","reason":"444_SERIALIZATION_FAILED","detail":null,"solution":"","moveCount":0,"verified":false,"stages":[],"meta":{"apiVersion":"444-centers-v1","parsedMoveCount":0,"scrambleValid":false,"stateValid":false,"solvedState":false,"centersSolved":false,"centerMoveCount":0,"centerTableBuildMs":0,"centerSearchMs":0,"deadlineTs":0}}"#.to_string()
     })
+}
+
+fn format_moves(moves: &[crate::Move444]) -> String {
+    moves
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn solve_444_boundary(request_json: &str) -> String {
     let request: Solve444Request = match serde_json::from_str(request_json) {
         Ok(request) => request,
         Err(error) => {
-            return serialize_response(&response(
+            return serialize_response(&empty_response(
                 "invalid",
                 "444_INVALID_REQUEST",
                 Some(error.to_string()),
@@ -125,13 +165,18 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         ..BoundaryState::default()
     };
     if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
+        return serialize_response(&empty_response(
+            "timeout",
+            "444_DEADLINE_REACHED",
+            None,
+            boundary,
+        ));
     }
 
     let moves = match parse_alg444(&request.scramble) {
         Ok(moves) => moves,
         Err(error) => {
-            return serialize_response(&response(
+            return serialize_response(&empty_response(
                 "invalid",
                 "444_INVALID_SCRAMBLE",
                 Some(error.to_string()),
@@ -143,13 +188,18 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.parsed_move_count = moves.len();
 
     if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
+        return serialize_response(&empty_response(
+            "timeout",
+            "444_DEADLINE_REACHED",
+            None,
+            boundary,
+        ));
     }
 
     let mut state = Cube444::solved();
     state.apply_moves(&moves);
     if let Err(error) = state.validate() {
-        return serialize_response(&response(
+        return serialize_response(&empty_response(
             "invalid",
             "444_STATE_INVALID",
             Some(error.to_string()),
@@ -159,16 +209,58 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.state_valid = true;
     boundary.solved_state = state.is_solved();
 
-    if deadline_reached(boundary.deadline_ts) {
-        return serialize_response(&response("timeout", "444_DEADLINE_REACHED", None, boundary));
+    let center_result = match solve_centers(&state, boundary.deadline_ts) {
+        Ok(result) => result,
+        Err(CenterSolveError::DeadlineReached) => {
+            return serialize_response(&empty_response(
+                "timeout",
+                "444_DEADLINE_REACHED",
+                None,
+                boundary,
+            ));
+        }
+        Err(error) => {
+            return serialize_response(&empty_response(
+                "error",
+                "444_CENTER_SOLVER_FAILED",
+                Some(error.to_string()),
+                boundary,
+            ));
+        }
+    };
+
+    let mut verified_state = state.clone();
+    verified_state.apply_moves(&center_result.moves);
+    if !verified_state.centers_solved() || verified_state.validate().is_err() {
+        return serialize_response(&empty_response(
+            "error",
+            "444_CENTER_VERIFICATION_FAILED",
+            None,
+            boundary,
+        ));
     }
 
-    // Search stages are deliberately not exposed until centers, edge pairing,
-    // parity normalization, and the virtual 3x3 bridge are independently verified.
+    boundary.centers_solved = true;
+    boundary.center_move_count = center_result.moves.len();
+    boundary.center_table_build_ms = center_result.table_build_ms;
+    boundary.center_search_ms = center_result.search_ms;
+
+    let stage = Solve444Stage {
+        id: "centers",
+        name: "Centers",
+        solution: format_moves(&center_result.moves),
+        move_count: center_result.moves.len(),
+        verified: true,
+    };
+
+    // The verified center stage is safe to expose for development and diagnostics,
+    // but the full solution remains empty until edges, parity, and the virtual 3x3
+    // bridge are independently implemented and verified.
     serialize_response(&response(
-        "not_implemented",
-        "444_NOT_IMPLEMENTED",
+        "partial",
+        "444_REDUCTION_INCOMPLETE",
         None,
+        vec![stage],
         boundary,
     ))
 }
@@ -192,21 +284,46 @@ mod tests {
     }
 
     #[test]
-    fn valid_scramble_reaches_the_honest_boundary() {
+    fn valid_scramble_returns_only_a_verified_center_stage() {
+        let scramble = "Rw U2 F' Lw D B2";
         let result = solve(serde_json::json!({
-            "scramble": "Rw U2 F' Lw D B2",
+            "scramble": scramble,
             "deadlineTs": 0
         }));
         assert_eq!(result["ok"], false);
-        assert_eq!(result["status"], "not_implemented");
-        assert_eq!(result["reason"], "444_NOT_IMPLEMENTED");
+        assert_eq!(result["status"], "partial");
+        assert_eq!(result["reason"], "444_REDUCTION_INCOMPLETE");
         assert_eq!(result["solution"], "");
         assert_eq!(result["moveCount"], 0);
         assert_eq!(result["verified"], false);
-        assert_eq!(result["stages"], serde_json::json!([]));
+        assert_eq!(result["stages"].as_array().unwrap().len(), 1);
+        assert_eq!(result["stages"][0]["id"], "centers");
+        assert_eq!(result["stages"][0]["name"], "Centers");
+        assert_eq!(result["stages"][0]["verified"], true);
         assert_eq!(result["meta"]["parsedMoveCount"], 6);
         assert_eq!(result["meta"]["scrambleValid"], true);
         assert_eq!(result["meta"]["stateValid"], true);
+        assert_eq!(result["meta"]["centersSolved"], true);
+        assert_eq!(
+            result["stages"][0]["moveCount"],
+            result["meta"]["centerMoveCount"]
+        );
+
+        let center_solution = result["stages"][0]["solution"].as_str().unwrap();
+        let mut state = Cube444::solved();
+        state.apply_alg(scramble).unwrap();
+        state.apply_alg(center_solution).unwrap();
+        assert!(state.centers_solved());
+        assert_eq!(state.validate(), Ok(()));
+    }
+
+    #[test]
+    fn solved_scramble_returns_a_zero_move_center_stage() {
+        let result = solve(serde_json::json!({ "scramble": "" }));
+        assert_eq!(result["status"], "partial");
+        assert_eq!(result["stages"][0]["solution"], "");
+        assert_eq!(result["stages"][0]["moveCount"], 0);
+        assert_eq!(result["meta"]["centersSolved"], true);
     }
 
     #[test]
@@ -216,6 +333,7 @@ mod tests {
         assert_eq!(result["reason"], "444_INVALID_SCRAMBLE");
         assert_eq!(result["solution"], "");
         assert_eq!(result["moveCount"], 0);
+        assert_eq!(result["stages"], serde_json::json!([]));
     }
 
     #[test]
