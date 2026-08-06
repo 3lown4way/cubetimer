@@ -5,16 +5,15 @@ This directory contains the checked-in browser package generated from `solver444
 ## Available now
 
 - lazy loading only for `eventId === "444"`
-- WCA-style 4×4 scramble parsing
-- 96-facelet state application and physical inventory validation
-- four exact center pruning coordinates with 753,311 total abstract states
-- independently verified Centers stage generation
-- a deterministic center-stage upper bound of 31 HTM moves
+- WCA-style 4×4 parsing and 96-facelet physical validation
+- exact and independently verified Centers stage
+- exact sequential edge pairing with a 40,320-state last-four-edge table
+- independently verified Edge Pairing stage, including L2E handling
 - absolute deadline, readiness, and progress reporting
 
 ## Boundary contract
 
-The current package solves and verifies all 24 centers, but it does not claim to solve the full 4×4 yet. A valid request returns `ok: false`, an empty final `solution`, and one verified partial stage:
+The package returns two verified partial stages while keeping the final 4×4 result closed:
 
 ```json
 {
@@ -25,26 +24,13 @@ The current package solves and verifies all 24 centers, but it does not claim to
   "moveCount": 0,
   "verified": false,
   "stages": [
-    {
-      "id": "centers",
-      "name": "Centers",
-      "solution": "...",
-      "moveCount": 24,
-      "verified": true
-    }
+    { "id": "centers", "name": "Centers", "solution": "...", "verified": true },
+    { "id": "edges", "name": "Edge Pairing", "solution": "...", "verified": true }
   ]
 }
 ```
 
-Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_INVALID_SCRAMBLE`. The verified center stage is never promoted to a complete solution or fallback.
-
-## Still to implement
-
-- edge pairing and last-two-edge handling
-- parity normalization
-- virtual 3×3 conversion and existing Two-Phase bridge
-- final independent full-solution verification
-- user-facing 4×4 solver activation
+The partial stages are never promoted to a complete solution or fallback. Parity normalization, virtual 3×3 conversion, the Two-Phase bridge, and final full-solution verification remain closed.
 
 ## Exports
 

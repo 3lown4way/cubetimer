@@ -259,6 +259,21 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     });
   }
 
+  const edgeStage = Array.isArray(result.stages)
+    ? result.stages.find((stage) => stage?.id === "edges" && stage?.verified === true)
+    : null;
+  if (edgeStage && result.meta?.edgesPaired === true) {
+    emitProgress(onProgress, {
+      type: "444_stage_done",
+      eventId: "444",
+      stage: "EDGES",
+      stageName: "Edge Pairing",
+      moveCount: Number(edgeStage.moveCount) || 0,
+      tableBuildMs: Number(result.meta.edgeTableBuildMs) || 0,
+      searchMs: Number(result.meta.edgeSearchMs) || 0,
+    });
+  }
+
   emitProgress(onProgress, {
     type: result.ok
       ? "444_stage_done"

@@ -10,7 +10,7 @@ const progress = [];
 const valid = await solve444(
   "Rw U2 F' Lw D B2",
   (update) => progress.push(update),
-  { deadlineTs: Date.now() + 10_000 },
+  { deadlineTs: Date.now() + 30_000 },
 );
 
 assert.equal(valid.ok, false);
@@ -20,20 +20,26 @@ assert.equal(valid.reason, "444_REDUCTION_INCOMPLETE");
 assert.equal(valid.solution, "");
 assert.equal(valid.moveCount, 0);
 assert.equal(valid.verified, false);
-assert.equal(valid.stages.length, 1);
+assert.equal(valid.stages.length, 2);
 assert.equal(valid.stages[0].id, "centers");
 assert.equal(valid.stages[0].name, "Centers");
 assert.equal(valid.stages[0].verified, true);
 assert.equal(valid.stages[0].moveCount, valid.meta.centerMoveCount);
+assert.equal(valid.stages[1].id, "edges");
+assert.equal(valid.stages[1].name, "Edge Pairing");
+assert.equal(valid.stages[1].verified, true);
+assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
 assert.equal(valid.meta.centersSolved, true);
+assert.equal(valid.meta.edgesPaired, true);
 assert.equal(valid.meta.scrambleValid, true);
 assert.equal(valid.meta.stateValid, true);
 assert.equal(valid.meta.parsedMoveCount, 6);
-assert.equal(valid.meta.apiVersion, "444-centers-v1");
+assert.equal(valid.meta.apiVersion, "444-edges-v1");
 assert.ok(progress.some((update) => update.type === "444_stage_start"));
 assert.ok(progress.some((update) => update.type === "444_stage_update" && update.phase === "wasm_ready"));
 assert.ok(progress.some((update) => update.type === "444_state_validated"));
 assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "CENTERS"));
+assert.ok(progress.some((update) => update.type === "444_stage_done" && update.stage === "EDGES"));
 assert.ok(progress.some((update) => update.type === "444_stage_update" && update.stage === "REDUCTION" && update.reason === "444_REDUCTION_INCOMPLETE"));
 
 const invalid = await solve444("3Rw U", null, { deadlineTs: Date.now() + 10_000 });
@@ -54,7 +60,7 @@ assert.deepEqual(expired.stages, []);
 const readiness = getSolver444ReadinessStatus();
 assert.equal(readiness.ready, true);
 assert.equal(readiness.loading, false);
-assert.equal(readiness.apiVersion, "444-centers-v1");
+assert.equal(readiness.apiVersion, "444-edges-v1");
 
 const workerSource = fs.readFileSync(new URL("../solver/solverWorker.js", import.meta.url), "utf8");
 assert.match(workerSource, /let solver444ModulePromise = null;/);
