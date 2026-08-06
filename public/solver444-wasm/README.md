@@ -1,26 +1,20 @@
-# 4×4 solver engine
+# 4×4 solver browser package
 
-This crate is the correctness-first foundation and browser boundary for the cubetimer 4×4 reduction solver.
+This directory contains the checked-in browser package generated from `solver444-wasm`.
 
 ## Available now
 
-- 96-facelet reference state in `U R F D L B` order
-- outer and two-layer wide turns for all six faces
-- normal, prime, and half-turn amounts
-- WCA-style `Rw` notation and lowercase wide aliases
-- move permutations generated from fixed 3D sticker coordinates
-- color, corner, wing, and center inventory validation
-- deterministic long-sequence inverse and invariant tests
-- `wasm-bindgen` browser exports
-- absolute-deadline checks around parsing and state validation
-- lazy worker routing for `eventId === "444"`
-- progress and readiness reporting
+- lazy loading only for `eventId === "444"`
+- WCA-style 4×4 scramble parsing
+- 96-facelet state application and physical inventory validation
 - four exact center pruning coordinates with 753,311 total abstract states
 - independently verified Centers stage generation
+- a deterministic center-stage upper bound of 31 HTM moves
+- absolute deadline, readiness, and progress reporting
 
 ## Boundary contract
 
-The current engine solves and verifies all 24 centers, but it does not claim to solve the full 4×4 yet. A valid request returns `ok: false`, an empty final `solution`, and one verified partial stage:
+The current package solves and verifies all 24 centers, but it does not claim to solve the full 4×4 yet. A valid request returns `ok: false`, an empty final `solution`, and one verified partial stage:
 
 ```json
 {
@@ -46,16 +40,20 @@ Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_I
 
 ## Still to implement
 
-- center search
-- edge pairing
+- edge pairing and last-two-edge handling
 - parity normalization
 - virtual 3×3 conversion and existing Two-Phase bridge
-- final independent solution verification
+- final independent full-solution verification
 - user-facing 4×4 solver activation
 
-The reference facelet model remains the independent verifier when later search code introduces compact center, wing, and corner coordinates.
+## Exports
 
-## Build
+```js
+solve_444_json(requestJson)
+solver_444_api_version()
+```
+
+## Rebuild
 
 ```bash
 wasm-pack build solver444-wasm \
