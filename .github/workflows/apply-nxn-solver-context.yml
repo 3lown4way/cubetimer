@@ -1,0 +1,42 @@
+name: Apply NxNxN solver context patch
+
+on:
+  push:
+    branches:
+      - feature/nxn-3d-preview
+    paths:
+      - "tools/apply-nxn-solver-context.mjs"
+      - ".github/workflows/apply-nxn-solver-context.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/nxn-3d-preview
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply patch
+        run: node tools/apply-nxn-solver-context.mjs
+      - name: Validate
+        run: |
+          node --check main.js
+          node --check tools/verify-nxn-solver-preview.mjs
+          node tools/verify-nxn-solver-preview.mjs
+      - name: Remove one-time patch files
+        run: |
+          rm tools/apply-nxn-solver-context.mjs
+          rm .github/workflows/apply-nxn-solver-context.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.js tools/verify-nxn-solver-preview.mjs tools/apply-nxn-solver-context.mjs .github/workflows/apply-nxn-solver-context.yml
+          git commit -m "Preserve solver preview event context"
+          git push
