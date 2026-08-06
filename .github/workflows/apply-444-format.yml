@@ -1,0 +1,40 @@
+name: Apply 4x4 formatting
+
+on:
+  push:
+    branches:
+      - agent/444-state-engine
+    paths:
+      - ".github/workflows/apply-444-format.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/444-state-engine
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml
+      - name: Test
+        run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib
+      - name: Clippy
+        run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
+      - name: Release build
+        run: cargo build --manifest-path solver444-wasm/Cargo.toml --release
+      - name: Remove one-time workflow
+        run: rm .github/workflows/apply-444-format.yml
+      - name: Commit formatted source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver444-wasm .github/workflows/apply-444-format.yml
+          git commit -m "Format and validate 4x4 state engine"
+          git push
