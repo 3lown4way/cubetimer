@@ -1,75 +1,49 @@
-name: Apply complete 4x4 solver bridge
+name: Diagnose 4x4 cubie convention
 
 on:
   push:
     branches:
       - agent/444-twophase-complete
     paths:
-      - "tools/apply-444-complete.mjs"
+      - "tools/patch-444-paired-shortcut.mjs"
       - "tools/compare-444-333-cubies.mjs"
-      - "solver-wasm/src/cubie_bridge.rs"
       - ".github/workflows/apply-444-complete.yml"
 
-permissions:
-  contents: write
-
 jobs:
-  integrate:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/444-twophase-complete
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
           targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Apply source patch
-        run: node tools/apply-444-complete.mjs
-      - name: Format and test Rust
+      - name: Apply paired-edge shortcut
+        run: node tools/patch-444-paired-shortcut.mjs
+      - name: Test shortcut
         run: |
-          cargo fmt --manifest-path solver-wasm/Cargo.toml --all
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
-          cargo test --manifest-path solver-wasm/Cargo.toml --lib
-          cargo check --manifest-path solver-wasm/Cargo.toml --lib
-          cargo test --manifest-path solver444-wasm/Cargo.toml --lib
-          cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
-      - name: Validate JavaScript
-        run: |
-          node --check solver/wasmSolver.js
-          node --check solver/solver444.js
-          node --check solver/solverWorker.js
-          node --check tools/compare-444-333-cubies.mjs
+          cargo test --manifest-path solver444-wasm/Cargo.toml outer_turns_keep_all_edges_paired_without_reduction_moves -- --nocapture
       - name: Install wasm-pack
         run: |
           if ! command -v wasm-pack >/dev/null 2>&1; then
             cargo install wasm-pack --locked
           fi
-      - name: Rebuild browser WASM packages
+      - name: Rebuild 4x4 WASM
         run: |
-          rm -rf target/solver-wasm-web target/solver444-wasm-web
-          wasm-pack build solver-wasm \
-            --target web \
-            --out-dir ../target/solver-wasm-web \
-            --out-name solver_wasm \
-            --release
           wasm-pack build solver444-wasm \
             --target web \
             --out-dir ../target/solver444-wasm-web \
             --out-name solver444_wasm \
             --release
-          cp target/solver-wasm-web/solver_wasm.js public/solver-wasm/solver_wasm.js
-          cp target/solver-wasm-web/solver_wasm.d.ts public/solver-wasm/solver_wasm.d.ts
-          cp target/solver-wasm-web/solver_wasm_bg.wasm public/solver-wasm/solver_wasm_bg.wasm
-          cp target/solver-wasm-web/solver_wasm_bg.wasm.d.ts public/solver-wasm/solver_wasm_bg.wasm.d.ts
           cp target/solver444-wasm-web/solver444_wasm.js public/solver444-wasm/solver444_wasm.js
-          cp target/solver444-wasm-web/solver444_wasm.d.ts public/solver444-wasm/solver444_wasm.d.ts
           cp target/solver444-wasm-web/solver444_wasm_bg.wasm public/solver444-wasm/solver444_wasm_bg.wasm
-          cp target/solver444-wasm-web/solver444_wasm_bg.wasm.d.ts public/solver444-wasm/solver444_wasm_bg.wasm.d.ts
       - name: Compare exact cubie states
         run: node tools/compare-444-333-cubies.mjs
       - name: Stop before committing diagnostics
