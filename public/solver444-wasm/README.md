@@ -1,25 +1,31 @@
-# 4×4 state engine
+# 4×4 solver engine
 
-This crate is the correctness-first foundation for the cubetimer 4×4 reduction solver.
+This directory contains the checked-in browser package generated from `solver444-wasm`.
 
-## Included in this slice
+The current runtime boundary:
 
-- 96-facelet state in `U R F D L B` order
-- outer and two-layer wide turns for all six faces
-- normal, prime, and half-turn amounts
-- WCA-style `Rw` notation and lowercase wide aliases
-- move permutation generation from fixed 3D sticker coordinates
-- color, corner, wing, and center inventory validation
-- deterministic long-sequence inverse and invariant tests
+- lazily loads only for `eventId === "444"`
+- parses WCA-style 4×4 notation
+- applies the scramble to the 96-facelet reference model
+- validates corner, wing, center, and color inventories
+- checks an absolute deadline
+- reports readiness and progress events
 
-## Deliberately not included yet
+Search is intentionally not exposed yet. A valid request returns `444_NOT_IMPLEMENTED` with an empty `solution`, `moveCount: 0`, no stages, and no fallback candidate. Expired deadlines return `444_DEADLINE_REACHED` with the same empty-result contract.
 
-- worker routing for `eventId === "444"`
-- browser WASM bindings or generated artifacts
-- center search
-- edge pairing
-- parity normalization
-- virtual 3×3 conversion
-- UI exposure
+The package exports:
 
-The reference facelet model remains the independent verifier when later search code introduces compact center, wing, and corner coordinates.
+```js
+solve_444_json(requestJson)
+solver_444_api_version()
+```
+
+Rebuild from the repository root with:
+
+```bash
+wasm-pack build solver444-wasm \
+  --target web \
+  --out-dir ../public/solver444-wasm \
+  --out-name solver444_wasm \
+  --release
+```
