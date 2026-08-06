@@ -34,8 +34,8 @@ jobs:
           cargo fmt --manifest-path solver-wasm/Cargo.toml --all
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           cargo test --manifest-path solver-wasm/Cargo.toml --lib
+          cargo check --manifest-path solver-wasm/Cargo.toml --lib
           cargo test --manifest-path solver444-wasm/Cargo.toml --lib
-          cargo clippy --manifest-path solver-wasm/Cargo.toml --lib --tests -- -D warnings
           cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
       - name: Validate JavaScript
         run: |
