@@ -22,55 +22,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Apply inner-slice parity notation
+      - name: Apply rotation-free OLL parity notation
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path("solver444-wasm/src/reduction.rs")
           text = path.read_text()
-          old = '''fn oll_parity_macro() -> Vec<Move444> {
-              vec![
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 3),
-                  mv(Face::F, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 3),
-                  mv(Face::F, false, 2),
-              ]
-          }'''
+          start = text.index("fn oll_parity_macro() -> Vec<Move444> {")
+          end = text.index("\n}\n\nfn pll_parity_macro()", start) + 2
           new = '''fn oll_parity_macro() -> Vec<Move444> {
-              // 2R U2 2R U2 2R' F2 2R U2 2R U2 2R' F2, where
-              // an inner R turn is expanded as Rw R' and its inverse as Rw' R.
+              // Standard Rw U2 x ... parity algorithm with the x viewpoint
+              // change eliminated. After x, relative U turns address fixed B.
               vec![
                   mv(Face::R, true, 1),
-                  mv(Face::R, false, 3),
                   mv(Face::U, false, 2),
                   mv(Face::R, true, 1),
-                  mv(Face::R, false, 3),
-                  mv(Face::U, false, 2),
+                  mv(Face::B, false, 2),
+                  mv(Face::R, true, 1),
+                  mv(Face::B, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::R, false, 1),
-                  mv(Face::F, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::R, false, 3),
-                  mv(Face::U, false, 2),
-                  mv(Face::R, true, 1),
-                  mv(Face::R, false, 3),
-                  mv(Face::U, false, 2),
+                  mv(Face::B, false, 2),
+                  mv(Face::L, true, 1),
+                  mv(Face::B, false, 2),
                   mv(Face::R, true, 3),
-                  mv(Face::R, false, 1),
-                  mv(Face::F, false, 2),
+                  mv(Face::B, false, 2),
+                  mv(Face::R, true, 1),
+                  mv(Face::B, false, 2),
+                  mv(Face::R, true, 3),
+                  mv(Face::B, false, 2),
+                  mv(Face::R, true, 3),
               ]
           }'''
-          if old not in text:
-              raise SystemExit("OLL parity macro target not found")
-          path.write_text(text.replace(old, new))
+          path.write_text(text[:start] + new + text[end:])
           PY
       - name: Format Rust
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
