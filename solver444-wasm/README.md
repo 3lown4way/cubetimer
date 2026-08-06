@@ -6,22 +6,20 @@ This crate is the correctness-first foundation and browser boundary for the cube
 
 - 96-facelet reference state in `U R F D L B` order
 - outer and two-layer wide turns for all six faces
-- normal, prime, and half-turn amounts
 - WCA-style `Rw` notation and lowercase wide aliases
-- move permutations generated from fixed 3D sticker coordinates
 - color, corner, wing, and center inventory validation
-- deterministic long-sequence inverse and invariant tests
-- `wasm-bindgen` browser exports
-- absolute-deadline checks around parsing and state validation
-- lazy worker routing for `eventId === "444"`
-- progress and readiness reporting
 - four exact center pruning coordinates with 753,311 total abstract states
 - independently verified Centers stage generation
-- a deterministic center-stage upper bound of 31 HTM moves
+- oriented 24-wing coordinate derived from the 96-facelet geometry
+- eight sequential exact edge-pair distance tables
+- an exact 40,320-state last-four-edge table, including L2E handling
+- independently verified Edge Pairing stage generation
+- `wasm-bindgen` browser exports and absolute-deadline checks
+- lazy worker routing, progress, and readiness reporting
 
 ## Boundary contract
 
-The current engine solves and verifies all 24 centers, but it does not claim to solve the full 4×4 yet. A valid request returns `ok: false`, an empty final `solution`, and one verified partial stage:
+The engine solves and independently verifies all centers and all twelve edge pairs. It does not claim a complete 4×4 solution until parity normalization and the virtual 3×3 bridge are implemented. A valid request returns `ok: false`, an empty final `solution`, and two verified partial stages:
 
 ```json
 {
@@ -32,28 +30,20 @@ The current engine solves and verifies all 24 centers, but it does not claim to 
   "moveCount": 0,
   "verified": false,
   "stages": [
-    {
-      "id": "centers",
-      "name": "Centers",
-      "solution": "...",
-      "moveCount": 24,
-      "verified": true
-    }
+    { "id": "centers", "name": "Centers", "solution": "...", "verified": true },
+    { "id": "edges", "name": "Edge Pairing", "solution": "...", "verified": true }
   ]
 }
 ```
 
-Expired deadlines return `444_DEADLINE_REACHED`; invalid notation returns `444_INVALID_SCRAMBLE`. The verified center stage is never promoted to a complete solution or fallback.
+Each stage is reapplied to the independent 96-facelet model before exposure. Expired deadlines and invalid notation preserve the empty final-result contract. No stage is promoted to a complete solution or fallback.
 
 ## Still to implement
 
-- edge pairing
 - parity normalization
 - virtual 3×3 conversion and existing Two-Phase bridge
-- final independent solution verification
+- final independent full-solution verification
 - user-facing 4×4 solver activation
-
-The reference facelet model remains the independent verifier when later search code introduces compact wing and corner coordinates.
 
 ## Build
 

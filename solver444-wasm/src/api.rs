@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444, EdgeSolveError,
-};
+use crate::{parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444, EdgeSolveError};
 
 const API_VERSION: &str = "444-edges-v1";
 
@@ -386,7 +384,9 @@ mod tests {
         let mut state = Cube444::solved();
         state.apply_alg(scramble).unwrap();
         for stage in result["stages"].as_array().unwrap() {
-            state.apply_alg(stage["solution"].as_str().unwrap()).unwrap();
+            state
+                .apply_alg(stage["solution"].as_str().unwrap())
+                .unwrap();
         }
         assert!(state.centers_solved());
         assert!(state.edges_paired());
