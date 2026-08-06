@@ -9,7 +9,7 @@ on:
       - ".github/workflows/test-444-edge-pairing.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   edge-pairing:
@@ -22,9 +22,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Check formatting
-        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all -- --check
+      - name: Format Rust
+        run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
       - name: Run 4x4 Rust tests
         run: cargo test --manifest-path solver444-wasm/Cargo.toml --lib -- --nocapture
       - name: Reject compiler warnings
         run: cargo clippy --manifest-path solver444-wasm/Cargo.toml --lib --tests -- -D warnings
+      - name: Commit formatted source
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver444-wasm/src/edges.rs solver444-wasm/src/lib.rs
+          git commit -m "Format the 4x4 edge pairing core"
+          git push
