@@ -14,6 +14,15 @@ struct Solve444Request {
     deadline_ts: f64,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct BoundaryState {
+    deadline_ts: f64,
+    parsed_move_count: usize,
+    scramble_valid: bool,
+    state_valid: bool,
+    solved_state: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Solve444Meta {
@@ -23,6 +32,19 @@ struct Solve444Meta {
     state_valid: bool,
     solved_state: bool,
     deadline_ts: f64,
+}
+
+impl From<BoundaryState> for Solve444Meta {
+    fn from(state: BoundaryState) -> Self {
+        Self {
+            api_version: API_VERSION,
+            parsed_move_count: state.parsed_move_count,
+            scramble_valid: state.scramble_valid,
+            state_valid: state.state_valid,
+            solved_state: state.solved_state,
+            deadline_ts: state.deadline_ts,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -63,11 +85,7 @@ fn response(
     status: &'static str,
     reason: &'static str,
     detail: Option<String>,
-    deadline_ts: f64,
-    parsed_move_count: usize,
-    scramble_valid: bool,
-    state_valid: bool,
-    solved_state: bool,
+    state: BoundaryState,
 ) -> Solve444Response {
     Solve444Response {
         ok: false,
@@ -79,14 +97,7 @@ fn response(
         move_count: 0,
         verified: false,
         stages: Vec::new(),
-        meta: Solve444Meta {
-            api_version: API_VERSION,
-            parsed_move_count,
-            scramble_valid,
-            state_valid,
-            solved_state,
-            deadline_ts,
-        },
+        meta: state.into(),
     }
 }
 
@@ -104,25 +115,21 @@ pub fn solve_444_boundary(request_json: &str) -> String {
                 "invalid",
                 "444_INVALID_REQUEST",
                 Some(error.to_string()),
-                0.0,
-                0,
-                false,
-                false,
-                false,
+                BoundaryState::default(),
             ));
         }
     };
 
-    if deadline_reached(request.deadline_ts) {
+    let mut boundary = BoundaryState {
+        deadline_ts: request.deadline_ts,
+        ..BoundaryState::default()
+    };
+    if deadline_reached(boundary.deadline_ts) {
         return serialize_response(&response(
             "timeout",
             "444_DEADLINE_REACHED",
             None,
-            request.deadline_ts,
-            0,
-            false,
-            false,
-            false,
+            boundary,
         ));
     }
 
@@ -133,25 +140,19 @@ pub fn solve_444_boundary(request_json: &str) -> String {
                 "invalid",
                 "444_INVALID_SCRAMBLE",
                 Some(error.to_string()),
-                request.deadline_ts,
-                0,
-                false,
-                false,
-                false,
+                boundary,
             ));
         }
     };
+    boundary.scramble_valid = true;
+    boundary.parsed_move_count = moves.len();
 
-    if deadline_reached(request.deadline_ts) {
+    if deadline_reached(boundary.deadline_ts) {
         return serialize_response(&response(
             "timeout",
             "444_DEADLINE_REACHED",
             None,
-            request.deadline_ts,
-            moves.len(),
-            true,
-            false,
-            false,
+            boundary,
         ));
     }
 
@@ -162,24 +163,18 @@ pub fn solve_444_boundary(request_json: &str) -> String {
             "invalid",
             "444_STATE_INVALID",
             Some(error.to_string()),
-            request.deadline_ts,
-            moves.len(),
-            true,
-            false,
-            false,
+            boundary,
         ));
     }
+    boundary.state_valid = true;
+    boundary.solved_state = state.is_solved();
 
-    if deadline_reached(request.deadline_ts) {
+    if deadline_reached(boundary.deadline_ts) {
         return serialize_response(&response(
             "timeout",
             "444_DEADLINE_REACHED",
             None,
-            request.deadline_ts,
-            moves.len(),
-            true,
-            true,
-            state.is_solved(),
+            boundary,
         ));
     }
 
@@ -189,11 +184,7 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         "not_implemented",
         "444_NOT_IMPLEMENTED",
         None,
-        request.deadline_ts,
-        moves.len(),
-        true,
-        true,
-        state.is_solved(),
+        boundary,
     ))
 }
 
