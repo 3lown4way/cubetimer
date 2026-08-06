@@ -137,7 +137,7 @@ function translateTwophaseSolutionFor444(solution) {
       const match = /^([URFDLB])(2|')?$/.exec(token);
       if (!match) return token;
       const [, face, suffix = ""] = match;
-      if (suffix === "2" || !["R", "D", "L"].includes(face)) return token;
+      if (suffix === "2" || !["U", "R", "D", "L"].includes(face)) return token;
       return suffix === "'" ? face : face + "'";
     })
     .join(" ");
