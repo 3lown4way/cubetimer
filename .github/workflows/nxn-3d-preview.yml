@@ -1,0 +1,41 @@
+name: NxNxN 3D preview
+
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "main.js"
+      - "preview/nxn3dPreview.css"
+      - "preview/nxn3dPreview.js"
+      - "tools/verify-nxn-3d-preview.mjs"
+      - ".github/workflows/nxn-3d-preview.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "index.html"
+      - "main.js"
+      - "preview/nxn3dPreview.css"
+      - "preview/nxn3dPreview.js"
+      - "tools/verify-nxn-3d-preview.mjs"
+      - ".github/workflows/nxn-3d-preview.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check main.js
+          node --check preview/nxn3dPreview.js
+          node --check tools/verify-nxn-3d-preview.mjs
+      - name: Verify NxNxN preview behavior
+        run: node tools/verify-nxn-3d-preview.mjs
