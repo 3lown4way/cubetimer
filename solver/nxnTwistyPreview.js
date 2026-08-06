@@ -4,7 +4,6 @@ export const NXN_SOLVER_EVENT_TO_PUZZLE = Object.freeze({
   "333oh": "3x3x3",
   "333bf": "3x3x3",
   "333fm": "3x3x3",
-  "333mbf": "3x3x3",
   "444": "4x4x4",
   "444bf": "4x4x4",
   "555": "5x5x5",
