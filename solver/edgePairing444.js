@@ -441,12 +441,13 @@ function edgeTypeSignature444(state, edgeType) {
   );
 }
 
-function edgePairDistanceHeuristic444(state, lockedTypeMask, targetCount, closeMove, model) {
-  const needed = Math.max(0, targetCount - bitCount(lockedTypeMask));
+function edgePairDistanceHeuristic444(state, lockedTypeMask, targetCount, closeMove, model, targetTypeMask = 0x0fff) {
+  const needed = Math.max(0, targetCount - bitCount(lockedTypeMask & targetTypeMask));
   if (!needed) return 0;
   const table = buildEdgePairDistanceTable444(closeMove, model);
   const distances = [];
   for (let edgeType = 0; edgeType < 12; edgeType += 1) {
+    if (!(targetTypeMask & (1 << edgeType))) continue;
     if (lockedTypeMask & (1 << edgeType)) continue;
     const signature = edgeTypeSignature444(state, edgeType);
     if (signature < 0) continue;
@@ -564,6 +565,15 @@ async function buildPlannerModel() {
     throw new Error(`444_323_SLICE_FRAME_COUNT:${uniqueFrames.size}`);
   }
 
+  const centerPositionsByFace = {};
+  for (const face of "URFDLB") {
+    const action = actionFor(face);
+    centerPositionsByFace[face] = [];
+    for (let position = 0; position < 24; position += 1) {
+      if (action.centerPermutation[position] !== position) centerPositionsByFace[face].push(position);
+    }
+  }
+
   return {
     kpuzzle,
     solved,
@@ -573,6 +583,7 @@ async function buildPlannerModel() {
     outerActions,
     l2eActions,
     sliceFamilies,
+    centerPositionsByFace,
   };
 }
 
@@ -622,9 +633,27 @@ function collectSeedCandidates(initialState, bankMask, model, deadlineTs) {
     .slice(0, SEED_GOAL_LIMIT);
 }
 
-function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0) {
+function protectedCenterFacesSolved444(state, model, faces) {
+  for (const face of faces) {
+    const positions = model.centerPositionsByFace[face] || [];
+    if (positions.length !== 4) return false;
+    for (const position of positions) {
+      if (state.centerPieces[position] !== model.solvedCompact.centerPieces[position]) return false;
+    }
+  }
+  return true;
+}
+
+function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0, options = {}) {
   const solvedCenters = model.solvedCompact;
   const openMoves = sliceFamily.openMoves;
+  const targetTypeMask = (Number(options?.targetTypeMask) >>> 0) || 0x0fff;
+  const exactTargetCount = options?.exactTargetCount === true;
+  const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces) ? options.protectedCenterFaces : [];
+  const requireAllCenters = options?.requireAllCenters !== false;
+  const centersOkay = (state) => requireAllCenters
+    ? centersSolved(state, solvedCenters.centerPieces)
+    : protectedCenterFacesSolved444(state, model, protectedCenterFaces);
 
   for (const openMove of openMoves) {
     // A human 3-2-3 cycle must restore the same working slice it opened.
@@ -646,11 +675,12 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
       for (const node of beam) {
         const closedState = applyCompactAction(node.state, closeAction, true);
         const closedMask = pairedEdgeTypeMask(closedState);
+        const targetPairedCount = bitCount(closedMask & targetTypeMask);
         if (
           maskContains(closedMask, lockedMask) &&
-          bitCount(closedMask) >= targetCount &&
+          (exactTargetCount ? targetPairedCount === targetCount : targetPairedCount >= targetCount) &&
           (!requiredSolvedTypeMask || maskContains(solvedEdgeTypeMask(closedState), requiredSolvedTypeMask)) &&
-          centersSolved(closedState, solvedCenters.centerPieces)
+          centersOkay(closedState)
         ) {
           return {
             state: closedState,
@@ -666,14 +696,11 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
           const closedCandidate = applyCompactAction(nextState, closeAction, true);
           const candidateMask = pairedEdgeTypeMask(closedCandidate);
           const pairDistance = edgePairDistanceHeuristic444(
-            nextState,
-            lockedMask,
-            targetCount,
-            closeMove,
-            model,
+            nextState, lockedMask, targetCount, closeMove, model, targetTypeMask,
           );
-          const score = bitCount(candidateMask) * 220
-            + bitCount(candidateMask & lockedMask) * 260
+          const score = bitCount(candidateMask & targetTypeMask) * 520
+            + bitCount(candidateMask) * 80
+            + bitCount(candidateMask & lockedMask) * 360
             - pairDistance * 95
             - depth;
           const key = compactStateKey(nextState, true);
@@ -1090,6 +1117,64 @@ export async function solveTargetEdgeTypes444(
     searchMaxMacros,
     alignmentRescueUsed,
     method: "Yau Cross Edges",
+  };
+}
+
+export async function solveYauCross3Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
+  const globalDeadlineTs = Number(options?.deadlineTs) || 0;
+  const budgetMs = Math.max(150, Math.min(2500, Number(options?.timeBudgetMs) || 1200));
+  const startedAt = Date.now();
+  const localDeadlineTs = globalDeadlineTs > 0 ? Math.min(globalDeadlineTs, startedAt + budgetMs) : startedAt + budgetMs;
+  const model = await getPlannerModel();
+  let pattern = model.solved;
+  if (publicScramble) pattern = pattern.applyAlg(String(publicScramble));
+  if (publicSetupSolution) pattern = pattern.applyAlg(String(publicSetupSolution));
+  let state = compactStateFromPattern(pattern);
+  const targetMask = Number(targetTypeMask) >>> 0;
+  const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces) ? options.protectedCenterFaces : ["D", "U"];
+  if (!protectedCenterFacesSolved444(state, model, protectedCenterFaces)) return { ok: false, reason: "444_YAU_NATURAL_CROSS3_CENTERS_NOT_READY" };
+  let lockedMask = pairedEdgeTypeMask(state) & targetMask;
+  let count = bitCount(lockedMask);
+  if (count > 3) return { ok: false, reason: "444_YAU_NATURAL_CROSS3_OVERSHOOT_START" };
+  const moves = [];
+  const cycles = [];
+  while (count < 3 && !deadlineReached(localDeadlineTs)) {
+    const nextTarget = count + 1;
+    let best = null;
+    for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {
+      if (deadlineReached(localDeadlineTs)) break;
+      const found = searchSliceCycle(
+        state, lockedMask, nextTarget, model.sliceFamilies[frameIndex], model, localDeadlineTs, 4, 0,
+        { targetTypeMask: targetMask, exactTargetCount: true, protectedCenterFaces, requireAllCenters: false },
+      );
+      if (!found) continue;
+      if (!best || found.moves.length < best.moves.length) best = { ...found, frameIndex };
+      if (found.moves.length <= 4) break;
+    }
+    if (!best) return {
+      ok: false,
+      reason: deadlineReached(localDeadlineTs) ? "444_YAU_NATURAL_CROSS3_TIMEOUT" : "444_YAU_NATURAL_CROSS3_NO_CYCLE",
+      moveCount: moves.length, pairCount: count, elapsedMs: Date.now() - startedAt,
+    };
+    state = best.state;
+    lockedMask = pairedEdgeTypeMask(state) & targetMask;
+    count = bitCount(lockedMask);
+    moves.push(...best.moves);
+    cycles.push({ frameIndex: best.frameIndex, workingSlice: best.moves[0], moveCount: best.moves.length, pairCount: count });
+  }
+  const simplified = simplifyOuterSequence(moves);
+  const solution = simplified.join(" ");
+  let verified = pattern;
+  if (solution) verified = verified.applyAlg(solution);
+  const verifiedState = compactStateFromPattern(verified);
+  const verifiedMask = pairedEdgeTypeMask(verifiedState) & targetMask;
+  if (bitCount(verifiedMask) !== 3 || !protectedCenterFacesSolved444(verifiedState, model, protectedCenterFaces)) {
+    return { ok: false, reason: "444_YAU_NATURAL_CROSS3_VERIFY_FAILED" };
+  }
+  return {
+    ok: true, reason: null, solution, moveCount: simplified.length,
+    lockedTypeMask: verifiedMask, pairedTargetMask: verifiedMask, cycleCount: cycles.length, cycles,
+    elapsedMs: Date.now() - startedAt, method: "Yau Natural Slice Cross 3/4",
   };
 }
 

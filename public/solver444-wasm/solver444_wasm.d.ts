@@ -3,6 +3,8 @@
 
 export function solve_444_json(request_json: string): string;
 
+export function solve_444_yau_remaining_centers_json(request_json: string): string;
+
 export function solver_444_api_version(): string;
 
 export function verify_444_solution_json(request_json: string): string;
@@ -12,6 +14,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly solve_444_json: (a: number, b: number) => [number, number];
+    readonly solve_444_yau_remaining_centers_json: (a: number, b: number) => [number, number];
     readonly solver_444_api_version: () => [number, number];
     readonly verify_444_solution_json: (a: number, b: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;

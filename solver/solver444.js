@@ -962,24 +962,92 @@ async function preferYauReduction444(
   }
   const targetTypeMask = edgeModule.crossEdgeTypeMask444(crossColor);
 
-  const cross3 = await edgeModule.solveTargetEdgeTypes444(
-    publicScramble,
-    firstTwoCenters,
-    targetTypeMask,
-    {
-      targetCount: 3,
-      deadlineTs,
-      maxMacros: 8,
-      postSequence: remainingCenters,
-      enableRescue: options?.__yauFastFrameProbe !== true,
-      projectTargetState: options?.__yauFastFrameProbe === true,
-    },
-  );
+  let cross3 = null;
+  let effectiveRemainingCenters = remainingCenters;
+  let naturalCross3Applied = false;
+  let remainingCentersRecomputed = false;
+  let naturalCross3FallbackReason = null;
+  let recomputedCenterPhaseMoveCounts = null;
+  let protectedCenterSearchMs = 0;
+
+  if (
+    !deadlineReached(deadlineTs) &&
+    typeof edgeModule.solveYauCross3Natural444 === "function" &&
+    typeof api.solveYauRemainingCenters === "function"
+  ) {
+    const natural = await edgeModule.solveYauCross3Natural444(
+      publicScramble, firstTwoCenters, targetTypeMask,
+      {
+        deadlineTs,
+        timeBudgetMs: options?.__yauFastFrameProbe === true ? 650 : 1400,
+        protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
+      },
+    );
+    if (natural?.ok) {
+      const stateBeforeRemainingCenters = [firstTwoCenters, natural.solution]
+        .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+      const protectedCenterScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]
+        .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+      const protectedDeadlineTs = deadlineTs > 0
+        ? Math.min(deadlineTs, Date.now() + (options?.__yauFastFrameProbe === true ? 900 : 2200))
+        : Date.now() + (options?.__yauFastFrameProbe === true ? 900 : 2200);
+      let protectedResult = null;
+      try {
+        const rawProtected = api.solveYauRemainingCenters({
+          scramble: protectedCenterScramble,
+          crossColor,
+          deadlineTs: protectedDeadlineTs,
+        });
+        protectedResult = typeof rawProtected === "string" ? JSON.parse(rawProtected) : rawProtected;
+      } catch (error) {
+        naturalCross3FallbackReason = `PROTECTED_CENTER_CALL:${String(error?.message || error)}`;
+      }
+      if (protectedResult?.ok === true && protectedResult?.verified === true) {
+        const candidateRemainingCenters = translate444MoveConvention(protectedResult.solution || "");
+        const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]
+          .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+        const preserved = await edgeModule.solveTargetEdgeTypes444(
+          publicScramble, verifySetup, targetTypeMask,
+          {
+            targetCount: 3, requiredTypeMask: natural.lockedTypeMask, deadlineTs,
+            maxMacros: 0, enableRescue: false,
+          },
+        );
+        if (preserved?.ok) {
+          cross3 = natural;
+          effectiveRemainingCenters = candidateRemainingCenters;
+          naturalCross3Applied = true;
+          remainingCentersRecomputed = true;
+          recomputedCenterPhaseMoveCounts = Array.isArray(protectedResult.phaseMoveCounts)
+            ? [...protectedResult.phaseMoveCounts]
+            : null;
+          protectedCenterSearchMs = Number(protectedResult.searchMs) || 0;
+        } else {
+          naturalCross3FallbackReason = preserved?.reason || "PROTECTED_CENTER_JS_VERIFY_FAILED";
+        }
+      } else if (!naturalCross3FallbackReason) {
+        naturalCross3FallbackReason = protectedResult?.reason || "PROTECTED_CENTER_SEARCH_FAILED";
+      }
+    } else {
+      naturalCross3FallbackReason = natural?.reason || "NATURAL_CROSS3_NOT_FOUND";
+    }
+  }
+
+  if (!cross3) {
+    cross3 = await edgeModule.solveTargetEdgeTypes444(
+      publicScramble, firstTwoCenters, targetTypeMask,
+      {
+        targetCount: 3, deadlineTs, maxMacros: 8, postSequence: remainingCenters,
+        enableRescue: options?.__yauFastFrameProbe !== true,
+        projectTargetState: options?.__yauFastFrameProbe === true,
+      },
+    );
+  }
   if (!cross3?.ok) {
     return yauFailure444(reduction, "444_YAU_CROSS3_FAILED", cross3?.reason || cross3?.detail, deadlineTs);
   }
 
-  const beforeCross4 = [firstTwoCenters, cross3.solution, remainingCenters]
+  const beforeCross4 = [firstTwoCenters, cross3.solution, effectiveRemainingCenters]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
@@ -1122,7 +1190,9 @@ async function preferYauReduction444(
       crossEdgeCount: 3,
       lockedTypeMask: cross3.lockedTypeMask,
     }),
-    makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", remainingCenters),
+    makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", effectiveRemainingCenters, {
+      recomputedAfterCross3: remainingCentersRecomputed,
+    }),
     makeSetupSegment("yauCross4", "Yau · Cross Edge 4/4", cross4.solution, {
       crossEdgeCount: 4,
       alignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
@@ -1189,6 +1259,12 @@ async function preferYauReduction444(
       yauFallbackReason: null,
       yauCrossTypeMask: targetTypeMask,
       yauCross3MoveCount: Number(cross3.moveCount) || 0,
+      yauCross3Method: String(cross3.method || "Yau Cross Edges"),
+      yauNaturalCross3Applied: naturalCross3Applied,
+      yauNaturalCross3FallbackReason: naturalCross3FallbackReason,
+      yauRemainingCentersRecomputed: remainingCentersRecomputed,
+      yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,
+      yauProtectedCenterSearchMs: protectedCenterSearchMs,
       yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
       yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
       yauCross4MoveCount: Number(cross4.moveCount) || 0,
@@ -1198,7 +1274,7 @@ async function preferYauReduction444(
       yauCrossAlignmentRescueUsed: cross4.alignmentRescueUsed === true,
       yauCrossRestoreMoveCount: Number(crossRestore.moveCount) || 0,
       yauPureCenterMoveCount: publicCenterMoves.length,
-      yauRemainingCenterMoveCount: splitAlgorithm(remainingCenters).length,
+      yauRemainingCenterMoveCount: splitAlgorithm(effectiveRemainingCenters).length,
       yauEdge323: remainingEdges.meta && typeof remainingEdges.meta === "object"
         ? { ...remainingEdges.meta }
         : {},
@@ -1282,6 +1358,11 @@ async function loadModuleCandidate(specifier) {
   return {
     solve(request) {
       return mod.solve_444_json(JSON.stringify(request));
+    },
+    solveYauRemainingCenters(request) {
+      return typeof mod.solve_444_yau_remaining_centers_json === "function"
+        ? mod.solve_444_yau_remaining_centers_json(JSON.stringify(request))
+        : null;
     },
     verify(request) {
       return mod.verify_444_solution_json(JSON.stringify(request));

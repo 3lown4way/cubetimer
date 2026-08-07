@@ -761,6 +761,36 @@ fn edge_home_paired(inventory: &WingInventory, edge_type: usize) -> bool {
         && inventory.orientation[first as usize] == inventory.orientation[second as usize]
 }
 
+pub(crate) fn paired_edge_type_mask(state: &Cube444) -> Result<u16, EdgeSolveError> {
+    let inventory = wing_inventory(state)?;
+    let mut mask = 0u16;
+    for &[first, second] in &EDGE_SLOTS {
+        let first_type = inventory.edge_type[first as usize];
+        let second_type = inventory.edge_type[second as usize];
+        if first_type == second_type
+            && first_type != u8::MAX
+            && inventory.orientation[first as usize] == inventory.orientation[second as usize]
+        {
+            mask |= 1u16 << first_type;
+        }
+    }
+    Ok(mask)
+}
+
+pub(crate) fn paired_cross_edge_type_mask(
+    state: &Cube444,
+    cross_color: u8,
+) -> Result<u16, EdgeSolveError> {
+    let paired = paired_edge_type_mask(state)?;
+    let mut cross_mask = 0u16;
+    for (edge_type, colors) in EDGE_COLOR_PAIRS.iter().enumerate() {
+        if colors.contains(&cross_color) {
+            cross_mask |= 1u16 << edge_type;
+        }
+    }
+    Ok(paired & cross_mask)
+}
+
 impl Cube444 {
     pub fn edges_paired(&self) -> bool {
         let Ok(inventory) = wing_inventory(self) else {

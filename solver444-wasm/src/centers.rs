@@ -2,6 +2,7 @@ use core::fmt;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 
+use crate::edges::paired_cross_edge_type_mask;
 use crate::geometry::{move_permutation, sticker_geometry, FACELET_COUNT};
 use crate::{Cube444, Move444};
 
@@ -804,6 +805,254 @@ pub fn solve_centers_for_cross(
         },
         search_ms: (now_ms() - search_started).max(0.0),
     })
+}
+
+const YAU_CENTER_PHASE3_EXTRA_DEPTH: u8 = 6;
+const YAU_CENTER_PHASE4_EXTRA_DEPTH: u8 = 6;
+
+struct YauCenterSearch<'a> {
+    tables: &'a CenterTables,
+    cross_color: u8,
+    protected_cross_mask: u16,
+    deadline_ts: f64,
+    nodes: usize,
+}
+
+impl YauCenterSearch<'_> {
+    fn tick(&mut self) -> Result<(), CenterSolveError> {
+        self.nodes += 1;
+        if self.nodes & 0x03ff == 0 {
+            check_deadline(self.deadline_ts)?;
+        }
+        Ok(())
+    }
+
+    fn preserves_cross(&self, state: &Cube444) -> bool {
+        paired_cross_edge_type_mask(state, self.cross_color)
+            .map(|mask| mask & self.protected_cross_mask == self.protected_cross_mask)
+            .unwrap_or(false)
+    }
+
+    fn phase3_distance(&self, state: &Cube444) -> Result<u8, CenterSolveError> {
+        let frame = &self.tables.frame;
+        let mask = center_color_mask(state, &[frame.side_a_color, frame.side_a_opposite_color]);
+        let rank = coordinate_rank(mask, &frame.side_positions, 8);
+        let distance = self.tables.phase3_distance[rank];
+        if distance == UNVISITED {
+            Err(CenterSolveError::CoordinateNotReachable("yau-phase3"))
+        } else {
+            Ok(distance)
+        }
+    }
+
+    fn phase4_distance(&self, state: &Cube444) -> Result<u8, CenterSolveError> {
+        let frame = &self.tables.frame;
+        let first = center_color_mask(state, &[frame.side_a_color]);
+        let second = center_color_mask(state, &[frame.side_b_color]);
+        let rank = coordinate_rank(first, &frame.side_a_pair_positions, 4) * PAIR_FACE_STATE_COUNT
+            + coordinate_rank(second, &frame.side_b_pair_positions, 4);
+        let distance = self.tables.phase4_distance[rank];
+        if distance == UNVISITED {
+            Err(CenterSolveError::CoordinateNotReachable("yau-phase4"))
+        } else {
+            Ok(distance)
+        }
+    }
+
+    fn same_layer(previous: Option<Move444>, mv: Move444) -> bool {
+        previous
+            .map(|last| last.face() == mv.face() && last.is_wide() == mv.is_wide())
+            .unwrap_or(false)
+    }
+
+    fn dfs_phase4(
+        &mut self,
+        state: &mut Cube444,
+        path: &mut Vec<Move444>,
+        remaining: u8,
+        previous: Option<Move444>,
+    ) -> Result<bool, CenterSolveError> {
+        self.tick()?;
+        let distance = self.phase4_distance(state)?;
+        if distance > remaining {
+            return Ok(false);
+        }
+        if distance == 0 {
+            return Ok(state.centers_solved() && self.preserves_cross(state));
+        }
+        if remaining == 0 {
+            return Ok(false);
+        }
+
+        let mut candidates = Vec::with_capacity(self.tables.phase4_moves.len());
+        for index in 0..self.tables.phase4_moves.len() {
+            let mv = self.tables.phase4_moves[index].mv;
+            if Self::same_layer(previous, mv) {
+                continue;
+            }
+            state.apply_move(mv);
+            if self.preserves_cross(state) {
+                let next_distance = self.phase4_distance(state)?;
+                if next_distance < remaining {
+                    candidates.push((next_distance, mv));
+                }
+            }
+            state.apply_move(mv.inverse());
+        }
+        candidates.sort_unstable_by_key(|&(distance, mv)| (distance, mv));
+
+        for (_, mv) in candidates {
+            state.apply_move(mv);
+            path.push(mv);
+            if self.dfs_phase4(state, path, remaining - 1, Some(mv))? {
+                return Ok(true);
+            }
+            path.pop();
+            state.apply_move(mv.inverse());
+        }
+        Ok(false)
+    }
+
+    fn search_phase4(
+        &mut self,
+        state: &mut Cube444,
+    ) -> Result<Option<Vec<Move444>>, CenterSolveError> {
+        let initial = self.phase4_distance(state)?;
+        let max_bound = initial.saturating_add(YAU_CENTER_PHASE4_EXTRA_DEPTH);
+        for bound in initial..=max_bound {
+            check_deadline(self.deadline_ts)?;
+            let mut path = Vec::with_capacity(bound as usize);
+            if self.dfs_phase4(state, &mut path, bound, None)? {
+                return Ok(Some(path));
+            }
+        }
+        Ok(None)
+    }
+
+    fn dfs_phase3(
+        &mut self,
+        state: &mut Cube444,
+        path: &mut Vec<Move444>,
+        remaining: u8,
+        previous: Option<Move444>,
+    ) -> Result<Option<usize>, CenterSolveError> {
+        self.tick()?;
+        let distance = self.phase3_distance(state)?;
+        if distance > remaining {
+            return Ok(None);
+        }
+        if distance == 0 {
+            if let Some(phase4) = self.search_phase4(state)? {
+                let phase3_len = path.len();
+                path.extend(phase4);
+                return Ok(Some(phase3_len));
+            }
+        }
+        if remaining == 0 {
+            return Ok(None);
+        }
+
+        let mut candidates = Vec::with_capacity(self.tables.phase3_moves.len());
+        for index in 0..self.tables.phase3_moves.len() {
+            let mv = self.tables.phase3_moves[index].mv;
+            if Self::same_layer(previous, mv) {
+                continue;
+            }
+            state.apply_move(mv);
+            if self.preserves_cross(state) {
+                let next_distance = self.phase3_distance(state)?;
+                if next_distance < remaining {
+                    candidates.push((next_distance, mv));
+                }
+            }
+            state.apply_move(mv.inverse());
+        }
+        candidates.sort_unstable_by_key(|&(distance, mv)| (distance, mv));
+
+        for (_, mv) in candidates {
+            state.apply_move(mv);
+            path.push(mv);
+            if let Some(phase3_len) = self.dfs_phase3(state, path, remaining - 1, Some(mv))? {
+                return Ok(Some(phase3_len));
+            }
+            path.pop();
+            state.apply_move(mv.inverse());
+        }
+        Ok(None)
+    }
+}
+
+pub fn solve_remaining_centers_for_yau(
+    state: &Cube444,
+    deadline_ts: f64,
+    cross_color: u8,
+) -> Result<CenterSolveResult, CenterSolveError> {
+    check_deadline(deadline_ts)?;
+    let tables_were_ready = cross_color < 6 && CENTER_TABLES[cross_color as usize].get().is_some();
+    let tables = get_tables(cross_color, deadline_ts)?;
+    let frame = &tables.frame;
+
+    if center_color_mask(state, &[frame.cross_color]) != frame.goal_cross
+        || center_color_mask(state, &[frame.opposite_color]) != frame.goal_opposite
+    {
+        return Err(CenterSolveError::CoordinateNotReachable(
+            "yau-first-two-centers",
+        ));
+    }
+
+    let protected_cross_mask = paired_cross_edge_type_mask(state, cross_color)
+        .map_err(|_| CenterSolveError::CoordinateNotReachable("yau-cross-wings"))?;
+    if protected_cross_mask.count_ones() < 3 {
+        return Err(CenterSolveError::CoordinateNotReachable("yau-cross3"));
+    }
+
+    let search_started = now_ms();
+    let initial_distance = {
+        let mask = center_color_mask(state, &[frame.side_a_color, frame.side_a_opposite_color]);
+        let rank = coordinate_rank(mask, &frame.side_positions, 8);
+        tables.phase3_distance[rank]
+    };
+    if initial_distance == UNVISITED {
+        return Err(CenterSolveError::CoordinateNotReachable("yau-phase3"));
+    }
+
+    let max_bound = initial_distance.saturating_add(YAU_CENTER_PHASE3_EXTRA_DEPTH);
+    for bound in initial_distance..=max_bound {
+        check_deadline(deadline_ts)?;
+        let mut working = state.clone();
+        let mut path = Vec::with_capacity((bound as usize) + 12);
+        let mut search = YauCenterSearch {
+            tables,
+            cross_color,
+            protected_cross_mask,
+            deadline_ts,
+            nodes: 0,
+        };
+        if let Some(phase3_len) = search.dfs_phase3(&mut working, &mut path, bound, None)? {
+            check_deadline(deadline_ts)?;
+            let protected_after = paired_cross_edge_type_mask(&working, cross_color)
+                .map_err(|_| CenterSolveError::VerificationFailed)?;
+            if !working.centers_solved()
+                || protected_after & protected_cross_mask != protected_cross_mask
+                || working.validate().is_err()
+            {
+                return Err(CenterSolveError::VerificationFailed);
+            }
+            let phase4_len = path.len() - phase3_len;
+            return Ok(CenterSolveResult {
+                moves: path,
+                phase_move_counts: [0, 0, phase3_len, phase4_len],
+                table_build_ms: if tables_were_ready {
+                    0.0
+                } else {
+                    tables.build_ms
+                },
+                search_ms: (now_ms() - search_started).max(0.0),
+            });
+        }
+    }
+
+    Err(CenterSolveError::NoDescendingMove("yau-remaining-centers"))
 }
 
 #[cfg(test)]

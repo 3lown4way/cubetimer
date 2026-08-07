@@ -112,7 +112,7 @@ function isSolved(pattern) {
   return pattern.experimentalIsSolved({ ignorePuzzleOrientation: false });
 }
 
-async function verifyCase(scramble, crossColor) {
+async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) {
   const result = await solve444(scramble, null, {
     deadlineTs: Date.now() + 60_000,
     crossColor,
@@ -123,6 +123,13 @@ async function verifyCase(scramble, crossColor) {
   assert.equal(result.meta.method444, "yau");
   assert.equal(result.meta.yauAttempted, true);
   assert.equal(result.meta.yauFallbackReason, null);
+  if (expectNatural) {
+    assert.equal(result.meta.yauNaturalCross3Applied, true, `natural Cross 3/4 was not used for ${crossColor}: ${result.meta.yauNaturalCross3FallbackReason}`);
+    assert.equal(result.meta.yauRemainingCentersRecomputed, true);
+    assert.equal(result.meta.yauCross3Method, "Yau Natural Slice Cross 3/4");
+    assert.ok(Number(result.meta.yauCross3MoveCount) <= 14);
+    assert.ok(Number(result.meta.yauProtectedCenterSearchMs) >= 0);
+  }
   assert.equal(result.meta.humanViewpointApplied, true);
   assert.equal(result.meta.yauHumanGripApplied, true);
   assert.ok(Number(result.meta.yauViewpointRotationCount) >= 3, "Yau human grip did not reorient enough between method phases");
@@ -186,8 +193,8 @@ async function verifyCase(scramble, crossColor) {
   return result;
 }
 
-await verifyCase("Rw U2 F' Lw D B2", "D");
-await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F");
+await verifyCase("Rw U2 F' Lw D B2", "D", { expectNatural: true });
+await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });
 const crossFrameRegression = await verifyCase(
   "Rw U' F R2 F Bw' Fw' Dw Bw Dw Uw R Bw Fw2 B2 Fw2 B Uw2 Lw Bw2 R' Lw R' L Bw U2 Bw U' Fw2 D Bw' Uw'",
   "D",

@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    normalize_parity, parse_alg444, solve_centers_for_cross, solve_edges, CenterSolveError,
-    Cube444, EdgeSolveError, ReductionError, Virtual333State,
+    normalize_parity, parse_alg444, solve_centers_for_cross, solve_edges,
+    solve_remaining_centers_for_yau, CenterSolveError, Cube444, EdgeSolveError, ReductionError,
+    Virtual333State,
 };
 
 const API_VERSION: &str = "444-complete-v1";
@@ -441,6 +442,134 @@ pub fn solve_444_boundary(request_json: &str) -> String {
         stages,
         boundary,
     ))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct YauRemainingCentersResponse {
+    ok: bool,
+    status: &'static str,
+    reason: Option<String>,
+    solution: String,
+    move_count: usize,
+    verified: bool,
+    protected_cross_pair_count: u32,
+    phase_move_counts: [usize; 4],
+    table_build_ms: f64,
+    search_ms: f64,
+}
+
+fn serialize_yau_remaining(value: &YauRemainingCentersResponse) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| {
+        r#"{"ok":false,"status":"error","reason":"444_YAU_CENTER_SERIALIZATION_FAILED","solution":"","moveCount":0,"verified":false,"protectedCrossPairCount":0,"phaseMoveCounts":[0,0,0,0],"tableBuildMs":0,"searchMs":0}"#.to_string()
+    })
+}
+
+fn yau_remaining_error(status: &'static str, reason: String, protected_count: u32) -> String {
+    serialize_yau_remaining(&YauRemainingCentersResponse {
+        ok: false,
+        status,
+        reason: Some(reason),
+        solution: String::new(),
+        move_count: 0,
+        verified: false,
+        protected_cross_pair_count: protected_count,
+        phase_move_counts: [0; 4],
+        table_build_ms: 0.0,
+        search_ms: 0.0,
+    })
+}
+
+pub fn solve_444_yau_remaining_centers_boundary(request_json: &str) -> String {
+    let request: Solve444Request = match serde_json::from_str(request_json) {
+        Ok(request) => request,
+        Err(error) => {
+            return yau_remaining_error(
+                "invalid",
+                format!("444_YAU_CENTER_INVALID_REQUEST:{error}"),
+                0,
+            );
+        }
+    };
+    if deadline_reached(request.deadline_ts) {
+        return yau_remaining_error("timeout", "444_DEADLINE_REACHED".to_string(), 0);
+    }
+    let moves = match parse_alg444(&request.scramble) {
+        Ok(moves) => moves,
+        Err(error) => {
+            return yau_remaining_error(
+                "invalid",
+                format!("444_YAU_CENTER_INVALID_SCRAMBLE:{error}"),
+                0,
+            );
+        }
+    };
+    let cross_color = match parse_cross_color(&request.cross_color) {
+        Some(color) => color,
+        None => {
+            return yau_remaining_error(
+                "invalid",
+                "444_YAU_CENTER_INVALID_CROSS_COLOR".to_string(),
+                0,
+            );
+        }
+    };
+    let mut state = Cube444::solved();
+    state.apply_moves(&moves);
+    if state.validate().is_err() {
+        return yau_remaining_error("invalid", "444_YAU_CENTER_STATE_INVALID".to_string(), 0);
+    }
+    let protected_before =
+        crate::edges::paired_cross_edge_type_mask(&state, cross_color).unwrap_or(0);
+    let protected_count = protected_before.count_ones();
+    let result = match solve_remaining_centers_for_yau(&state, request.deadline_ts, cross_color) {
+        Ok(result) => result,
+        Err(CenterSolveError::DeadlineReached) => {
+            return yau_remaining_error(
+                "timeout",
+                "444_DEADLINE_REACHED".to_string(),
+                protected_count,
+            );
+        }
+        Err(error) => {
+            return yau_remaining_error(
+                "partial",
+                format!("444_YAU_CENTER_SEARCH_FAILED:{error}"),
+                protected_count,
+            );
+        }
+    };
+    let mut verified_state = state;
+    verified_state.apply_moves(&result.moves);
+    let protected_after =
+        crate::edges::paired_cross_edge_type_mask(&verified_state, cross_color).unwrap_or(0);
+    let verified = verified_state.centers_solved()
+        && verified_state.validate().is_ok()
+        && protected_after & protected_before == protected_before;
+    if !verified {
+        return yau_remaining_error(
+            "error",
+            "444_YAU_CENTER_VERIFICATION_FAILED".to_string(),
+            protected_count,
+        );
+    }
+    serialize_yau_remaining(&YauRemainingCentersResponse {
+        ok: true,
+        status: "ok",
+        reason: None,
+        solution: format_moves(&result.moves),
+        move_count: result.moves.len(),
+        verified: true,
+        protected_cross_pair_count: protected_count,
+        phase_move_counts: result.phase_move_counts,
+        table_build_ms: result.table_build_ms,
+        search_ms: result.search_ms,
+    })
+}
+
+#[wasm_bindgen]
+pub fn solve_444_yau_remaining_centers_json(request_json: &str) -> String {
+    solve_444_yau_remaining_centers_boundary(request_json)
 }
 
 #[derive(Debug, Deserialize)]
