@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply Yau source patch
-        run: python tools/apply-yau-once.py
+        run: |
+          python tools/apply-yau-once.py
+          python tools/apply-yau-fix1.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
