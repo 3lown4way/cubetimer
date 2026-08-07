@@ -1,0 +1,48 @@
+name: Apply Yau integration once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-yau-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply Yau source patch
+        run: python tools/apply-yau-once.py
+      - name: Validate JavaScript syntax
+        run: |
+          node --check solver/edgePairing444.js
+          node --check solver/solver444.js
+          node --check solver/solverWorker.js
+          node --check solver/solver444UiActivation.js
+          node --check tools/verify-444-yau.mjs
+          node --check tools/verify-yau-center-preservation.mjs
+      - name: Verify Yau center/cross preservation invariant
+        run: node tools/verify-yau-center-preservation.mjs
+      - name: Verify Yau solve pipeline
+        run: node tools/verify-444-yau.mjs
+      - name: Verify existing 4x4 worker contract
+        run: node tools/verify-444-worker-boundary.mjs
+      - name: Verify existing public WCA contract
+        run: node tools/verify-444-public-notation.mjs
+      - name: Commit Yau source
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/edgePairing444.js solver/solver444.js solver/solverWorker.js solver/solver444UiActivation.js index.html
+          git commit -m "Add Yau method for 4x4 solver"
+          git push origin HEAD:main
