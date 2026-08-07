@@ -1,0 +1,106 @@
+name: Apply Yau cross robustness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-yau-cross-robustness.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply robustness patches
+        run: |
+          python tools/apply-yau-cross-robustness.py
+          python tools/apply-yau-cross-meta.py
+      - name: Validate syntax
+        run: |
+          node --check solver/edgePairing444.js
+          node --check solver/solver444.js
+      - name: Verify existing Yau contract
+        run: node tools/verify-444-yau.mjs
+      - name: Stress Yau cross search
+        run: |
+          cat > tools/.yau-cross-stress-temp.mjs <<'EOF'
+          import { solve444 } from "../solver/solver444.js";
+
+          let seed = 0x44c0ffee;
+          function rnd() {
+            seed ^= seed << 13; seed >>>= 0;
+            seed ^= seed >>> 17; seed >>>= 0;
+            seed ^= seed << 5; seed >>>= 0;
+            return seed / 0x100000000;
+          }
+          const faces = ["U", "R", "F", "D", "L", "B"];
+          const suffixes = ["", "'", "2"];
+          function makeScramble(length = 32) {
+            const out = [];
+            let previous = "";
+            while (out.length < length) {
+              const face = faces[Math.floor(rnd() * faces.length)];
+              if (face === previous) continue;
+              previous = face;
+              const wide = rnd() < 0.46 ? "w" : "";
+              const suffix = suffixes[Math.floor(rnd() * suffixes.length)];
+              out.push(`${face}${wide}${suffix}`);
+            }
+            return out.join(" ");
+          }
+
+          const crosses = ["D", "F", "R", "U", "L", "B", "D", "F"];
+          let rescueCount = 0;
+          for (let index = 0; index < crosses.length; index += 1) {
+            const scramble = makeScramble();
+            const crossColor = crosses[index];
+            const started = Date.now();
+            const result = await solve444(scramble, null, {
+              deadlineTs: Date.now() + 60_000,
+              crossColor,
+              method444: "yau",
+            });
+            const info = {
+              index,
+              crossColor,
+              elapsedMs: Date.now() - started,
+              ok: result.ok,
+              reason: result.reason,
+              detail: result.detail,
+              cross3Rescue: result.meta?.yauCross3SearchRescueUsed === true,
+              cross4Rescue: result.meta?.yauCross4SearchRescueUsed === true,
+              alignRescue: result.meta?.yauCrossAlignmentRescueUsed === true,
+              scramble,
+            };
+            console.log(JSON.stringify(info));
+            if (!result.ok || result.verified !== true) {
+              throw new Error(`YAU_STRESS_FAILED:${JSON.stringify(info)}`);
+            }
+            if (info.cross3Rescue || info.cross4Rescue || info.alignRescue) rescueCount += 1;
+          }
+          console.log(JSON.stringify({ stressPassed: true, rescueCount }));
+          EOF
+          node tools/.yau-cross-stress-temp.mjs
+          rm tools/.yau-cross-stress-temp.mjs
+      - name: Verify existing 4x4 contracts
+        run: |
+          node tools/verify-444-worker-boundary.mjs
+          node tools/verify-444-public-notation.mjs
+          node tools/verify-444-edge-323.mjs
+      - name: Commit runtime fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/edgePairing444.js solver/solver444.js
+          git commit -m "Make Yau cross search resilient"
+          git push origin HEAD:main
