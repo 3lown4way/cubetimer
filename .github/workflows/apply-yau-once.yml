@@ -52,3 +52,5 @@ jobs:
           git add solver/edgePairing444.js solver/solver444.js solver/solverWorker.js solver/solver444UiActivation.js index.html
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
+
+# Retry after robust Yau final-setup patch.
