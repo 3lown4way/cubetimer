@@ -32,6 +32,7 @@ jobs:
           python tools/apply-yau-fix6.py
           python tools/apply-yau-fix7.py
           python tools/apply-yau-fix8.py
+          python tools/apply-yau-fix9.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
@@ -56,4 +57,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Cross3 uses a wider Yau-only beam so non-D cross frames retain viable post-center banks.
+# Non-D cross colors are solved in the canonical D-frame and conjugated back.
