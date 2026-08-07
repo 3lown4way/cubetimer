@@ -63,4 +63,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Rerun after validating partial centers by color group rather than interchangeable center IDs.
+# Rerun with center-piece color ownership derived from the solved 4x4 pattern.
