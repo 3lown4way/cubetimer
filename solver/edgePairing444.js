@@ -627,7 +627,10 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
   const openMoves = sliceFamily.openMoves;
 
   for (const openMove of openMoves) {
-    const closeMove = openMove.endsWith("'") ? "Dw" : "Dw'";
+    // A human 3-2-3 cycle must restore the same working slice it opened.
+    // The old code always closed with Dw/Dw', even when a rotated frame opened
+    // Uw/Fw/Bw/Rw/Lw, forcing the beam search to compensate with unnatural moves.
+    const closeMove = invertMoveToken(openMove);
     const openAction = model.actionFor(openMove);
     const closeAction = model.actionFor(closeMove);
     let beam = [{
