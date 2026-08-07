@@ -27,6 +27,7 @@ jobs:
           python tools/apply-yau-target-projection.py
           python tools/apply-yau-cross-meta.py
           python tools/apply-yau-frame-retry.py
+          python tools/apply-yau-probe-projection-flag.py
       - name: Validate syntax
         run: |
           node --check solver/edgePairing444.js
@@ -108,4 +109,4 @@ jobs:
           git commit -m "Make Yau cross search frame-resilient"
           git push origin HEAD:main
 
-# Project Cross 3/4 and 4/4 search onto the eight target wings only.
+# Target-only projection is used for Cross 4/4 frame probes, not final solve quality.
