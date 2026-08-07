@@ -22,25 +22,18 @@ const solved = kpuzzle.defaultPattern();
 const CENTER_POSITIONS_BY_FACE = {};
 const CENTER_FACE_BY_PIECE = new Map();
 for (const face of FACES) {
-  const moved = solved.applyAlg(face);
-  const positions = [];
-  const before = solved.patternData.CENTERS;
-  const after = moved.patternData.CENTERS;
-  for (let position = 0; position < before.pieces.length; position += 1) {
-    if (
-      Number(after.pieces[position]) !== Number(before.pieces[position]) ||
-      Number(after.orientation[position]) !== Number(before.orientation[position])
-    ) {
-      positions.push(position);
-    }
-  }
+  const permutation = kpuzzle.moveToTransformation(face).transformationData.CENTERS.permutation;
+  const positions = permutation.flatMap((source, position) => Number(source) !== position ? [position] : []);
   assert.equal(positions.length, 4, `${face} must rotate exactly four 4x4 center slots`);
   CENTER_POSITIONS_BY_FACE[face] = positions;
   for (const position of positions) {
-    CENTER_FACE_BY_PIECE.set(Number(before.pieces[position]), face);
+    const piece = Number(solved.patternData.CENTERS.pieces[position]);
+    const previous = CENTER_FACE_BY_PIECE.get(piece);
+    assert.ok(previous == null || previous === face, `center piece ${piece} belongs to conflicting faces`);
+    CENTER_FACE_BY_PIECE.set(piece, face);
   }
 }
-assert.equal(CENTER_FACE_BY_PIECE.size, 24, "every 4x4 center piece must belong to one face color");
+assert.equal(CENTER_FACE_BY_PIECE.size, 6, "4x4 center orbit should expose six color identities");
 
 function crossTypeMask(face) {
   let mask = 0;
