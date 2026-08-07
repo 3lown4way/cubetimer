@@ -38,12 +38,19 @@ replace_once(
 )
 
 replace_once(
-'''        const key = compactStateKey(nextState, false);''',
-'''        // The fast pass keys only the wings. The rescue pass also keys the
-        // center permutation: two nodes with identical wings can differ in
-        // whether a later macro sequence can restore the exact Yau center
-        // snapshot, so collapsing those nodes makes the search incomplete.
-        const key = compactStateKey(nextState, centerAwareKey);''',
+'''        if (!maskContains(pairedMask, requiredTypeMask)) continue;
+        if (bitCount(pairedMask) < minPairCount) continue;
+        const candidate = evaluate({ state: nextState, path: [...node.path, actionIndex] });
+        const key = compactStateKey(nextState, false);
+        const previous = seen.get(key);''',
+'''        if (!maskContains(pairedMask, requiredTypeMask)) continue;
+        if (bitCount(pairedMask) < minPairCount) continue;
+        const candidate = evaluate({ state: nextState, path: [...node.path, actionIndex] });
+        // Only the Yau target-edge search may opt into a center-aware key.
+        // Do not touch collectSeedCandidates(): that is the standard 3-2-3
+        // reduction path and intentionally keys only the wing state.
+        const key = compactStateKey(nextState, centerAwareKey);
+        const previous = seen.get(key);''',
 'center-aware target search key',
 )
 
@@ -216,4 +223,4 @@ replace_once(
 )
 
 path.write_text(s)
-print('patched Yau cross search robustness')
+print('patched Yau cross search robustness without touching standard 3-2-3')
