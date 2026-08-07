@@ -163,4 +163,4 @@ jobs:
       - name: Validate repository diff
         run: git diff --check
 
-# Permanent contracts include former Yau Cross 3/4 failures, bounded/retryable Worker bootstrap, and human Yau grip transitions.
+# Permanent contracts include natural Yau Cross 3/4 slice cycles, protected remaining-center solving, human grip transitions, and bounded/retryable Worker bootstrap.
