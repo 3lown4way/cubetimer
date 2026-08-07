@@ -60,4 +60,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Center face slots are derived from the four CENTER positions moved by each outer face turn.
+# Center face slots are read from KPuzzle CENTER transformations, not solved-pattern deltas.
