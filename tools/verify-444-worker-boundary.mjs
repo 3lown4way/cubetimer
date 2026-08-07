@@ -29,7 +29,7 @@ const expectedStages = [
   ["centers", "Centers"],
   ["edges", "Edge Pairing"],
   ["parity", "Parity Normalization"],
-  ["threeByThree", "3x3 Stage"],
+  ["threeByThree", "3x3 CFOP"],
 ];
 for (let index = 0; index < expectedStages.length; index += 1) {
   const stage = valid.stages[index];
@@ -42,7 +42,30 @@ for (let index = 0; index < expectedStages.length; index += 1) {
 assert.equal(valid.stages[0].moveCount, valid.meta.centerMoveCount);
 assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
 assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);
-assert.equal(valid.stages[3].moveCount, valid.meta.twophaseMoveCount);
+assert.equal(valid.stages[3].moveCount, valid.meta.cfopMoveCount);
+
+const edgeSegments = valid.stages[1].segments;
+assert.ok(Array.isArray(edgeSegments) && edgeSegments.length >= 2);
+assert.equal(edgeSegments.at(-1).pairEnd, 12);
+assert.equal(
+  edgeSegments.map((stage) => stage.solution).filter(Boolean).join(" "),
+  valid.stages[1].solution,
+);
+for (let index = 1; index < edgeSegments.length; index += 1) {
+  assert.ok(edgeSegments[index].pairEnd > edgeSegments[index - 1].pairEnd);
+}
+
+const cfopSegments = valid.stages[3].segments;
+assert.deepEqual(
+  cfopSegments.map((stage) => stage.name),
+  ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],
+);
+assert.equal(
+  cfopSegments.map((stage) => stage.solution).filter(Boolean).join(" "),
+  valid.stages[3].solution,
+);
+assert.equal(valid.meta.cfopMethod, "CFOP");
+assert.equal(valid.meta.cfopStageCount, 7);
 
 assert.equal(valid.meta.apiVersion, "444-complete-v1");
 assert.equal(valid.meta.centersSolved, true);
@@ -126,11 +149,13 @@ assert.match(
 assert.match(routeSource, /workerError: errorMessage/);
 
 const solver444Source = fs.readFileSync(new URL("../solver/solver444.js", import.meta.url), "utf8");
-assert.match(solver444Source, /solveTwophaseAdaptive333FromCubie/);
+assert.match(solver444Source, /solve3x3StrictCfopFromPattern/);
+assert.match(solver444Source, /enableHumanViewpoint: false/);
+assert.match(solver444Source, /buildEdgePairingSegments/);
 assert.match(solver444Source, /verify_444_solution_json/);
 assert.match(solver444Source, /444_FINAL_VERIFICATION_FAILED/);
 assert.match(solver444Source, /fullVerificationSolved: true/);
-assert.doesNotMatch(solver444Source, /solveWithExternalSearch|reverseScramble|fallback/i);
+assert.doesNotMatch(solver444Source, /solveTwophaseAdaptive333FromCubie|solveWithExternalSearch|reverseScramble|fallback/i);
 
 const mainSource = fs.readFileSync(new URL("../main.js", import.meta.url), "utf8");
 assert.doesNotMatch(mainSource, /ensureSolver444Ready|solve444Lazy|444_NOT_IMPLEMENTED/);

@@ -10,7 +10,7 @@ const STAGE_LABELS = Object.freeze({
   centers: "센터",
   edges: "엣지 페어링",
   parity: "패리티 정규화",
-  threeByThree: "3×3 단계",
+  threeByThree: "3×3 CFOP",
 });
 
 const PROGRESS_LABELS = Object.freeze({
@@ -19,7 +19,7 @@ const PROGRESS_LABELS = Object.freeze({
   EDGES: "엣지 페어링",
   PARITY: "패리티 정규화",
   VIRTUAL_333: "가상 3×3 변환",
-  THREE_BY_THREE: "3×3 Two-Phase",
+  THREE_BY_THREE: "3×3 CFOP",
   VERIFY: "96-facelet 최종 검증",
   REDUCTION: "4×4 reduction",
 });
@@ -241,6 +241,7 @@ export function installSolver444UiActivation() {
     solverStepResetBtn.disabled = moveIndex === 0;
     solverStepPrevBtn.disabled = moveIndex === 0;
     solverStepNextBtn.disabled = moveIndex >= moves.length;
+    solverPlayBtn.disabled = moves.length === 0;
   }
 
   function setMoveIndex(nextIndex) {
@@ -273,20 +274,37 @@ export function installSolver444UiActivation() {
       .forEach((element) => element.remove());
   }
 
+  function renderStageItem(stage, { substage = false } = {}) {
+    const item = document.createElement("li");
+    item.dataset.solver444Ui = "true";
+    if (substage) {
+      item.dataset.solver444Substage = "true";
+      item.style.marginLeft = "1.25rem";
+      item.style.borderLeftWidth = "2px";
+    }
+    const title = document.createElement("strong");
+    title.textContent = STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
+    const count = document.createElement("span");
+    const moveCount = Number(stage?.moveCount) || splitMoves(stage?.solution).length;
+    const alreadyPaired = stage?.alreadyPaired === true ? " · 이미 페어링" : "";
+    count.textContent = ` ${moveCount}수${alreadyPaired}${stage?.verified === true ? " · 검증됨" : ""}`;
+    const algorithm = document.createElement("code");
+    algorithm.textContent = String(stage?.solution || "").trim() || "0수";
+    item.append(title, count, algorithm);
+    solverStageList.appendChild(item);
+  }
+
   function renderStages(stages) {
     solverStageList.textContent = "";
     for (const stage of Array.isArray(stages) ? stages : []) {
-      const item = document.createElement("li");
-      item.dataset.solver444Ui = "true";
-      const title = document.createElement("strong");
-      title.textContent = STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
-      const count = document.createElement("span");
-      const moveCount = Number(stage?.moveCount) || splitMoves(stage?.solution).length;
-      count.textContent = ` ${moveCount}수${stage?.verified === true ? " · 검증됨" : ""}`;
-      const algorithm = document.createElement("code");
-      algorithm.textContent = String(stage?.solution || "").trim() || "0수";
-      item.append(title, count, algorithm);
-      solverStageList.appendChild(item);
+      const segments = Array.isArray(stage?.segments) ? stage.segments : [];
+      const summary = segments.length
+        ? { ...stage, solution: `${segments.length}개 세부 단계` }
+        : stage;
+      renderStageItem(summary);
+      for (const segment of segments) {
+        renderStageItem(segment, { substage: true });
+      }
     }
   }
 
@@ -299,6 +317,7 @@ export function installSolver444UiActivation() {
     clearOwnedStages();
     solverVisualPanel.hidden = true;
     solverStepLabel.textContent = "0/0 수";
+    solverPlayBtn.disabled = true;
     solverCopyBtn.disabled = true;
     solverSolution.textContent = "-";
     solverMoveCount.textContent = "0 수";
@@ -330,7 +349,10 @@ export function installSolver444UiActivation() {
 
   function progressText(progress) {
     const stage = String(progress?.stage || "");
-    const label = PROGRESS_LABELS[stage] || String(progress?.stageName || stage || "4×4 탐색");
+    const baseLabel = PROGRESS_LABELS[stage] || String(progress?.stageName || stage || "4×4 탐색");
+    const label = stage === "THREE_BY_THREE" && progress?.cfopStageName
+      ? `${baseLabel} · ${progress.cfopStageName}`
+      : baseLabel;
     if (progress?.type === "444_stage_done") {
       const count = Number(progress?.moveCount);
       return Number.isFinite(count) && count > 0 ? `${label} 완료 · ${count}수` : `${label} 완료`;

@@ -72,6 +72,11 @@ assert.match(
 );
 assert.match(solver444UiSource, /puzzle: PUZZLE_ID/);
 assert.match(solver444UiSource, /experimentalSetupAlg = scramble/);
+assert.match(solver444UiSource, /threeByThree: "3×3 CFOP"/);
+assert.match(solver444UiSource, /solverPlayBtn\.disabled = moves\.length === 0/);
+assert.match(solver444UiSource, /solverPlayBtn\.disabled = true/);
+assert.match(solver444UiSource, /renderStageItem\(segment, \{ substage: true \}\)/);
+assert.match(solver444UiSource, /progress\.cfopStageName/);
 assert.match(solver444UiSource, /setThreeByThreeControlsHidden\(true\)/);
 assert.match(solver444UiSource, /findSolutionBtn\.addEventListener\("click", solveCurrent444, true\)/);
 assert.match(solver444UiSource, /event\.stopImmediatePropagation\(\)/);

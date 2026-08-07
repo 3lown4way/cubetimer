@@ -63,6 +63,178 @@ export function translate444MoveConvention(sequence) {
     .join(" ");
 }
 
+const EDGE_SLOT_PAIRS_444 = Object.freeze([
+  [8, 2], [9, 15], [5, 11], [10, 20], [21, 14], [6, 23],
+  [22, 18], [3, 4], [7, 17], [19, 13], [16, 0], [12, 1],
+]);
+const EDGE_TYPE_BY_WING_444 = (() => {
+  const edgeTypes = new Array(24).fill(-1);
+  EDGE_SLOT_PAIRS_444.forEach((pair, edgeType) => {
+    for (const wing of pair) edgeTypes[wing] = edgeType;
+  });
+  return Object.freeze(edgeTypes);
+})();
+
+function splitAlgorithm(sequence) {
+  return String(sequence || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function getPairedEdgeTypes444(pattern) {
+  const edges = pattern?.patternData?.EDGES;
+  if (!edges?.pieces || !edges?.orientation) return new Set();
+  const paired = new Set();
+  for (const [first, second] of EDGE_SLOT_PAIRS_444) {
+    const firstType = EDGE_TYPE_BY_WING_444[Number(edges.pieces[first])];
+    const secondType = EDGE_TYPE_BY_WING_444[Number(edges.pieces[second])];
+    if (
+      firstType >= 0 &&
+      firstType === secondType &&
+      Number(edges.orientation[first]) === Number(edges.orientation[second])
+    ) {
+      paired.add(firstType);
+    }
+  }
+  return paired;
+}
+
+function intersectSets(left, right) {
+  const result = new Set();
+  for (const value of left) {
+    if (right.has(value)) result.add(value);
+  }
+  return result;
+}
+
+async function buildEdgePairingSegments(publicScramble, centerSolution, edgeSolution) {
+  const edgeMoves = splitAlgorithm(edgeSolution);
+  if (!edgeMoves.length) return [];
+  const { puzzles } = await import("../vendor/cubing/puzzles/index.js");
+  const kpuzzle = await puzzles["4x4x4"].kpuzzle();
+  let pattern = kpuzzle.defaultPattern();
+  if (publicScramble) pattern = pattern.applyAlg(publicScramble);
+  if (centerSolution) pattern = pattern.applyAlg(centerSolution);
+
+  // The Rust edge solver operates in six-move macros. A locked dedge can be
+  // disturbed inside a macro and restored at its boundary, so pairing
+  // milestones must be sampled at macro boundaries rather than every move.
+  const checkpoints = [{ moveIndex: 0, paired: getPairedEdgeTypes444(pattern) }];
+  for (let index = 0; index < edgeMoves.length; index += 1) {
+    pattern = pattern.applyAlg(edgeMoves[index]);
+    const moveIndex = index + 1;
+    if (moveIndex % 6 === 0 || moveIndex === edgeMoves.length) {
+      checkpoints.push({ moveIndex, paired: getPairedEdgeTypes444(pattern) });
+    }
+  }
+  if (checkpoints.at(-1)?.paired.size !== 12) return [];
+
+  const permanentHistory = new Array(checkpoints.length);
+  let permanent = new Set(checkpoints.at(-1).paired);
+  permanentHistory[permanentHistory.length - 1] = new Set(permanent);
+  for (let index = checkpoints.length - 2; index >= 0; index -= 1) {
+    permanent = intersectSets(permanent, checkpoints[index].paired);
+    permanentHistory[index] = new Set(permanent);
+  }
+
+  const segments = [];
+  let completed = permanentHistory[0].size;
+  let moveStart = 0;
+  if (completed > 0) {
+    segments.push({
+      id: "edgePairInitial",
+      name: completed === 1 ? "Edge Pairing 1/12" : `Edge Pairing 1-${completed}/12`,
+      solution: "",
+      moveCount: 0,
+      pairStart: 1,
+      pairEnd: completed,
+      alreadyPaired: true,
+      verified: true,
+    });
+  }
+
+  for (let index = 1; index < checkpoints.length; index += 1) {
+    const nextCompleted = permanentHistory[index].size;
+    if (nextCompleted <= completed) continue;
+    const moveEnd = checkpoints[index].moveIndex;
+    const segmentMoves = edgeMoves.slice(moveStart, moveEnd);
+    const pairStart = completed + 1;
+    const pairEnd = nextCompleted;
+    segments.push({
+      id: `edgePair${pairStart}`,
+      name: pairStart === pairEnd
+        ? `Edge Pairing ${pairEnd}/12`
+        : `Edge Pairing ${pairStart}-${pairEnd}/12`,
+      solution: segmentMoves.join(" "),
+      moveCount: segmentMoves.length,
+      pairStart,
+      pairEnd,
+      alreadyPaired: false,
+      verified: true,
+    });
+    completed = nextCompleted;
+    moveStart = moveEnd;
+  }
+
+  if (completed !== 12 || !segments.length) return [];
+  if (moveStart < edgeMoves.length) {
+    const tail = edgeMoves.slice(moveStart);
+    const last = segments[segments.length - 1];
+    last.solution = [last.solution, tail.join(" ")].filter(Boolean).join(" ");
+    last.moveCount += tail.length;
+  }
+  const rebuilt = segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+  if (rebuilt !== edgeMoves.join(" ")) return [];
+  return segments;
+}
+
+function build333PatternFromCubie(solvedPattern, cubieState) {
+  const cp = Array.from(cubieState?.cp || [], Number);
+  const co = Array.from(cubieState?.co || [], Number);
+  const ep = Array.from(cubieState?.ep || [], Number);
+  const eo = Array.from(cubieState?.eo || [], Number);
+  if (cp.length !== 8 || co.length !== 8 || ep.length !== 12 || eo.length !== 12) {
+    throw new Error("INVALID_VIRTUAL_333_CUBIE_STATE");
+  }
+  const patternData = structuredClone(solvedPattern.patternData);
+  patternData.CORNERS.pieces = cp;
+  patternData.CORNERS.orientation = co;
+  patternData.EDGES.pieces = ep;
+  patternData.EDGES.orientation = eo;
+  return new solvedPattern.constructor(solvedPattern.kpuzzle, patternData);
+}
+
+function normalizeCfopStageName(name) {
+  const value = String(name || "CFOP").trim();
+  return /^Cross\b/i.test(value) ? "Cross" : value;
+}
+
+async function solveCfop333FromCubie(cubieState, onProgress, deadlineTs) {
+  const [{ getDefaultPattern }, { solve3x3StrictCfopFromPattern }] = await Promise.all([
+    import("./context.js"),
+    import("./cfop3x3.js"),
+  ]);
+  const solved333 = await getDefaultPattern("333");
+  const pattern = build333PatternFromCubie(solved333, cubieState);
+  return solve3x3StrictCfopFromPattern(pattern, {
+    mode: "strict",
+    crossColor: "D",
+    solverVersion: "v2",
+    deadlineTs,
+    enableHumanViewpoint: false,
+    enableMixedCfopStages: false,
+    onStageUpdate(progress) {
+      emitProgress(onProgress, {
+        type: "444_stage_update",
+        eventId: "444",
+        stage: "THREE_BY_THREE",
+        phase: String(progress?.type || "cfop"),
+        stageName: "3x3 CFOP",
+        cfopStageName: normalizeCfopStageName(progress?.stageName),
+        moveCount: Number(progress?.moveCount) || 0,
+      });
+    },
+  });
+}
+
 function emptyFailure(reason, status = "error", detail = null, meta = {}) {
   return {
     ok: false,
@@ -352,59 +524,84 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     type: "444_stage_start",
     eventId: "444",
     stage: "THREE_BY_THREE",
-    stageName: "3x3 Two-Phase",
+    stageName: "3x3 CFOP",
   });
 
-  let twophase;
+  let cfop;
   try {
-    const { solveTwophaseAdaptive333FromCubie } = await import("./wasmSolver.js");
-    twophase = await solveTwophaseAdaptive333FromCubie(result.meta.virtual333, {
-      deadlineTs,
-      frontierLimits: [2, 12],
-      prepareOptions: {
-        phase1MaxDepth: 13,
-        phase1NodeLimit: 0,
-      },
-      searchOptions: {
-        phase2MaxDepth: 20,
-        phase2NodeLimit: 0,
-        strictIncumbent: false,
-      },
-    });
+    cfop = await solveCfop333FromCubie(result.meta.virtual333, onProgress, deadlineTs);
   } catch (error) {
-    twophase = { ok: false, reason: "TWOPHASE_CUBIE_BRIDGE_FAILED", detail: String(error?.message || error) };
+    cfop = { ok: false, reason: "CFOP_CUBIE_BRIDGE_FAILED", detail: String(error?.message || error) };
   }
 
-  if (!twophase?.ok || !String(twophase.solution || "").trim()) {
-    const timedOut = deadlineReached(deadlineTs) || twophase?.reason === "TWOPHASE_DEADLINE_REACHED";
+  if (!cfop?.ok) {
+    const timedOut = deadlineReached(deadlineTs);
     emitProgress(onProgress, {
       type: "444_stage_fail",
       eventId: "444",
       stage: "THREE_BY_THREE",
-      reason: twophase?.reason || "444_TWOPHASE_FAILED",
+      reason: cfop?.reason || "444_CFOP_FAILED",
     });
     return {
       ...result,
       status: timedOut ? "timeout" : "partial",
-      reason: timedOut ? "444_DEADLINE_REACHED" : "444_TWOPHASE_FAILED",
-      detail: twophase?.reason || twophase?.detail || null,
+      reason: timedOut ? "444_DEADLINE_REACHED" : "444_CFOP_FAILED",
+      detail: cfop?.reason || cfop?.detail || null,
       solution: "",
       moveCount: 0,
       verified: false,
       meta: {
         ...result.meta,
-        twophaseReason: twophase?.reason || null,
+        cfopReason: cfop?.reason || null,
       },
     };
   }
 
-  const internalTwophaseSolution = translate444MoveConvention(twophase.solution);
+  const publicCfopSegments = (Array.isArray(cfop.stages) ? cfop.stages : []).map((stage, index) => ({
+    id: `cfop${index + 1}`,
+    name: normalizeCfopStageName(stage?.name),
+    solution: String(stage?.solution || "").trim(),
+    moveCount: splitAlgorithm(stage?.solution).length,
+    verified: true,
+  }));
+  const publicCfopSolution = publicCfopSegments
+    .map((stage) => stage.solution)
+    .filter(Boolean)
+    .join(" ");
+  const unsupportedCfopMove = splitAlgorithm(publicCfopSolution)
+    .find((move) => !/^[URFDLB](?:2|')?$/.test(move));
+  if (unsupportedCfopMove) {
+    return {
+      ...result,
+      status: "partial",
+      reason: "444_CFOP_UNSUPPORTED_MOVE",
+      detail: unsupportedCfopMove,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      meta: {
+        ...result.meta,
+        cfopUnsupportedMove: unsupportedCfopMove,
+      },
+    };
+  }
+
+  const internalCfopSegments = publicCfopSegments.map((stage) => ({
+    ...stage,
+    solution: translate444MoveConvention(stage.solution),
+  }));
+  const internalCfopSolution = internalCfopSegments
+    .map((stage) => stage.solution)
+    .filter(Boolean)
+    .join(" ");
   const internalThreeByThreeStage = {
     id: "threeByThree",
-    name: "3x3 Stage",
-    solution: internalTwophaseSolution,
-    moveCount: internalTwophaseSolution ? internalTwophaseSolution.split(/\s+/).length : 0,
+    name: "3x3 CFOP",
+    solution: internalCfopSolution,
+    moveCount: splitAlgorithm(internalCfopSolution).length,
     verified: false,
+    method: "CFOP",
+    segments: internalCfopSegments,
   };
   const internalCompleteStages = [...result.stages, internalThreeByThreeStage];
   const internalCompleteSolution = internalCompleteStages
@@ -439,7 +636,8 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       verified: false,
       meta: {
         ...result.meta,
-        twophaseMoveCount: internalThreeByThreeStage.moveCount,
+        cfopMoveCount: internalThreeByThreeStage.moveCount,
+        cfopMethod: "CFOP",
         fullVerificationSolved: false,
       },
     };
@@ -449,17 +647,36 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   const publicStages = internalCompleteStages.map((stage) => ({
     ...stage,
     solution: translate444MoveConvention(stage.solution),
+    segments: Array.isArray(stage.segments)
+      ? stage.segments.map((segment) => ({
+          ...segment,
+          solution: translate444MoveConvention(segment.solution),
+        }))
+      : stage.segments,
   }));
+  try {
+    const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
+    const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
+    if (publicEdgeStage) {
+      publicEdgeStage.segments = await buildEdgePairingSegments(
+        publicScramble,
+        publicCenterStage?.solution || "",
+        publicEdgeStage.solution || "",
+      );
+    }
+  } catch (error) {
+    console.warn("[444] edge pairing segmentation failed", error);
+  }
   const completeSolution = publicStages
     .map((stage) => String(stage.solution || "").trim())
     .filter(Boolean)
     .join(" ");
-  const moveCount = completeSolution ? completeSolution.split(/\s+/).filter(Boolean).length : 0;
+  const moveCount = splitAlgorithm(completeSolution).length;
   emitProgress(onProgress, {
     type: "444_stage_done",
     eventId: "444",
     stage: "THREE_BY_THREE",
-    stageName: "3x3 Stage",
+    stageName: "3x3 CFOP",
     moveCount: internalThreeByThreeStage.moveCount,
   });
   emitProgress(onProgress, {
@@ -483,10 +700,10 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     meta: {
       ...result.meta,
       apiVersion: api.version(),
-      twophaseMoveCount: internalThreeByThreeStage.moveCount,
-      twophaseNodes: Number(twophase.nodes) || 0,
-      twophasePhase1Nodes: Number(twophase.phase1Nodes) || 0,
-      twophasePhase2Nodes: Number(twophase.phase2Nodes) || 0,
+      cfopMoveCount: internalThreeByThreeStage.moveCount,
+      cfopNodes: Number(cfop.nodes) || 0,
+      cfopStageCount: internalCfopSegments.length,
+      cfopMethod: "CFOP",
       fullVerificationSolved: true,
     },
   };

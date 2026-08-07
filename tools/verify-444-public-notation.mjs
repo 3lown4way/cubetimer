@@ -52,6 +52,24 @@ for (const scramble of representativeScrambles) {
     );
   }
 
+  const edgeStage = result.stages.find((stage) => stage.id === "edges");
+  assert.ok(edgeStage?.verified, "verified Edge Pairing stage is missing");
+  assert.ok(Array.isArray(edgeStage.segments) && edgeStage.segments.length >= 2);
+  assert.equal(edgeStage.segments.at(-1).pairEnd, 12);
+  assert.equal(
+    edgeStage.segments.map((segment) => segment.solution).filter(Boolean).join(" "),
+    edgeStage.solution,
+    "edge pairing sub-stages must rebuild the verified edge solution",
+  );
+
+  const cfopStage = result.stages.find((stage) => stage.id === "threeByThree");
+  assert.equal(cfopStage?.name, "3x3 CFOP");
+  assert.deepEqual(
+    cfopStage.segments.map((stage) => stage.name),
+    ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],
+  );
+  assert.equal(result.meta.cfopMethod, "CFOP");
+
   let stagePattern = solved444.applyAlg(scramble);
   for (const stage of result.stages) {
     stagePattern = stage.solution ? stagePattern.applyAlg(stage.solution) : stagePattern;
@@ -66,4 +84,4 @@ for (const scramble of representativeScrambles) {
   );
 }
 
-console.log("4x4 public WCA notation and Centers-stage regression passed");
+console.log("4x4 public WCA notation, edge pairing detail, CFOP, and Centers regression passed");
