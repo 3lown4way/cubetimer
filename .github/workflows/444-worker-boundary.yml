@@ -6,12 +6,14 @@ on:
       - "solver444-wasm/**"
       - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/edgePairing444.js"
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
       - "tools/verify-444-public-notation.mjs"
+      - "tools/verify-444-edge-323.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
   push:
@@ -21,12 +23,14 @@ on:
       - "solver444-wasm/**"
       - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/edgePairing444.js"
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
       - "tools/verify-444-public-notation.mjs"
+      - "tools/verify-444-edge-323.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
 
@@ -75,10 +79,12 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check solver/solver444.js
+          node --check solver/edgePairing444.js
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check tools/verify-444-worker-boundary.mjs
           node --check tools/verify-444-public-notation.mjs
+          node --check tools/verify-444-edge-323.mjs
           node --check tools/compare-444-333-cubies.mjs
 
       - name: Install wasm-pack
@@ -113,6 +119,9 @@ jobs:
 
       - name: Verify public WCA notation and Centers stage
         run: node tools/verify-444-public-notation.mjs
+
+      - name: Verify human-style 3-2-3 edge pairing
+        run: node tools/verify-444-edge-323.mjs
 
       - name: Validate repository diff
         run: git diff --check
