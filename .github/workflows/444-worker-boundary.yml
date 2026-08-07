@@ -11,12 +11,15 @@ on:
       - "solver/edgePairing444.js"
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
+      - "solver/solver444UiActivation.js"
+      - "index.html"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
       - "tools/verify-444-public-notation.mjs"
       - "tools/verify-444-ll-parity.mjs"
       - "tools/verify-444-edge-323.mjs"
+      - "tools/verify-444-yau.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
   push:
@@ -31,12 +34,15 @@ on:
       - "solver/edgePairing444.js"
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
+      - "solver/solver444UiActivation.js"
+      - "index.html"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
       - "tools/verify-444-public-notation.mjs"
       - "tools/verify-444-ll-parity.mjs"
       - "tools/verify-444-edge-323.mjs"
+      - "tools/verify-444-yau.mjs"
       - "tools/compare-444-333-cubies.mjs"
       - ".github/workflows/444-worker-boundary.yml"
 
@@ -90,10 +96,12 @@ jobs:
           node --check solver/edgePairing444.js
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
+          node --check solver/solver444UiActivation.js
           node --check tools/verify-444-worker-boundary.mjs
           node --check tools/verify-444-public-notation.mjs
           node --check tools/verify-444-ll-parity.mjs
           node --check tools/verify-444-edge-323.mjs
+          node --check tools/verify-444-yau.mjs
           node --check tools/compare-444-333-cubies.mjs
 
       - name: Install wasm-pack
@@ -134,6 +142,9 @@ jobs:
 
       - name: Verify human-style 3-2-3 edge pairing
         run: node tools/verify-444-edge-323.mjs
+
+      - name: Verify Yau method order and protected cross
+        run: node tools/verify-444-yau.mjs
 
       - name: Validate repository diff
         run: git diff --check
