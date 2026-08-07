@@ -63,4 +63,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Temporary diagnostic prints physical center checkpoints for canonical F-frame Yau.
+# Rerun logical-vs-physical Yau center checkpoint diagnostics.
