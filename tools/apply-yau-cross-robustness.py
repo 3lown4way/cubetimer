@@ -94,8 +94,9 @@ replace_once(
 
 replace_once(
 '''  const maxMacros = Math.max(0, Math.min(8, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));''',
-'''  const maxMacros = Math.max(0, Math.min(YAU_TARGET_RESCUE_MAX_MACROS, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));''',
-'max macro clamp',
+'''  const maxMacros = Math.max(0, Math.min(YAU_TARGET_RESCUE_MAX_MACROS, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));
+  const enableRescue = options?.enableRescue !== false;''',
+'max macro clamp and rescue flag',
 )
 
 replace_once(
@@ -127,7 +128,7 @@ replace_once(
   );
   let searchRescueUsed = false;
   let searchMaxMacros = maxMacros;
-  if (!paired && maxMacros > 0 && !deadlineReached(deadlineTs)) {
+  if (enableRescue && !paired && maxMacros > 0 && !deadlineReached(deadlineTs)) {
     searchMaxMacros = Math.max(maxMacros, YAU_TARGET_RESCUE_MAX_MACROS);
     paired = searchTargetEdgeTypes444(
       initialState,
@@ -148,7 +149,7 @@ replace_once(
     return {
       ok: false,
       reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_TARGET_EDGES_NOT_FOUND",
-      detail: JSON.stringify({ targetCount, maxMacros, rescueMaxMacros: searchMaxMacros }),
+      detail: JSON.stringify({ targetCount, maxMacros, rescueEnabled: enableRescue, rescueMaxMacros: searchMaxMacros }),
     };
   }''',
 'target search rescue',
@@ -173,7 +174,7 @@ replace_once(
   let alignmentRescueUsed = false;
   if (alignSolved) {
     let alignment = searchOuterCrossAlignment444(finalState, targetMask, model, deadlineTs);
-    if (!alignment && !deadlineReached(deadlineTs)) {
+    if (enableRescue && !alignment && !deadlineReached(deadlineTs)) {
       alignment = searchOuterCrossAlignment444(
         finalState,
         targetMask,
@@ -189,6 +190,7 @@ replace_once(
         ok: false,
         reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_CROSS_ALIGNMENT_FAILED",
         detail: JSON.stringify({
+          rescueEnabled: enableRescue,
           primaryMaxDepth: YAU_ALIGNMENT_MAX_DEPTH,
           rescueMaxDepth: YAU_ALIGNMENT_RESCUE_MAX_DEPTH,
         }),
