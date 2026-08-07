@@ -155,9 +155,15 @@ async function verifyCase(scramble, crossColor) {
   pattern = cfop.solution ? pattern.applyAlg(cfop.solution) : pattern;
   assert.equal(isSolved(pattern), true, "Yau public stage sequence did not solve the cube");
   assert.equal(isSolved(solved.applyAlg(scramble).applyAlg(result.solution)), true);
+  return result;
 }
 
 await verifyCase("Rw U2 F' Lw D B2", "D");
 await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F");
+const crossFrameRegression = await verifyCase(
+  "Rw U' F R2 F Bw' Fw' Dw Bw Dw Uw R Bw Fw2 B2 Fw2 B Uw2 Lw Bw2 R' Lw R' L Bw U2 Bw U' Fw2 D Bw' Uw'",
+  "D",
+);
+assert.ok(Number(crossFrameRegression.meta?.yauFrameAttemptCount) >= 2, "Yau cross regression did not exercise frame selection");
 
-console.log("4x4 Yau order, protected cross, 3-2-3 edges, LL parity, and final verification passed");
+console.log("4x4 Yau order, protected cross, cross-frame retry, 3-2-3 edges, LL parity, and final verification passed");
