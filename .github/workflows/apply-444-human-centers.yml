@@ -29,6 +29,7 @@ jobs:
           python tools/apply-444-edge-323-v3.py
           python tools/apply-444-edge-323-v4.py
           python tools/apply-444-edge-323-v5.py
+          python tools/apply-444-edge-323-v6.py
           python tools/apply-444-edge-diagnostics.py
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           node --check solver/solver444.js
@@ -58,4 +59,4 @@ jobs:
           git add solver444-wasm/src/centers.rs solver444-wasm/src/api.rs solver/solver444.js solver/edgePairing444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs tools/verify-444-edge-323.mjs public/solver444-wasm
           git commit -m "Humanize 4x4 centers viewpoints and 3-2-3 banks"
           git push origin HEAD:main
-      # fixed exact 2-wing distance heuristic
+      # Next2 now builds its two dedges as separate human-style insertions
