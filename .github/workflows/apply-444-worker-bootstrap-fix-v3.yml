@@ -1,0 +1,41 @@
+name: Apply 4x4 worker bootstrap recovery v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-444-worker-bootstrap-fix-v3.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply patch
+        run: python tools/apply-444-worker-bootstrap-fix.py
+      - name: Validate
+        run: |
+          node --check solver/solver444UiActivation.js
+          node --check solver/nxnTwistyPreview.js
+          node tools/verify-444-ui-worker-bootstrap.mjs
+          node tools/verify-nxn-solver-preview.mjs
+          node tools/verify-444-worker-boundary.mjs
+          node tools/verify-444-yau.mjs
+          git diff --check
+      - name: Commit runtime fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/solver444UiActivation.js solver/nxnTwistyPreview.js tools/verify-nxn-solver-preview.mjs tools/verify-444-ui-worker-bootstrap.mjs
+          git commit -m "Recover stalled 4x4 worker bootstrap"
+          git push origin HEAD:main
