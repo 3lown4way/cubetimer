@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const ui = fs.readFileSync(new URL("../solver/solver444UiActivation.js", import.meta.url), "utf8");
+const preview = fs.readFileSync(new URL("../solver/nxnTwistyPreview.js", import.meta.url), "utf8");
+assert.match(ui, /WORKER_BOOT_TIMEOUT_MS = 8_000/);
+assert.match(ui, /workerUrl\.searchParams\.set\("v", WORKER_BUILD_TOKEN\)/);
+assert.match(ui, /workerUrl\.searchParams\.set\("reload", String\(Date\.now\(\)\)\)/);
+assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
+assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
+assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
+assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
+assert.match(preview, /solver444UiActivation\.js\?v=20260808-444-bootstrap-1/);
+console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");

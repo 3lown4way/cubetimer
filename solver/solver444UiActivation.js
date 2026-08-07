@@ -4,6 +4,9 @@ import { TwistyPlayer } from "cubing/twisty";
 const EVENT_ID = "444";
 const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
+const WORKER_BOOT_TIMEOUT_MS = 8_000;
+const WORKER_CALL_GRACE_MS = 5_000;
+const WORKER_BUILD_TOKEN = "20260808-444-bootstrap-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const STAGE_LABELS = Object.freeze({
@@ -51,6 +54,11 @@ function reasonLabel(reason) {
       return "Reduction 이후 3×3 단계의 해를 찾지 못했습니다.";
     case "444_FINAL_VERIFICATION_FAILED":
       return "생성된 수열이 96-facelet 최종 검증을 통과하지 못했습니다.";
+    case "444_WORKER_BOOT_TIMEOUT":
+      return "4×4 Worker 준비가 지연되어 새 Worker로 다시 연결하지 못했습니다.";
+    case "444_WORKER_BOOT_ERROR":
+    case "444_WORKER_MESSAGE_ERROR":
+      return "4×4 Worker를 불러오지 못했습니다. 새 버전으로 다시 연결해 주세요.";
     case "444_WORKER_FAILED":
       return "4×4 솔버 Worker 실행 중 오류가 발생했습니다.";
     case "NO_SCRAMBLE":
@@ -83,10 +91,55 @@ function copyText(text) {
   return Promise.resolve(copied);
 }
 
-function createWorkerClient() {
-  const worker = new Worker(new URL("./solverWorker.js", import.meta.url), { type: "module" });
+function createWorkerClient(forceReload = false) {
+  const workerUrl = new URL("./solverWorker.js", import.meta.url);
+  workerUrl.searchParams.set("v", WORKER_BUILD_TOKEN);
+  if (forceReload) workerUrl.searchParams.set("reload", String(Date.now()));
+  const worker = new Worker(workerUrl, { type: "module" });
   const api = wrap(worker);
   return { worker, api };
+}
+
+function withUiTimeout(promise, timeoutMs, reason) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(reason)), timeoutMs);
+    Promise.resolve(promise).then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function waitForWorkerPing(client) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      client.worker.removeEventListener("error", onError);
+      client.worker.removeEventListener("messageerror", onMessageError);
+      callback(value);
+    };
+    const onError = () => finish(reject, new Error("444_WORKER_BOOT_ERROR"));
+    const onMessageError = () => finish(reject, new Error("444_WORKER_MESSAGE_ERROR"));
+    const timer = window.setTimeout(
+      () => finish(reject, new Error("444_WORKER_BOOT_TIMEOUT")),
+      WORKER_BOOT_TIMEOUT_MS,
+    );
+    client.worker.addEventListener("error", onError);
+    client.worker.addEventListener("messageerror", onMessageError);
+    Promise.resolve(client.api.ping()).then(
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
+    );
+  });
 }
 
 export function installSolver444UiActivation() {
@@ -376,11 +429,21 @@ export function installSolver444UiActivation() {
 
   async function ensureWorker() {
     if (worker && solverApi) return solverApi;
-    const client = createWorkerClient();
-    worker = client.worker;
-    solverApi = client.api;
-    await solverApi.ping();
-    return solverApi;
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const client = createWorkerClient(attempt > 0);
+      try {
+        const pong = await waitForWorkerPing(client);
+        if (pong?.ok !== true) throw new Error("444_WORKER_BOOT_ERROR");
+        worker = client.worker;
+        solverApi = client.api;
+        return solverApi;
+      } catch (error) {
+        lastError = error;
+        client.worker.terminate();
+      }
+    }
+    throw lastError || new Error("444_WORKER_BOOT_ERROR");
   }
 
   function disposeWorker() {
@@ -411,9 +474,11 @@ export function installSolver444UiActivation() {
     try {
       const api = await ensureWorker();
       if (activeRun !== runId || !is444()) return;
+      setStatus("4×4 Worker 연결 완료 · 엔진을 초기화하고 있습니다...");
       const deadlineTs = Date.now() + SOLVE_TIMEOUT_MS;
-      const result = await api.solve(
-        {
+      const result = await withUiTimeout(
+        api.solve(
+          {
           scramble,
           eventId: EVENT_ID,
           deadlineTs,
@@ -422,10 +487,13 @@ export function installSolver444UiActivation() {
             : "D",
           method444: solver444MethodSelect?.value === "yau" ? "yau" : "reduction",
         },
-        proxy((progress) => {
-          if (activeRun !== runId || !is444()) return;
-          setStatus(progressText(progress));
-        }),
+          proxy((progress) => {
+            if (activeRun !== runId || !is444()) return;
+            setStatus(progressText(progress));
+          }),
+        ),
+        SOLVE_TIMEOUT_MS + WORKER_CALL_GRACE_MS,
+        "444_UI_SOLVE_TIMEOUT",
       );
       if (activeRun !== runId || !is444() || currentScramble() !== scramble) return;
       if (result?.ok === true && result?.verified === true && String(result.solution || "").trim()) {
@@ -435,7 +503,13 @@ export function installSolver444UiActivation() {
       }
     } catch (error) {
       if (activeRun === runId && is444()) {
-        renderFailure({ reason: "444_WORKER_FAILED", detail: error?.message || error });
+        const message = String(error?.message || error || "444_WORKER_FAILED");
+        const reason = message === "444_UI_SOLVE_TIMEOUT"
+          ? "444_DEADLINE_REACHED"
+          : message.startsWith("444_WORKER_")
+            ? message
+            : "444_WORKER_FAILED";
+        renderFailure({ reason, detail: message });
       }
       disposeWorker();
     } finally {

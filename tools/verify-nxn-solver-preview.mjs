@@ -55,16 +55,14 @@ assert.doesNotMatch(mainSource, /!isThreeByThreeFamilyEvent\(appState\.settings\
 
 // Browser-only activation must not change Node imports or timer behavior.
 assert.match(nxnSource, /typeof window !== "undefined" && typeof document !== "undefined"/);
-assert.match(nxnSource, /import\("\.\/solver444UiActivation\.js"\)/);
+assert.match(nxnSource, /import\("\.\/solver444UiActivation\.js(?:\?v=[^"]+)?"\)/);
 assert.match(nxnSource, /DOMContentLoaded/);
 
 // Standard 4x4 is routed through the existing worker and only verified complete results are exposed.
 assert.match(solver444UiSource, /const EVENT_ID = "444"/);
 assert.match(solver444UiSource, /const PUZZLE_ID = "4x4x4"/);
-assert.match(
-  solver444UiSource,
-  /new Worker\(new URL\("\.\/solverWorker\.js", import\.meta\.url\), \{ type: "module" \}\)/,
-);
+assert.match(solver444UiSource, /const workerUrl = new URL\("\.\/solverWorker\.js", import\.meta\.url\)/);
+assert.match(solver444UiSource, /new Worker\(workerUrl, \{ type: "module" \}\)/);
 assert.match(solver444UiSource, /eventId: EVENT_ID/);
 assert.match(
   solver444UiSource,
