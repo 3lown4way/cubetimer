@@ -29,6 +29,7 @@ jobs:
           python tools/apply-yau-fix3.py
           python tools/apply-yau-fix4.py
           python tools/apply-yau-fix5.py
+          python tools/apply-yau-fix6.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
@@ -53,4 +54,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Retry with all six pairing frames and Yau-specific search depths.
+# Yau final 9→10 edge setup may use two center-preserving slice macros.
