@@ -53,4 +53,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Retry after robust Yau final-setup patch.
+# Retry with all six pairing frames and Yau-specific search depths.
