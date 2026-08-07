@@ -407,6 +407,48 @@ function buildHumanCenterPresentation444(centerStage, phaseMoveCounts, crossColo
   return humanizeAbsoluteSegments444(segments, [firstCandidates, oppositeCandidates, remainingCandidates]);
 }
 
+function buildHumanYauSetupPresentation444(segments, crossColor) {
+  if (!Array.isArray(segments) || segments.length < 5) return null;
+  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+  const opposite = OPPOSITE_FACE_444[normalizedCross];
+
+  // Human Yau grip sequence:
+  // 1) build the first center on U,
+  // 2) flip so the first center is D while building its opposite on U,
+  // 3) hold the cross center on L for Cross 3/4 and the last four centers,
+  // 4) put the cross on D before Cross 4/4 and the remaining edge stage.
+  const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+    (entry) => entry.map.U === normalizedCross,
+  );
+  const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+  );
+  const crossLeftCandidates = VIEW_ORIENTATIONS_444.filter(
+    (entry) => entry.map.L === normalizedCross && entry.map.R === opposite,
+  );
+  const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
+    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+  );
+
+  const candidateSets = segments.map((_, index) => {
+    if (index === 0) return firstCenterCandidates;
+    if (index === 1) return oppositeCenterCandidates;
+    if (index === 2 || index === 3) return crossLeftCandidates;
+    return crossDownCandidates;
+  });
+  return humanizeAbsoluteSegments444(segments, candidateSets);
+}
+
+function buildHumanYauEdgePresentation444(segments, crossColor) {
+  if (!Array.isArray(segments) || !segments.length) return null;
+  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+  const opposite = OPPOSITE_FACE_444[normalizedCross];
+  const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
+    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+  );
+  return humanizeAbsoluteSegments444(segments, segments.map(() => crossDownCandidates));
+}
+
 function buildHumanYawPresentation444(segments) {
   if (!Array.isArray(segments) || !segments.length) return null;
   const yawCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === "U" && entry.map.D === "D");
@@ -1906,10 +1948,22 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   const rotationlessPublicStages = structuredClone(publicStages);
   let humanViewpointApplied = false;
   let viewpointRotationCount = 0;
+  let yauHumanGripApplied = false;
+  let yauViewpointRotationCount = 0;
   try {
     const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
     const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
     const publicCfopStage = publicStages.find((stage) => stage?.id === "threeByThree");
+
+    const yauSetupHuman = publicCenterStage?.method === "Yau" && publicCenterStage?.segments?.length
+      ? buildHumanYauSetupPresentation444(publicCenterStage.segments, crossColor)
+      : null;
+    if (yauSetupHuman) {
+      publicCenterStage.segments = yauSetupHuman.segments;
+      publicCenterStage.solution = yauSetupHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+      viewpointRotationCount += yauSetupHuman.rotationCount;
+      yauViewpointRotationCount += yauSetupHuman.rotationCount;
+    }
 
     const centerHuman = publicCenterStage && publicCenterStage.method !== "Yau"
       ? buildHumanCenterPresentation444(publicCenterStage, result.meta?.centerPhaseMoveCounts, crossColor)
@@ -1921,13 +1975,17 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       viewpointRotationCount += centerHuman.rotationCount;
     }
 
+    const isYauEdgeStage = String(publicEdgeStage?.method || "").startsWith("Yau");
     const edgeHuman = publicEdgeStage?.segments?.length
-      ? buildHumanYawPresentation444(publicEdgeStage.segments)
+      ? isYauEdgeStage
+        ? buildHumanYauEdgePresentation444(publicEdgeStage.segments, crossColor)
+        : buildHumanYawPresentation444(publicEdgeStage.segments)
       : null;
     if (edgeHuman) {
       publicEdgeStage.segments = edgeHuman.segments;
       publicEdgeStage.solution = edgeHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
       viewpointRotationCount += edgeHuman.rotationCount;
+      if (isYauEdgeStage) yauViewpointRotationCount += edgeHuman.rotationCount;
     }
 
     const cfopHuman = publicCfopStage?.segments?.length
@@ -1944,12 +2002,17 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     if (!humanViewpointApplied) {
       publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
       viewpointRotationCount = 0;
+      yauViewpointRotationCount = 0;
+    } else if (result.meta?.method444 === "yau" && yauViewpointRotationCount > 0) {
+      yauHumanGripApplied = true;
     }
   } catch (error) {
     console.warn("[444] human viewpoint presentation failed", error);
     publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
     viewpointRotationCount = 0;
+    yauViewpointRotationCount = 0;
     humanViewpointApplied = false;
+    yauHumanGripApplied = false;
   }
 
   const completeSolution = publicStages
@@ -2002,6 +2065,8 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       method444: result.meta?.method444 === "yau" ? "yau" : method444,
       humanViewpointApplied,
       viewpointRotationCount,
+      yauHumanGripApplied,
+      yauViewpointRotationCount,
       fullVerificationSolved: true,
     },
   };

@@ -88,6 +88,26 @@ function allCentersSolved(pattern) {
   return FACES.every((face) => faceCentersSolved(pattern, face));
 }
 
+function centerColorGroupedSomewhere(pattern, color) {
+  const centers = pattern.patternData.CENTERS;
+  return FACES.some((face) => CENTER_POSITIONS_BY_FACE[face].every(
+    (position) => CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])) === color,
+  ));
+}
+
+function allCentersGrouped(pattern) {
+  const centers = pattern.patternData.CENTERS;
+  const groupedColors = [];
+  for (const face of FACES) {
+    const colors = new Set(CENTER_POSITIONS_BY_FACE[face].map(
+      (position) => CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])),
+    ));
+    if (colors.size !== 1) return false;
+    groupedColors.push([...colors][0]);
+  }
+  return new Set(groupedColors).size === 6;
+}
+
 function isSolved(pattern) {
   return pattern.experimentalIsSolved({ ignorePuzzleOrientation: false });
 }
@@ -103,6 +123,10 @@ async function verifyCase(scramble, crossColor) {
   assert.equal(result.meta.method444, "yau");
   assert.equal(result.meta.yauAttempted, true);
   assert.equal(result.meta.yauFallbackReason, null);
+  assert.equal(result.meta.humanViewpointApplied, true);
+  assert.equal(result.meta.yauHumanGripApplied, true);
+  assert.ok(Number(result.meta.yauViewpointRotationCount) >= 3, "Yau human grip did not reorient enough between method phases");
+  assert.ok(Number(result.meta.yauViewpointRotationCount) <= 12, "Yau human grip inserted excessive cube rotations");
   assert.equal(result.stages.length, 3);
 
   const setup = result.stages[0];
@@ -117,18 +141,22 @@ async function verifyCase(scramble, crossColor) {
     "Yau · Cross Edge 4/4",
   ]);
   assert.equal(setup.segments.map((segment) => segment.solution).filter(Boolean).join(" "), setup.solution);
+  assert.ok(Number(setup.segments[1].viewpointRotations) >= 1, "Yau opposite center did not flip the first center down");
+  assert.ok(Number(setup.segments[2].viewpointRotations) >= 1, "Yau Cross 3/4 did not regrip with the cross center on the side");
+  assert.ok(Number(setup.segments[4].viewpointRotations) >= 1, "Yau Cross 4/4 did not return the cross to the bottom");
 
   const targetMask = crossTypeMask(crossColor);
   let pattern = solved.applyAlg(scramble);
   pattern = setup.segments[0].solution ? pattern.applyAlg(setup.segments[0].solution) : pattern;
-  assert.equal(faceCentersSolved(pattern, crossColor), true, "first Yau center was not solved first");
+  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not solved first");
   pattern = setup.segments[1].solution ? pattern.applyAlg(setup.segments[1].solution) : pattern;
-  assert.equal(faceCentersSolved(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
+  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not preserved");
+  assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
   pattern = setup.segments[2].solution ? pattern.applyAlg(setup.segments[2].solution) : pattern;
   assert.ok(bitCount(pairedTypeMask(pattern) & targetMask) >= 3, "Yau Cross 3/4 did not pair three cross dedges");
   const cross3Mask = pairedTypeMask(pattern) & targetMask;
   pattern = setup.segments[3].solution ? pattern.applyAlg(setup.segments[3].solution) : pattern;
-  assert.equal(allCentersSolved(pattern), true, "Yau remaining centers did not finish all centers");
+  assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
   assert.equal((pairedTypeMask(pattern) & cross3Mask), cross3Mask, "remaining centers broke a protected Yau cross dedge");
   pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
