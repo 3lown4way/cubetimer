@@ -35,6 +35,7 @@ jobs:
           python tools/apply-yau-fix9.py
           python tools/apply-yau-fix10.py
           python tools/apply-yau-fix11.py
+          python tools/apply-yau-fix12.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
@@ -59,4 +60,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Yau target search tracks center permutations instead of treating partial centers as fixed.
+# Yau Next2 may reshuffle non-cross banks while the four cross dedges stay protected.
