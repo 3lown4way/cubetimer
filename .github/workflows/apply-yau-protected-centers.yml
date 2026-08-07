@@ -28,7 +28,9 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Apply protected Yau patch
-        run: python tools/apply-yau-protected-centers.py
+        run: |
+          python tools/apply-yau-protected-centers.py
+          sed -i 's/next_distance <= remaining - 1/next_distance < remaining/g' solver444-wasm/src/centers.rs
 
       - name: Format patched Rust
         run: cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
