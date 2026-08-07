@@ -5,6 +5,12 @@ const EDGE_SLOT_PAIRS = [
   [8, 2], [9, 15], [5, 11], [10, 20], [21, 14], [6, 23],
   [22, 18], [3, 4], [7, 17], [19, 13], [16, 0], [12, 1],
 ];
+const EDGE_TYPE_BY_WING = (() => {
+  const output = new Uint8Array(24);
+  output.fill(255);
+  EDGE_SLOT_PAIRS.forEach((pair, type) => pair.forEach((wing) => { output[wing] = type; }));
+  return output;
+})();
 const D_CROSS_TYPES = new Set([4, 5, 6, 7]);
 const ALL_MOVES = [..."URFDLB"].flatMap((face) => [face, `${face}'`, `${face}2`, `${face}w`, `${face}w'`, `${face}w2`]);
 
@@ -25,13 +31,10 @@ function centersOnFacesSolved(pattern, faces) {
 function pairedTypes(pattern) {
   const edges = pattern.patternData.EDGES;
   const output = new Set();
-  for (let type = 0; type < EDGE_SLOT_PAIRS.length; type++) {
-    const [a, b] = EDGE_SLOT_PAIRS[type];
-    const pa = edges.pieces[a];
-    const pb = edges.pieces[b];
-    const ta = EDGE_SLOT_PAIRS.findIndex((pair) => pair.includes(pa));
-    const tb = EDGE_SLOT_PAIRS.findIndex((pair) => pair.includes(pb));
-    if (ta === type && tb === type && edges.orientation[a] === edges.orientation[b]) output.add(type);
+  for (const [a, b] of EDGE_SLOT_PAIRS) {
+    const ta = EDGE_TYPE_BY_WING[Number(edges.pieces[a])];
+    const tb = EDGE_TYPE_BY_WING[Number(edges.pieces[b])];
+    if (ta !== 255 && ta === tb && Number(edges.orientation[a]) === Number(edges.orientation[b])) output.add(ta);
   }
   return output;
 }
