@@ -79,6 +79,190 @@ function splitAlgorithm(sequence) {
   return String(sequence || "").trim().split(/\s+/).filter(Boolean);
 }
 
+const CFOP_444_IDENTITY_FACE_MAP = Object.freeze({
+  U: "U", R: "R", F: "F", D: "D", L: "L", B: "B",
+});
+const CFOP_444_ROTATION_FACE_MAP = Object.freeze({
+  x: Object.freeze({ U: "F", R: "R", F: "D", D: "B", L: "L", B: "U" }),
+  y: Object.freeze({ U: "U", R: "B", F: "R", D: "D", L: "F", B: "L" }),
+  z: Object.freeze({ U: "L", R: "U", F: "F", D: "R", L: "D", B: "B" }),
+});
+const CFOP_444_SLICE_EXPANSIONS = Object.freeze({
+  M: Object.freeze(["L'", "R", "x'"]),
+  E: Object.freeze(["D'", "U", "y'"]),
+  S: Object.freeze(["F'", "B", "z"]),
+});
+const CFOP_444_WIDE_EXPANSIONS = Object.freeze({
+  R: Object.freeze(["R", "M'"]),
+  L: Object.freeze(["L", "M"]),
+  U: Object.freeze(["U", "E'"]),
+  D: Object.freeze(["D", "E"]),
+  F: Object.freeze(["F", "S"]),
+  B: Object.freeze(["B", "S'"]),
+});
+
+function cfop444TurnAmount(suffix) {
+  const value = String(suffix || "");
+  if (value.startsWith("2")) return 2;
+  if (value === "'") return 3;
+  return 1;
+}
+
+function cfop444FormatTurn(face, amount) {
+  const normalized = ((Number(amount) % 4) + 4) % 4;
+  if (!normalized) return "";
+  if (normalized === 1) return face;
+  if (normalized === 2) return `${face}2`;
+  return `${face}'`;
+}
+
+function cfop444InvertToken(token) {
+  const match = /^([A-Za-z]+)(2'?|')?$/.exec(String(token || "").trim());
+  if (!match) return null;
+  const amount = cfop444TurnAmount(match[2]);
+  return cfop444FormatTurn(match[1], 4 - amount);
+}
+
+function cfop444PowerTokens(baseTokens, amount) {
+  const normalized = ((Number(amount) % 4) + 4) % 4;
+  if (normalized === 0) return [];
+  if (normalized === 1) return [...baseTokens];
+  if (normalized === 2) return [...baseTokens, ...baseTokens];
+  const inverse = [];
+  for (let index = baseTokens.length - 1; index >= 0; index -= 1) {
+    const token = cfop444InvertToken(baseTokens[index]);
+    if (!token) return null;
+    inverse.push(token);
+  }
+  return inverse;
+}
+
+function cfop444ComposeFaceMaps(left, right) {
+  const composed = {};
+  for (const face of Object.keys(CFOP_444_IDENTITY_FACE_MAP)) {
+    composed[face] = left[right[face]];
+  }
+  return composed;
+}
+
+function cfop444RotationMap(axis, amount) {
+  let result = { ...CFOP_444_IDENTITY_FACE_MAP };
+  const quarter = CFOP_444_ROTATION_FACE_MAP[axis];
+  if (!quarter) return null;
+  for (let turn = 0; turn < amount; turn += 1) {
+    result = cfop444ComposeFaceMaps(result, quarter);
+  }
+  return result;
+}
+
+function simplifyCfop444OuterMoves(moves) {
+  const simplified = [];
+  for (const rawMove of moves) {
+    const match = /^([URFDLB])(2|')?$/.exec(String(rawMove || "").trim());
+    if (!match) return null;
+    const face = match[1];
+    const amount = cfop444TurnAmount(match[2]);
+    const previous = simplified.at(-1);
+    const previousMatch = previous ? /^([URFDLB])(2|')?$/.exec(previous) : null;
+    if (!previousMatch || previousMatch[1] !== face) {
+      simplified.push(cfop444FormatTurn(face, amount));
+      continue;
+    }
+    simplified.pop();
+    const combined = (cfop444TurnAmount(previousMatch[2]) + amount) % 4;
+    const merged = cfop444FormatTurn(face, combined);
+    if (merged) simplified.push(merged);
+  }
+  return simplified;
+}
+
+function compileCfopSegmentsFor444(segments) {
+  let faceMap = { ...CFOP_444_IDENTITY_FACE_MAP };
+  const compiledSegments = [];
+  let unsupportedMove = null;
+
+  const processToken = (rawToken, output) => {
+    const token = String(rawToken || "").trim();
+    if (!token) return true;
+
+    let match = /^([xyzXYZ])(2'?|')?$/.exec(token);
+    if (match) {
+      const axis = match[1].toLowerCase();
+      const rotation = cfop444RotationMap(axis, cfop444TurnAmount(match[2]));
+      if (!rotation) return false;
+      faceMap = cfop444ComposeFaceMaps(faceMap, rotation);
+      return true;
+    }
+
+    match = /^([MESmes])(2'?|')?$/.exec(token);
+    if (match) {
+      const base = CFOP_444_SLICE_EXPANSIONS[match[1].toUpperCase()];
+      const expanded = cfop444PowerTokens(base, cfop444TurnAmount(match[2]));
+      if (!expanded) return false;
+      return expanded.every((expandedToken) => processToken(expandedToken, output));
+    }
+
+    match = /^([URFDLB])(w)?(2'?|')?$/.exec(token);
+    if (match?.[2]) {
+      const base = CFOP_444_WIDE_EXPANSIONS[match[1]];
+      const expanded = cfop444PowerTokens(base, cfop444TurnAmount(match[3]));
+      if (!expanded) return false;
+      return expanded.every((expandedToken) => processToken(expandedToken, output));
+    }
+
+    if (!match) {
+      const lowerWide = /^([urfdlb])(2'?|')?$/.exec(token);
+      if (lowerWide) {
+        const base = CFOP_444_WIDE_EXPANSIONS[lowerWide[1].toUpperCase()];
+        const expanded = cfop444PowerTokens(base, cfop444TurnAmount(lowerWide[2]));
+        if (!expanded) return false;
+        return expanded.every((expandedToken) => processToken(expandedToken, output));
+      }
+      unsupportedMove = token;
+      return false;
+    }
+
+    const mappedFace = faceMap[match[1]];
+    if (!mappedFace) {
+      unsupportedMove = token;
+      return false;
+    }
+    output.push(cfop444FormatTurn(mappedFace, cfop444TurnAmount(match[3])));
+    return true;
+  };
+
+  for (const stage of Array.isArray(segments) ? segments : []) {
+    const output = [];
+    for (const move of splitAlgorithm(stage?.solution)) {
+      if (!processToken(move, output)) {
+        return { ok: false, reason: "unsupported_move", detail: unsupportedMove || move, segments: [] };
+      }
+    }
+    const simplified = simplifyCfop444OuterMoves(output);
+    if (!simplified) {
+      return { ok: false, reason: "compile_failed", detail: stage?.name || stage?.id || null, segments: [] };
+    }
+    compiledSegments.push({
+      ...stage,
+      solution: simplified.join(" "),
+      moveCount: simplified.length,
+    });
+  }
+
+  const frameRestored = Object.keys(CFOP_444_IDENTITY_FACE_MAP)
+    .every((face) => faceMap[face] === face);
+  if (!frameRestored) {
+    return {
+      ok: false,
+      reason: "frame_not_restored",
+      detail: JSON.stringify(faceMap),
+      segments: [],
+    };
+  }
+
+  return { ok: true, reason: null, detail: null, segments: compiledSegments };
+}
+
 function getPairedEdgeTypes444(pattern) {
   const edges = pattern?.patternData?.EDGES;
   if (!edges?.pieces || !edges?.orientation) return new Set();
@@ -557,34 +741,32 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     };
   }
 
-  const publicCfopSegments = (Array.isArray(cfop.stages) ? cfop.stages : []).map((stage, index) => ({
+  const rawPublicCfopSegments = (Array.isArray(cfop.stages) ? cfop.stages : []).map((stage, index) => ({
     id: `cfop${index + 1}`,
     name: normalizeCfopStageName(stage?.name),
     solution: String(stage?.solution || "").trim(),
     moveCount: splitAlgorithm(stage?.solution).length,
     verified: true,
   }));
-  const publicCfopSolution = publicCfopSegments
-    .map((stage) => stage.solution)
-    .filter(Boolean)
-    .join(" ");
-  const unsupportedCfopMove = splitAlgorithm(publicCfopSolution)
-    .find((move) => !/^[URFDLB](?:2|')?$/.test(move));
-  if (unsupportedCfopMove) {
+  const compiledCfop = compileCfopSegmentsFor444(rawPublicCfopSegments);
+  if (!compiledCfop.ok) {
+    const unsupported = compiledCfop.reason === "unsupported_move";
     return {
       ...result,
       status: "partial",
-      reason: "444_CFOP_UNSUPPORTED_MOVE",
-      detail: unsupportedCfopMove,
+      reason: unsupported ? "444_CFOP_UNSUPPORTED_MOVE" : "444_CFOP_FRAME_NOT_RESTORED",
+      detail: compiledCfop.detail || null,
       solution: "",
       moveCount: 0,
       verified: false,
       meta: {
         ...result.meta,
-        cfopUnsupportedMove: unsupportedCfopMove,
+        cfopCompileReason: compiledCfop.reason,
+        cfopUnsupportedMove: unsupported ? compiledCfop.detail || null : null,
       },
     };
   }
+  const publicCfopSegments = compiledCfop.segments;
 
   const internalCfopSegments = publicCfopSegments.map((stage) => ({
     ...stage,

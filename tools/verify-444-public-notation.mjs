@@ -9,6 +9,8 @@ import {
 const representativeScrambles = [
   "Rw U2 F' Lw D B2",
   "Rw U2 F2 Rw' D2 Lw2 B2 U' Fw R2 Uw' B' Rw2 D F2 Lw' U2 B2 Dw R' Fw2 U L2 Bw' D2 Rw U' F2 Dw2 Lw B U2 R2 Fw' D' L2 Uw2 B2 Rw'",
+  // Regression for an OLL where the CFOP database chooses an M-slice algorithm.
+  "L' U' F' D' L U2 F B R B2 D' R2 D' R2 L2 U B2 U F2 D2 Fw2 Uw2 F' L' Fw2 U2 F R' B F2 R2 F Uw Rw2 L' Uw B U2 F' U2 Rw Uw' L D' R",
 ];
 
 assert.equal(
@@ -69,6 +71,11 @@ for (const scramble of representativeScrambles) {
     ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],
   );
   assert.equal(result.meta.cfopMethod, "CFOP");
+  for (const segment of cfopStage.segments) {
+    for (const move of String(segment.solution || "").trim().split(/\s+/).filter(Boolean)) {
+      assert.match(move, /^[URFDLB](?:2|')?$/, `4x4 CFOP emitted unsupported move ${move}`);
+    }
+  }
 
   let stagePattern = solved444.applyAlg(scramble);
   for (const stage of result.stages) {
