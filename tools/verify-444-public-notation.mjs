@@ -8,7 +8,10 @@ import {
 
 const representativeScrambles = [
   "Rw U2 F' Lw D B2",
-  "Rw U2 F2 Rw' D2 Lw2 B2 U' Fw R2 Uw' B' Rw2 D F2 Lw' U2 B2 Dw R' Fw2 U L2 Bw' D2 Rw U' F2 Dw2 Lw B U2 R2 Fw' D' L2 Uw2 B2 Rw'",
+  // Medium WCA-style public-notation coverage. The deliberately difficult
+  // long edge state lives in verify-444-edge-323.mjs so we do not solve that
+  // same expensive regression twice in one workflow.
+  "Rw U2 F2 Lw' D R2 Fw U' B2 L2 Uw F' Rw2 D2 Bw' U L2 Fw2 R' D",
   // Regression for an OLL where the CFOP database chooses an M-slice algorithm.
   // Keep this case in the GitHub contract so slice-move compilation cannot regress.
   "L' U' F' D' L U2 F B R B2 D' R2 D' R2 L2 U B2 U F2 D2 Fw2 Uw2 F' L' Fw2 U2 F R' B F2 R2 F Uw Rw2 L' Uw B U2 F' U2 Rw Uw' L D' R",
