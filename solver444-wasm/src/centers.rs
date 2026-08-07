@@ -645,6 +645,7 @@ fn descend_single(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn descend_macro_single(
     state: &mut Cube444,
     output: &mut Vec<Move444>,
