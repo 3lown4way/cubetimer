@@ -126,4 +126,4 @@ jobs:
       - name: Validate repository diff
         run: git diff --check
 
-# Final contract retrigger after the narrow center-search clippy allowance.
+# Final contract retrigger after synchronizing the checked-in 4x4 browser WASM.
