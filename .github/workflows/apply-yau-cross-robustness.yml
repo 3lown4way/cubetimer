@@ -80,6 +80,7 @@ jobs:
               detail: result.detail,
               frameSpin: result.meta?.yauFrameSpin || null,
               frameAttempts: result.meta?.yauFrameAttemptCount || 0,
+              probePasses: result.meta?.yauFrameProbePassCount || 0,
               attempts: result.meta?.yauFrameAttempts || [],
               scramble,
             };
@@ -103,5 +104,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add solver/edgePairing444.js solver/solver444.js
-          git commit -m "Retry Yau across cross-axis frames"
+          git commit -m "Probe Yau frames before full solve"
           git push origin HEAD:main
+
+# Probe Cross 4/4 before paying for full Yau + CFOP on a frame.
