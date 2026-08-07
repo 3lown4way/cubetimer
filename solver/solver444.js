@@ -1088,36 +1088,17 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     });
   }
 
-  const parityStage = Array.isArray(result.stages)
+  const reductionParityStage = Array.isArray(result.stages)
     ? result.stages.find((stage) => stage?.id === "parity" && stage?.verified === true)
     : null;
-  if (parityStage && result.meta?.parityNormalized === true) {
-    emitProgress(onProgress, {
-      type: "444_stage_done",
-      eventId: "444",
-      stage: "PARITY",
-      stageName: "Parity Normalization",
-      moveCount: Number(parityStage.moveCount) || 0,
-      ollParityDetected: result.meta.ollParityDetected === true,
-      pllParityDetected: result.meta.pllParityDetected === true,
-    });
-  }
-
-  if (result.meta?.virtual333Ready === true && result.meta?.virtual333) {
-    emitProgress(onProgress, {
-      type: "444_stage_done",
-      eventId: "444",
-      stage: "VIRTUAL_333",
-      stageName: "Virtual 3x3",
-      cubieState: result.meta.virtual333,
-    });
-  }
 
   if (
     result.status !== "partial" ||
     result.reason !== "444_REDUCTION_INCOMPLETE" ||
     result.meta?.virtual333Ready !== true ||
-    !result.meta?.virtual333
+    !result.meta?.virtual333 ||
+    !centerStage ||
+    !edgeStage
   ) {
     emitProgress(onProgress, {
       type: result.ok ? "444_stage_done" : "444_stage_fail",
@@ -1133,84 +1114,83 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     type: "444_stage_start",
     eventId: "444",
     stage: "THREE_BY_THREE",
-    stageName: "3x3 CFOP",
+    stageName: "3x3 CFOP · LL parity",
   });
 
-  let cfop;
+  let ll;
   try {
-    cfop = await solveCfop333FromCubie(result.meta.virtual333, onProgress, deadlineTs, crossColor);
+    const { solveLlDeferred444 } = await import("./llParity444.js");
+    ll = await solveLlDeferred444({
+      scramble: publicScramble,
+      centerSolution: translate444MoveConvention(centerStage.solution || ""),
+      edgeSolution: translate444MoveConvention(edgeStage.solution || ""),
+      crossColor,
+      deadlineTs,
+      onProgress(progress) {
+        emitProgress(onProgress, {
+          type: "444_stage_update",
+          eventId: "444",
+          stage: "THREE_BY_THREE",
+          phase: "ll",
+          stageName: "3x3 CFOP · LL parity",
+          cfopStageName: String(progress?.stageName || "LL"),
+        });
+      },
+    });
   } catch (error) {
-    cfop = { ok: false, reason: "CFOP_CUBIE_BRIDGE_FAILED", detail: String(error?.message || error) };
+    ll = { ok: false, reason: "444_LL_PARITY_BRIDGE_FAILED", detail: String(error?.message || error) };
   }
 
-  if (!cfop?.ok) {
+  if (!ll?.ok) {
     const timedOut = deadlineReached(deadlineTs);
     emitProgress(onProgress, {
       type: "444_stage_fail",
       eventId: "444",
       stage: "THREE_BY_THREE",
-      reason: cfop?.reason || "444_CFOP_FAILED",
+      reason: ll?.reason || "444_LL_PARITY_FAILED",
     });
     return {
       ...result,
       status: timedOut ? "timeout" : "partial",
-      reason: timedOut ? "444_DEADLINE_REACHED" : "444_CFOP_FAILED",
-      detail: cfop?.reason || cfop?.detail || null,
+      reason: timedOut ? "444_DEADLINE_REACHED" : "444_LL_PARITY_FAILED",
+      detail: ll?.reason || ll?.detail || null,
       solution: "",
       moveCount: 0,
       verified: false,
       meta: {
         ...result.meta,
-        cfopReason: cfop?.reason || null,
+        llParityReason: ll?.reason || null,
+        parityHandledAt: "LL",
       },
     };
   }
 
-  const rawPublicCfopSegments = (Array.isArray(cfop.stages) ? cfop.stages : []).map((stage, index) => ({
-    id: `cfop${index + 1}`,
+  const publicLlSegments = (Array.isArray(ll.segments) ? ll.segments : []).map((stage, index) => ({
+    ...stage,
+    id: stage?.id || `cfop${index + 1}`,
     name: normalizeCfopStageName(stage?.name),
     solution: String(stage?.solution || "").trim(),
     moveCount: splitAlgorithm(stage?.solution).length,
     verified: true,
   }));
-  const compiledCfop = compileCfopSegmentsFor444(rawPublicCfopSegments);
-  if (!compiledCfop.ok) {
-    const unsupported = compiledCfop.reason === "unsupported_move";
-    return {
-      ...result,
-      status: "partial",
-      reason: unsupported ? "444_CFOP_UNSUPPORTED_MOVE" : "444_CFOP_FRAME_NOT_RESTORED",
-      detail: compiledCfop.detail || null,
-      solution: "",
-      moveCount: 0,
-      verified: false,
-      meta: {
-        ...result.meta,
-        cfopCompileReason: compiledCfop.reason,
-        cfopUnsupportedMove: unsupported ? compiledCfop.detail || null : null,
-      },
-    };
-  }
-  const publicCfopSegments = compiledCfop.segments;
-
-  const internalCfopSegments = publicCfopSegments.map((stage) => ({
+  const internalLlSegments = publicLlSegments.map((stage) => ({
     ...stage,
     solution: translate444MoveConvention(stage.solution),
   }));
-  const internalCfopSolution = internalCfopSegments
+  const internalThreeByThreeSolution = internalLlSegments
     .map((stage) => stage.solution)
     .filter(Boolean)
     .join(" ");
   const internalThreeByThreeStage = {
     id: "threeByThree",
     name: "3x3 CFOP",
-    solution: internalCfopSolution,
-    moveCount: splitAlgorithm(internalCfopSolution).length,
+    solution: internalThreeByThreeSolution,
+    moveCount: splitAlgorithm(internalThreeByThreeSolution).length,
     verified: false,
-    method: "CFOP",
-    segments: internalCfopSegments,
+    method: "CFOP · LL Parity",
+    segments: internalLlSegments,
   };
-  const internalCompleteStages = [...result.stages, internalThreeByThreeStage];
+  const internalCompleteStages = [centerStage, edgeStage, internalThreeByThreeStage];
   const internalCompleteSolution = internalCompleteStages
     .map((stage) => String(stage.solution || "").trim())
     .filter(Boolean)
@@ -1243,8 +1223,10 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       verified: false,
       meta: {
         ...result.meta,
-        cfopMoveCount: internalThreeByThreeStage.moveCount,
-        cfopMethod: "CFOP",
+        cfopMoveCount: Number(ll.cfopMoveCount) || 0,
+        threeByThreeMoveCount: internalThreeByThreeStage.moveCount,
+        parityMoveCount: Number(ll.parityMoveCount) || 0,
+        parityHandledAt: "LL",
         fullVerificationSolved: false,
       },
     };
@@ -1357,10 +1339,19 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     meta: {
       ...result.meta,
       apiVersion: api.version(),
-      cfopMoveCount: internalThreeByThreeStage.moveCount,
-      cfopNodes: Number(cfop.nodes) || 0,
-      cfopStageCount: internalCfopSegments.length,
+      cfopMoveCount: Number(ll.cfopMoveCount) || 0,
+      threeByThreeMoveCount: internalThreeByThreeStage.moveCount,
+      parityMoveCount: Number(ll.parityMoveCount) || 0,
+      reductionParityMoveCount: Number(reductionParityStage?.moveCount) || 0,
+      cfopNodes: Number(ll.nodes) || 0,
+      cfopStageCount: internalLlSegments.filter((stage) => stage?.parity !== true).length,
+      llStageCount: internalLlSegments.length,
       cfopMethod: "CFOP",
+      parityHandledAt: "LL",
+      ollParityDetected: ll.ollParityDetected === true,
+      pllParityDetected: ll.pllParityDetected === true,
+      reductionOllParityDetected: result.meta?.ollParityDetected === true,
+      reductionPllParityDetected: result.meta?.pllParityDetected === true,
       crossColor,
       humanViewpointApplied,
       viewpointRotationCount,

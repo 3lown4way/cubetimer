@@ -45,7 +45,7 @@ for (const scramble of representativeScrambles) {
   const result = await solve444(scramble, null, { deadlineTs: Date.now() + 60_000 });
   assert.equal(result.ok, true, `solver failed for ${scramble}: ${result.reason}`);
   assert.equal(result.verified, true, `unverified result for ${scramble}`);
-  assert.equal(result.stages.length, 4);
+  assert.equal(result.stages.length, 3);
 
   const centerStage = result.stages.find((stage) => stage.id === "centers");
   assert.ok(centerStage?.verified, "verified Centers stage is missing");
@@ -76,14 +76,24 @@ for (const scramble of representativeScrambles) {
 
   const cfopStage = result.stages.find((stage) => stage.id === "threeByThree");
   assert.equal(cfopStage?.name, "3x3 CFOP");
-  assert.deepEqual(
-    cfopStage.segments.map((stage) => stage.name),
-    ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],
-  );
+  const llNames = cfopStage.segments.map((stage) => stage.name);
+  assert.equal(llNames[0], "Cross");
+  assert.ok(llNames.some((name) => /^F2L(?:\s|$)/.test(name)));
+  assert.ok(llNames.includes("OLL"));
+  assert.ok(llNames.includes("PLL"));
+  if (result.meta.ollParityDetected) {
+    assert.ok(llNames.indexOf("OLL Parity") >= 0);
+    assert.ok(llNames.indexOf("OLL Parity") < llNames.indexOf("OLL"));
+  }
+  if (result.meta.pllParityDetected) {
+    assert.ok(llNames.indexOf("PLL Parity") > llNames.indexOf("OLL"));
+    assert.ok(llNames.indexOf("PLL Parity") < llNames.indexOf("PLL"));
+  }
+  assert.equal(result.meta.parityHandledAt, "LL");
   assert.equal(result.meta.cfopMethod, "CFOP");
   for (const segment of cfopStage.segments) {
     for (const move of String(segment.solution || "").trim().split(/\s+/).filter(Boolean)) {
-      assert.match(move, /^(?:[URFDLB](?:2|')?|[xyz](?:2|')?)$/, `4x4 CFOP emitted unsupported move ${move}`);
+      assert.match(move, /^(?:[URFDLB](?:w)?(?:2|')?|[xyz](?:2|')?)$/, `4x4 CFOP emitted unsupported move ${move}`);
     }
   }
 

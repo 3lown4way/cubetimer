@@ -22,13 +22,12 @@ assert.ok(valid.solution.length > 0);
 assert.ok(valid.moveCount > 0);
 assert.equal(valid.verified, true);
 assert.equal(valid.source, "WASM_444_COMPLETE");
-assert.equal(valid.stages.length, 4);
+assert.equal(valid.stages.length, 3);
 assert.equal(valid.moveCount, valid.solution.split(/\s+/).filter((move) => move && !/^[xyz](?:2|')?$/i.test(move)).length);
 
 const expectedStages = [
   ["centers", "Centers"],
   ["edges", "Edge Pairing · 3-2-3"],
-  ["parity", "Parity Normalization"],
   ["threeByThree", "3x3 CFOP"],
 ];
 for (let index = 0; index < expectedStages.length; index += 1) {
@@ -41,8 +40,8 @@ for (let index = 0; index < expectedStages.length; index += 1) {
 }
 assert.equal(valid.stages[0].moveCount, valid.meta.centerMoveCount);
 assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
-assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);
-assert.equal(valid.stages[3].moveCount, valid.meta.cfopMoveCount);
+assert.equal(valid.stages[2].moveCount, valid.meta.threeByThreeMoveCount);
+assert.ok(valid.meta.cfopMoveCount <= valid.meta.threeByThreeMoveCount);
 assert.equal(valid.meta.humanViewpointApplied, true);
 assert.ok(valid.meta.viewpointRotationCount > 0);
 assert.equal(valid.stages[0].method, "Cross → Opposite → Remaining 4");
@@ -79,17 +78,22 @@ for (let index = 1; index < edgeSegments.length; index += 1) {
   );
 }
 
-const cfopSegments = valid.stages[3].segments;
+const cfopSegments = valid.stages[2].segments;
 assert.deepEqual(
   cfopSegments.map((stage) => stage.name),
-  ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],
+  ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL Parity", "PLL"],
 );
+assert.ok(cfopSegments.findIndex((stage) => stage.name === "PLL Parity") > cfopSegments.findIndex((stage) => stage.name === "OLL"));
 assert.equal(
   cfopSegments.map((stage) => stage.solution).filter(Boolean).join(" "),
-  valid.stages[3].solution,
+  valid.stages[2].solution,
 );
 assert.equal(valid.meta.cfopMethod, "CFOP");
 assert.equal(valid.meta.cfopStageCount, 7);
+assert.equal(valid.meta.llStageCount, 8);
+assert.equal(valid.meta.parityHandledAt, "LL");
+assert.equal(valid.meta.ollParityDetected, false);
+assert.equal(valid.meta.pllParityDetected, true);
 
 assert.equal(valid.meta.apiVersion, "444-complete-v1");
 assert.equal(valid.meta.centersSolved, true);
@@ -111,7 +115,7 @@ assert.equal(valid.meta.virtual333.eo.length, 12);
 assert.ok(progress.some((update) => update.type === "444_stage_start"));
 assert.ok(progress.some((update) => update.type === "444_stage_update" && update.phase === "wasm_ready"));
 assert.ok(progress.some((update) => update.type === "444_state_validated"));
-for (const stage of ["CENTERS", "EDGES", "PARITY", "VIRTUAL_333", "THREE_BY_THREE", "VERIFY"]) {
+for (const stage of ["CENTERS", "EDGES", "THREE_BY_THREE", "VERIFY"]) {
   assert.ok(
     progress.some((update) => update.type === "444_stage_done" && update.stage === stage),
     `missing ${stage} completion event`,
@@ -173,8 +177,8 @@ assert.match(
 assert.match(routeSource, /workerError: errorMessage/);
 
 const solver444Source = fs.readFileSync(new URL("../solver/solver444.js", import.meta.url), "utf8");
-assert.match(solver444Source, /solve3x3StrictCfopFromPattern/);
-assert.match(solver444Source, /enableHumanViewpoint: true/);
+assert.match(solver444Source, /llParity444\.js/);
+assert.match(solver444Source, /parityHandledAt: "LL"/);
 assert.match(solver444Source, /preferHumanEdgePairing323/);
 assert.match(solver444Source, /edgePairing444\.js/);
 assert.match(solver444Source, /edgeMethod: "3-2-3"/);

@@ -7306,6 +7306,7 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
   const withPerformance = (result) =>
     isRootPerformanceCall ? attachCfopPerformanceDiagnostics(result, performanceSession) : result;
   const solveMode = normalizeSolveMode(options.mode);
+  const stopAfterStage = String(options.stopAfterStage || "").trim().toUpperCase();
   const solverVersion = normalizeSolverVersion(options.solverVersion);
   if (solverVersion === "v2" && (solveMode === "zb" || options.enableMixedCfopStages === true)) {
     await ensureStaticZbllCaseIndex();
@@ -7562,6 +7563,17 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
         stages[lastIndex].moveCount = countMetricMoves(lastMoves);
         stages[lastIndex].depth = countMetricMoves(lastMoves);
       }
+    }
+
+    if (childResult.partialStageComplete === true) {
+      return withPerformance({
+        ...childResult,
+        selectedCrossColor: crossColorRaw,
+        solution: fullSolution,
+        moveCount: countMetricMoves(fullMoves),
+        stages,
+        solutionDisplay: formatStageDisplay(stages, fullSolution),
+      });
     }
 
     const finalPattern = fullSolution ? pattern.applyAlg(fullSolution) : pattern;
@@ -7887,6 +7899,24 @@ export async function solve3x3StrictCfopFromPattern(pattern, options = {}) {
     allMoves.push(...outputMoves);
     if (moveText) {
       currentPattern = currentPattern.applyAlg(moveText);
+    }
+    if (stopAfterStage && String(stage.name || "").toUpperCase() === stopAfterStage) {
+      const partialMoves = simplifyMoves(allMoves);
+      const partialSolution = joinMoves(partialMoves);
+      return withPerformance({
+        ok: true,
+        partialStageComplete: true,
+        stoppedAfterStage: stage.name,
+        solution: partialSolution,
+        solutionDisplay: formatStageDisplay(solvedStages, partialSolution),
+        moveCount: countMetricMoves(partialMoves),
+        nodes: totalNodes,
+        bound: totalBound,
+        selectedCrossColor: crossColorRaw === "CN" ? "D" : crossColorRaw,
+        source: "INTERNAL_3X3_CFOP_PARTIAL",
+        stages: solvedStages,
+        stageDiagnostics,
+      });
     }
   }
 
