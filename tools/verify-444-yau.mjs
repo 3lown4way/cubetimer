@@ -14,19 +14,33 @@ const EDGE_TYPE_BY_WING = (() => {
   EDGE_SLOT_PAIRS.forEach((pair, type) => pair.forEach((wing) => { output[wing] = type; }));
   return output;
 })();
+const FACES = ["U", "R", "F", "D", "L", "B"];
 const OPPOSITE = { U: "D", R: "L", F: "B", D: "U", L: "R", B: "F" };
-const FACE_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
 
 const kpuzzle = await puzzles["4x4x4"].kpuzzle();
 const solved = kpuzzle.defaultPattern();
-const CENTER_FACE_BY_PIECE = (() => {
-  const output = new Map();
-  const pieces = solved.patternData.CENTERS.pieces;
-  for (let position = 0; position < pieces.length; position += 1) {
-    output.set(Number(pieces[position]), Math.floor(position / 4));
+const CENTER_POSITIONS_BY_FACE = {};
+const CENTER_FACE_BY_PIECE = new Map();
+for (const face of FACES) {
+  const moved = solved.applyAlg(face);
+  const positions = [];
+  const before = solved.patternData.CENTERS;
+  const after = moved.patternData.CENTERS;
+  for (let position = 0; position < before.pieces.length; position += 1) {
+    if (
+      Number(after.pieces[position]) !== Number(before.pieces[position]) ||
+      Number(after.orientation[position]) !== Number(before.orientation[position])
+    ) {
+      positions.push(position);
+    }
   }
-  return output;
-})();
+  assert.equal(positions.length, 4, `${face} must rotate exactly four 4x4 center slots`);
+  CENTER_POSITIONS_BY_FACE[face] = positions;
+  for (const position of positions) {
+    CENTER_FACE_BY_PIECE.set(Number(before.pieces[position]), face);
+  }
+}
+assert.equal(CENTER_FACE_BY_PIECE.size, 24, "every 4x4 center piece must belong to one face color");
 
 function crossTypeMask(face) {
   let mask = 0;
@@ -71,16 +85,14 @@ function bitCount(value) {
 }
 
 function faceCentersSolved(pattern, face) {
-  const index = FACE_INDEX[face];
   const centers = pattern.patternData.CENTERS;
-  for (let position = index * 4; position < index * 4 + 4; position += 1) {
-    if (CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])) !== index) return false;
-  }
-  return true;
+  return CENTER_POSITIONS_BY_FACE[face].every(
+    (position) => CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])) === face,
+  );
 }
 
 function allCentersSolved(pattern) {
-  return Object.keys(FACE_INDEX).every((face) => faceCentersSolved(pattern, face));
+  return FACES.every((face) => faceCentersSolved(pattern, face));
 }
 
 function isSolved(pattern) {
