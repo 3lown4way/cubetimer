@@ -21,6 +21,7 @@ jobs:
       - name: Patch and verify
         run: |
           python tools/apply-444-human-centers.py
+          python tools/apply-444-human-centers-v2.py
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           node --check solver/solver444.js
           node --check solver/solverWorker.js
