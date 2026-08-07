@@ -25,6 +25,7 @@ jobs:
         run: |
           python tools/apply-yau-cross-robustness.py
           python tools/apply-yau-cross-meta.py
+          python tools/apply-yau-frame-retry.py
       - name: Validate syntax
         run: |
           node --check solver/edgePairing444.js
@@ -60,7 +61,7 @@ jobs:
           }
 
           const crosses = ["D", "F", "R", "U", "L", "B", "D", "F"];
-          let rescueCount = 0;
+          let multiFrameCount = 0;
           for (let index = 0; index < crosses.length; index += 1) {
             const scramble = makeScramble();
             const crossColor = crosses[index];
@@ -77,18 +78,18 @@ jobs:
               ok: result.ok,
               reason: result.reason,
               detail: result.detail,
-              cross3Rescue: result.meta?.yauCross3SearchRescueUsed === true,
-              cross4Rescue: result.meta?.yauCross4SearchRescueUsed === true,
-              alignRescue: result.meta?.yauCrossAlignmentRescueUsed === true,
+              frameSpin: result.meta?.yauFrameSpin || null,
+              frameAttempts: result.meta?.yauFrameAttemptCount || 0,
+              attempts: result.meta?.yauFrameAttempts || [],
               scramble,
             };
             console.log(JSON.stringify(info));
             if (!result.ok || result.verified !== true) {
               throw new Error(`YAU_STRESS_FAILED:${JSON.stringify(info)}`);
             }
-            if (info.cross3Rescue || info.cross4Rescue || info.alignRescue) rescueCount += 1;
+            if ((info.frameAttempts || 0) > 1) multiFrameCount += 1;
           }
-          console.log(JSON.stringify({ stressPassed: true, rescueCount }));
+          console.log(JSON.stringify({ stressPassed: true, multiFrameCount }));
           EOF
           node tools/.yau-cross-stress-temp.mjs
           rm tools/.yau-cross-stress-temp.mjs
@@ -102,5 +103,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add solver/edgePairing444.js solver/solver444.js
-          git commit -m "Make Yau cross search resilient"
+          git commit -m "Retry Yau across cross-axis frames"
           git push origin HEAD:main
