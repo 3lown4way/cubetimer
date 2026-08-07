@@ -83,4 +83,4 @@ jobs:
           git commit -m "Fix Yau cross frame failures"
           git push origin HEAD:main
 
-# Reproduces the former 444_YAU_CROSS3_FAILED path and requires verified Yau output.
+# Scoped Yau rescue search must not alter the standard Reduction 3-2-3 seed search.
