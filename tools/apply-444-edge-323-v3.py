@@ -3,16 +3,51 @@ from pathlib import Path
 p = Path('solver/edgePairing444.js')
 s = p.read_text()
 
-# This script runs after apply-444-edge-323-v2.py. The human 3-2-3 method only
-# protects the four-edge bank and the pairs intentionally added by each group.
-# Incidental pairs are allowed to break later; locking every currently paired
-# slot made Next2 artificially impossible on otherwise normal center states.
-marker = '''function enumerateSetupPaths(maxDepth = 3) {\n'''
-helper = r'''function chooseProtectedPairMask(pairedMask, requiredMask, targetCount) {
-  let protectedMask = requiredMask & pairedMask;
+# Runs after apply-444-edge-323-v2.py. The seed still creates a physical
+# four-slot working bank, but from that point on a solved dedge is protected by
+# edge identity, not by the physical slot it occupies. Outer turns are free to
+# carry a paired dedge to another slot, exactly as in a human 3-2-3 solve.
+marker = '''function centersSolved(state, solvedCenterPieces) {\n'''
+helper = r'''function pairedEdgeTypeMask(state) {
+  let mask = 0;
+  for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length; slot += 1) {
+    const [first, second] = EDGE_SLOT_PAIRS_444[slot];
+    const firstType = EDGE_TYPE_BY_WING_444[state.edgePieces[first]];
+    const secondType = EDGE_TYPE_BY_WING_444[state.edgePieces[second]];
+    if (
+      firstType !== 255 &&
+      firstType === secondType &&
+      state.edgeOrientation[first] === state.edgeOrientation[second]
+    ) {
+      mask |= 1 << firstType;
+    }
+  }
+  return mask;
+}
+
+function pairedEdgeTypeMaskInSlots(state, slotMask) {
+  let mask = 0;
+  for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length; slot += 1) {
+    if (!(slotMask & (1 << slot))) continue;
+    const [first, second] = EDGE_SLOT_PAIRS_444[slot];
+    const firstType = EDGE_TYPE_BY_WING_444[state.edgePieces[first]];
+    const secondType = EDGE_TYPE_BY_WING_444[state.edgePieces[second]];
+    if (
+      firstType !== 255 &&
+      firstType === secondType &&
+      state.edgeOrientation[first] === state.edgeOrientation[second]
+    ) {
+      mask |= 1 << firstType;
+    }
+  }
+  return mask;
+}
+
+function chooseProtectedTypeMask(pairedMask, requiredMask, targetCount) {
   if (!maskContains(pairedMask, requiredMask)) return 0;
-  for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length && bitCount(protectedMask) < targetCount; slot += 1) {
-    const bit = 1 << slot;
+  let protectedMask = requiredMask;
+  for (let edgeType = 0; edgeType < 12 && bitCount(protectedMask) < targetCount; edgeType += 1) {
+    const bit = 1 << edgeType;
     if ((pairedMask & bit) && !(protectedMask & bit)) protectedMask |= bit;
   }
   return protectedMask;
@@ -20,7 +55,7 @@ helper = r'''function chooseProtectedPairMask(pairedMask, requiredMask, targetCo
 
 function searchSliceCycleAcrossFrames(
   initialState,
-  lockedMask,
+  lockedTypeMask,
   targetCount,
   preferredFamily,
   model,
@@ -34,7 +69,7 @@ function searchSliceCycleAcrossFrames(
     if (deadlineReached(deadlineTs)) return null;
     const result = searchSliceCycle(
       initialState,
-      lockedMask,
+      lockedTypeMask,
       targetCount,
       sliceFamily,
       model,
@@ -53,10 +88,16 @@ function searchSliceCycleAcrossFrames(
 }
 
 '''
-if 'function chooseProtectedPairMask(' not in s:
+if 'function pairedEdgeTypeMask(state)' not in s:
     if marker not in s:
-        raise SystemExit('enumerateSetupPaths marker missing')
+        raise SystemExit('centersSolved marker missing')
     s = s.replace(marker, helper + marker, 1)
+
+# searchSliceCycle's mask is now a mask of solved dedge identities. Physical
+# slot masks remain in collectSeedCandidates only, where a concrete bank is
+# intentionally being created.
+s = s.replace('const closedMask = pairedSlotMask(closedState);', 'const closedMask = pairedEdgeTypeMask(closedState);', 1)
+s = s.replace('const candidateMask = pairedSlotMask(closedCandidate);', 'const candidateMask = pairedEdgeTypeMask(closedCandidate);', 1)
 
 old = r'''      const seed = seedCandidates[seedIndex];
       const seedMask = pairedSlotMask(seed.state);
@@ -119,15 +160,14 @@ old = r'''      const seed = seedCandidates[seedIndex];
       ));
 '''
 new = r'''      const seed = seedCandidates[seedIndex];
-      const seedMask = pairedSlotMask(seed.state);
-      const protectedBankMask = sliceFamily.bankMask;
-      if (!maskContains(seedMask, protectedBankMask)) continue;
+      const seedSlotMask = pairedSlotMask(seed.state);
+      const bankTypeMask = pairedEdgeTypeMaskInSlots(seed.state, sliceFamily.bankMask);
+      if (bitCount(bankTypeMask) !== 4) continue;
 
-      const bankCount = bitCount(protectedBankMask);
-      const firstTarget = Math.max(7, bankCount);
+      const firstTarget = 7;
       const firstThree = searchSliceCycle(
         seed.state,
-        protectedBankMask,
+        bankTypeMask,
         firstTarget,
         sliceFamily,
         model,
@@ -137,17 +177,13 @@ new = r'''      const seed = seedCandidates[seedIndex];
         diagnostics.firstThreeFailures += 1;
         continue;
       }
-      const firstLockedMask = chooseProtectedPairMask(
-        firstThree.mask,
-        protectedBankMask,
-        firstTarget,
-      );
-      if (bitCount(firstLockedMask) < firstTarget) {
+      const firstLockedMask = chooseProtectedTypeMask(firstThree.mask, bankTypeMask, firstTarget);
+      if (bitCount(firstLockedMask) !== firstTarget) {
         diagnostics.firstThreeFailures += 1;
         continue;
       }
 
-      const secondTarget = Math.max(9, bitCount(firstLockedMask));
+      const secondTarget = 9;
       const nextTwo = searchSliceCycleAcrossFrames(
         firstThree.state,
         firstLockedMask,
@@ -160,19 +196,15 @@ new = r'''      const seed = seedCandidates[seedIndex];
         diagnostics.nextTwoFailures += 1;
         continue;
       }
-      const secondLockedMask = chooseProtectedPairMask(
-        nextTwo.mask,
-        firstLockedMask,
-        secondTarget,
-      );
-      if (bitCount(secondLockedMask) < secondTarget) {
+      const secondLockedMask = chooseProtectedTypeMask(nextTwo.mask, firstLockedMask, secondTarget);
+      if (bitCount(secondLockedMask) !== secondTarget) {
         diagnostics.nextTwoFailures += 1;
         continue;
       }
 
       let finalSetup = null;
       let beforeL2E = nextTwo;
-      let finalLockedCount = secondTarget;
+      let beforeL2ELockedCount = secondTarget;
       if (bitCount(nextTwo.mask) < 10) {
         finalSetup = searchSliceCycleAcrossFrames(
           nextTwo.state,
@@ -186,21 +218,17 @@ new = r'''      const seed = seedCandidates[seedIndex];
           diagnostics.lastThreeFailures += 1;
           continue;
         }
-        const finalLockedMask = chooseProtectedPairMask(
-          finalSetup.mask,
-          secondLockedMask,
-          10,
-        );
-        if (bitCount(finalLockedMask) < 10) {
+        const finalLockedMask = chooseProtectedTypeMask(finalSetup.mask, secondLockedMask, 10);
+        if (bitCount(finalLockedMask) !== 10) {
           diagnostics.lastThreeFailures += 1;
           continue;
         }
-        finalLockedCount = 10;
+        beforeL2ELockedCount = 10;
         beforeL2E = finalSetup;
       }
 
-      const beforeL2ECount = bitCount(pairedSlotMask(beforeL2E.state));
-      const l2e = beforeL2ECount === 12
+      const beforeL2ETypeCount = bitCount(pairedEdgeTypeMask(beforeL2E.state));
+      const l2e = beforeL2ETypeCount === 12
         ? { state: beforeL2E.state, moves: [] }
         : findL2E(beforeL2E.state, model, deadlineTs);
       if (!l2e) {
@@ -210,29 +238,29 @@ new = r'''      const seed = seedCandidates[seedIndex];
 
       const seedMoves = seed.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));
       const segments = [
-        buildSegment("edge323Bank", `Edge Bank ${bankCount}/12`, seedMoves, 1, bankCount),
-        buildSegment("edge323First3", "3-2-3 · First 3", firstThree.moves, bankCount + 1, firstTarget),
-        buildSegment("edge323Next2", "3-2-3 · Next 2", nextTwo.moves, firstTarget + 1, secondTarget),
+        buildSegment("edge323Bank", "Edge Bank 4/12", seedMoves, 1, 4),
+        buildSegment("edge323First3", "3-2-3 · First 3", firstThree.moves, 5, 7),
+        buildSegment("edge323Next2", "3-2-3 · Next 2", nextTwo.moves, 8, 9),
       ];
       if (finalSetup) {
         segments.push(buildSegment(
           "edge323Last3Setup",
           "3-2-3 · Last 3 setup",
           finalSetup.moves,
-          secondTarget + 1,
-          finalLockedCount,
+          10,
+          10,
         ));
       }
       segments.push(buildSegment(
         "edge323L2E",
         "3-2-3 · L2E",
         l2e.moves,
-        finalLockedCount + 1,
+        beforeL2ELockedCount + 1,
         12,
       ));
 '''
 if old not in s:
-    raise SystemExit('v2 greedy 3-2-3 group block missing')
+    raise SystemExit('v2 greedy 3-2-3 block missing')
 s = s.replace(old, new, 1)
 
 old_meta = r'''          frameIndex,
@@ -253,13 +281,13 @@ new_meta = r'''          frameIndex,
           finalFrameRotation: finalSetup?.frameRotation || nextTwo.frameRotation || sliceFamily.rotation || "identity",
           finalWorkingSlice: finalSetup?.workingSlice || nextTwo.workingSlice || sliceFamily.openMoves[0][0],
           seedCandidateIndex: seedIndex,
-          seedPairCount: bankCount,
-          incidentalSeedPairs: Math.max(0, bitCount(seedMask) - bankCount),
-          afterFirstThree: firstTarget,
-          incidentalAfterFirstThree: Math.max(0, bitCount(firstThree.mask) - firstTarget),
-          afterNextTwo: secondTarget,
-          incidentalAfterNextTwo: Math.max(0, bitCount(nextTwo.mask) - secondTarget),
-          beforeL2E: finalLockedCount,
+          seedPairCount: 4,
+          incidentalSeedPairs: Math.max(0, bitCount(seedSlotMask) - 4),
+          afterFirstThree: 7,
+          incidentalAfterFirstThree: Math.max(0, bitCount(firstThree.mask) - 7),
+          afterNextTwo: 9,
+          incidentalAfterNextTwo: Math.max(0, bitCount(nextTwo.mask) - 9),
+          beforeL2E: beforeL2ELockedCount,
           diagnostics,
 '''
 if old_meta not in s:
