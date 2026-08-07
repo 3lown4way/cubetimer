@@ -44,3 +44,5 @@ jobs:
           node --check tools/verify-nxn-solver-preview.mjs
       - name: Verify solver-only NxNxN 3D preview and 4x4 activation
         run: node tools/verify-nxn-solver-preview.mjs
+
+# Manual contract retrigger after the human-center/viewpoint integration.

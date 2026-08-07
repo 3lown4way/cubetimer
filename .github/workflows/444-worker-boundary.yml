@@ -125,3 +125,5 @@ jobs:
 
       - name: Validate repository diff
         run: git diff --check
+
+# Manual contract retrigger after the human-center/viewpoint integration.
