@@ -8,7 +8,7 @@ s = p.read_text()
 # regrip: try the six equivalent working slices for Next2 / Last3 and accept
 # the first valid continuation. This matches how a human changes viewpoint
 # between 3-2-3 groups without carrying a large search frontier.
-marker = '''function enumerateSetupPaths(maxDepth, actions) {\n'''
+marker = '''function enumerateSetupPaths(maxDepth = 3) {\n'''
 helper = r'''function searchSliceCycleAcrossFrames(
   initialState,
   lockedMask,
