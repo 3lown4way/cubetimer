@@ -3,22 +3,6 @@ from pathlib import Path
 p = Path("solver/edgePairing444.js")
 s = p.read_text()
 
-old = '''  for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {
-    if (deadlineReached(deadlineTs)) break;
-    const sliceFamily = model.sliceFamilies[frameIndex];
-    const seedCandidates = yauBank
-      ? [{ state: initialState, path: [], score: Number.MAX_SAFE_INTEGER }]
-      : collectSeedCandidates(initialState, sliceFamily.bankMask, model, deadlineTs);'''
-new = '''  for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {
-    if (deadlineReached(deadlineTs)) break;
-    const sliceFamily = model.sliceFamilies[frameIndex];
-    if (yauBank && sliceFamily.bankMask !== requiredTypeMask) continue;
-    const seedCandidates = yauBank
-      ? [{ state: initialState, path: [], score: Number.MAX_SAFE_INTEGER }]
-      : collectSeedCandidates(initialState, sliceFamily.bankMask, model, deadlineTs);'''
-assert old in s, "missing Yau frame loop"
-s = s.replace(old, new, 1)
-
 old = '''      const firstThree = searchSliceCycle(
         seed.state,
         bankTypeMask,
@@ -54,4 +38,4 @@ block = block.replace(needle, "          yauBank ? 10 : 7,\n", 1)
 s = s[:start] + block + s[end + len("        );"):]
 
 p.write_text(s)
-print("Yau 3-2-3 matching frame and deeper final setup applied")
+print("Yau 3-2-3 deeper First3 and final setup applied across all frames")
