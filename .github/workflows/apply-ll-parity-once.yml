@@ -1,0 +1,301 @@
+name: Apply LL parity integration once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-ll-parity-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch CFOP partial stages and 4x4 LL integration
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          cfop = Path('solver/cfop3x3.js')
+          s = cfop.read_text()
+          old = '  const solveMode = normalizeSolveMode(options.mode);\n  const solverVersion = normalizeSolverVersion(options.solverVersion);'
+          new = '  const solveMode = normalizeSolveMode(options.mode);\n  const stopAfterStage = String(options.stopAfterStage || "").trim().toUpperCase();\n  const solverVersion = normalizeSolverVersion(options.solverVersion);'
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          anchor = '    const finalPattern = fullSolution ? pattern.applyAlg(fullSolution) : pattern;\n'
+          insert = '''    if (childResult.partialStageComplete === true) {\n      return withPerformance({\n        ...childResult,\n        selectedCrossColor: crossColorRaw,\n        solution: fullSolution,\n        moveCount: countMetricMoves(fullMoves),\n        stages,\n        solutionDisplay: formatStageDisplay(stages, fullSolution),\n      });\n    }\n\n'''
+          assert anchor in s
+          s = s.replace(anchor, insert + anchor, 1)
+
+          old = '''    if (moveText) {\n      currentPattern = currentPattern.applyAlg(moveText);\n    }\n  }\n\n  if (!isStrictSolvedPattern(currentPattern, currentPattern.patternData, ctx)) {'''
+          new = '''    if (moveText) {\n      currentPattern = currentPattern.applyAlg(moveText);\n    }\n    if (stopAfterStage && String(stage.name || "").toUpperCase() === stopAfterStage) {\n      const partialMoves = simplifyMoves(allMoves);\n      const partialSolution = joinMoves(partialMoves);\n      return withPerformance({\n        ok: true,\n        partialStageComplete: true,\n        stoppedAfterStage: stage.name,\n        solution: partialSolution,\n        solutionDisplay: formatStageDisplay(solvedStages, partialSolution),\n        moveCount: countMetricMoves(partialMoves),\n        nodes: totalNodes,\n        bound: totalBound,\n        selectedCrossColor: crossColorRaw === "CN" ? "D" : crossColorRaw,\n        source: "INTERNAL_3X3_CFOP_PARTIAL",\n        stages: solvedStages,\n        stageDiagnostics,\n      });\n    }\n  }\n\n  if (!isStrictSolvedPattern(currentPattern, currentPattern.patternData, ctx)) {'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          cfop.write_text(s)
+
+          solver = Path('solver/solver444.js')
+          s = solver.read_text()
+          start = s.index('  const parityStage = Array.isArray(result.stages)')
+          end = s.index('  const rotationlessPublicStages = structuredClone(publicStages);', start)
+          replacement = r'''  const reductionParityStage = Array.isArray(result.stages)
+    ? result.stages.find((stage) => stage?.id === "parity" && stage?.verified === true)
+    : null;
+
+  if (
+    result.status !== "partial" ||
+    result.reason !== "444_REDUCTION_INCOMPLETE" ||
+    result.meta?.virtual333Ready !== true ||
+    !result.meta?.virtual333 ||
+    !centerStage ||
+    !edgeStage
+  ) {
+    emitProgress(onProgress, {
+      type: result.ok ? "444_stage_done" : "444_stage_fail",
+      eventId: "444",
+      stage: "REDUCTION",
+      reason: result.reason,
+      status: result.status,
+    });
+    return result;
+  }
+
+  emitProgress(onProgress, {
+    type: "444_stage_start",
+    eventId: "444",
+    stage: "THREE_BY_THREE",
+    stageName: "3x3 CFOP · LL parity",
+  });
+
+  let ll;
+  try {
+    const { solveLlDeferred444 } = await import("./llParity444.js");
+    ll = await solveLlDeferred444({
+      scramble: publicScramble,
+      centerSolution: translate444MoveConvention(centerStage.solution || ""),
+      edgeSolution: translate444MoveConvention(edgeStage.solution || ""),
+      crossColor,
+      deadlineTs,
+      onProgress(progress) {
+        emitProgress(onProgress, {
+          type: "444_stage_update",
+          eventId: "444",
+          stage: "THREE_BY_THREE",
+          phase: "ll",
+          stageName: "3x3 CFOP · LL parity",
+          cfopStageName: String(progress?.stageName || "LL"),
+        });
+      },
+    });
+  } catch (error) {
+    ll = { ok: false, reason: "444_LL_PARITY_BRIDGE_FAILED", detail: String(error?.message || error) };
+  }
+
+  if (!ll?.ok) {
+    const timedOut = deadlineReached(deadlineTs);
+    emitProgress(onProgress, {
+      type: "444_stage_fail",
+      eventId: "444",
+      stage: "THREE_BY_THREE",
+      reason: ll?.reason || "444_LL_PARITY_FAILED",
+    });
+    return {
+      ...result,
+      status: timedOut ? "timeout" : "partial",
+      reason: timedOut ? "444_DEADLINE_REACHED" : "444_LL_PARITY_FAILED",
+      detail: ll?.reason || ll?.detail || null,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      meta: {
+        ...result.meta,
+        llParityReason: ll?.reason || null,
+        parityHandledAt: "LL",
+      },
+    };
+  }
+
+  const publicLlSegments = (Array.isArray(ll.segments) ? ll.segments : []).map((stage, index) => ({
+    ...stage,
+    id: stage?.id || `cfop${index + 1}`,
+    name: normalizeCfopStageName(stage?.name),
+    solution: String(stage?.solution || "").trim(),
+    moveCount: splitAlgorithm(stage?.solution).length,
+    verified: true,
+  }));
+  const internalLlSegments = publicLlSegments.map((stage) => ({
+    ...stage,
+    solution: translate444MoveConvention(stage.solution),
+  }));
+  const internalThreeByThreeSolution = internalLlSegments
+    .map((stage) => stage.solution)
+    .filter(Boolean)
+    .join(" ");
+  const internalThreeByThreeStage = {
+    id: "threeByThree",
+    name: "3x3 CFOP",
+    solution: internalThreeByThreeSolution,
+    moveCount: splitAlgorithm(internalThreeByThreeSolution).length,
+    verified: false,
+    method: "CFOP · LL Parity",
+    segments: internalLlSegments,
+  };
+  const internalCompleteStages = [centerStage, edgeStage, internalThreeByThreeStage];
+  const internalCompleteSolution = internalCompleteStages
+    .map((stage) => String(stage.solution || "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  let verification;
+  try {
+    verification = JSON.parse(String(api.verify({
+      scramble: internalScramble,
+      solution: internalCompleteSolution,
+    }) || ""));
+  } catch (error) {
+    verification = { ok: false, solved: false, reason: String(error?.message || error) };
+  }
+
+  if (verification?.ok !== true || verification?.solved !== true) {
+    emitProgress(onProgress, {
+      type: "444_stage_fail",
+      eventId: "444",
+      stage: "VERIFY",
+      reason: verification?.reason || "444_FINAL_VERIFICATION_FAILED",
+    });
+    return {
+      ...result,
+      status: "error",
+      reason: "444_FINAL_VERIFICATION_FAILED",
+      detail: verification?.reason || null,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      meta: {
+        ...result.meta,
+        cfopMoveCount: Number(ll.cfopMoveCount) || 0,
+        threeByThreeMoveCount: internalThreeByThreeStage.moveCount,
+        parityMoveCount: Number(ll.parityMoveCount) || 0,
+        parityHandledAt: "LL",
+        fullVerificationSolved: false,
+      },
+    };
+  }
+
+  internalThreeByThreeStage.verified = true;
+  const publicStages = internalCompleteStages.map((stage) => ({
+    ...stage,
+    solution: translate444MoveConvention(stage.solution),
+    segments: Array.isArray(stage.segments)
+      ? stage.segments.map((segment) => ({
+          ...segment,
+          solution: translate444MoveConvention(segment.solution),
+        }))
+      : stage.segments,
+  }));
+  try {
+    const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
+    const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
+    if (publicEdgeStage && publicEdgeStage.method !== "3-2-3") {
+      publicEdgeStage.segments = await buildEdgePairingSegments(
+        publicScramble,
+        publicCenterStage?.solution || "",
+        publicEdgeStage.solution || "",
+      );
+    }
+  } catch (error) {
+    console.warn("[444] edge pairing segmentation failed", error);
+  }
+
+'''
+          s = s[:start] + replacement + s[end:]
+          old = '''      cfopMoveCount: internalThreeByThreeStage.moveCount,\n      cfopNodes: Number(cfop.nodes) || 0,\n      cfopStageCount: internalCfopSegments.length,\n      cfopMethod: "CFOP",\n      crossColor,'''
+          new = '''      cfopMoveCount: Number(ll.cfopMoveCount) || 0,\n      threeByThreeMoveCount: internalThreeByThreeStage.moveCount,\n      parityMoveCount: Number(ll.parityMoveCount) || 0,\n      reductionParityMoveCount: Number(reductionParityStage?.moveCount) || 0,\n      cfopNodes: Number(ll.nodes) || 0,\n      cfopStageCount: internalLlSegments.filter((stage) => stage?.parity !== true).length,\n      llStageCount: internalLlSegments.length,\n      cfopMethod: "CFOP",\n      parityHandledAt: "LL",\n      ollParityDetected: ll.ollParityDetected === true,\n      pllParityDetected: ll.pllParityDetected === true,\n      reductionOllParityDetected: result.meta?.ollParityDetected === true,\n      reductionPllParityDetected: result.meta?.pllParityDetected === true,\n      crossColor,'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          solver.write_text(s)
+          PY
+
+      - name: Patch 4x4 contracts
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          p = Path('tools/verify-444-worker-boundary.mjs')
+          s = p.read_text()
+          s = s.replace('assert.equal(valid.stages.length, 4);', 'assert.equal(valid.stages.length, 3);')
+          old = '''const expectedStages = [\n  ["centers", "Centers"],\n  ["edges", "Edge Pairing · 3-2-3"],\n  ["parity", "Parity Normalization"],\n  ["threeByThree", "3x3 CFOP"],\n];'''
+          new = '''const expectedStages = [\n  ["centers", "Centers"],\n  ["edges", "Edge Pairing · 3-2-3"],\n  ["threeByThree", "3x3 CFOP"],\n];'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          s = s.replace('assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);\nassert.equal(valid.stages[3].moveCount, valid.meta.cfopMoveCount);', 'assert.equal(valid.stages[2].moveCount, valid.meta.threeByThreeMoveCount);\nassert.ok(valid.meta.cfopMoveCount <= valid.meta.threeByThreeMoveCount);')
+          s = s.replace('const cfopSegments = valid.stages[3].segments;', 'const cfopSegments = valid.stages[2].segments;')
+          old = '''assert.deepEqual(\n  cfopSegments.map((stage) => stage.name),\n  ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],\n);'''
+          new = '''assert.deepEqual(\n  cfopSegments.map((stage) => stage.name),\n  ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL Parity", "PLL"],\n);\nassert.ok(cfopSegments.findIndex((stage) => stage.name === "PLL Parity") > cfopSegments.findIndex((stage) => stage.name === "OLL"));'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          s = s.replace('  valid.stages[3].solution,', '  valid.stages[2].solution,')
+          s = s.replace('assert.equal(valid.meta.cfopStageCount, 7);', 'assert.equal(valid.meta.cfopStageCount, 7);\nassert.equal(valid.meta.llStageCount, 8);\nassert.equal(valid.meta.parityHandledAt, "LL");\nassert.equal(valid.meta.ollParityDetected, false);\nassert.equal(valid.meta.pllParityDetected, true);')
+          s = s.replace('for (const stage of ["CENTERS", "EDGES", "PARITY", "VIRTUAL_333", "THREE_BY_THREE", "VERIFY"]) {', 'for (const stage of ["CENTERS", "EDGES", "THREE_BY_THREE", "VERIFY"]) {')
+          s = s.replace('assert.match(solver444Source, /solve3x3StrictCfopFromPattern/);\nassert.match(solver444Source, /enableHumanViewpoint: true/);', 'assert.match(solver444Source, /llParity444\\.js/);\nassert.match(solver444Source, /parityHandledAt: "LL"/);')
+          p.write_text(s)
+
+          p = Path('tools/verify-444-public-notation.mjs')
+          s = p.read_text()
+          s = s.replace('  assert.equal(result.stages.length, 4);', '  assert.equal(result.stages.length, 3);')
+          old = '''  assert.deepEqual(\n    cfopStage.segments.map((stage) => stage.name),\n    ["Cross", "F2L 1", "F2L 2", "F2L 3", "F2L 4", "OLL", "PLL"],\n  );'''
+          new = '''  const llNames = cfopStage.segments.map((stage) => stage.name);\n  assert.equal(llNames[0], "Cross");\n  assert.ok(llNames.some((name) => /^F2L(?:\\s|$)/.test(name)));\n  assert.ok(llNames.includes("OLL"));\n  assert.ok(llNames.includes("PLL"));\n  if (result.meta.ollParityDetected) {\n    assert.ok(llNames.indexOf("OLL Parity") >= 0);\n    assert.ok(llNames.indexOf("OLL Parity") < llNames.indexOf("OLL"));\n  }\n  if (result.meta.pllParityDetected) {\n    assert.ok(llNames.indexOf("PLL Parity") > llNames.indexOf("OLL"));\n    assert.ok(llNames.indexOf("PLL Parity") < llNames.indexOf("PLL"));\n  }\n  assert.equal(result.meta.parityHandledAt, "LL");'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          s = s.replace('/^(?:[URFDLB](?:2|\')?|[xyz](?:2|\')?)$/', '/^(?:[URFDLB](?:w)?(?:2|\')?|[xyz](?:2|\')?)$/')
+          p.write_text(s)
+
+          p = Path('.github/workflows/444-worker-boundary.yml')
+          s = p.read_text()
+          s = s.replace('      - "solver/solver444.js"\n', '      - "solver/solver444.js"\n      - "solver/llParity444.js"\n', 2)
+          s = s.replace('      - "tools/verify-444-public-notation.mjs"\n', '      - "tools/verify-444-public-notation.mjs"\n      - "tools/verify-444-ll-parity.mjs"\n', 2)
+          s = s.replace('          node --check solver/solver444.js\n', '          node --check solver/solver444.js\n          node --check solver/llParity444.js\n', 1)
+          s = s.replace('          node --check tools/verify-444-public-notation.mjs\n', '          node --check tools/verify-444-public-notation.mjs\n          node --check tools/verify-444-ll-parity.mjs\n', 1)
+          anchor = '      - name: Verify public WCA notation and Centers stage\n        run: node tools/verify-444-public-notation.mjs\n\n'
+          assert anchor in s
+          s = s.replace(anchor, anchor + '      - name: Verify LL-time OLL and PLL parity\n        run: node tools/verify-444-ll-parity.mjs\n\n', 1)
+          p.write_text(s)
+          PY
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check solver/cfop3x3.js
+          node --check solver/solver444.js
+          node --check solver/llParity444.js
+          node --check tools/verify-444-worker-boundary.mjs
+          node --check tools/verify-444-public-notation.mjs
+          node --check tools/verify-444-ll-parity.mjs
+
+      - name: Verify LL parity module
+        run: node tools/verify-444-ll-parity.mjs
+
+      - name: Verify 4x4 worker boundary
+        run: node tools/verify-444-worker-boundary.mjs
+
+      - name: Verify public WCA notation
+        run: node tools/verify-444-public-notation.mjs
+
+      - name: Commit integration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/cfop3x3.js solver/solver444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs .github/workflows/444-worker-boundary.yml
+          git commit -m "Handle 4x4 parity during last layer"
+          git push origin HEAD:main
