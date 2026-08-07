@@ -3,6 +3,120 @@ from pathlib import Path
 path = Path('solver/solver444.js')
 s = path.read_text()
 
+def replace_once(old, new, label):
+    global s
+    if old not in s:
+        raise SystemExit(f'missing anchor: {label}')
+    s = s.replace(old, new, 1)
+
+replace_once(
+'''async function preferYauReduction444(
+  api,
+  reduction,
+  publicScramble,
+  internalScramble,
+  crossColor,
+  deadlineTs,
+) {''',
+'''async function preferYauReduction444(
+  api,
+  reduction,
+  publicScramble,
+  internalScramble,
+  crossColor,
+  deadlineTs,
+  options = {},
+) {''',
+'preferYauReduction signature',
+)
+
+replace_once(
+'''      maxMacros: 8,
+      postSequence: remainingCenters,
+    },''',
+'''      maxMacros: 8,
+      postSequence: remainingCenters,
+      enableRescue: options?.__yauFastFrameProbe !== true,
+    },''',
+'cross3 rescue flag',
+)
+replace_once(
+'''      alignSolved: true,
+      deadlineTs,
+      maxMacros: 6,
+    },''',
+'''      alignSolved: true,
+      deadlineTs,
+      maxMacros: 6,
+      enableRescue: options?.__yauFastFrameProbe !== true,
+    },''',
+'cross4 rescue flag',
+)
+
+replace_once(
+'''  if (!cross4?.ok) {
+    return yauFailure444(reduction, "444_YAU_CROSS4_FAILED", cross4?.reason || cross4?.detail, deadlineTs);
+  }
+
+  const yauSetupPublic = [beforeCross4, cross4.solution]''',
+'''  if (!cross4?.ok) {
+    return yauFailure444(reduction, "444_YAU_CROSS4_FAILED", cross4?.reason || cross4?.detail, deadlineTs);
+  }
+
+  if (options?.__yauProbeOnly === true) {
+    return {
+      ...reduction,
+      ok: true,
+      status: "yau_probe",
+      reason: null,
+      detail: null,
+      solution: "",
+      moveCount: 0,
+      verified: false,
+      stages: [],
+      meta: {
+        ...reduction.meta,
+        method444: "yau",
+        yauAttempted: true,
+        yauProbePassed: true,
+        yauCross3MoveCount: Number(cross3.moveCount) || 0,
+        yauCross4MoveCount: Number(cross4.moveCount) || 0,
+        yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
+      },
+    };
+  }
+
+  const yauSetupPublic = [beforeCross4, cross4.solution]''',
+'Yau probe return',
+)
+
+replace_once(
+'''        internalScramble,
+        crossColor,
+        deadlineTs,
+      )
+    : await preferHumanEdgePairing323(''',
+'''        internalScramble,
+        crossColor,
+        deadlineTs,
+        options,
+      )
+    : await preferHumanEdgePairing323(''',
+'preferYauReduction call options',
+)
+
+replace_once(
+'''      );
+
+  if (result.meta?.stateValid === true) {''',
+'''      );
+
+  if (options?.__yauProbeOnly === true) return result;
+
+  if (result.meta?.stateValid === true) {''',
+'probe early return in solve444',
+)
+
 start = s.index('async function solveYauCanonicalFrame444(')
 end = s.index('\nexport async function solve444', start)
 new_function = r'''async function solveYauCanonicalFrame444(
@@ -17,61 +131,85 @@ new_function = r'''async function solveYauCanonicalFrame444(
     return emptyFailure("444_YAU_FRAME_INVALID", "error", crossColor, { method444: "yau", crossColor });
   }
 
-  // Keep the chosen cross face fixed, but allow the four rotations around that
-  // axis. Yau quality depends strongly on which side-center/cross-edge layout
-  // the center solver happens to expose. A single fixed front/right frame can
-  // make a perfectly valid Yau state look unsolvable to the bounded 3/4-cross
-  // and 3-2-3 planners.
-  const frameSpins = ["", "y2", "y'", "y"];
+  // Keep the selected cross face fixed and only spin around its axis. This
+  // changes which side-center layout the bounded Yau cross search sees.
+  const frameSpins = ["y2", "y'", "", "y"];
   const attempts = [];
+  const probePassed = [];
   let lastFailure = null;
 
-  for (let frameIndex = 0; frameIndex < frameSpins.length; frameIndex += 1) {
-    if (deadlineReached(deadlineTs)) break;
-    const spin = frameSpins[frameIndex];
+  const buildOrientation = (spin) => {
     let map = { ...baseOrientation.map };
     if (spin) {
       const parsed = rotationTokenAmount444(spin);
       const rotation = parsed ? cfop444RotationMap(parsed.axis, parsed.amount) : null;
-      if (!rotation) continue;
+      if (!rotation) return null;
       map = cfop444ComposeFaceMaps(baseOrientation.map, rotation);
     }
-    const orientation = {
-      token: baseOrientation.token,
-      map,
-      key: viewMapKey444(map),
-    };
-    const logicalScramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
-    if (logicalScramble == null) {
-      lastFailure = emptyFailure("444_YAU_FRAME_SCRAMBLE_FAILED", "invalid", publicScramble, {
-        method444: "yau",
-        crossColor,
-      });
-      continue;
-    }
+    return { token: baseOrientation.token, map, key: viewMapKey444(map) };
+  };
 
-    const framesLeft = frameSpins.length - frameIndex;
+  // First probe only through Cross 4/4. This is much cheaper than running
+  // 3-2-3 + LL/CFOP four times, and prevents a hostile frame from consuming
+  // the entire worker deadline before another frame is tried.
+  for (const spin of frameSpins) {
+    if (deadlineReached(deadlineTs)) break;
+    const orientation = buildOrientation(spin);
+    if (!orientation) continue;
+    const logicalScramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
+    if (logicalScramble == null) continue;
     const now = Date.now();
-    const remaining = Number.isFinite(Number(deadlineTs)) && Number(deadlineTs) > now
-      ? Number(deadlineTs) - now
-      : 60_000;
-    // Do not let a hostile frame consume the whole 4x4 worker budget. A good
-    // Yau frame normally completes in a few seconds; a bad frame can spend
-    // tens of seconds exhausting an impossible cross constraint.
-    const perFrameBudget = Math.max(5_000, Math.min(14_000, Math.floor(remaining / Math.max(1, framesLeft))));
-    const attemptDeadline = Number.isFinite(Number(deadlineTs)) && Number(deadlineTs) > 0
-      ? Math.min(Number(deadlineTs), now + perFrameBudget)
-      : now + perFrameBudget;
+    const hardDeadline = Number.isFinite(Number(deadlineTs)) && Number(deadlineTs) > 0
+      ? Number(deadlineTs)
+      : now + 60_000;
+    const probeDeadline = Math.min(hardDeadline, now + 6_000);
     const started = Date.now();
-    const logicalResult = await solve444(logicalScramble, onProgress, {
+    const probe = await solve444(logicalScramble, null, {
       ...options,
       method444: "yau",
       crossColor: "D",
-      deadlineTs: attemptDeadline,
+      deadlineTs: probeDeadline,
       __yauCanonicalFrame: true,
+      __yauProbeOnly: true,
+      __yauFastFrameProbe: true,
+    });
+    const entry = {
+      phase: "probe",
+      spin: spin || "identity",
+      elapsedMs: Math.max(0, Date.now() - started),
+      ok: probe?.ok === true && probe?.status === "yau_probe",
+      reason: probe?.reason || null,
+    };
+    attempts.push(entry);
+    if (entry.ok) probePassed.push({ spin, orientation, logicalScramble });
+    else lastFailure = probe;
+  }
+
+  const fullCandidates = probePassed.length
+    ? probePassed
+    : frameSpins.map((spin) => {
+        const orientation = buildOrientation(spin);
+        const logicalScramble = orientation
+          ? mapPhysical444SequenceToLogical(publicScramble, orientation)
+          : null;
+        return orientation && logicalScramble ? { spin, orientation, logicalScramble } : null;
+      }).filter(Boolean);
+
+  for (const candidate of fullCandidates) {
+    if (deadlineReached(deadlineTs)) break;
+    const started = Date.now();
+    const logicalResult = await solve444(candidate.logicalScramble, onProgress, {
+      ...options,
+      method444: "yau",
+      crossColor: "D",
+      deadlineTs,
+      __yauCanonicalFrame: true,
+      __yauProbeOnly: false,
+      __yauFastFrameProbe: false,
     });
     attempts.push({
-      spin: spin || "identity",
+      phase: "full",
+      spin: candidate.spin || "identity",
       elapsedMs: Math.max(0, Date.now() - started),
       ok: logicalResult?.ok === true,
       reason: logicalResult?.reason || null,
@@ -81,20 +219,20 @@ new_function = r'''async function solveYauCanonicalFrame444(
       continue;
     }
 
-    const physicalSolution = mapLogical444SequenceToPhysical(logicalResult.solution, orientation);
+    const physicalSolution = mapLogical444SequenceToPhysical(logicalResult.solution, candidate.orientation);
     if (physicalSolution == null) {
-      lastFailure = emptyFailure("444_YAU_FRAME_SOLUTION_FAILED", "error", spin || null, {
+      lastFailure = emptyFailure("444_YAU_FRAME_SOLUTION_FAILED", "error", candidate.spin || null, {
         method444: "yau",
         crossColor,
       });
       continue;
     }
     const physicalStages = [];
-    let stageMappingFailed = false;
+    let mappingFailed = false;
     for (const stage of Array.isArray(logicalResult.stages) ? logicalResult.stages : []) {
-      const mappedStage = mapYauStageToPhysical444(stage, orientation);
+      const mappedStage = mapYauStageToPhysical444(stage, candidate.orientation);
       if (!mappedStage) {
-        stageMappingFailed = true;
+        mappingFailed = true;
         lastFailure = emptyFailure("444_YAU_FRAME_STAGE_FAILED", "error", stage?.name || stage?.id || null, {
           method444: "yau",
           crossColor,
@@ -103,7 +241,7 @@ new_function = r'''async function solveYauCanonicalFrame444(
       }
       physicalStages.push(mappedStage);
     }
-    if (stageMappingFailed) continue;
+    if (mappingFailed) continue;
 
     try {
       const { puzzles } = await import("../vendor/cubing/puzzles/index.js");
@@ -115,7 +253,7 @@ new_function = r'''async function solveYauCanonicalFrame444(
         ? pattern.experimentalIsSolved({ ignorePuzzleOrientation: false })
         : JSON.stringify(pattern.patternData) === JSON.stringify(kpuzzle.defaultPattern().patternData);
       if (!solved) {
-        lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", spin || "identity", {
+        lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", candidate.spin || "identity", {
           method444: "yau",
           crossColor,
         });
@@ -140,8 +278,9 @@ new_function = r'''async function solveYauCanonicalFrame444(
         crossColor,
         yauCanonicalCrossColor: "D",
         yauFrameRotation: baseOrientation.token,
-        yauFrameSpin: spin || "identity",
+        yauFrameSpin: candidate.spin || "identity",
         yauFrameAttemptCount: attempts.length,
+        yauFrameProbePassCount: probePassed.length,
         yauFrameAttempts: attempts,
         fullVerificationSolved: true,
       },
@@ -155,6 +294,7 @@ new_function = r'''async function solveYauCanonicalFrame444(
       yauCanonicalCrossColor: "D",
       yauFrameRotation: baseOrientation.token,
       yauFrameAttemptCount: attempts.length,
+      yauFrameProbePassCount: probePassed.length,
       yauFrameAttempts: attempts,
     });
   }
@@ -167,6 +307,7 @@ new_function = r'''async function solveYauCanonicalFrame444(
       yauCanonicalCrossColor: "D",
       yauFrameRotation: baseOrientation.token,
       yauFrameAttemptCount: attempts.length,
+      yauFrameProbePassCount: probePassed.length,
       yauFrameAttempts: attempts,
     },
   };
@@ -174,14 +315,15 @@ new_function = r'''async function solveYauCanonicalFrame444(
 '''
 s = s[:start] + new_function + s[end:]
 
-old = '''  if (method444 === "yau" && crossColor !== "D" && options?.__yauCanonicalFrame !== true) {
+replace_once(
+'''  if (method444 === "yau" && crossColor !== "D" && options?.__yauCanonicalFrame !== true) {
     return solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs);
-  }'''
-new = '''  if (method444 === "yau" && options?.__yauCanonicalFrame !== true) {
+  }''',
+'''  if (method444 === "yau" && options?.__yauCanonicalFrame !== true) {
     return solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs);
-  }'''
-if old not in s:
-    raise SystemExit('missing solve444 Yau frame gate')
-s = s.replace(old, new, 1)
+  }''',
+'solve444 all-Yau frame gate',
+)
+
 path.write_text(s)
-print('patched four-frame Yau retry')
+print('patched probe-first four-frame Yau retry')
