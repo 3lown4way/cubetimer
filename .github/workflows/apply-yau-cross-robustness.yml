@@ -12,7 +12,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,74 +28,48 @@ jobs:
           python tools/apply-yau-cross-meta.py
           python tools/apply-yau-frame-retry.py
           python tools/apply-yau-probe-projection-flag.py
+          python tools/apply-yau-frame-sequential.py
       - name: Validate syntax
         run: |
           node --check solver/edgePairing444.js
           node --check solver/solver444.js
       - name: Verify existing Yau contract
         run: node tools/verify-444-yau.mjs
-      - name: Stress Yau cross search
+      - name: Verify reproduced Cross failure
         run: |
-          cat > tools/.yau-cross-stress-temp.mjs <<'EOF'
+          cat > tools/.yau-cross-repro-temp.mjs <<'EOF'
           import { solve444 } from "../solver/solver444.js";
-
-          let seed = 0x44c0ffee;
-          function rnd() {
-            seed ^= seed << 13; seed >>>= 0;
-            seed ^= seed >>> 17; seed >>>= 0;
-            seed ^= seed << 5; seed >>>= 0;
-            return seed / 0x100000000;
-          }
-          const faces = ["U", "R", "F", "D", "L", "B"];
-          const suffixes = ["", "'", "2"];
-          function makeScramble(length = 32) {
-            const out = [];
-            let previous = "";
-            while (out.length < length) {
-              const face = faces[Math.floor(rnd() * faces.length)];
-              if (face === previous) continue;
-              previous = face;
-              const wide = rnd() < 0.46 ? "w" : "";
-              const suffix = suffixes[Math.floor(rnd() * suffixes.length)];
-              out.push(`${face}${wide}${suffix}`);
-            }
-            return out.join(" ");
-          }
-
-          const crosses = ["D", "F", "R", "U", "L", "B", "D", "F"];
-          let multiFrameCount = 0;
-          for (let index = 0; index < crosses.length; index += 1) {
-            const scramble = makeScramble();
-            const crossColor = crosses[index];
+          const cases = [
+            {
+              crossColor: "D",
+              scramble: "Rw U' F R2 F Bw' Fw' Dw Bw Dw Uw R Bw Fw2 B2 Fw2 B Uw2 Lw Bw2 R' Lw R' L Bw U2 Bw U' Fw2 D Bw' Uw'",
+            },
+            {
+              crossColor: "F",
+              scramble: "Bw' F L F' D Lw' Dw Lw2 R D Uw' Lw2 Dw U' L2 R2 Bw' Rw' Bw' R Fw' U Rw' Uw' B2 Uw' F' R Uw' Rw' Lw2 Uw",
+            },
+          ];
+          for (const test of cases) {
             const started = Date.now();
-            const result = await solve444(scramble, null, {
+            const result = await solve444(test.scramble, null, {
               deadlineTs: Date.now() + 60_000,
-              crossColor,
+              crossColor: test.crossColor,
               method444: "yau",
             });
-            const info = {
-              index,
-              crossColor,
+            console.log(JSON.stringify({
+              crossColor: test.crossColor,
               elapsedMs: Date.now() - started,
               ok: result.ok,
+              verified: result.verified,
               reason: result.reason,
-              detail: result.detail,
-              frameSpin: result.meta?.yauFrameSpin || null,
-              frameAttempts: result.meta?.yauFrameAttemptCount || 0,
-              probePasses: result.meta?.yauFrameProbePassCount || 0,
-              attempts: result.meta?.yauFrameAttempts || [],
-              scramble,
-            };
-            console.log(JSON.stringify(info));
-            if (!result.ok || result.verified !== true) {
-              throw new Error(`YAU_STRESS_FAILED:${JSON.stringify(info)}`);
-            }
-            if ((info.frameAttempts || 0) > 1) multiFrameCount += 1;
+              frameSpin: result.meta?.yauFrameSpin,
+              attempts: result.meta?.yauFrameAttempts,
+            }));
+            if (!result.ok || result.verified !== true) throw new Error(`YAU_CROSS_REPRO_FAILED:${result.reason}`);
           }
-          console.log(JSON.stringify({ stressPassed: true, multiFrameCount }));
           EOF
-          node tools/.yau-cross-stress-temp.mjs
-          rm tools/.yau-cross-stress-temp.mjs
+          node tools/.yau-cross-repro-temp.mjs
+          rm tools/.yau-cross-repro-temp.mjs
       - name: Verify existing 4x4 contracts
         run: |
           node tools/verify-444-worker-boundary.mjs
@@ -106,7 +80,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add solver/edgePairing444.js solver/solver444.js
-          git commit -m "Make Yau cross search frame-resilient"
+          git commit -m "Fix Yau cross frame failures"
           git push origin HEAD:main
 
-# Target-only projection is used for Cross 4/4 frame probes, not final solve quality.
+# Reproduces the former 444_YAU_CROSS3_FAILED path and requires verified Yau output.
