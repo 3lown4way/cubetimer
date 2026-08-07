@@ -5,13 +5,17 @@ const EDGE_SLOT_PAIRS = [
   [8, 2], [9, 15], [5, 11], [10, 20], [21, 14], [6, 23],
   [22, 18], [3, 4], [7, 17], [19, 13], [16, 0], [12, 1],
 ];
+const EDGE_SLOT_TO_333 = [0, 8, 9, 4, 5, 7, 6, 3, 11, 10, 2, 1];
+const EDGE_NAMES_333 = ["UF", "UR", "UB", "UL", "DF", "DR", "DB", "DL", "FR", "FL", "BR", "BL"];
 const EDGE_TYPE_BY_WING = (() => {
   const output = new Uint8Array(24);
   output.fill(255);
   EDGE_SLOT_PAIRS.forEach((pair, type) => pair.forEach((wing) => { output[wing] = type; }));
   return output;
 })();
-const D_CROSS_TYPES = new Set([4, 5, 6, 7]);
+const D_CROSS_TYPES = new Set(
+  EDGE_SLOT_TO_333.flatMap((cubieIndex, type) => EDGE_NAMES_333[cubieIndex].includes("D") ? [type] : []),
+);
 const ALL_MOVES = [..."URFDLB"].flatMap((face) => [face, `${face}'`, `${face}2`, `${face}w`, `${face}w'`, `${face}w2`]);
 
 const kpuzzle = await puzzles["4x4x4"].kpuzzle();
@@ -39,6 +43,8 @@ function pairedTypes(pattern) {
   return output;
 }
 
+assert.deepEqual([...D_CROSS_TYPES].sort((a, b) => a - b), [3, 4, 5, 6]);
+
 const phase3 = [];
 const phase4 = [];
 for (const move of ALL_MOVES) {
@@ -57,5 +63,5 @@ for (const [name, moves] of [["phase3", phase3], ["phase4", phase4]]) {
   }
 }
 
-console.log(JSON.stringify({ phase3, phase4 }, null, 2));
+console.log(JSON.stringify({ dCrossTypes: [...D_CROSS_TYPES], phase3, phase4 }, null, 2));
 console.log("Yau remaining-center moves preserve D-cross dedges");
