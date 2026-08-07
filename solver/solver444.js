@@ -391,7 +391,7 @@ function normalizeCfopStageName(name) {
   return /^Cross\b/i.test(value) ? "Cross" : value;
 }
 
-async function solveCfop333FromCubie(cubieState, onProgress, deadlineTs) {
+async function solveCfop333FromCubie(cubieState, onProgress, deadlineTs, crossColor = "D") {
   const [{ getDefaultPattern }, { solve3x3StrictCfopFromPattern }] = await Promise.all([
     import("./context.js"),
     import("./cfop3x3.js"),
@@ -400,7 +400,7 @@ async function solveCfop333FromCubie(cubieState, onProgress, deadlineTs) {
   const pattern = build333PatternFromCubie(solved333, cubieState);
   return solve3x3StrictCfopFromPattern(pattern, {
     mode: "strict",
-    crossColor: "D",
+    crossColor,
     solverVersion: "v2",
     deadlineTs,
     enableHumanViewpoint: false,
@@ -435,7 +435,7 @@ function emptyFailure(reason, status = "error", detail = null, meta = {}) {
   };
 }
 
-async function preferHumanEdgePairing323(api, reduction, publicScramble, internalScramble, deadlineTs) {
+async function preferHumanEdgePairing323(api, reduction, publicScramble, internalScramble, crossColor, deadlineTs) {
   if (
     reduction?.status !== "partial" ||
     reduction?.reason !== "444_REDUCTION_INCOMPLETE" ||
@@ -492,6 +492,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   try {
     continued = normalizeBoundaryResponse(api.solve({
       scramble: continuationScramble,
+      crossColor,
       deadlineTs,
     }));
   } catch (error) {
@@ -680,6 +681,9 @@ export function getSolver444ReadinessStatus() {
 
 export async function solve444(scramble, onProgress = null, options = {}) {
   const deadlineTs = Number(options?.deadlineTs) || 0;
+  const crossColor = /^[URFDLB]$/i.test(String(options?.crossColor || "D"))
+    ? String(options?.crossColor || "D").toUpperCase()
+    : "D";
   const publicScramble = String(scramble || "").trim();
   const internalScramble = translate444MoveConvention(publicScramble);
   if (deadlineReached(deadlineTs)) {
@@ -736,6 +740,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   try {
     result = normalizeBoundaryResponse(api.solve({
       scramble: internalScramble,
+      crossColor,
       deadlineTs,
     }));
   } catch (error) {
@@ -751,6 +756,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     result,
     publicScramble,
     internalScramble,
+    crossColor,
     deadlineTs,
   );
 
@@ -844,7 +850,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
 
   let cfop;
   try {
-    cfop = await solveCfop333FromCubie(result.meta.virtual333, onProgress, deadlineTs);
+    cfop = await solveCfop333FromCubie(result.meta.virtual333, onProgress, deadlineTs, crossColor);
   } catch (error) {
     cfop = { ok: false, reason: "CFOP_CUBIE_BRIDGE_FAILED", detail: String(error?.message || error) };
   }

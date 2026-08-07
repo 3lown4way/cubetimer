@@ -1587,6 +1587,7 @@ const api = {
       return withTimeout(
         solve444Lazy(scramble, onProgress, {
           deadlineTs: effective444DeadlineTs,
+          crossColor,
         }),
         remaining444Ms,
       ).catch((error) => {

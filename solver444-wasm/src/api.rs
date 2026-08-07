@@ -2,17 +2,35 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    normalize_parity, parse_alg444, solve_centers, solve_edges, CenterSolveError, Cube444,
-    EdgeSolveError, ReductionError, Virtual333State,
+    normalize_parity, parse_alg444, solve_centers_for_cross, solve_edges, CenterSolveError,
+    Cube444, EdgeSolveError, ReductionError, Virtual333State,
 };
 
 const API_VERSION: &str = "444-complete-v1";
+
+fn default_cross_color() -> String {
+    "D".to_string()
+}
+
+fn parse_cross_color(value: &str) -> Option<u8> {
+    match value.trim().to_ascii_uppercase().as_str() {
+        "U" => Some(0),
+        "R" => Some(1),
+        "F" => Some(2),
+        "D" => Some(3),
+        "L" => Some(4),
+        "B" => Some(5),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Solve444Request {
     #[serde(default)]
     scramble: String,
+    #[serde(default = "default_cross_color")]
+    cross_color: String,
     #[serde(default)]
     deadline_ts: f64,
 }
@@ -246,7 +264,19 @@ pub fn solve_444_boundary(request_json: &str) -> String {
     boundary.state_valid = true;
     boundary.solved_state = state.is_solved();
 
-    let center_result = match solve_centers(&state, boundary.deadline_ts) {
+    let cross_color = match parse_cross_color(&request.cross_color) {
+        Some(color) => color,
+        None => {
+            return serialize_response(&empty_response(
+                "invalid",
+                "444_INVALID_CROSS_COLOR",
+                Some(request.cross_color),
+                boundary,
+            ));
+        }
+    };
+
+    let center_result = match solve_centers_for_cross(&state, boundary.deadline_ts, cross_color) {
         Ok(result) => result,
         Err(CenterSolveError::DeadlineReached) => {
             return serialize_response(&empty_response(
