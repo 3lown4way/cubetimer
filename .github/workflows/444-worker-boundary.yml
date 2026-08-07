@@ -12,10 +12,13 @@ on:
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "solver/solver444UiActivation.js"
+      - "solver/nxnTwistyPreview.js"
       - "index.html"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/verify-444-ui-worker-bootstrap.mjs"
+      - "tools/verify-nxn-solver-preview.mjs"
       - "tools/verify-444-public-notation.mjs"
       - "tools/verify-444-ll-parity.mjs"
       - "tools/verify-444-edge-323.mjs"
@@ -35,10 +38,13 @@ on:
       - "solver/wasmSolver.js"
       - "solver/solverWorker.js"
       - "solver/solver444UiActivation.js"
+      - "solver/nxnTwistyPreview.js"
       - "index.html"
       - "public/solver444-wasm/**"
       - "public/solver-wasm/**"
       - "tools/verify-444-worker-boundary.mjs"
+      - "tools/verify-444-ui-worker-bootstrap.mjs"
+      - "tools/verify-nxn-solver-preview.mjs"
       - "tools/verify-444-public-notation.mjs"
       - "tools/verify-444-ll-parity.mjs"
       - "tools/verify-444-edge-323.mjs"
@@ -97,7 +103,10 @@ jobs:
           node --check solver/wasmSolver.js
           node --check solver/solverWorker.js
           node --check solver/solver444UiActivation.js
+          node --check solver/nxnTwistyPreview.js
           node --check tools/verify-444-worker-boundary.mjs
+          node --check tools/verify-444-ui-worker-bootstrap.mjs
+          node --check tools/verify-nxn-solver-preview.mjs
           node --check tools/verify-444-public-notation.mjs
           node --check tools/verify-444-ll-parity.mjs
           node --check tools/verify-444-edge-323.mjs
@@ -131,6 +140,11 @@ jobs:
       - name: Verify 4x4 and 3x3 cubie convention
         run: node tools/compare-444-333-cubies.mjs
 
+      - name: Verify 4x4 UI worker bootstrap recovery
+        run: |
+          node tools/verify-444-ui-worker-bootstrap.mjs
+          node tools/verify-nxn-solver-preview.mjs
+
       - name: Verify complete no-fallback solver contract
         run: node tools/verify-444-worker-boundary.mjs
 
@@ -149,4 +163,4 @@ jobs:
       - name: Validate repository diff
         run: git diff --check
 
-# The permanent Yau contract includes a formerly failing Cross 3/4 frame-regression scramble.
+# Permanent contracts include former Yau Cross 3/4 failures and a bounded, retryable 4x4 Worker bootstrap.
