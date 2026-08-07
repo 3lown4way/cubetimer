@@ -435,6 +435,129 @@ function emptyFailure(reason, status = "error", detail = null, meta = {}) {
   };
 }
 
+async function preferHumanEdgePairing323(api, reduction, publicScramble, internalScramble, deadlineTs) {
+  if (
+    reduction?.status !== "partial" ||
+    reduction?.reason !== "444_REDUCTION_INCOMPLETE" ||
+    reduction?.meta?.centersSolved !== true ||
+    reduction?.meta?.edgesPaired !== true
+  ) {
+    return reduction;
+  }
+  const centerStage = Array.isArray(reduction.stages)
+    ? reduction.stages.find((stage) => stage?.id === "centers" && stage?.verified === true)
+    : null;
+  const exactEdgeStage = Array.isArray(reduction.stages)
+    ? reduction.stages.find((stage) => stage?.id === "edges" && stage?.verified === true)
+    : null;
+  if (!centerStage || !exactEdgeStage || Number(exactEdgeStage.moveCount) === 0 || deadlineReached(deadlineTs)) {
+    return reduction;
+  }
+
+  const started = Date.now();
+  let human;
+  try {
+    const { solveEdgePairing323 } = await import("./edgePairing444.js");
+    human = await solveEdgePairing323(
+      publicScramble,
+      translate444MoveConvention(centerStage.solution),
+      { deadlineTs },
+    );
+  } catch (error) {
+    human = { ok: false, reason: "444_323_IMPORT_FAILED", detail: String(error?.message || error) };
+  }
+  if (!human?.ok) {
+    return {
+      ...reduction,
+      meta: {
+        ...reduction.meta,
+        edge323Attempted: true,
+        edge323FallbackReason: human?.reason || human?.detail || "444_323_NO_PLAN",
+      },
+    };
+  }
+
+  const internalHumanSegments = (Array.isArray(human.segments) ? human.segments : []).map((segment) => ({
+    ...segment,
+    solution: translate444MoveConvention(segment?.solution || ""),
+    verified: true,
+  }));
+  const internalHumanSolution = translate444MoveConvention(human.solution || "");
+  const continuationScramble = [internalScramble, centerStage.solution, internalHumanSolution]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  let continued;
+  try {
+    continued = normalizeBoundaryResponse(api.solve({
+      scramble: continuationScramble,
+      deadlineTs,
+    }));
+  } catch (error) {
+    return {
+      ...reduction,
+      meta: {
+        ...reduction.meta,
+        edge323Attempted: true,
+        edge323FallbackReason: `444_323_CONTINUATION_FAILED:${String(error?.message || error)}`,
+      },
+    };
+  }
+  const parityStage = Array.isArray(continued.stages)
+    ? continued.stages.find((stage) => stage?.id === "parity" && stage?.verified === true)
+    : null;
+  if (
+    continued.status !== "partial" ||
+    continued.reason !== "444_REDUCTION_INCOMPLETE" ||
+    continued.meta?.virtual333Ready !== true ||
+    !continued.meta?.virtual333 ||
+    !parityStage
+  ) {
+    return {
+      ...reduction,
+      meta: {
+        ...reduction.meta,
+        edge323Attempted: true,
+        edge323FallbackReason: continued.reason || "444_323_CONTINUATION_INVALID",
+      },
+    };
+  }
+
+  const humanEdgeStage = {
+    id: "edges",
+    name: "Edge Pairing · 3-2-3",
+    solution: internalHumanSolution,
+    moveCount: splitAlgorithm(internalHumanSolution).length,
+    verified: true,
+    method: "3-2-3",
+    segments: internalHumanSegments,
+  };
+  return {
+    ...continued,
+    stages: [centerStage, humanEdgeStage, parityStage],
+    meta: {
+      ...continued.meta,
+      parsedMoveCount: reduction.meta?.parsedMoveCount,
+      scrambleValid: reduction.meta?.scrambleValid,
+      stateValid: reduction.meta?.stateValid,
+      solvedState: reduction.meta?.solvedState,
+      centersSolved: true,
+      centerMoveCount: Number(centerStage.moveCount) || 0,
+      centerTableBuildMs: Number(reduction.meta?.centerTableBuildMs) || 0,
+      centerSearchMs: Number(reduction.meta?.centerSearchMs) || 0,
+      edgesPaired: true,
+      edgeMoveCount: humanEdgeStage.moveCount,
+      edgeTableBuildMs: 0,
+      edgeSearchMs: Math.max(0, Date.now() - started),
+      edgeMethod: "3-2-3",
+      edge323Attempted: true,
+      edge323FallbackReason: null,
+      edge323: human.meta && typeof human.meta === "object" ? { ...human.meta } : {},
+    },
+  };
+}
+
 function normalizeBoundaryResponse(raw) {
   let value = raw;
   if (typeof value === "string") {
@@ -622,6 +745,14 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       apiVersion: api.version(),
     });
   }
+
+  result = await preferHumanEdgePairing323(
+    api,
+    result,
+    publicScramble,
+    internalScramble,
+    deadlineTs,
+  );
 
   if (result.meta?.stateValid === true) {
     emitProgress(onProgress, {
@@ -839,7 +970,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   try {
     const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
     const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
-    if (publicEdgeStage) {
+    if (publicEdgeStage && publicEdgeStage.method !== "3-2-3") {
       publicEdgeStage.segments = await buildEdgePairingSegments(
         publicScramble,
         publicCenterStage?.solution || "",
