@@ -12,27 +12,38 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-      - name: Patch and verify
+      - name: Patch human viewpoint
         run: |
-          python tools/apply-444-human-centers.py
-          python tools/apply-444-human-centers-v2.py
+          python tools/apply-444-human-viewpoint.py
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           node --check solver/solver444.js
           node --check solver/solverWorker.js
+          node --check tools/verify-444-worker-boundary.mjs
+          node --check tools/verify-444-public-notation.mjs
           cargo test --manifest-path solver444-wasm/Cargo.toml --lib
+      - name: Rebuild browser 4x4 WASM
+        run: |
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --locked
+          fi
+          rm -rf public/solver444-wasm
+          wasm-pack build solver444-wasm --target web --out-dir ../public/solver444-wasm --out-name solver444_wasm --release
+      - name: Verify complete browser pipeline
+        run: |
           node tools/verify-444-worker-boundary.mjs
           node tools/verify-444-public-notation.mjs
+          node tools/verify-444-edge-323.mjs
           git diff --check
       - name: Commit verified change
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver444-wasm/src/centers.rs solver444-wasm/src/lib.rs solver444-wasm/src/api.rs solver/solver444.js solver/solverWorker.js
-          git commit -m "Use selected cross color for 4x4 center order"
+          git add solver444-wasm/src/centers.rs solver444-wasm/src/api.rs solver/solver444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs public/solver444-wasm
+          git commit -m "Humanize 4x4 center order and viewpoints"
           git push origin HEAD:main
