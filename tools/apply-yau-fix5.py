@@ -42,28 +42,16 @@ new = '''      const firstThree = searchSliceCycle(
 assert old in s, "missing firstThree call"
 s = s.replace(old, new, 1)
 
-old = '''        finalSetup = searchSliceCycleAcrossFrames(
-          nextTwo.state,
-          secondLockedMask,
-          10,
-          nextTwo.sliceFamily || sliceFamily,
-          model,
-          deadlineTs,
-          7,
-          requiredSolvedTypeMask,
-        );'''
-new = '''        finalSetup = searchSliceCycleAcrossFrames(
-          nextTwo.state,
-          secondLockedMask,
-          10,
-          nextTwo.sliceFamily || sliceFamily,
-          model,
-          deadlineTs,
-          yauBank ? 10 : 7,
-          requiredSolvedTypeMask,
-        );'''
-assert old in s, "missing finalSetup call"
-s = s.replace(old, new, 1)
+anchor = "        finalSetup = searchSliceCycleAcrossFrames(\n"
+start = s.find(anchor)
+assert start >= 0, "missing finalSetup block"
+end = s.find("        );", start)
+assert end > start, "unterminated finalSetup block"
+block = s[start:end + len("        );")]
+needle = "          7,\n"
+assert needle in block, f"missing finalSetup depth in block: {block}"
+block = block.replace(needle, "          yauBank ? 10 : 7,\n", 1)
+s = s[:start] + block + s[end + len("        );"):]
 
 p.write_text(s)
 print("Yau 3-2-3 matching frame and deeper final setup applied")
