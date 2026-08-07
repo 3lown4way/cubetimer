@@ -44,8 +44,11 @@ jobs:
           node --check solver/solver444UiActivation.js
           node --check tools/verify-444-yau.mjs
           node --check tools/verify-yau-center-preservation.mjs
+          node --check tools/diagnose-yau-frame.mjs
       - name: Verify Yau center/cross preservation invariant
         run: node tools/verify-yau-center-preservation.mjs
+      - name: Diagnose canonical F-frame checkpoints
+        run: node tools/diagnose-yau-frame.mjs
       - name: Verify Yau solve pipeline
         run: node tools/verify-444-yau.mjs
       - name: Verify existing 4x4 worker contract
@@ -60,4 +63,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Yau Next2 may reshuffle non-cross banks while the four cross dedges stay protected.
+# Temporary diagnostic prints physical center checkpoints for canonical F-frame Yau.
