@@ -25,6 +25,7 @@ jobs:
         run: |
           python tools/apply-yau-once.py
           python tools/apply-yau-fix1.py
+          python tools/apply-yau-fix2.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
