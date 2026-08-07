@@ -58,4 +58,4 @@ jobs:
           git add solver444-wasm/src/centers.rs solver444-wasm/src/api.rs solver/solver444.js solver/edgePairing444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs tools/verify-444-edge-323.mjs public/solver444-wasm
           git commit -m "Humanize 4x4 centers viewpoints and 3-2-3 banks"
           git push origin HEAD:main
-      # exact 2-wing heuristic guides Next2 without widening the beam
+      # fixed exact 2-wing distance heuristic
