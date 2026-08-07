@@ -746,9 +746,13 @@ function findL2E(initialState, model, deadlineTs, requiredSolvedTypeMask = 0) {
 }
 
 const YAU_TARGET_BEAM_WIDTH = 3600;
+const YAU_TARGET_RESCUE_BEAM_WIDTH = 10000;
 const YAU_TARGET_MAX_MACROS = 6;
+const YAU_TARGET_RESCUE_MAX_MACROS = 10;
 const YAU_ALIGNMENT_BEAM_WIDTH = 5000;
+const YAU_ALIGNMENT_RESCUE_BEAM_WIDTH = 12000;
 const YAU_ALIGNMENT_MAX_DEPTH = 8;
+const YAU_ALIGNMENT_RESCUE_MAX_DEPTH = 11;
 
 function sameCenterState444(left, right) {
   if (!left?.centerPieces || !right?.centerPieces) return false;
@@ -757,6 +761,31 @@ function sameCenterState444(left, right) {
     if (left.centerPieces[index] !== right.centerPieces[index]) return false;
   }
   return true;
+}
+
+function targetEdgeProjectionKey444(state, targetTypeMask, includeCenters = false) {
+  // Exact projection for frame probes: only the eight wings belonging to the
+  // four target dedges influence whether those dedges can be paired and survive
+  // the fixed remaining-center action.
+  const positionByPiece = new Uint8Array(24);
+  for (let position = 0; position < 24; position += 1) {
+    positionByPiece[state.edgePieces[position]] = position;
+  }
+  const values = [];
+  for (let edgeType = 0; edgeType < 12; edgeType += 1) {
+    if (!(targetTypeMask & (1 << edgeType))) continue;
+    const [firstPiece, secondPiece] = EDGE_SLOT_PAIRS_444[edgeType];
+    const firstPosition = positionByPiece[firstPiece];
+    const secondPosition = positionByPiece[secondPiece];
+    values.push(
+      firstPosition,
+      state.edgeOrientation[firstPosition],
+      secondPosition,
+      state.edgeOrientation[secondPosition],
+    );
+  }
+  if (includeCenters) values.push(...state.centerPieces, ...state.centerOrientation);
+  return String.fromCharCode(...values);
 }
 
 function searchTargetEdgeTypes444(
@@ -769,6 +798,9 @@ function searchTargetEdgeTypes444(
   maxMacros = YAU_TARGET_MAX_MACROS,
   postAction = null,
   minPairCount = 0,
+  beamWidth = YAU_TARGET_BEAM_WIDTH,
+  centerAwareKey = false,
+  projectTargetState = false,
 ) {
   const evaluate = (node) => {
     const pairedMask = pairedEdgeTypeMask(node.state);
@@ -821,19 +853,31 @@ function searchTargetEdgeTypes444(
         if (!maskContains(pairedMask, requiredTypeMask)) continue;
         if (bitCount(pairedMask) < minPairCount) continue;
         const candidate = evaluate({ state: nextState, path: [...node.path, actionIndex] });
-        const key = compactStateKey(nextState, false);
+        // Only the Yau target-edge search may opt into a center-aware key.
+        // Do not touch collectSeedCandidates(): that is the standard 3-2-3
+        // reduction path and intentionally keys only the wing state.
+        const key = projectTargetState
+          ? targetEdgeProjectionKey444(nextState, targetTypeMask, centerAwareKey)
+          : compactStateKey(nextState, centerAwareKey);
         const previous = seen.get(key);
         if (!previous || previous.score < candidate.score) seen.set(key, candidate);
       }
     }
     beam = [...seen.values()]
       .sort((left, right) => right.score - left.score)
-      .slice(0, YAU_TARGET_BEAM_WIDTH);
+      .slice(0, beamWidth);
   }
   return overshoot;
 }
 
-function searchOuterCrossAlignment444(initialState, targetTypeMask, model, deadlineTs) {
+function searchOuterCrossAlignment444(
+  initialState,
+  targetTypeMask,
+  model,
+  deadlineTs,
+  maxDepth = YAU_ALIGNMENT_MAX_DEPTH,
+  beamWidth = YAU_ALIGNMENT_BEAM_WIDTH,
+) {
   const solvedCenters = model.solvedCompact;
   const initialSolvedMask = solvedEdgeTypeMask(initialState);
   if (
@@ -849,7 +893,7 @@ function searchOuterCrossAlignment444(initialState, targetTypeMask, model, deadl
     lastFace: "",
     score: bitCount(initialSolvedMask & targetTypeMask) * 10000,
   }];
-  for (let depth = 0; depth < YAU_ALIGNMENT_MAX_DEPTH; depth += 1) {
+  for (let depth = 0; depth < maxDepth; depth += 1) {
     if (deadlineReached(deadlineTs)) return null;
     const seen = new Map();
     for (const node of beam) {
@@ -877,7 +921,7 @@ function searchOuterCrossAlignment444(initialState, targetTypeMask, model, deadl
     }
     beam = [...seen.values()]
       .sort((left, right) => right.score - left.score)
-      .slice(0, YAU_ALIGNMENT_BEAM_WIDTH);
+      .slice(0, beamWidth);
   }
   return null;
 }
@@ -902,7 +946,8 @@ export async function solveTargetEdgeTypes444(
   const targetMask = Number(targetTypeMask) >>> 0;
   const requiredTypeMask = Number(options?.requiredTypeMask) >>> 0;
   const targetCount = Math.max(1, Math.min(bitCount(targetMask), Number(options?.targetCount) || bitCount(targetMask)));
-  const maxMacros = Math.max(0, Math.min(8, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));
+  const maxMacros = Math.max(0, Math.min(YAU_TARGET_RESCUE_MAX_MACROS, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));
+  const enableRescue = options?.enableRescue !== false;
   const alignSolved = options?.alignSolved === true;
   const postSequence = String(options?.postSequence || "").trim();
   const postAction = postSequence ? model.actionFor(postSequence) : null;
@@ -922,7 +967,7 @@ export async function solveTargetEdgeTypes444(
     return { ok: false, reason: "444_YAU_REQUIRED_CROSS_BROKEN" };
   }
 
-  const paired = searchTargetEdgeTypes444(
+  let paired = searchTargetEdgeTypes444(
     initialState,
     targetMask,
     requiredTypeMask,
@@ -931,11 +976,36 @@ export async function solveTargetEdgeTypes444(
     deadlineTs,
     maxMacros,
     postAction,
+    0,
+    YAU_TARGET_BEAM_WIDTH,
+    false,
+    options?.projectTargetState === true,
   );
+  let searchRescueUsed = false;
+  let searchMaxMacros = maxMacros;
+  if (enableRescue && !paired && maxMacros > 0 && !deadlineReached(deadlineTs)) {
+    searchMaxMacros = Math.max(maxMacros, YAU_TARGET_RESCUE_MAX_MACROS);
+    paired = searchTargetEdgeTypes444(
+      initialState,
+      targetMask,
+      requiredTypeMask,
+      targetCount,
+      model,
+      deadlineTs,
+      searchMaxMacros,
+      postAction,
+      0,
+      YAU_TARGET_RESCUE_BEAM_WIDTH,
+      true,
+      false,
+    );
+    searchRescueUsed = paired != null;
+  }
   if (!paired) {
     return {
       ok: false,
       reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_TARGET_EDGES_NOT_FOUND",
+      detail: JSON.stringify({ targetCount, maxMacros, rescueEnabled: enableRescue, rescueMaxMacros: searchMaxMacros }),
     };
   }
 
@@ -950,12 +1020,29 @@ export async function solveTargetEdgeTypes444(
   const pairMoves = paired.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));
   let finalState = paired.state;
   let alignmentMoves = [];
+  let alignmentRescueUsed = false;
   if (alignSolved) {
-    const alignment = searchOuterCrossAlignment444(finalState, targetMask, model, deadlineTs);
+    let alignment = searchOuterCrossAlignment444(finalState, targetMask, model, deadlineTs);
+    if (enableRescue && !alignment && !deadlineReached(deadlineTs)) {
+      alignment = searchOuterCrossAlignment444(
+        finalState,
+        targetMask,
+        model,
+        deadlineTs,
+        YAU_ALIGNMENT_RESCUE_MAX_DEPTH,
+        YAU_ALIGNMENT_RESCUE_BEAM_WIDTH,
+      );
+      alignmentRescueUsed = alignment != null;
+    }
     if (!alignment) {
       return {
         ok: false,
         reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_CROSS_ALIGNMENT_FAILED",
+        detail: JSON.stringify({
+          rescueEnabled: enableRescue,
+          primaryMaxDepth: YAU_ALIGNMENT_MAX_DEPTH,
+          rescueMaxDepth: YAU_ALIGNMENT_RESCUE_MAX_DEPTH,
+        }),
       };
     }
     finalState = alignment.state;
@@ -996,6 +1083,9 @@ export async function solveTargetEdgeTypes444(
     targetCount,
     macroCount: paired.path.length,
     alignmentMoveCount: alignmentMoves.length,
+    searchRescueUsed,
+    searchMaxMacros,
+    alignmentRescueUsed,
     method: "Yau Cross Edges",
   };
 }
