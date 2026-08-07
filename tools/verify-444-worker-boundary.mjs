@@ -27,7 +27,7 @@ assert.equal(valid.moveCount, valid.solution.split(/\s+/).filter(Boolean).length
 
 const expectedStages = [
   ["centers", "Centers"],
-  ["edges", "Edge Pairing"],
+  ["edges", "Edge Pairing · 3-2-3"],
   ["parity", "Parity Normalization"],
   ["threeByThree", "3x3 CFOP"],
 ];
@@ -44,12 +44,21 @@ assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
 assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);
 assert.equal(valid.stages[3].moveCount, valid.meta.cfopMoveCount);
 
-const edgeSegments = valid.stages[1].segments;
-assert.ok(Array.isArray(edgeSegments) && edgeSegments.length >= 2);
+const edgeStage = valid.stages[1];
+assert.equal(edgeStage.method, "3-2-3");
+assert.equal(valid.meta.edgeMethod, "3-2-3");
+assert.equal(valid.meta.edge323Attempted, true);
+assert.equal(valid.meta.edge323FallbackReason, null);
+assert.ok(edgeStage.moveCount <= 80, `3-2-3 edge stage regressed to ${edgeStage.moveCount} moves`);
+const edgeSegments = edgeStage.segments;
+assert.ok(Array.isArray(edgeSegments) && edgeSegments.length >= 4);
+assert.ok(edgeSegments.some((stage) => stage.name === "3-2-3 · First 3"));
+assert.ok(edgeSegments.some((stage) => stage.name === "3-2-3 · Next 2"));
+assert.equal(edgeSegments.at(-1)?.name, "3-2-3 · L2E");
 assert.equal(edgeSegments.at(-1).pairEnd, 12);
 assert.equal(
   edgeSegments.map((stage) => stage.solution).filter(Boolean).join(" "),
-  valid.stages[1].solution,
+  edgeStage.solution,
 );
 for (let index = 1; index < edgeSegments.length; index += 1) {
   assert.ok(edgeSegments[index].pairEnd > edgeSegments[index - 1].pairEnd);
@@ -151,11 +160,21 @@ assert.match(routeSource, /workerError: errorMessage/);
 const solver444Source = fs.readFileSync(new URL("../solver/solver444.js", import.meta.url), "utf8");
 assert.match(solver444Source, /solve3x3StrictCfopFromPattern/);
 assert.match(solver444Source, /enableHumanViewpoint: false/);
+assert.match(solver444Source, /preferHumanEdgePairing323/);
+assert.match(solver444Source, /edgePairing444\.js/);
+assert.match(solver444Source, /edgeMethod: "3-2-3"/);
 assert.match(solver444Source, /buildEdgePairingSegments/);
 assert.match(solver444Source, /verify_444_solution_json/);
 assert.match(solver444Source, /444_FINAL_VERIFICATION_FAILED/);
 assert.match(solver444Source, /fullVerificationSolved: true/);
-assert.doesNotMatch(solver444Source, /solveTwophaseAdaptive333FromCubie|solveWithExternalSearch|reverseScramble|fallback/i);
+assert.doesNotMatch(solver444Source, /solveTwophaseAdaptive333FromCubie|solveWithExternalSearch|reverseScramble/i);
+
+const edge323Source = fs.readFileSync(new URL("../solver/edgePairing444.js", import.meta.url), "utf8");
+assert.match(edge323Source, /solveEdgePairing323/);
+assert.match(edge323Source, /3-2-3 · First 3/);
+assert.match(edge323Source, /3-2-3 · Next 2/);
+assert.match(edge323Source, /3-2-3 · L2E/);
+assert.match(edge323Source, /L2E_ALGORITHMS_444/);
 
 const mainSource = fs.readFileSync(new URL("../main.js", import.meta.url), "utf8");
 assert.doesNotMatch(mainSource, /ensureSolver444Ready|solve444Lazy|444_NOT_IMPLEMENTED/);
@@ -173,4 +192,4 @@ for (const path of [
   assert.equal(fs.existsSync(new URL(`../${path}`, import.meta.url)), true, `missing ${path}`);
 }
 
-console.log("complete verified 4x4 WASM and worker contract passed");
+console.log("complete verified 4x4 WASM, 3-2-3 edge, and worker contract passed");
