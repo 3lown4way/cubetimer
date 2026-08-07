@@ -19,6 +19,14 @@ const FACE_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
 
 const kpuzzle = await puzzles["4x4x4"].kpuzzle();
 const solved = kpuzzle.defaultPattern();
+const CENTER_FACE_BY_PIECE = (() => {
+  const output = new Map();
+  const pieces = solved.patternData.CENTERS.pieces;
+  for (let position = 0; position < pieces.length; position += 1) {
+    output.set(Number(pieces[position]), Math.floor(position / 4));
+  }
+  return output;
+})();
 
 function crossTypeMask(face) {
   let mask = 0;
@@ -62,16 +70,11 @@ function bitCount(value) {
   return count;
 }
 
-function centerPieceColor(piece) {
-  const value = Number(piece);
-  return Number.isInteger(value) && value >= 0 ? Math.floor(value / 4) : -1;
-}
-
 function faceCentersSolved(pattern, face) {
   const index = FACE_INDEX[face];
   const centers = pattern.patternData.CENTERS;
   for (let position = index * 4; position < index * 4 + 4; position += 1) {
-    if (centerPieceColor(centers.pieces[position]) !== index) return false;
+    if (CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])) !== index) return false;
   }
   return true;
 }
