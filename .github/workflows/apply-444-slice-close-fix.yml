@@ -1,0 +1,48 @@
+name: Apply 4x4 natural slice close fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-444-slice-close-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fix slice cycle close move
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('solver/edgePairing444.js')
+          s = p.read_text()
+          old = '''  for (const openMove of openMoves) {\n    const closeMove = openMove.endsWith("'") ? "Dw" : "Dw'";'''
+          new = '''  for (const openMove of openMoves) {\n    // A human 3-2-3 cycle must restore the same working slice it opened.\n    // The old code always closed with Dw/Dw', even when a rotated frame opened\n    // Uw/Fw/Bw/Rw/Lw, forcing the beam search to compensate with unnatural moves.\n    const closeMove = invertMoveToken(openMove);'''
+          if old not in s:
+              raise SystemExit('slice close anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Validate natural slice behavior
+        run: |
+          node --check solver/edgePairing444.js
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-yau.mjs
+          git diff --check
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/edgePairing444.js
+          git commit -m "Fix 4x4 slice cycle restoration"
+          git push origin HEAD:main
