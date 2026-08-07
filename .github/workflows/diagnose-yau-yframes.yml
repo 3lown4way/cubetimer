@@ -1,0 +1,47 @@
+name: Diagnose Yau y-frames
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/diagnose-yau-yframes.yml"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply candidate search rescue
+        run: |
+          python tools/apply-yau-cross-robustness.py
+          python tools/apply-yau-cross-meta.py
+      - name: Try four D-axis frames on reproduced failure
+        run: |
+          cat > tools/.diag-yframes.mjs <<'EOF'
+          import { solve444 } from "../solver/solver444.js";
+          const scramble = "Rw U' F R2 F Bw' Fw' Dw Bw Dw Uw R Bw Fw2 B2 Fw2 B Uw2 Lw Bw2 R' Lw R' L Bw U2 Bw U' Fw2 D Bw' Uw'";
+          const maps = [
+            { name: "id", map: {U:"U",R:"R",F:"F",D:"D",L:"L",B:"B"} },
+            { name: "y", map: {U:"U",R:"F",F:"L",D:"D",L:"B",B:"R"} },
+            { name: "y2", map: {U:"U",R:"L",F:"B",D:"D",L:"R",B:"F"} },
+            { name: "y'", map: {U:"U",R:"B",F:"R",D:"D",L:"F",B:"L"} },
+          ];
+          function remap(sequence, map) {
+            return sequence.split(/\s+/).map((token) => {
+              const m = /^([URFDLB])(w)?(2|')?$/.exec(token);
+              if (!m) throw new Error(token);
+              return `${map[m[1]]}${m[2]||""}${m[3]||""}`;
+            }).join(" ");
+          }
+          for (const frame of maps) {
+            const s = remap(scramble, frame.map);
+            const started = Date.now();
+            const r = await solve444(s, null, { deadlineTs: Date.now()+60_000, crossColor:"D", method444:"yau" });
+            console.log(JSON.stringify({frame:frame.name,elapsedMs:Date.now()-started,ok:r.ok,verified:r.verified,reason:r.reason,detail:r.detail,c3:r.meta?.yauCross3SearchRescueUsed,c4:r.meta?.yauCross4SearchRescueUsed,align:r.meta?.yauCrossAlignmentRescueUsed,scramble:s}));
+          }
+          EOF
+          node tools/.diag-yframes.mjs
