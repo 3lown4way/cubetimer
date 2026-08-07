@@ -143,7 +143,7 @@ if 'function edgePairDistanceHeuristic444(' not in s:
         raise SystemExit('centersSolved insertion marker missing')
     s = s.replace(marker, helper + marker, 1)
 
-old = '''          const score = bitCount(candidateMask) * 180\n            + bitCount(candidateMask & lockedMask) * 220\n            - depth;\n'''
+old = '          const score = bitCount(candidateMask) * 180 + bitCount(candidateMask & lockedMask) * 220 - depth;\n'
 new = '''          const pairDistance = edgePairDistanceHeuristic444(\n            nextState,\n            lockedMask,\n            targetCount,\n            closeMove,\n            model,\n          );\n          const score = bitCount(candidateMask) * 220\n            + bitCount(candidateMask & lockedMask) * 260\n            - pairDistance * 95\n            - depth;\n'''
 if old not in s:
     raise SystemExit('slice beam score block missing')
