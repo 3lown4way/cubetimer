@@ -62,18 +62,22 @@ function bitCount(value) {
   return count;
 }
 
+function centerPieceColor(piece) {
+  const value = Number(piece);
+  return Number.isInteger(value) && value >= 0 ? Math.floor(value / 4) : -1;
+}
+
 function faceCentersSolved(pattern, face) {
   const index = FACE_INDEX[face];
-  const actual = pattern.patternData.CENTERS;
-  const target = solved.patternData.CENTERS;
+  const centers = pattern.patternData.CENTERS;
   for (let position = index * 4; position < index * 4 + 4; position += 1) {
-    if (actual.pieces[position] !== target.pieces[position] || actual.orientation[position] !== target.orientation[position]) return false;
+    if (centerPieceColor(centers.pieces[position]) !== index) return false;
   }
   return true;
 }
 
 function allCentersSolved(pattern) {
-  return JSON.stringify(pattern.patternData.CENTERS) === JSON.stringify(solved.patternData.CENTERS);
+  return Object.keys(FACE_INDEX).every((face) => faceCentersSolved(pattern, face));
 }
 
 function isSolved(pattern) {
