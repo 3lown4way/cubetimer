@@ -1,0 +1,112 @@
+name: Apply natural Yau Cross 3 with center recompute
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-yau-natural-cross3-recompute.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Add bounded natural Cross 3 planner
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('solver/edgePairing444.js')
+          s=p.read_text()
+          old='''  return {\n    kpuzzle,\n    solved,\n    solvedCompact,\n    actionFor,\n    seedActions,\n    outerActions,\n    l2eActions,\n    sliceFamilies,\n  };'''
+          new='''  const centerPositionsByFace = {};\n  for (const face of "URFDLB") {\n    const action = actionFor(face);\n    centerPositionsByFace[face] = [];\n    for (let position = 0; position < 24; position += 1) {\n      if (action.centerPermutation[position] !== position) centerPositionsByFace[face].push(position);\n    }\n  }\n\n  return {\n    kpuzzle,\n    solved,\n    solvedCompact,\n    actionFor,\n    seedActions,\n    outerActions,\n    l2eActions,\n    sliceFamilies,\n    centerPositionsByFace,\n  };'''
+          if old not in s: raise SystemExit('model return anchor missing')
+          s=s.replace(old,new,1)
+
+          old='''function edgePairDistanceHeuristic444(state, lockedTypeMask, targetCount, closeMove, model) {\n  const needed = Math.max(0, targetCount - bitCount(lockedTypeMask));'''
+          new='''function edgePairDistanceHeuristic444(state, lockedTypeMask, targetCount, closeMove, model, targetTypeMask = 0x0fff) {\n  const needed = Math.max(0, targetCount - bitCount(lockedTypeMask & targetTypeMask));'''
+          if old not in s: raise SystemExit('heuristic anchor missing')
+          s=s.replace(old,new,1)
+          s=s.replace('''  for (let edgeType = 0; edgeType < 12; edgeType += 1) {\n    if (lockedTypeMask & (1 << edgeType)) continue;\n    const signature = edgeTypeSignature444(state, edgeType);''','''  for (let edgeType = 0; edgeType < 12; edgeType += 1) {\n    if (!(targetTypeMask & (1 << edgeType))) continue;\n    if (lockedTypeMask & (1 << edgeType)) continue;\n    const signature = edgeTypeSignature444(state, edgeType);''',1)
+
+          old='''function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0) {\n  const solvedCenters = model.solvedCompact;\n  const openMoves = sliceFamily.openMoves;'''
+          new='''function protectedCenterFacesSolved444(state, model, faces) {\n  for (const face of faces) {\n    const positions = model.centerPositionsByFace[face] || [];\n    if (positions.length !== 4) return false;\n    for (const position of positions) {\n      if (state.centerPieces[position] !== model.solvedCompact.centerPieces[position]) return false;\n    }\n  }\n  return true;\n}\n\nfunction searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0, options = {}) {\n  const solvedCenters = model.solvedCompact;\n  const openMoves = sliceFamily.openMoves;\n  const targetTypeMask = (Number(options?.targetTypeMask) >>> 0) || 0x0fff;\n  const exactTargetCount = options?.exactTargetCount === true;\n  const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces) ? options.protectedCenterFaces : [];\n  const requireAllCenters = options?.requireAllCenters !== false;\n  const centersOkay = (state) => requireAllCenters\n    ? centersSolved(state, solvedCenters.centerPieces)\n    : protectedCenterFacesSolved444(state, model, protectedCenterFaces);'''
+          if old not in s: raise SystemExit('slice anchor missing')
+          s=s.replace(old,new,1)
+
+          old='''        if (\n          maskContains(closedMask, lockedMask) &&\n          bitCount(closedMask) >= targetCount &&\n          (!requiredSolvedTypeMask || maskContains(solvedEdgeTypeMask(closedState), requiredSolvedTypeMask)) &&\n          centersSolved(closedState, solvedCenters.centerPieces)\n        ) {'''
+          new='''        const targetPairedCount = bitCount(closedMask & targetTypeMask);\n        if (\n          maskContains(closedMask, lockedMask) &&\n          (exactTargetCount ? targetPairedCount === targetCount : targetPairedCount >= targetCount) &&\n          (!requiredSolvedTypeMask || maskContains(solvedEdgeTypeMask(closedState), requiredSolvedTypeMask)) &&\n          centersOkay(closedState)\n        ) {'''
+          if old not in s: raise SystemExit('goal anchor missing')
+          s=s.replace(old,new,1)
+
+          old='''          const pairDistance = edgePairDistanceHeuristic444(\n            nextState,\n            lockedMask,\n            targetCount,\n            closeMove,\n            model,\n          );\n          const score = bitCount(candidateMask) * 220\n            + bitCount(candidateMask & lockedMask) * 260'''
+          new='''          const pairDistance = edgePairDistanceHeuristic444(\n            nextState,\n            lockedMask,\n            targetCount,\n            closeMove,\n            model,\n            targetTypeMask,\n          );\n          const score = bitCount(candidateMask & targetTypeMask) * 520\n            + bitCount(candidateMask) * 80\n            + bitCount(candidateMask & lockedMask) * 360'''
+          if old not in s: raise SystemExit('score anchor missing')
+          s=s.replace(old,new,1)
+
+          marker='''function buildSegment(id, name, moves, pairStart, pairEnd) {'''
+          insert='''export async function solveYauCross3Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {\n  const globalDeadlineTs = Number(options?.deadlineTs) || 0;\n  const budgetMs = Math.max(150, Math.min(2500, Number(options?.timeBudgetMs) || 1200));\n  const startedAt = Date.now();\n  const localDeadlineTs = globalDeadlineTs > 0\n    ? Math.min(globalDeadlineTs, startedAt + budgetMs)\n    : startedAt + budgetMs;\n  const model = await getPlannerModel();\n  let pattern = model.solved;\n  if (publicScramble) pattern = pattern.applyAlg(String(publicScramble));\n  if (publicSetupSolution) pattern = pattern.applyAlg(String(publicSetupSolution));\n  let state = compactStateFromPattern(pattern);\n  const targetMask = Number(targetTypeMask) >>> 0;\n  const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces)\n    ? options.protectedCenterFaces\n    : ["D", "U"];\n  if (!protectedCenterFacesSolved444(state, model, protectedCenterFaces)) {\n    return { ok: false, reason: "444_YAU_NATURAL_CROSS3_CENTERS_NOT_READY" };\n  }\n  let lockedMask = pairedEdgeTypeMask(state) & targetMask;\n  let count = bitCount(lockedMask);\n  if (count > 3) {\n    return { ok: false, reason: "444_YAU_NATURAL_CROSS3_OVERSHOOT_START" };\n  }\n  const moves = [];\n  const cycles = [];\n  while (count < 3 && !deadlineReached(localDeadlineTs)) {\n    const nextTarget = count + 1;\n    let best = null;\n    for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {\n      if (deadlineReached(localDeadlineTs)) break;\n      const family = model.sliceFamilies[frameIndex];\n      const found = searchSliceCycle(\n        state, lockedMask, nextTarget, family, model, localDeadlineTs, 4, 0,\n        { targetTypeMask: targetMask, exactTargetCount: true, protectedCenterFaces, requireAllCenters: false },\n      );\n      if (!found) continue;\n      if (!best || found.moves.length < best.moves.length) best = { ...found, frameIndex };\n      if (found.moves.length <= 4) break;\n    }\n    if (!best) {\n      return {\n        ok: false,\n        reason: deadlineReached(localDeadlineTs) ? "444_YAU_NATURAL_CROSS3_TIMEOUT" : "444_YAU_NATURAL_CROSS3_NO_CYCLE",\n        moveCount: moves.length, pairCount: count, elapsedMs: Date.now() - startedAt,\n      };\n    }\n    state = best.state;\n    lockedMask = pairedEdgeTypeMask(state) & targetMask;\n    count = bitCount(lockedMask);\n    moves.push(...best.moves);\n    cycles.push({ frameIndex: best.frameIndex, workingSlice: best.moves[0], moveCount: best.moves.length, pairCount: count });\n  }\n  const simplified = simplifyOuterSequence(moves);\n  const solution = simplified.join(" ");\n  let verified = pattern;\n  if (solution) verified = verified.applyAlg(solution);\n  const verifiedState = compactStateFromPattern(verified);\n  const verifiedMask = pairedEdgeTypeMask(verifiedState) & targetMask;\n  if (bitCount(verifiedMask) !== 3 || !protectedCenterFacesSolved444(verifiedState, model, protectedCenterFaces)) {\n    return { ok: false, reason: "444_YAU_NATURAL_CROSS3_VERIFY_FAILED" };\n  }\n  return {\n    ok: true, reason: null, solution, moveCount: simplified.length,\n    lockedTypeMask: verifiedMask, pairedTargetMask: verifiedMask,\n    cycleCount: cycles.length, cycles, elapsedMs: Date.now() - startedAt,\n    method: "Yau Natural Slice Cross 3/4",\n  };\n}\n\n''' + marker
+          if marker not in s: raise SystemExit('insert marker missing')
+          s=s.replace(marker,insert,1)
+          p.write_text(s)
+          PY
+
+      - name: Recompute centers after natural Cross 3
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('solver/solver444.js')
+          s=p.read_text()
+          old='''  const targetTypeMask = edgeModule.crossEdgeTypeMask444(crossColor);\n\n  const cross3 = await edgeModule.solveTargetEdgeTypes444(\n    publicScramble,\n    firstTwoCenters,\n    targetTypeMask,\n    {\n      targetCount: 3,\n      deadlineTs,\n      maxMacros: 8,\n      postSequence: remainingCenters,\n      enableRescue: options?.__yauFastFrameProbe !== true,\n      projectTargetState: options?.__yauFastFrameProbe === true,\n    },\n  );\n  if (!cross3?.ok) {\n    return yauFailure444(reduction, "444_YAU_CROSS3_FAILED", cross3?.reason || cross3?.detail, deadlineTs);\n  }\n\n  const beforeCross4 = [firstTwoCenters, cross3.solution, remainingCenters]'''
+          new='''  const targetTypeMask = edgeModule.crossEdgeTypeMask444(crossColor);\n\n  let cross3 = null;\n  let effectiveRemainingCenters = remainingCenters;\n  let naturalCross3Applied = false;\n  let remainingCentersRecomputed = false;\n  let naturalCross3FallbackReason = null;\n  let recomputedCenterPhaseMoveCounts = null;\n\n  if (!deadlineReached(deadlineTs) && typeof edgeModule.solveYauCross3Natural444 === "function") {\n    const naturalBudgetMs = options?.__yauFastFrameProbe === true ? 650 : 1400;\n    const natural = await edgeModule.solveYauCross3Natural444(\n      publicScramble,\n      firstTwoCenters,\n      targetTypeMask,\n      {\n        deadlineTs,\n        timeBudgetMs: naturalBudgetMs,\n        protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],\n      },\n    );\n    if (natural?.ok) {\n      const stateBeforeRemainingCenters = [firstTwoCenters, natural.solution]\n        .map((part) => String(part || "").trim())\n        .filter(Boolean)\n        .join(" ");\n      const recomputeScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]\n        .map((part) => String(part || "").trim())\n        .filter(Boolean)\n        .join(" ");\n      const recomputeBudgetMs = options?.__yauFastFrameProbe === true ? 650 : 1500;\n      const recomputeDeadlineTs = deadlineTs > 0\n        ? Math.min(deadlineTs, Date.now() + recomputeBudgetMs)\n        : Date.now() + recomputeBudgetMs;\n      let recomputed = null;\n      try {\n        recomputed = normalizeBoundaryResponse(api.solve({\n          scramble: recomputeScramble,\n          crossColor,\n          deadlineTs: recomputeDeadlineTs,\n        }));\n      } catch (error) {\n        naturalCross3FallbackReason = `CENTER_RECOMPUTE_CALL:${String(error?.message || error)}`;\n      }\n      const recomputedCenterStage = Array.isArray(recomputed?.stages)\n        ? recomputed.stages.find((stage) => stage?.id === "centers" && stage?.verified === true)\n        : null;\n      if (recomputedCenterStage && recomputed?.meta?.centersSolved === true) {\n        const candidateRemainingCenters = translate444MoveConvention(recomputedCenterStage.solution || "");\n        const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]\n          .map((part) => String(part || "").trim())\n          .filter(Boolean)\n          .join(" ");\n        const preserved = await edgeModule.solveTargetEdgeTypes444(\n          publicScramble,\n          verifySetup,\n          targetTypeMask,\n          {\n            targetCount: 3,\n            requiredTypeMask: natural.lockedTypeMask,\n            deadlineTs,\n            maxMacros: 0,\n            enableRescue: false,\n          },\n        );\n        if (preserved?.ok) {\n          cross3 = natural;\n          effectiveRemainingCenters = candidateRemainingCenters;\n          naturalCross3Applied = true;\n          remainingCentersRecomputed = true;\n          recomputedCenterPhaseMoveCounts = Array.isArray(recomputed.meta?.centerPhaseMoveCounts)\n            ? [...recomputed.meta.centerPhaseMoveCounts]\n            : null;\n        } else {\n          naturalCross3FallbackReason = preserved?.reason || "CENTER_RECOMPUTE_BREAKS_CROSS3";\n        }\n      } else if (!naturalCross3FallbackReason) {\n        naturalCross3FallbackReason = recomputed?.reason || "CENTER_RECOMPUTE_NO_CENTER_STAGE";\n      }\n    } else {\n      naturalCross3FallbackReason = natural?.reason || "NATURAL_CROSS3_NOT_FOUND";\n    }\n  }\n\n  if (!cross3) {\n    cross3 = await edgeModule.solveTargetEdgeTypes444(\n      publicScramble,\n      firstTwoCenters,\n      targetTypeMask,\n      {\n        targetCount: 3,\n        deadlineTs,\n        maxMacros: 8,\n        postSequence: remainingCenters,\n        enableRescue: options?.__yauFastFrameProbe !== true,\n        projectTargetState: options?.__yauFastFrameProbe === true,\n      },\n    );\n  }\n  if (!cross3?.ok) {\n    return yauFailure444(reduction, "444_YAU_CROSS3_FAILED", cross3?.reason || cross3?.detail, deadlineTs);\n  }\n\n  const beforeCross4 = [firstTwoCenters, cross3.solution, effectiveRemainingCenters]'''
+          if old not in s: raise SystemExit('cross3 block anchor missing')
+          s=s.replace(old,new,1)
+          s=s.replace('''    makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", remainingCenters),''','''    makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", effectiveRemainingCenters, {\n      recomputedAfterCross3: remainingCentersRecomputed,\n    }),''',1)
+          s=s.replace('''      yauCross3MoveCount: Number(cross3.moveCount) || 0,\n      yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,''','''      yauCross3MoveCount: Number(cross3.moveCount) || 0,\n      yauCross3Method: String(cross3.method || "Yau Cross Edges"),\n      yauNaturalCross3Applied: naturalCross3Applied,\n      yauNaturalCross3FallbackReason: naturalCross3FallbackReason,\n      yauRemainingCentersRecomputed: remainingCentersRecomputed,\n      yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,\n      yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,''',1)
+          s=s.replace('''      yauRemainingCenterMoveCount: splitAlgorithm(remainingCenters).length,''','''      yauRemainingCenterMoveCount: splitAlgorithm(effectiveRemainingCenters).length,''',1)
+          p.write_text(s)
+          PY
+
+      - name: Lock natural Yau regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/verify-444-yau.mjs')
+          s=p.read_text()
+          s=s.replace('''async function verifyCase(scramble, crossColor) {''','''async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) {''',1)
+          marker='''  assert.equal(result.meta.yauFallbackReason, null);\n'''
+          replacement=marker+'''  if (expectNatural) {\n    assert.equal(result.meta.yauNaturalCross3Applied, true, `natural Cross 3/4 was not used for ${crossColor}: ${result.meta.yauNaturalCross3FallbackReason}`);\n    assert.equal(result.meta.yauRemainingCentersRecomputed, true);\n    assert.equal(result.meta.yauCross3Method, "Yau Natural Slice Cross 3/4");\n    assert.ok(Number(result.meta.yauCross3MoveCount) <= 14, "natural Cross 3/4 became too long");\n  }\n'''
+          if marker not in s: raise SystemExit('meta marker missing')
+          s=s.replace(marker,replacement,1)
+          s=s.replace('''await verifyCase("Rw U2 F' Lw D B2", "D");''','''await verifyCase("Rw U2 F' Lw D B2", "D", { expectNatural: true });''',1)
+          s=s.replace('''await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F");''','''await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });''',1)
+          p.write_text(s)
+          PY
+
+      - name: Validate targeted contracts
+        run: |
+          node --check solver/edgePairing444.js
+          node --check solver/solver444.js
+          node --check tools/verify-444-yau.mjs
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-public-notation.mjs
+          git diff --check
+
+      - name: Commit runtime fix
+        run: |
+          rm -f .github/workflows/diagnose-yau-natural-cross3.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/edgePairing444.js solver/solver444.js tools/verify-444-yau.mjs .github/workflows/diagnose-yau-natural-cross3.yml
+          git commit -m "Use natural slice cycles for Yau Cross 3"
+          git push origin HEAD:main
