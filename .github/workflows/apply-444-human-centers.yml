@@ -23,10 +23,10 @@ jobs:
           workspaces: solver444-wasm
       - name: Patch human 4x4 solve
         run: |
+          python tools/apply-444-center-edge-aware.py
           python tools/apply-444-human-viewpoint.py
           python tools/apply-444-human-viewpoint-v2.py
           python tools/apply-444-edge-323-v2.py
-          python tools/apply-444-edge-323-v3.py
           python tools/apply-444-edge-diagnostics.py
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           node --check solver/solver444.js
@@ -53,6 +53,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver444-wasm/src/centers.rs solver444-wasm/src/api.rs solver/solver444.js solver/edgePairing444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs tools/verify-444-edge-323.mjs public/solver444-wasm
+          git add solver444-wasm/src/centers.rs solver444-wasm/src/edges.rs solver444-wasm/src/api.rs solver/solver444.js solver/edgePairing444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs tools/verify-444-edge-323.mjs public/solver444-wasm
           git commit -m "Humanize 4x4 centers viewpoints and 3-2-3 banks"
           git push origin HEAD:main
