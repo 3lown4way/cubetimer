@@ -30,6 +30,7 @@ jobs:
           python tools/apply-yau-fix4.py
           python tools/apply-yau-fix5.py
           python tools/apply-yau-fix6.py
+          python tools/apply-yau-fix7.py
       - name: Validate JavaScript syntax
         run: |
           node --check solver/edgePairing444.js
@@ -54,4 +55,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Structural retry: final 9→10 edge setup may use two center-preserving slice macros.
+# Yau last-three keeps the four cross dedges locked while non-cross bank identities may reshuffle.
