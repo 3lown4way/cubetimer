@@ -1,0 +1,33 @@
+name: Cleanup 4x4 bootstrap tooling
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-444-worker-bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Remove temporary tooling
+        run: |
+          rm -f \
+            .github/workflows/apply-444-worker-bootstrap-fix.yml \
+            .github/workflows/apply-444-worker-bootstrap-fix-v2.yml \
+            .github/workflows/apply-444-worker-bootstrap-fix-v3.yml \
+            .github/workflows/trigger-444-final-bootstrap-check.yml \
+            tools/apply-444-worker-bootstrap-fix.py
+      - name: Commit cleanup
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Clean up 4x4 bootstrap tooling"
+          git push origin HEAD:main
