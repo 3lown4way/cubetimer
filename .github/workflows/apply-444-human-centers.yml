@@ -26,6 +26,7 @@ jobs:
           python tools/apply-444-human-viewpoint.py
           python tools/apply-444-human-viewpoint-v2.py
           python tools/apply-444-edge-323-v2.py
+          python tools/apply-444-edge-323-v3.py
           python tools/apply-444-edge-diagnostics.py
           cargo fmt --manifest-path solver444-wasm/Cargo.toml --all
           node --check solver/solver444.js
