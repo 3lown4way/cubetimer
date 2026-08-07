@@ -170,18 +170,6 @@ jobs:
           elif new_segment not in text:
               raise SystemExit('edge segmentation marker missing')
           path.write_text(text)
-
-          workflow = Path('.github/workflows/444-worker-boundary.yml')
-          wf = workflow.read_text()
-          wf = wf.replace('      - "solver/solver444.js"\n', '      - "solver/solver444.js"\n      - "solver/edgePairing444.js"\n')
-          wf = wf.replace('          node --check solver/solver444.js\n', '          node --check solver/solver444.js\n          node --check solver/edgePairing444.js\n')
-          anchor = '      - name: Validate repository diff\n        run: git diff --check\n'
-          extra = '      - name: Verify human-style 3-2-3 edge pairing\n        run: node tools/verify-444-edge-323.mjs\n\n'
-          if extra not in wf:
-              if anchor not in wf:
-                  raise SystemExit('CI anchor missing')
-              wf = wf.replace(anchor, extra + anchor, 1)
-          workflow.write_text(wf)
           PY
 
           node --check solver/solver444.js
@@ -193,7 +181,6 @@ jobs:
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm .github/workflows/apply-444-edge-323.yml
-          git add solver/solver444.js solver/edgePairing444.js tools/verify-444-edge-323.mjs .github/workflows/444-worker-boundary.yml
+          git add solver/solver444.js
           git commit -m "Use human-style 3-2-3 edge pairing on 4x4"
           git push origin HEAD:main
