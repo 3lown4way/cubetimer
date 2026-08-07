@@ -1491,6 +1491,7 @@ const api = {
     let fmcTimeBudgetMs = null;
     let benchmarkNoFallback = false;
     let deadlineTs = 0;
+    let method444 = "reduction";
     if (arg1 && typeof arg1 === "object" && !Array.isArray(arg1)) {
       scramble = arg1.scramble;
       eventId = arg1.eventId;
@@ -1533,6 +1534,9 @@ const api = {
       }
       if (Number.isFinite(Number(arg1.deadlineTs))) {
         deadlineTs = Math.max(0, Number(arg1.deadlineTs));
+      }
+      if (typeof arg1.method444 === "string" && arg1.method444) {
+        method444 = arg1.method444.trim().toLowerCase() === "yau" ? "yau" : "reduction";
       }
       benchmarkNoFallback = arg1.benchmarkNoFallback === true;
     } else {
@@ -1588,6 +1592,7 @@ const api = {
         solve444Lazy(scramble, onProgress, {
           deadlineTs: effective444DeadlineTs,
           crossColor,
+          method444,
         }),
         remaining444Ms,
       ).catch((error) => {

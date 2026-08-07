@@ -109,6 +109,9 @@ export function installSolver444UiActivation() {
   const solverStepNextBtn = document.getElementById("solverStepNextBtn");
   const solverStageList = document.getElementById("solverStageList");
   const solveTitle = document.getElementById("solveTitle");
+  const crossColorSelect = document.getElementById("crossColorSelect");
+  const solver444MethodField = document.getElementById("solver444MethodField");
+  const solver444MethodSelect = document.getElementById("solver444MethodSelect");
 
   if (
     !eventSelect ||
@@ -133,7 +136,6 @@ export function installSolver444UiActivation() {
   window[INSTALL_KEY] = true;
 
   const threeByThreeOnly = [
-    document.getElementById("crossColorSelect")?.closest("label"),
     document.getElementById("solverModeSelect")?.closest("label"),
     document.getElementById("fmcQualityField"),
     document.getElementById("solverVersionSelect")?.closest("label"),
@@ -283,7 +285,9 @@ export function installSolver444UiActivation() {
       item.style.borderLeftWidth = "2px";
     }
     const title = document.createElement("strong");
-    title.textContent = STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
+    title.textContent = stage?.method === "Yau"
+      ? "Yau Setup"
+      : STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
     const count = document.createElement("span");
     const moveCount = Number(stage?.moveCount) || splitMoves(stage?.solution).length;
     const alreadyPaired = stage?.alreadyPaired === true ? " · 이미 페어링" : "";
@@ -339,7 +343,8 @@ export function installSolver444UiActivation() {
     ensurePlayer(scramble);
     solverVisualPanel.hidden = false;
     updateFrame();
-    setStatus(`4×4 해를 찾았습니다. ${moveCount}수 · 96-facelet 검증 완료`);
+    const methodLabel = result?.meta?.method444 === "yau" ? "Yau · " : "";
+    setStatus(`4×4 ${methodLabel}해를 찾았습니다. ${moveCount}수 · 96-facelet 검증 완료`);
   }
 
   function renderFailure(result) {
@@ -412,6 +417,10 @@ export function installSolver444UiActivation() {
           scramble,
           eventId: EVENT_ID,
           deadlineTs,
+          crossColor: /^[URFDLB]$/i.test(String(crossColorSelect?.value || "D"))
+            ? String(crossColorSelect.value).toUpperCase()
+            : "D",
+          method444: solver444MethodSelect?.value === "yau" ? "yau" : "reduction",
         },
         proxy((progress) => {
           if (activeRun !== runId || !is444()) return;
@@ -473,12 +482,17 @@ export function installSolver444UiActivation() {
   function syncEventUi() {
     if (is444()) {
       setThreeByThreeControlsHidden(true);
+      if (crossColorSelect?.value === "CN") crossColorSelect.value = "D";
+      if (solver444MethodField) solver444MethodField.hidden = false;
       if (solveTitle) solveTitle.textContent = "4×4 해 찾기";
-      findSolutionBtn.title = "검증된 4×4 해 찾기";
+      findSolutionBtn.title = solver444MethodSelect?.value === "yau"
+        ? "검증된 4×4 Yau 해 찾기"
+        : "검증된 4×4 Reduction 해 찾기";
       syncButton();
       return;
     }
 
+    if (solver444MethodField) solver444MethodField.hidden = true;
     runId += 1;
     busy = false;
     disposeWorker();
@@ -488,6 +502,23 @@ export function installSolver444UiActivation() {
     clearOwnedPresentationWhenLeaving();
   }
 
+  solver444MethodSelect?.addEventListener("change", () => {
+    if (!is444()) return;
+    runId += 1;
+    busy = false;
+    resetResultPresentation();
+    findSolutionBtn.title = solver444MethodSelect.value === "yau"
+      ? "검증된 4×4 Yau 해 찾기"
+      : "검증된 4×4 Reduction 해 찾기";
+    syncButton();
+  });
+  crossColorSelect?.addEventListener("change", () => {
+    if (!is444()) return;
+    runId += 1;
+    busy = false;
+    resetResultPresentation();
+    syncButton();
+  });
   findSolutionBtn.addEventListener("click", solveCurrent444, true);
   solverCopyBtn.addEventListener("click", (event) => {
     if (!is444() || !solution) return;

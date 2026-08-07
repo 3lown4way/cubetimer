@@ -17,6 +17,20 @@ const EDGE_TYPE_BY_WING_444 = (() => {
 // Base protected bank for the human 3-2-3 planner. The solver derives the
 // five x/z-rotated equivalents too, so it can choose a natural working slice
 // instead of forcing every solve through Dw in one fixed physical frame.
+const EDGE_SLOT_TO_333_444 = Object.freeze([0, 8, 9, 4, 5, 7, 6, 3, 11, 10, 2, 1]);
+const EDGE_NAMES_333_444 = Object.freeze(["UF", "UR", "UB", "UL", "DF", "DR", "DB", "DL", "FR", "FL", "BR", "BL"]);
+
+export function crossEdgeTypeMask444(crossColor = "D") {
+  const face = /^[URFDLB]$/i.test(String(crossColor || "D"))
+    ? String(crossColor || "D").toUpperCase()
+    : "D";
+  let mask = 0;
+  EDGE_SLOT_TO_333_444.forEach((cubieIndex, edgeType) => {
+    if (EDGE_NAMES_333_444[cubieIndex].includes(face)) mask |= 1 << edgeType;
+  });
+  return mask;
+}
+
 const EDGE_323_BANK_SLOTS = Object.freeze([0, 7, 10, 11]);
 const EDGE_323_BANK_MASK = EDGE_323_BANK_SLOTS.reduce((mask, slot) => mask | (1 << slot), 0);
 const EDGE_323_FRAME_ROTATIONS = Object.freeze(["", "x", "x2", "x'", "z", "z'"]);
@@ -222,6 +236,34 @@ function pairedEdgeTypeMask(state) {
   return mask;
 }
 
+function solvedEdgeTypeMask(state) {
+  let mask = 0;
+  for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length; slot += 1) {
+    const [first, second] = EDGE_SLOT_PAIRS_444[slot];
+    const firstType = EDGE_TYPE_BY_WING_444[state.edgePieces[first]];
+    const secondType = EDGE_TYPE_BY_WING_444[state.edgePieces[second]];
+    if (
+      firstType === slot &&
+      secondType === slot &&
+      state.edgeOrientation[first] === 0 &&
+      state.edgeOrientation[second] === 0
+    ) {
+      mask |= 1 << slot;
+    }
+  }
+  return mask;
+}
+
+function chooseTargetTypeMask(pairedMask, targetMask, requiredMask, targetCount) {
+  if (!maskContains(pairedMask, requiredMask)) return 0;
+  let selected = requiredMask & targetMask;
+  for (let edgeType = 0; edgeType < 12 && bitCount(selected) < targetCount; edgeType += 1) {
+    const bit = 1 << edgeType;
+    if ((targetMask & bit) && (pairedMask & bit) && !(selected & bit)) selected |= bit;
+  }
+  return bitCount(selected) === targetCount ? selected : 0;
+}
+
 function pairedEdgeTypeMaskInSlots(state, slotMask) {
   let mask = 0;
   for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length; slot += 1) {
@@ -258,6 +300,7 @@ function searchSliceCycleAcrossFrames(
   model,
   deadlineTs,
   maxOuterMoves = SLICE_MAX_OUTER_MOVES,
+  requiredSolvedTypeMask = 0,
 ) {
   const orderedFamilies = [
     preferredFamily,
@@ -273,6 +316,7 @@ function searchSliceCycleAcrossFrames(
       model,
       deadlineTs,
       maxOuterMoves,
+      requiredSolvedTypeMask,
     );
     if (result) {
       return {
@@ -578,7 +622,7 @@ function collectSeedCandidates(initialState, bankMask, model, deadlineTs) {
     .slice(0, SEED_GOAL_LIMIT);
 }
 
-function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES) {
+function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0) {
   const solvedCenters = model.solvedCompact;
   const openMoves = sliceFamily.openMoves;
 
@@ -602,6 +646,7 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
         if (
           maskContains(closedMask, lockedMask) &&
           bitCount(closedMask) >= targetCount &&
+          (!requiredSolvedTypeMask || maskContains(solvedEdgeTypeMask(closedState), requiredSolvedTypeMask)) &&
           centersSolved(closedState, solvedCenters.centerPieces)
         ) {
           return {
@@ -675,7 +720,7 @@ function applyMovePath(state, moves, model) {
   return current;
 }
 
-function findL2E(initialState, model, deadlineTs) {
+function findL2E(initialState, model, deadlineTs, requiredSolvedTypeMask = 0) {
   const solvedCenters = model.solvedCompact;
   for (let setupIndex = 0; setupIndex < L2E_SETUP_PATHS.length; setupIndex += 1) {
     if ((setupIndex & 0x01ff) === 0 && deadlineReached(deadlineTs)) return null;
@@ -687,6 +732,7 @@ function findL2E(initialState, model, deadlineTs) {
       candidate = applyMovePath(candidate, undo, model);
       if (
         bitCount(pairedSlotMask(candidate)) === 12 &&
+        (!requiredSolvedTypeMask || maskContains(solvedEdgeTypeMask(candidate), requiredSolvedTypeMask)) &&
         centersSolved(candidate, solvedCenters.centerPieces)
       ) {
         return {
@@ -697,6 +743,261 @@ function findL2E(initialState, model, deadlineTs) {
     }
   }
   return null;
+}
+
+const YAU_TARGET_BEAM_WIDTH = 3600;
+const YAU_TARGET_MAX_MACROS = 6;
+const YAU_ALIGNMENT_BEAM_WIDTH = 5000;
+const YAU_ALIGNMENT_MAX_DEPTH = 8;
+
+function sameCenterState444(left, right) {
+  if (!left?.centerPieces || !right?.centerPieces) return false;
+  if (left.centerPieces.length !== right.centerPieces.length) return false;
+  for (let index = 0; index < left.centerPieces.length; index += 1) {
+    if (left.centerPieces[index] !== right.centerPieces[index]) return false;
+  }
+  return true;
+}
+
+function searchTargetEdgeTypes444(
+  initialState,
+  targetTypeMask,
+  requiredTypeMask,
+  targetCount,
+  model,
+  deadlineTs,
+  maxMacros = YAU_TARGET_MAX_MACROS,
+  postAction = null,
+  minPairCount = 0,
+) {
+  const evaluate = (node) => {
+    const pairedMask = pairedEdgeTypeMask(node.state);
+    const targetPaired = bitCount(pairedMask & targetTypeMask);
+    const centersPreserved = sameCenterState444(node.state, initialState);
+    const postState = postAction ? applyCompactAction(node.state, postAction, true) : node.state;
+    const postPairedMask = pairedEdgeTypeMask(postState);
+    const preservedTarget = bitCount(pairedMask & postPairedMask & targetTypeMask);
+    return {
+      ...node,
+      pairedMask,
+      postPairedMask,
+      targetPaired,
+      preservedTarget,
+      centersPreserved,
+      score: (centersPreserved ? 500000 : 0)
+        + preservedTarget * 250000
+        + targetPaired * 100000
+        + bitCount(pairedMask) * 1000
+        - node.path.length,
+    };
+  };
+
+  let beam = [evaluate({ state: initialState, path: [] })];
+  let overshoot = null;
+  for (let depth = 0; depth <= maxMacros; depth += 1) {
+    if (deadlineReached(deadlineTs)) return null;
+    const goals = beam
+      .filter((node) =>
+        node.centersPreserved &&
+        maskContains(node.pairedMask, requiredTypeMask) &&
+        maskContains(node.postPairedMask, requiredTypeMask) &&
+        node.targetPaired >= targetCount &&
+        node.preservedTarget >= targetCount
+      )
+      .sort((left, right) => {
+        const leftExact = left.targetPaired === targetCount ? 1 : 0;
+        const rightExact = right.targetPaired === targetCount ? 1 : 0;
+        return rightExact - leftExact || right.score - left.score;
+      });
+    if (goals.length && goals[0].targetPaired === targetCount) return goals[0];
+    if (goals.length && !overshoot) overshoot = goals[0];
+    if (depth === maxMacros) break;
+
+    const seen = new Map();
+    for (const node of beam) {
+      for (let actionIndex = 0; actionIndex < model.seedActions.length; actionIndex += 1) {
+        const nextState = applyCompactAction(node.state, model.seedActions[actionIndex].action, true);
+        const pairedMask = pairedEdgeTypeMask(nextState);
+        if (!maskContains(pairedMask, requiredTypeMask)) continue;
+        if (bitCount(pairedMask) < minPairCount) continue;
+        const candidate = evaluate({ state: nextState, path: [...node.path, actionIndex] });
+        const key = compactStateKey(nextState, false);
+        const previous = seen.get(key);
+        if (!previous || previous.score < candidate.score) seen.set(key, candidate);
+      }
+    }
+    beam = [...seen.values()]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, YAU_TARGET_BEAM_WIDTH);
+  }
+  return overshoot;
+}
+
+function searchOuterCrossAlignment444(initialState, targetTypeMask, model, deadlineTs) {
+  const solvedCenters = model.solvedCompact;
+  const initialSolvedMask = solvedEdgeTypeMask(initialState);
+  if (
+    maskContains(initialSolvedMask, targetTypeMask) &&
+    centersSolved(initialState, solvedCenters.centerPieces)
+  ) {
+    return { state: initialState, moves: [] };
+  }
+
+  let beam = [{
+    state: initialState,
+    path: [],
+    lastFace: "",
+    score: bitCount(initialSolvedMask & targetTypeMask) * 10000,
+  }];
+  for (let depth = 0; depth < YAU_ALIGNMENT_MAX_DEPTH; depth += 1) {
+    if (deadlineReached(deadlineTs)) return null;
+    const seen = new Map();
+    for (const node of beam) {
+      for (const move of OUTER_MOVES_444) {
+        if (node.lastFace && node.lastFace === move[0]) continue;
+        const nextState = applyCompactAction(node.state, model.outerActions.get(move), true);
+        if (!maskContains(pairedEdgeTypeMask(nextState), targetTypeMask)) continue;
+        const solvedMask = solvedEdgeTypeMask(nextState);
+        const path = [...node.path, move];
+        if (
+          maskContains(solvedMask, targetTypeMask) &&
+          centersSolved(nextState, solvedCenters.centerPieces)
+        ) {
+          return { state: nextState, moves: path };
+        }
+        const score = bitCount(solvedMask & targetTypeMask) * 10000
+          + bitCount(solvedMask) * 120
+          - path.length;
+        const key = compactStateKey(nextState, true);
+        const previous = seen.get(key);
+        if (!previous || previous.score < score) {
+          seen.set(key, { state: nextState, path, lastFace: move[0], score });
+        }
+      }
+    }
+    beam = [...seen.values()]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, YAU_ALIGNMENT_BEAM_WIDTH);
+  }
+  return null;
+}
+
+export async function debugEdge323Frames444() {
+  const model = await getPlannerModel();
+  return model.sliceFamilies.map((family) => ({
+    rotation: family.rotation,
+    bankMask: family.bankMask,
+    openMoves: [...family.openMoves],
+  }));
+}
+
+export async function solveTargetEdgeTypes444(
+  publicScramble,
+  publicSetupSolution,
+  targetTypeMask,
+  options = {},
+) {
+  const deadlineTs = Number(options?.deadlineTs) || 0;
+  const model = await getPlannerModel();
+  const targetMask = Number(targetTypeMask) >>> 0;
+  const requiredTypeMask = Number(options?.requiredTypeMask) >>> 0;
+  const targetCount = Math.max(1, Math.min(bitCount(targetMask), Number(options?.targetCount) || bitCount(targetMask)));
+  const maxMacros = Math.max(0, Math.min(8, Number(options?.maxMacros) || YAU_TARGET_MAX_MACROS));
+  const alignSolved = options?.alignSolved === true;
+  const postSequence = String(options?.postSequence || "").trim();
+  const postAction = postSequence ? model.actionFor(postSequence) : null;
+  if (!targetMask || deadlineReached(deadlineTs)) {
+    return { ok: false, reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_BAD_TARGET" };
+  }
+
+  let pattern = model.solved;
+  const scramble = String(publicScramble || "").trim();
+  const setup = String(publicSetupSolution || "").trim();
+  if (scramble) pattern = pattern.applyAlg(scramble);
+  if (setup) pattern = pattern.applyAlg(setup);
+  const centerSnapshot = JSON.stringify(pattern.patternData.CENTERS);
+  const initialState = compactStateFromPattern(pattern);
+  const initialPaired = pairedEdgeTypeMask(initialState);
+  if (!maskContains(initialPaired, requiredTypeMask)) {
+    return { ok: false, reason: "444_YAU_REQUIRED_CROSS_BROKEN" };
+  }
+
+  const paired = searchTargetEdgeTypes444(
+    initialState,
+    targetMask,
+    requiredTypeMask,
+    targetCount,
+    model,
+    deadlineTs,
+    maxMacros,
+    postAction,
+  );
+  if (!paired) {
+    return {
+      ok: false,
+      reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_TARGET_EDGES_NOT_FOUND",
+    };
+  }
+
+  const lockedTypeMask = chooseTargetTypeMask(
+    paired.pairedMask & paired.postPairedMask,
+    targetMask,
+    requiredTypeMask,
+    targetCount,
+  );
+  if (!lockedTypeMask) return { ok: false, reason: "444_YAU_TARGET_LOCK_FAILED" };
+
+  const pairMoves = paired.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));
+  let finalState = paired.state;
+  let alignmentMoves = [];
+  if (alignSolved) {
+    const alignment = searchOuterCrossAlignment444(finalState, targetMask, model, deadlineTs);
+    if (!alignment) {
+      return {
+        ok: false,
+        reason: deadlineReached(deadlineTs) ? "444_YAU_DEADLINE_REACHED" : "444_YAU_CROSS_ALIGNMENT_FAILED",
+      };
+    }
+    finalState = alignment.state;
+    alignmentMoves = alignment.moves;
+  }
+
+  const moves = simplifyOuterSequence([...pairMoves, ...alignmentMoves]);
+  const solution = moves.join(" ");
+  let verified = pattern;
+  if (solution) verified = verified.applyAlg(solution);
+  const verifiedState = compactStateFromPattern(verified);
+  const verifiedPaired = pairedEdgeTypeMask(verifiedState);
+  if (
+    bitCount(verifiedPaired & targetMask) < targetCount ||
+    !maskContains(verifiedPaired, requiredTypeMask)
+  ) {
+    return { ok: false, reason: "444_YAU_TARGET_VERIFICATION_FAILED" };
+  }
+  if (alignSolved && !maskContains(solvedEdgeTypeMask(verifiedState), targetMask)) {
+    return { ok: false, reason: "444_YAU_CROSS_ALIGNMENT_VERIFICATION_FAILED" };
+  }
+  if (alignSolved) {
+    if (!centersSolved(verifiedState, model.solvedCompact.centerPieces)) {
+      return { ok: false, reason: "444_YAU_ALIGNMENT_BREAKS_CENTERS" };
+    }
+  } else if (JSON.stringify(verified.patternData.CENTERS) !== centerSnapshot) {
+    return { ok: false, reason: "444_YAU_PAIRING_BREAKS_CENTERS" };
+  }
+
+  return {
+    ok: true,
+    reason: null,
+    solution,
+    moveCount: moves.length,
+    pairedTargetMask: verifiedPaired & targetMask,
+    lockedTypeMask,
+    solvedTargetMask: solvedEdgeTypeMask(verifiedState) & targetMask,
+    targetCount,
+    macroCount: paired.path.length,
+    alignmentMoveCount: alignmentMoves.length,
+    method: "Yau Cross Edges",
+  };
 }
 
 function buildSegment(id, name, moves, pairStart, pairEnd) {
@@ -714,6 +1015,10 @@ function buildSegment(id, name, moves, pairStart, pairEnd) {
 
 export async function solveEdgePairing323(publicScramble, publicCenterSolution, options = {}) {
   const deadlineTs = Number(options?.deadlineTs) || 0;
+  const requiredTypeMask = Number(options?.requiredTypeMask) >>> 0;
+  const requiredSolvedTypeMask = Number(options?.requiredSolvedTypeMask) >>> 0;
+  const yauBank = bitCount(requiredTypeMask) === 4;
+  const edgeMethod = yauBank ? "Yau 3-2-3" : "3-2-3";
   const model = await getPlannerModel();
   if (deadlineReached(deadlineTs)) {
     return { ok: false, reason: "444_323_DEADLINE_REACHED", solution: "", segments: [] };
@@ -730,8 +1035,15 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
   }
 
   const initialMask = pairedSlotMask(initialState);
+  const initialTypeMask = pairedEdgeTypeMask(initialState);
+  if (!maskContains(initialTypeMask, requiredTypeMask)) {
+    return { ok: false, reason: "444_323_REQUIRED_TYPES_NOT_PAIRED", solution: "", segments: [], method: edgeMethod };
+  }
+  if (requiredSolvedTypeMask && !maskContains(solvedEdgeTypeMask(initialState), requiredSolvedTypeMask)) {
+    return { ok: false, reason: "444_323_REQUIRED_CROSS_NOT_SOLVED", solution: "", segments: [], method: edgeMethod };
+  }
   if (bitCount(initialMask) === 12) {
-    return { ok: true, reason: null, solution: "", moveCount: 0, segments: [], method: "3-2-3" };
+    return { ok: true, reason: null, solution: "", moveCount: 0, segments: [], method: edgeMethod };
   }
 
   const diagnostics = {
@@ -747,13 +1059,18 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
   for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {
     if (deadlineReached(deadlineTs)) break;
     const sliceFamily = model.sliceFamilies[frameIndex];
-    const seedCandidates = collectSeedCandidates(initialState, sliceFamily.bankMask, model, deadlineTs);
+    const seedCandidates = yauBank
+      ? [{ state: initialState, path: [], score: Number.MAX_SAFE_INTEGER }]
+      : collectSeedCandidates(initialState, sliceFamily.bankMask, model, deadlineTs);
     diagnostics.seedCandidates += seedCandidates.length;
     for (let seedIndex = 0; seedIndex < seedCandidates.length; seedIndex += 1) {
       if (deadlineReached(deadlineTs)) break;
       const seed = seedCandidates[seedIndex];
       const seedSlotMask = pairedSlotMask(seed.state);
-      const bankTypeMask = pairedEdgeTypeMaskInSlots(seed.state, sliceFamily.bankMask);
+      const bankTypeMask = yauBank
+        ? chooseProtectedTypeMask(pairedEdgeTypeMask(seed.state), requiredTypeMask, 4)
+        : pairedEdgeTypeMaskInSlots(seed.state, sliceFamily.bankMask);
+      if (requiredSolvedTypeMask && !maskContains(solvedEdgeTypeMask(seed.state), requiredSolvedTypeMask)) continue;
       if (bitCount(bankTypeMask) !== 4) continue;
 
       const firstTarget = 7;
@@ -764,6 +1081,8 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
         sliceFamily,
         model,
         deadlineTs,
+        yauBank ? 7 : SLICE_MAX_OUTER_MOVES,
+        requiredSolvedTypeMask,
       );
       if (!firstThree) {
         diagnostics.firstThreeFailures += 1;
@@ -776,79 +1095,185 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
       }
 
       const eighthTarget = 8;
-      const nextTwoFirst = searchSliceCycleAcrossFrames(
-        firstThree.state,
-        firstLockedMask,
-        eighthTarget,
-        sliceFamily,
-        model,
-        deadlineTs,
-        7,
-      );
-      if (!nextTwoFirst) {
-        diagnostics.nextTwoFailures += 1;
-        continue;
-      }
-      const eighthLockedMask = chooseProtectedTypeMask(
-        nextTwoFirst.mask,
-        firstLockedMask,
-        eighthTarget,
-      );
-      if (bitCount(eighthLockedMask) !== eighthTarget) {
-        diagnostics.nextTwoFailures += 1;
-        continue;
-      }
-
       const secondTarget = 9;
-      const nextTwoSecond = searchSliceCycleAcrossFrames(
-        nextTwoFirst.state,
-        eighthLockedMask,
-        secondTarget,
-        nextTwoFirst.sliceFamily || sliceFamily,
-        model,
-        deadlineTs,
-        7,
-      );
-      if (!nextTwoSecond) {
-        diagnostics.nextTwoFailures += 1;
-        continue;
+      let nextTwo;
+      let secondLockedMask;
+      if (yauBank) {
+        const nextTwoFirst = searchTargetEdgeTypes444(
+          firstThree.state,
+          0x0fff,
+          requiredTypeMask,
+          eighthTarget,
+          model,
+          deadlineTs,
+          2,
+          null,
+          7,
+        );
+        if (!nextTwoFirst) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+        const eighthLockedMask = chooseProtectedTypeMask(
+          nextTwoFirst.pairedMask,
+          requiredTypeMask,
+          eighthTarget,
+        );
+        if (bitCount(eighthLockedMask) !== eighthTarget) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+
+        const nextTwoSecond = searchTargetEdgeTypes444(
+          nextTwoFirst.state,
+          0x0fff,
+          requiredTypeMask,
+          secondTarget,
+          model,
+          deadlineTs,
+          2,
+          null,
+          8,
+        );
+        if (!nextTwoSecond) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+        secondLockedMask = chooseProtectedTypeMask(
+          nextTwoSecond.pairedMask,
+          requiredTypeMask,
+          secondTarget,
+        );
+        if (bitCount(secondLockedMask) !== secondTarget) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+
+        const firstMoves = nextTwoFirst.path.flatMap((actionIndex) =>
+          splitAlgorithm(model.seedActions[actionIndex].algorithm)
+        );
+        const secondMoves = nextTwoSecond.path.flatMap((actionIndex) =>
+          splitAlgorithm(model.seedActions[actionIndex].algorithm)
+        );
+        nextTwo = {
+          state: nextTwoSecond.state,
+          mask: nextTwoSecond.pairedMask,
+          moves: [...firstMoves, ...secondMoves],
+          firstInsertionMoves: firstMoves,
+          secondInsertionMoves: secondMoves,
+          sliceFamily,
+          frameRotation: sliceFamily.rotation,
+          workingSlice: sliceFamily.openMoves[0][0],
+          firstFrameRotation: sliceFamily.rotation,
+          firstWorkingSlice: sliceFamily.openMoves[0][0],
+        };
+      } else {
+        const nextTwoFirst = searchSliceCycleAcrossFrames(
+          firstThree.state,
+          firstLockedMask,
+          eighthTarget,
+          sliceFamily,
+          model,
+          deadlineTs,
+          7,
+          requiredSolvedTypeMask,
+        );
+        if (!nextTwoFirst) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+        const eighthLockedMask = chooseProtectedTypeMask(
+          nextTwoFirst.mask,
+          firstLockedMask,
+          eighthTarget,
+        );
+        if (bitCount(eighthLockedMask) !== eighthTarget) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+
+        const nextTwoSecond = searchSliceCycleAcrossFrames(
+          nextTwoFirst.state,
+          eighthLockedMask,
+          secondTarget,
+          nextTwoFirst.sliceFamily || sliceFamily,
+          model,
+          deadlineTs,
+          7,
+          requiredSolvedTypeMask,
+        );
+        if (!nextTwoSecond) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+        secondLockedMask = chooseProtectedTypeMask(
+          nextTwoSecond.mask,
+          eighthLockedMask,
+          secondTarget,
+        );
+        if (bitCount(secondLockedMask) !== secondTarget) {
+          diagnostics.nextTwoFailures += 1;
+          continue;
+        }
+        nextTwo = {
+          ...nextTwoSecond,
+          moves: [...nextTwoFirst.moves, ...nextTwoSecond.moves],
+          firstInsertionMoves: nextTwoFirst.moves,
+          secondInsertionMoves: nextTwoSecond.moves,
+          firstFrameRotation: nextTwoFirst.frameRotation,
+          firstWorkingSlice: nextTwoFirst.workingSlice,
+        };
       }
-      const secondLockedMask = chooseProtectedTypeMask(
-        nextTwoSecond.mask,
-        eighthLockedMask,
-        secondTarget,
-      );
-      if (bitCount(secondLockedMask) !== secondTarget) {
-        diagnostics.nextTwoFailures += 1;
-        continue;
-      }
-      const nextTwo = {
-        ...nextTwoSecond,
-        moves: [...nextTwoFirst.moves, ...nextTwoSecond.moves],
-        firstInsertionMoves: nextTwoFirst.moves,
-        secondInsertionMoves: nextTwoSecond.moves,
-        firstFrameRotation: nextTwoFirst.frameRotation,
-        firstWorkingSlice: nextTwoFirst.workingSlice,
-      };
 
       let finalSetup = null;
       let beforeL2E = nextTwo;
       let beforeL2ELockedCount = secondTarget;
       if (bitCount(nextTwo.mask) < 10) {
-        finalSetup = searchSliceCycleAcrossFrames(
-          nextTwo.state,
-          secondLockedMask,
-          10,
-          nextTwo.sliceFamily || sliceFamily,
-          model,
-          deadlineTs,
-          7,
-        );
+        if (yauBank) {
+          const multiCycle = searchTargetEdgeTypes444(
+            nextTwo.state,
+            0x0fff,
+            requiredTypeMask,
+            10,
+            model,
+            deadlineTs,
+            3,
+            null,
+            9,
+          );
+          finalSetup = multiCycle
+            ? {
+                state: multiCycle.state,
+                mask: multiCycle.pairedMask,
+                moves: multiCycle.path.flatMap((actionIndex) =>
+                  splitAlgorithm(model.seedActions[actionIndex].algorithm)
+                ),
+                sliceFamily: nextTwo.sliceFamily || sliceFamily,
+                frameRotation: nextTwo.frameRotation || sliceFamily.rotation,
+                workingSlice: nextTwo.workingSlice || sliceFamily.openMoves[0][0],
+              }
+            : null;
+        } else {
+          finalSetup = searchSliceCycleAcrossFrames(
+            nextTwo.state,
+            secondLockedMask,
+            10,
+            nextTwo.sliceFamily || sliceFamily,
+            model,
+            deadlineTs,
+            7,
+            requiredSolvedTypeMask,
+          );
+        }
         if (!finalSetup) {
           diagnostics.lastThreeFailures += 1;
           continue;
         }
-        const finalLockedMask = chooseProtectedTypeMask(finalSetup.mask, secondLockedMask, 10);
+        const finalLockedMask = chooseProtectedTypeMask(
+          finalSetup.mask,
+          yauBank ? requiredTypeMask : secondLockedMask,
+          10,
+        );
         if (bitCount(finalLockedMask) !== 10) {
           diagnostics.lastThreeFailures += 1;
           continue;
@@ -860,15 +1285,27 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
       const beforeL2ETypeCount = bitCount(pairedEdgeTypeMask(beforeL2E.state));
       const l2e = beforeL2ETypeCount === 12
         ? { state: beforeL2E.state, moves: [] }
-        : findL2E(beforeL2E.state, model, deadlineTs);
+        : findL2E(beforeL2E.state, model, deadlineTs, requiredSolvedTypeMask);
       if (!l2e) {
         diagnostics.l2eFailures += 1;
         continue;
       }
 
       const seedMoves = seed.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));
+      const bankSegment = yauBank
+        ? {
+            id: "edge323Bank",
+            name: "Yau Cross Bank 4/12",
+            solution: "",
+            moveCount: 0,
+            pairStart: 1,
+            pairEnd: 4,
+            alreadyPaired: true,
+            verified: true,
+          }
+        : buildSegment("edge323Bank", "Edge Bank 4/12", seedMoves, 1, 4);
       const segments = [
-        buildSegment("edge323Bank", "Edge Bank 4/12", seedMoves, 1, 4),
+        bankSegment,
         buildSegment("edge323First3", "3-2-3 · First 3", firstThree.moves, 5, 7),
         buildSegment("edge323Next2", "3-2-3 · Next 2", nextTwo.moves, 8, 9),
       ];
@@ -906,7 +1343,7 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
         solution,
         moveCount: splitAlgorithm(solution).length,
         segments,
-        method: "3-2-3",
+        method: edgeMethod,
         meta: {
           frameIndex,
           frameRotation: sliceFamily.rotation || "identity",
@@ -940,7 +1377,7 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
     solution: "",
     moveCount: 0,
     segments: [],
-    method: "3-2-3",
+    method: edgeMethod,
     meta: diagnostics,
   };
 }
