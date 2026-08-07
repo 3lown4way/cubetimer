@@ -44,6 +44,7 @@ struct BoundaryState {
     solved_state: bool,
     centers_solved: bool,
     center_move_count: usize,
+    center_phase_move_counts: [usize; 4],
     center_table_build_ms: f64,
     center_search_ms: f64,
     edges_paired: bool,
@@ -68,6 +69,7 @@ struct Solve444Meta {
     solved_state: bool,
     centers_solved: bool,
     center_move_count: usize,
+    center_phase_move_counts: [usize; 4],
     center_table_build_ms: f64,
     center_search_ms: f64,
     edges_paired: bool,
@@ -93,6 +95,7 @@ impl From<BoundaryState> for Solve444Meta {
             solved_state: state.solved_state,
             centers_solved: state.centers_solved,
             center_move_count: state.center_move_count,
+            center_phase_move_counts: state.center_phase_move_counts,
             center_table_build_ms: state.center_table_build_ms,
             center_search_ms: state.center_search_ms,
             edges_paired: state.edges_paired,
@@ -309,6 +312,7 @@ pub fn solve_444_boundary(request_json: &str) -> String {
 
     boundary.centers_solved = true;
     boundary.center_move_count = center_result.moves.len();
+    boundary.center_phase_move_counts = center_result.phase_move_counts;
     boundary.center_table_build_ms = center_result.table_build_ms;
     boundary.center_search_ms = center_result.search_ms;
 

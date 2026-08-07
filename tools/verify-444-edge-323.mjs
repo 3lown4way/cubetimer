@@ -60,7 +60,11 @@ for (const { scramble, require323 } of cases) {
   assert.ok(edgeStage?.verified, "verified edge stage missing");
 
   if (require323) {
-    assert.equal(edgeStage.method, "3-2-3", `expected human 3-2-3 edge method for ${scramble}`);
+    assert.equal(
+    edgeStage.method,
+    "3-2-3",
+    `expected human 3-2-3 edge method for ${scramble}; fallback=${result.meta?.edge323FallbackReason || "none"}`,
+  );
   }
 
   if (edgeStage.method === "3-2-3") {

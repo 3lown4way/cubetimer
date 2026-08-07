@@ -155,6 +155,291 @@ function cfop444RotationMap(axis, amount) {
   return result;
 }
 
+const VIEW_FACE_ORDER_444 = Object.freeze(["U", "R", "F", "D", "L", "B"]);
+const VIEW_ROTATION_TOKENS_444 = Object.freeze(["x", "x2", "x'", "y", "y2", "y'", "z", "z2", "z'"]);
+const CUBE_ROTATION_444_RE = /^[xyz](?:2|')?$/i;
+const OPPOSITE_FACE_444 = Object.freeze({ U: "D", R: "L", F: "B", D: "U", L: "R", B: "F" });
+
+function countMetric444Moves(sequence) {
+  return splitAlgorithm(sequence).filter((token) => !CUBE_ROTATION_444_RE.test(token)).length;
+}
+
+function viewMapKey444(faceMap) {
+  return VIEW_FACE_ORDER_444.map((face) => faceMap[face]).join("");
+}
+
+function rotationTokenAmount444(token) {
+  const match = /^([xyz])(2|')?$/i.exec(String(token || "").trim());
+  if (!match) return null;
+  return {
+    axis: match[1].toLowerCase(),
+    amount: match[2] === "2" ? 2 : match[2] === "'" ? 3 : 1,
+  };
+}
+
+function applyViewRotation444(faceMap, token) {
+  const parsed = rotationTokenAmount444(token);
+  if (!parsed) return null;
+  const rotation = cfop444RotationMap(parsed.axis, parsed.amount);
+  if (!rotation) return null;
+  return cfop444ComposeFaceMaps(faceMap, rotation);
+}
+
+function buildViewOrientations444() {
+  const start = { ...CFOP_444_IDENTITY_FACE_MAP };
+  const queue = [{ map: start, path: [] }];
+  const byKey = new Map([[viewMapKey444(start), queue[0]]]);
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const current = queue[cursor];
+    for (const token of VIEW_ROTATION_TOKENS_444) {
+      const nextMap = applyViewRotation444(current.map, token);
+      const key = viewMapKey444(nextMap);
+      if (byKey.has(key)) continue;
+      const entry = { map: nextMap, path: [...current.path, token] };
+      byKey.set(key, entry);
+      queue.push(entry);
+    }
+  }
+  if (queue.length !== 24) throw new Error(`INVALID_444_ORIENTATION_GROUP:${queue.length}`);
+  return Object.freeze(queue.map((entry, index) => Object.freeze({
+    index,
+    map: Object.freeze({ ...entry.map }),
+    path: Object.freeze([...entry.path]),
+    key: viewMapKey444(entry.map),
+  })));
+}
+
+const VIEW_ORIENTATIONS_444 = buildViewOrientations444();
+const VIEW_ORIENTATION_BY_KEY_444 = new Map(VIEW_ORIENTATIONS_444.map((entry) => [entry.key, entry]));
+const VIEW_ROTATION_PATH_CACHE_444 = new Map();
+
+function shortestViewRotationPath444(from, to) {
+  if (from.key === to.key) return [];
+  const cacheKey = `${from.key}>${to.key}`;
+  const cached = VIEW_ROTATION_PATH_CACHE_444.get(cacheKey);
+  if (cached) return [...cached];
+  const queue = [{ map: { ...from.map }, path: [] }];
+  const seen = new Set([from.key]);
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const current = queue[cursor];
+    for (const token of VIEW_ROTATION_TOKENS_444) {
+      const nextMap = applyViewRotation444(current.map, token);
+      const key = viewMapKey444(nextMap);
+      if (seen.has(key)) continue;
+      const path = [...current.path, token];
+      if (key === to.key) {
+        VIEW_ROTATION_PATH_CACHE_444.set(cacheKey, path);
+        return [...path];
+      }
+      seen.add(key);
+      queue.push({ map: nextMap, path });
+    }
+  }
+  return [];
+}
+
+function remapPhysical444MoveForView(token, orientation) {
+  const match = /^([URFDLB])(w)?(2|')?$/.exec(String(token || "").trim());
+  if (!match) return null;
+  const physicalFace = match[1];
+  const logicalFace = VIEW_FACE_ORDER_444.find((face) => orientation.map[face] === physicalFace);
+  if (!logicalFace) return null;
+  return `${logicalFace}${match[2] || ""}${match[3] || ""}`;
+}
+
+function remapPhysical444SequenceForView(sequence, orientation) {
+  const output = [];
+  for (const token of splitAlgorithm(sequence)) {
+    const remapped = remapPhysical444MoveForView(token, orientation);
+    if (!remapped) return null;
+    output.push(remapped);
+  }
+  return output;
+}
+
+function viewRotationExecutionCost444(tokens) {
+  return tokens.reduce((cost, token) => cost + (String(token).includes("2") ? 1.25 : 0.9), 0);
+}
+
+function viewMoveExecutionCost444(tokens) {
+  const faceWeight = { U: 0.7, R: 0.65, F: 0.75, D: 1.05, L: 1.2, B: 2.7 };
+  let cost = 0;
+  for (const token of tokens) {
+    const match = /^([URFDLB])(w)?(2|')?$/.exec(token);
+    if (!match) continue;
+    cost += faceWeight[match[1]] ?? 1;
+    if (match[2]) cost += match[1] === "B" ? 1.0 : 0.35;
+    if (match[3] === "2") cost *= 0.985;
+  }
+  return cost;
+}
+
+function humanizeAbsoluteSegments444(segments, candidateSets) {
+  if (!Array.isArray(segments) || !segments.length) return null;
+  const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
+  const normalizedCandidates = segments.map((segment, index) => {
+    const moves = splitAlgorithm(segment?.solution);
+    if (!moves.length) return VIEW_ORIENTATIONS_444;
+    const candidates = Array.isArray(candidateSets?.[index]) && candidateSets[index].length
+      ? candidateSets[index]
+      : VIEW_ORIENTATIONS_444;
+    return candidates;
+  });
+  const remapCache = new Map();
+  const remappedFor = (segmentIndex, orientation) => {
+    const key = `${segmentIndex}:${orientation.key}`;
+    if (remapCache.has(key)) return remapCache.get(key);
+    const value = remapPhysical444SequenceForView(segments[segmentIndex]?.solution || "", orientation);
+    remapCache.set(key, value);
+    return value;
+  };
+
+  let previous = new Map([[identity.key, { cost: 0, orientation: identity, path: [] }]]);
+  const layers = [];
+  for (let index = 0; index < segments.length; index += 1) {
+    const next = new Map();
+    for (const target of normalizedCandidates[index]) {
+      const remapped = remappedFor(index, target);
+      if (!remapped) continue;
+      for (const state of previous.values()) {
+        const transition = shortestViewRotationPath444(state.orientation, target);
+        const cost = state.cost
+          + viewRotationExecutionCost444(transition)
+          + viewMoveExecutionCost444(remapped);
+        const existing = next.get(target.key);
+        if (!existing || cost < existing.cost) {
+          next.set(target.key, {
+            cost,
+            orientation: target,
+            previousKey: state.orientation.key,
+          });
+        }
+      }
+    }
+    if (!next.size) return null;
+    layers.push(next);
+    previous = next;
+  }
+
+  let best = null;
+  for (const state of previous.values()) {
+    const restore = shortestViewRotationPath444(state.orientation, identity);
+    const cost = state.cost + viewRotationExecutionCost444(restore);
+    if (!best || cost < best.cost) best = { ...state, cost };
+  }
+  if (!best) return null;
+
+  const chosen = new Array(segments.length);
+  let key = best.orientation.key;
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const state = layers[index].get(key);
+    if (!state) return null;
+    chosen[index] = state.orientation;
+    key = state.previousKey;
+  }
+
+  const output = [];
+  let current = identity;
+  let rotationCount = 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    const target = chosen[index];
+    const transition = shortestViewRotationPath444(current, target);
+    const remapped = remappedFor(index, target) || [];
+    rotationCount += transition.length;
+    output.push({
+      ...segments[index],
+      solution: [...transition, ...remapped].join(" "),
+      moveCount: countMetric444Moves(segments[index]?.solution || ""),
+      viewpointRotations: transition.length,
+    });
+    current = target;
+  }
+  const restore = shortestViewRotationPath444(current, identity);
+  if (restore.length) {
+    const last = output[output.length - 1];
+    last.solution = [last.solution, restore.join(" ")].filter(Boolean).join(" ");
+    last.viewpointRotations += restore.length;
+    rotationCount += restore.length;
+  }
+  return { segments: output, rotationCount };
+}
+
+function buildHumanCenterPresentation444(centerStage, phaseMoveCounts, crossColor) {
+  const moves = splitAlgorithm(centerStage?.solution);
+  const counts = Array.from(phaseMoveCounts || [], Number).map((value) => Math.max(0, Math.floor(value || 0)));
+  if (counts.length !== 4 || counts.reduce((sum, value) => sum + value, 0) !== moves.length || !moves.length) {
+    return null;
+  }
+  const p1End = counts[0];
+  const p2End = p1End + counts[1];
+  const firstTwo = counts[0] + counts[1];
+  const segments = [
+    {
+      id: "centerCross",
+      name: "Centers · Cross Color",
+      solution: moves.slice(0, p1End).join(" "),
+      moveCount: counts[0],
+      verified: true,
+    },
+    {
+      id: "centerOpposite",
+      name: "Centers · Opposite",
+      solution: moves.slice(p1End, p2End).join(" "),
+      moveCount: counts[1],
+      verified: true,
+    },
+    {
+      id: "centerRemaining",
+      name: "Centers · Remaining 4",
+      solution: moves.slice(firstTwo).join(" "),
+      moveCount: counts[2] + counts[3],
+      verified: true,
+    },
+  ];
+  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+  const opposite = OPPOSITE_FACE_444[normalizedCross];
+  const firstCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === normalizedCross);
+  const oppositeCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === opposite);
+  const remainingCandidates = VIEW_ORIENTATIONS_444.filter((entry) => {
+    const pair = new Set([entry.map.L, entry.map.R]);
+    return pair.has(normalizedCross) && pair.has(opposite);
+  });
+  return humanizeAbsoluteSegments444(segments, [firstCandidates, oppositeCandidates, remainingCandidates]);
+}
+
+function buildHumanYawPresentation444(segments) {
+  if (!Array.isArray(segments) || !segments.length) return null;
+  const yawCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === "U" && entry.map.D === "D");
+  return humanizeAbsoluteSegments444(segments, segments.map(() => yawCandidates));
+}
+
+function buildHumanCfopPresentation444(segments, crossColor) {
+  if (!Array.isArray(segments) || !segments.length) return null;
+  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+  const crossDownCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.D === normalizedCross);
+  return humanizeAbsoluteSegments444(segments, segments.map(() => crossDownCandidates));
+}
+
+async function verifyEquivalent444Presentation(publicScramble, baselineStages, candidateStages) {
+  if (!Array.isArray(baselineStages) || baselineStages.length !== candidateStages?.length) return false;
+  const { puzzles } = await import("../vendor/cubing/puzzles/index.js");
+  const kpuzzle = await puzzles["4x4x4"].kpuzzle();
+  let baseline = kpuzzle.defaultPattern();
+  let candidate = kpuzzle.defaultPattern();
+  if (publicScramble) {
+    baseline = baseline.applyAlg(publicScramble);
+    candidate = candidate.applyAlg(publicScramble);
+  }
+  for (let index = 0; index < baselineStages.length; index += 1) {
+    const baselineSolution = String(baselineStages[index]?.solution || "").trim();
+    const candidateSolution = String(candidateStages[index]?.solution || "").trim();
+    if (baselineSolution) baseline = baseline.applyAlg(baselineSolution);
+    if (candidateSolution) candidate = candidate.applyAlg(candidateSolution);
+    if (JSON.stringify(baseline.patternData) !== JSON.stringify(candidate.patternData)) return false;
+  }
+  return true;
+}
+
 function simplifyCfop444OuterMoves(moves) {
   const simplified = [];
   for (const rawMove of moves) {
@@ -403,7 +688,7 @@ async function solveCfop333FromCubie(cubieState, onProgress, deadlineTs, crossCo
     crossColor,
     solverVersion: "v2",
     deadlineTs,
-    enableHumanViewpoint: false,
+    enableHumanViewpoint: true,
     enableMixedCfopStages: false,
     onStageUpdate(progress) {
       emitProgress(onProgress, {
@@ -472,7 +757,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
       meta: {
         ...reduction.meta,
         edge323Attempted: true,
-        edge323FallbackReason: human?.reason || human?.detail || "444_323_NO_PLAN",
+        edge323FallbackReason: human?.detail || human?.reason || "444_323_NO_PLAN",
       },
     };
   }
@@ -545,6 +830,9 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
       solvedState: reduction.meta?.solvedState,
       centersSolved: true,
       centerMoveCount: Number(centerStage.moveCount) || 0,
+      centerPhaseMoveCounts: Array.isArray(reduction.meta?.centerPhaseMoveCounts)
+        ? [...reduction.meta.centerPhaseMoveCounts]
+        : [0, 0, 0, 0],
       centerTableBuildMs: Number(reduction.meta?.centerTableBuildMs) || 0,
       centerSearchMs: Number(reduction.meta?.centerSearchMs) || 0,
       edgesPaired: true,
@@ -986,11 +1274,61 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   } catch (error) {
     console.warn("[444] edge pairing segmentation failed", error);
   }
+
+  const rotationlessPublicStages = structuredClone(publicStages);
+  let humanViewpointApplied = false;
+  let viewpointRotationCount = 0;
+  try {
+    const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
+    const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
+    const publicCfopStage = publicStages.find((stage) => stage?.id === "threeByThree");
+
+    const centerHuman = publicCenterStage
+      ? buildHumanCenterPresentation444(publicCenterStage, result.meta?.centerPhaseMoveCounts, crossColor)
+      : null;
+    if (centerHuman) {
+      publicCenterStage.segments = centerHuman.segments;
+      publicCenterStage.solution = centerHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+      publicCenterStage.method = "Cross → Opposite → Remaining 4";
+      viewpointRotationCount += centerHuman.rotationCount;
+    }
+
+    const edgeHuman = publicEdgeStage?.segments?.length
+      ? buildHumanYawPresentation444(publicEdgeStage.segments)
+      : null;
+    if (edgeHuman) {
+      publicEdgeStage.segments = edgeHuman.segments;
+      publicEdgeStage.solution = edgeHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+      viewpointRotationCount += edgeHuman.rotationCount;
+    }
+
+    const cfopHuman = publicCfopStage?.segments?.length
+      ? buildHumanCfopPresentation444(publicCfopStage.segments, crossColor)
+      : null;
+    if (cfopHuman) {
+      publicCfopStage.segments = cfopHuman.segments;
+      publicCfopStage.solution = cfopHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+      viewpointRotationCount += cfopHuman.rotationCount;
+    }
+
+    humanViewpointApplied = viewpointRotationCount > 0
+      && await verifyEquivalent444Presentation(publicScramble, rotationlessPublicStages, publicStages);
+    if (!humanViewpointApplied) {
+      publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
+      viewpointRotationCount = 0;
+    }
+  } catch (error) {
+    console.warn("[444] human viewpoint presentation failed", error);
+    publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
+    viewpointRotationCount = 0;
+    humanViewpointApplied = false;
+  }
+
   const completeSolution = publicStages
     .map((stage) => String(stage.solution || "").trim())
     .filter(Boolean)
     .join(" ");
-  const moveCount = splitAlgorithm(completeSolution).length;
+  const moveCount = countMetric444Moves(completeSolution);
   emitProgress(onProgress, {
     type: "444_stage_done",
     eventId: "444",
@@ -1023,6 +1361,9 @@ export async function solve444(scramble, onProgress = null, options = {}) {
       cfopNodes: Number(cfop.nodes) || 0,
       cfopStageCount: internalCfopSegments.length,
       cfopMethod: "CFOP",
+      crossColor,
+      humanViewpointApplied,
+      viewpointRotationCount,
       fullVerificationSolved: true,
     },
   };

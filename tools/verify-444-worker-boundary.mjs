@@ -23,7 +23,7 @@ assert.ok(valid.moveCount > 0);
 assert.equal(valid.verified, true);
 assert.equal(valid.source, "WASM_444_COMPLETE");
 assert.equal(valid.stages.length, 4);
-assert.equal(valid.moveCount, valid.solution.split(/\s+/).filter(Boolean).length);
+assert.equal(valid.moveCount, valid.solution.split(/\s+/).filter((move) => move && !/^[xyz](?:2|')?$/i.test(move)).length);
 
 const expectedStages = [
   ["centers", "Centers"],
@@ -43,6 +43,18 @@ assert.equal(valid.stages[0].moveCount, valid.meta.centerMoveCount);
 assert.equal(valid.stages[1].moveCount, valid.meta.edgeMoveCount);
 assert.equal(valid.stages[2].moveCount, valid.meta.parityMoveCount);
 assert.equal(valid.stages[3].moveCount, valid.meta.cfopMoveCount);
+assert.equal(valid.meta.humanViewpointApplied, true);
+assert.ok(valid.meta.viewpointRotationCount > 0);
+assert.equal(valid.stages[0].method, "Cross → Opposite → Remaining 4");
+assert.deepEqual(
+  valid.stages[0].segments.map((stage) => stage.name),
+  ["Centers · Cross Color", "Centers · Opposite", "Centers · Remaining 4"],
+);
+assert.ok(valid.stages[0].segments.some((stage) => /(?:^|\s)[xyz](?:2|')?(?:\s|$)/.test(stage.solution)));
+assert.equal(
+  valid.stages[0].segments.map((stage) => stage.solution).filter(Boolean).join(" "),
+  valid.stages[0].solution,
+);
 
 const edgeStage = valid.stages[1];
 assert.equal(edgeStage.method, "3-2-3");
@@ -61,7 +73,10 @@ assert.equal(
   edgeStage.solution,
 );
 for (let index = 1; index < edgeSegments.length; index += 1) {
-  assert.ok(edgeSegments[index].pairEnd > edgeSegments[index - 1].pairEnd);
+  assert.ok(
+    edgeSegments[index].pairEnd >= edgeSegments[index - 1].pairEnd,
+    "3-2-3 setup may preserve the pair count but must never reduce it",
+  );
 }
 
 const cfopSegments = valid.stages[3].segments;
@@ -159,7 +174,7 @@ assert.match(routeSource, /workerError: errorMessage/);
 
 const solver444Source = fs.readFileSync(new URL("../solver/solver444.js", import.meta.url), "utf8");
 assert.match(solver444Source, /solve3x3StrictCfopFromPattern/);
-assert.match(solver444Source, /enableHumanViewpoint: false/);
+assert.match(solver444Source, /enableHumanViewpoint: true/);
 assert.match(solver444Source, /preferHumanEdgePairing323/);
 assert.match(solver444Source, /edgePairing444\.js/);
 assert.match(solver444Source, /edgeMethod: "3-2-3"/);

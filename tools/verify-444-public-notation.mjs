@@ -49,6 +49,12 @@ for (const scramble of representativeScrambles) {
 
   const centerStage = result.stages.find((stage) => stage.id === "centers");
   assert.ok(centerStage?.verified, "verified Centers stage is missing");
+  assert.equal(centerStage.method, "Cross → Opposite → Remaining 4");
+  assert.deepEqual(
+    centerStage.segments.map((stage) => stage.name),
+    ["Centers · Cross Color", "Centers · Opposite", "Centers · Remaining 4"],
+  );
+  assert.ok(centerStage.segments.some((stage) => /(?:^|\s)[xyz](?:2|')?(?:\s|$)/.test(stage.solution)));
   const afterCenters = solved444.applyAlg(scramble).applyAlg(centerStage.solution);
   for (const orbitName of centerOrbitNames) {
     assert.deepEqual(
@@ -77,7 +83,7 @@ for (const scramble of representativeScrambles) {
   assert.equal(result.meta.cfopMethod, "CFOP");
   for (const segment of cfopStage.segments) {
     for (const move of String(segment.solution || "").trim().split(/\s+/).filter(Boolean)) {
-      assert.match(move, /^[URFDLB](?:2|')?$/, `4x4 CFOP emitted unsupported move ${move}`);
+      assert.match(move, /^(?:[URFDLB](?:2|')?|[xyz](?:2|')?)$/, `4x4 CFOP emitted unsupported move ${move}`);
     }
   }
 

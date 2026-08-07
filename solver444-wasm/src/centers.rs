@@ -186,6 +186,7 @@ static CENTER_TABLES: [OnceLock<CenterTables>; 6] = [
 #[derive(Clone, Debug)]
 pub struct CenterSolveResult {
     pub moves: Vec<Move444>,
+    pub phase_move_counts: [usize; 4],
     pub table_build_ms: f64,
     pub search_ms: f64,
 }
@@ -754,6 +755,7 @@ pub fn solve_centers_for_cross(
         "phase1-cross",
         deadline_ts,
     )?;
+    let phase1_end = moves.len();
     descend_macro_single(
         &mut working,
         &mut moves,
@@ -765,6 +767,7 @@ pub fn solve_centers_for_cross(
         "phase2-opposite",
         deadline_ts,
     )?;
+    let phase2_end = moves.len();
     descend_single(
         &mut working,
         &mut moves,
@@ -776,6 +779,7 @@ pub fn solve_centers_for_cross(
         "phase3-sides",
         deadline_ts,
     )?;
+    let phase3_end = moves.len();
     descend_pair(&mut working, &mut moves, deadline_ts, tables)?;
     check_deadline(deadline_ts)?;
 
@@ -783,8 +787,15 @@ pub fn solve_centers_for_cross(
         return Err(CenterSolveError::VerificationFailed);
     }
 
+    let phase4_end = moves.len();
     Ok(CenterSolveResult {
         moves,
+        phase_move_counts: [
+            phase1_end,
+            phase2_end - phase1_end,
+            phase3_end - phase2_end,
+            phase4_end - phase3_end,
+        ],
         table_build_ms: if tables_were_ready {
             0.0
         } else {
