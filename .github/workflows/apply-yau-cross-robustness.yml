@@ -24,6 +24,7 @@ jobs:
       - name: Apply robustness patches
         run: |
           python tools/apply-yau-cross-robustness.py
+          python tools/apply-yau-target-projection.py
           python tools/apply-yau-cross-meta.py
           python tools/apply-yau-frame-retry.py
       - name: Validate syntax
@@ -104,7 +105,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add solver/edgePairing444.js solver/solver444.js
-          git commit -m "Probe Yau frames before full solve"
+          git commit -m "Make Yau cross search frame-resilient"
           git push origin HEAD:main
 
-# Probe Cross 4/4 before paying for full Yau + CFOP on a frame.
+# Project Cross 3/4 and 4/4 search onto the eight target wings only.
