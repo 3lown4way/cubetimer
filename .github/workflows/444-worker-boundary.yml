@@ -148,3 +148,5 @@ jobs:
 
       - name: Validate repository diff
         run: git diff --check
+
+# The permanent Yau contract includes a formerly failing Cross 3/4 frame-regression scramble.
