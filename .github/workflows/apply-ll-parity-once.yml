@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply integration patch
-        run: python tools/apply-ll-parity-once.py
+        run: |
+          python tools/apply-ll-parity-once.py
+          git checkout -- .github/workflows/444-worker-boundary.yml
       - name: Validate JavaScript syntax
         run: |
           node --check solver/cfop3x3.js
@@ -41,6 +43,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver/cfop3x3.js solver/solver444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs .github/workflows/444-worker-boundary.yml
+          git add solver/cfop3x3.js solver/solver444.js tools/verify-444-worker-boundary.mjs tools/verify-444-public-notation.mjs
           git commit -m "Handle 4x4 parity during last layer"
           git push origin HEAD:main
