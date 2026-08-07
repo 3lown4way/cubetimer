@@ -63,4 +63,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Rerun with center-piece color ownership derived from the solved 4x4 pattern.
+# Print color-owned center checkpoints for logical D and physical F Yau frames.
