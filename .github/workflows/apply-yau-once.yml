@@ -54,4 +54,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Yau final 9→10 edge setup may use two center-preserving slice macros.
+# Structural retry: final 9→10 edge setup may use two center-preserving slice macros.
