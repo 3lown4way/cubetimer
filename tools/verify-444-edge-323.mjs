@@ -1,3 +1,4 @@
+// 3-2-3 edge pairing is a required human-style fast path; exact pairing remains the fallback.
 import assert from "node:assert/strict";
 
 import { puzzles } from "../vendor/cubing/puzzles/index.js";
