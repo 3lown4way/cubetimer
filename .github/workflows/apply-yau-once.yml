@@ -63,4 +63,4 @@ jobs:
           git commit -m "Add Yau method for 4x4 solver"
           git push origin HEAD:main
 
-# Rerun logical-vs-physical Yau center checkpoint diagnostics.
+# Rerun after validating partial centers by color group rather than interchangeable center IDs.
