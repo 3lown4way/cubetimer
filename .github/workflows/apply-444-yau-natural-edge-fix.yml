@@ -1,0 +1,95 @@
+name: Apply natural Yau edge flow
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-444-yau-natural-edge-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prefer slice cycles throughout Yau
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('solver/edgePairing444.js')
+          s = p.read_text()
+
+          old = '''  let paired = searchTargetEdgeTypes444(\n    initialState,\n    targetMask,\n    requiredTypeMask,\n    targetCount,\n    model,\n    deadlineTs,\n    maxMacros,\n    postAction,\n    0,\n    YAU_TARGET_BEAM_WIDTH,\n    false,\n    options?.projectTargetState === true,\n  );\n  let searchRescueUsed = false;'''
+          new = '''  let naturalSlicePairing = null;\n  if (\n    alignSolved &&\n    !postAction &&\n    bitCount(requiredTypeMask) >= 3 &&\n    targetCount > bitCount(requiredTypeMask) &&\n    !deadlineReached(deadlineTs)\n  ) {\n    naturalSlicePairing = searchSliceCycleAcrossFrames(\n      initialState,\n      requiredTypeMask,\n      targetCount,\n      model.sliceFamilies[0],\n      model,\n      deadlineTs,\n      7,\n    );\n  }\n\n  let paired = naturalSlicePairing\n    ? {\n        state: naturalSlicePairing.state,\n        pairedMask: naturalSlicePairing.mask,\n        postPairedMask: naturalSlicePairing.mask,\n        path: [],\n      }\n    : searchTargetEdgeTypes444(\n        initialState,\n        targetMask,\n        requiredTypeMask,\n        targetCount,\n        model,\n        deadlineTs,\n        maxMacros,\n        postAction,\n        0,\n        YAU_TARGET_BEAM_WIDTH,\n        false,\n        options?.projectTargetState === true,\n      );\n  let searchRescueUsed = false;'''
+          if old not in s:
+              raise SystemExit('target search anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''  const pairMoves = paired.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));'''
+          new = '''  const pairMoves = naturalSlicePairing\n    ? [...naturalSlicePairing.moves]\n    : paired.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm));'''
+          if old not in s:
+              raise SystemExit('pairMoves anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''    method: "Yau Cross Edges",\n  };'''
+          new = '''    pairingStyle: naturalSlicePairing ? "slice-cycle" : "center-preserving-macro",\n    workingSlice: naturalSlicePairing?.workingSlice || null,\n    frameRotation: naturalSlicePairing?.frameRotation || null,\n    method: "Yau Cross Edges",\n  };'''
+          if old not in s:
+              raise SystemExit('target return anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''      if (yauBank) {\n        const nextTwoFirst = searchTargetEdgeTypes444(\n          firstThree.state,\n          0x0fff,\n          requiredTypeMask,\n          eighthTarget,\n          model,\n          deadlineTs,\n          2,\n          null,\n          7,\n        );\n        if (!nextTwoFirst) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n        const eighthLockedMask = chooseProtectedTypeMask(\n          nextTwoFirst.pairedMask,\n          requiredTypeMask,\n          eighthTarget,\n        );\n        if (bitCount(eighthLockedMask) !== eighthTarget) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n\n        const nextTwoSecond = searchTargetEdgeTypes444(\n          nextTwoFirst.state,\n          0x0fff,\n          requiredTypeMask,\n          secondTarget,\n          model,\n          deadlineTs,\n          2,\n          null,\n          8,\n        );\n        if (!nextTwoSecond) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n        secondLockedMask = chooseProtectedTypeMask(\n          nextTwoSecond.pairedMask,\n          requiredTypeMask,\n          secondTarget,\n        );\n        if (bitCount(secondLockedMask) !== secondTarget) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n\n        const firstMoves = nextTwoFirst.path.flatMap((actionIndex) =>\n          splitAlgorithm(model.seedActions[actionIndex].algorithm)\n        );\n        const secondMoves = nextTwoSecond.path.flatMap((actionIndex) =>\n          splitAlgorithm(model.seedActions[actionIndex].algorithm)\n        );\n        nextTwo = {\n          state: nextTwoSecond.state,\n          mask: nextTwoSecond.pairedMask,\n          moves: [...firstMoves, ...secondMoves],\n          firstInsertionMoves: firstMoves,\n          secondInsertionMoves: secondMoves,\n          sliceFamily,\n          frameRotation: sliceFamily.rotation,\n          workingSlice: sliceFamily.openMoves[0][0],\n          firstFrameRotation: sliceFamily.rotation,\n          firstWorkingSlice: sliceFamily.openMoves[0][0],\n        };\n      } else {'''
+          new = '''      if (yauBank) {\n        let nextTwoFirstSlice = searchSliceCycleAcrossFrames(\n          firstThree.state,\n          firstLockedMask,\n          eighthTarget,\n          sliceFamily,\n          model,\n          deadlineTs,\n          7,\n          requiredSolvedTypeMask,\n        );\n        let nextTwoFirst;\n        let firstMoves;\n        if (nextTwoFirstSlice) {\n          nextTwoFirst = { state: nextTwoFirstSlice.state, pairedMask: nextTwoFirstSlice.mask };\n          firstMoves = nextTwoFirstSlice.moves;\n        } else {\n          nextTwoFirst = searchTargetEdgeTypes444(\n            firstThree.state,\n            0x0fff,\n            requiredTypeMask,\n            eighthTarget,\n            model,\n            deadlineTs,\n            2,\n            null,\n            7,\n          );\n          firstMoves = nextTwoFirst\n            ? nextTwoFirst.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm))\n            : null;\n        }\n        if (!nextTwoFirst) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n        const eighthLockedMask = chooseProtectedTypeMask(\n          nextTwoFirst.pairedMask,\n          requiredTypeMask,\n          eighthTarget,\n        );\n        if (bitCount(eighthLockedMask) !== eighthTarget) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n\n        let nextTwoSecondSlice = searchSliceCycleAcrossFrames(\n          nextTwoFirst.state,\n          eighthLockedMask,\n          secondTarget,\n          nextTwoFirstSlice?.sliceFamily || sliceFamily,\n          model,\n          deadlineTs,\n          7,\n          requiredSolvedTypeMask,\n        );\n        let nextTwoSecond;\n        let secondMoves;\n        if (nextTwoSecondSlice) {\n          nextTwoSecond = { state: nextTwoSecondSlice.state, pairedMask: nextTwoSecondSlice.mask };\n          secondMoves = nextTwoSecondSlice.moves;\n        } else {\n          nextTwoSecond = searchTargetEdgeTypes444(\n            nextTwoFirst.state,\n            0x0fff,\n            requiredTypeMask,\n            secondTarget,\n            model,\n            deadlineTs,\n            2,\n            null,\n            8,\n          );\n          secondMoves = nextTwoSecond\n            ? nextTwoSecond.path.flatMap((actionIndex) => splitAlgorithm(model.seedActions[actionIndex].algorithm))\n            : null;\n        }\n        if (!nextTwoSecond) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n        secondLockedMask = chooseProtectedTypeMask(\n          nextTwoSecond.pairedMask,\n          requiredTypeMask,\n          secondTarget,\n        );\n        if (bitCount(secondLockedMask) !== secondTarget) {\n          diagnostics.nextTwoFailures += 1;\n          continue;\n        }\n\n        nextTwo = {\n          state: nextTwoSecond.state,\n          mask: nextTwoSecond.pairedMask,\n          moves: [...firstMoves, ...secondMoves],\n          firstInsertionMoves: firstMoves,\n          secondInsertionMoves: secondMoves,\n          sliceFamily: nextTwoSecondSlice?.sliceFamily || nextTwoFirstSlice?.sliceFamily || sliceFamily,\n          frameRotation: nextTwoSecondSlice?.frameRotation || nextTwoFirstSlice?.frameRotation || sliceFamily.rotation,\n          workingSlice: nextTwoSecondSlice?.workingSlice || nextTwoFirstSlice?.workingSlice || sliceFamily.openMoves[0][0],\n          firstFrameRotation: nextTwoFirstSlice?.frameRotation || sliceFamily.rotation,\n          firstWorkingSlice: nextTwoFirstSlice?.workingSlice || sliceFamily.openMoves[0][0],\n          naturalSliceFirst: Boolean(nextTwoFirstSlice),\n          naturalSliceSecond: Boolean(nextTwoSecondSlice),\n        };\n      } else {'''
+          if old not in s:
+              raise SystemExit('yau next2 anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        if (yauBank) {\n          const multiCycle = searchTargetEdgeTypes444(\n            nextTwo.state,\n            0x0fff,\n            requiredTypeMask,\n            10,\n            model,\n            deadlineTs,\n            3,\n            null,\n            9,\n          );\n          finalSetup = multiCycle\n            ? {\n                state: multiCycle.state,\n                mask: multiCycle.pairedMask,\n                moves: multiCycle.path.flatMap((actionIndex) =>\n                  splitAlgorithm(model.seedActions[actionIndex].algorithm)\n                ),\n                sliceFamily: nextTwo.sliceFamily || sliceFamily,\n                frameRotation: nextTwo.frameRotation || sliceFamily.rotation,\n                workingSlice: nextTwo.workingSlice || sliceFamily.openMoves[0][0],\n              }\n            : null;\n        } else {'''
+          new = '''        if (yauBank) {\n          finalSetup = searchSliceCycleAcrossFrames(\n            nextTwo.state,\n            secondLockedMask,\n            10,\n            nextTwo.sliceFamily || sliceFamily,\n            model,\n            deadlineTs,\n            7,\n            requiredSolvedTypeMask,\n          );\n          if (!finalSetup) {\n            const multiCycle = searchTargetEdgeTypes444(\n              nextTwo.state,\n              0x0fff,\n              requiredTypeMask,\n              10,\n              model,\n              deadlineTs,\n              3,\n              null,\n              9,\n            );\n            finalSetup = multiCycle\n              ? {\n                  state: multiCycle.state,\n                  mask: multiCycle.pairedMask,\n                  moves: multiCycle.path.flatMap((actionIndex) =>\n                    splitAlgorithm(model.seedActions[actionIndex].algorithm)\n                  ),\n                  sliceFamily: nextTwo.sliceFamily || sliceFamily,\n                  frameRotation: nextTwo.frameRotation || sliceFamily.rotation,\n                  workingSlice: nextTwo.workingSlice || sliceFamily.openMoves[0][0],\n                  naturalSlice: false,\n                }\n              : null;\n          } else {\n            finalSetup.naturalSlice = true;\n          }\n        } else {'''
+          if old not in s:
+              raise SystemExit('yau final setup anchor missing')
+          s = s.replace(old, new, 1)
+
+          # Add diagnostics to result meta.
+          old = '''          nextTwoInsertionCount: 2,\n          nextTwoFirstFrameRotation: nextTwo.firstFrameRotation || sliceFamily.rotation || "identity",'''
+          new = '''          nextTwoInsertionCount: 2,\n          yauNaturalNextTwoFirst: yauBank ? nextTwo.naturalSliceFirst === true : null,\n          yauNaturalNextTwoSecond: yauBank ? nextTwo.naturalSliceSecond === true : null,\n          yauNaturalLastSetup: yauBank ? finalSetup?.naturalSlice === true : null,\n          nextTwoFirstFrameRotation: nextTwo.firstFrameRotation || sliceFamily.rotation || "identity",'''
+          if old not in s:
+              raise SystemExit('meta anchor missing')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+      - name: Validate Yau flow
+        run: |
+          node --check solver/edgePairing444.js
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-yau.mjs
+          git diff --check
+      - name: Print representative Yau stages
+        run: |
+          node --input-type=module <<'NODE'
+          import { solve444 } from './solver/solver444.js';
+          const scramble = "Rw U2 F' Lw D B2";
+          const result = await solve444(scramble, null, { method444: 'yau', crossColor: 'D', deadlineTs: Date.now() + 60000 });
+          console.log(JSON.stringify({
+            ok: result.ok,
+            setup: result.stages?.[0]?.segments?.map(s => ({name:s.name, solution:s.solution})),
+            edges: result.stages?.[1]?.segments?.map(s => ({name:s.name, solution:s.solution})),
+            meta: result.meta?.yauEdge323,
+          }, null, 2));
+          NODE
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/edgePairing444.js
+          git commit -m "Prefer natural slice cycles in Yau"
+          git push origin HEAD:main
