@@ -6,7 +6,9 @@ old = '''  const crossLeftCandidates = VIEW_ORIENTATIONS_444.filter(
     (entry) => entry.map.L === normalizedCross && entry.map.R === opposite,
   );'''
 new = '''  const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
-    (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
+    // Calibrated against the actual 4x4 presentation rotations: this view-map
+    // places the cross-colored center on the visible R face.
+    (entry) => entry.map.B === normalizedCross && entry.map.F === opposite,
   );'''
 if old not in s:
     raise SystemExit("missing cross-left Yau presentation anchor")
@@ -16,6 +18,11 @@ new = '''    if (index === 2 || index === 3) return crossRightCandidates;'''
 if old not in s:
     raise SystemExit("missing Yau cross-left candidate use")
 s = s.replace(old, new, 1)
+s = s.replace(
+    "// 3) hold the cross center on L for Cross 3/4 and the last four centers,",
+    "// 3) hold the cross center on the visible R face for Cross 3/4 and the last four centers,",
+    1,
+)
 solver.write_text(s)
 
 verify = Path("tools/verify-444-yau.mjs")
