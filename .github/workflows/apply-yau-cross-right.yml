@@ -22,6 +22,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Calibrate patch for post-canonical physical frame
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply-yau-cross-right.py')
+          s = p.read_text()
+          s = s.replace(
+              '(entry) => entry.map.B === normalizedCross && entry.map.F === opposite,',
+              '(entry) => entry.map.R === normalizedCross && entry.map.L === opposite,',
+              1,
+          )
+          s = s.replace(
+              '// The view-map convention is inverse to the rendered cube rotation here:\n    // map.B = cross places the selected cross-colored center on visible R.',
+              '// Presentation is applied after canonical mapping, so map.R is the visible R face.',
+              1,
+          )
+          p.write_text(s)
+          PY
       - name: Apply cross-right patch
         run: python tools/apply-yau-cross-right.py
       - name: Syntax check
@@ -31,6 +49,7 @@ jobs:
       - name: Verify Yau regressions
         run: |
           node tools/verify-444-yau.mjs
+          node tools/verify-444-edge-323.mjs
           node tools/verify-444-public-notation.mjs
           git diff --check
       - name: Commit implementation
