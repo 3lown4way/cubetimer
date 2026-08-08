@@ -83,10 +83,9 @@ jobs:
               if (!firstCenterCandidates.length || !oppositeCenterCandidates.length ||
                   !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
 
-              // Keep one speedsolver-style grip from Cross 4/4 through the whole
-              // 3-2-3 stage.  We evaluate each possible cross-down yaw, choose the
-              // cheapest full Yau presentation, and restore the public frame only
-              // after edge pairing is finished.
+              // Cross 3/4 and the remaining centers use a right-face grip. Cross
+              // 4/4 then moves to one fixed cross-down yaw which is held through
+              // all of Yau 3-2-3. Restore the public frame only after edge pairing.
               let bestYau = null;
               for (const edgeGrip of crossDownCandidates) {
                 const combined = [...centerStage.segments, ...edgeStage.segments];
@@ -127,9 +126,6 @@ jobs:
                 }
               }
 
-              // Center+edge is one presentation-equivalence boundary because the
-              // intended human grip remains rotated between those two UI stages.
-              // Edge pairing restores the public frame before CFOP begins.
               const baselineCheck = [
                 {
                   solution: baselineStages
@@ -166,6 +162,24 @@ jobs:
           if n != 1:
               raise SystemExit(f'Yau mapped humanizer replacement count={n}')
           p.write_text(s2)
+          PY
+      - name: Verify Cross 4 in human-held frame
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/verify-444-yau.mjs')
+          s = p.read_text()
+          old = '''  assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
+          assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not align the completed cross");'''
+          new = '''  assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
+          assert.equal(
+            pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
+            targetMask,
+            "Yau Cross 4/4 is not a complete cross around the D-face cross center",
+          );'''
+          if old not in s:
+              raise SystemExit('missing Cross 4 absolute-slot assertion')
+          p.write_text(s.replace(old, new, 1))
           PY
       - name: Syntax check
         run: |
