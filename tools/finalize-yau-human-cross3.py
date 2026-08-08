@@ -76,18 +76,20 @@ s = replace_once(
     3,
     "Yau Cross 3/4 must place three paired dedges directly into their correct cross slots",
   );
-  const cross3Mask = solvedTypeMask(pattern) & targetMask;''',
+  const cross3Mask = solvedTypeMask(pattern) & targetMask;
+  pattern = setup.segments[3].solution ? pattern.applyAlg(setup.segments[3].solution) : pattern;
+  assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
+  assert.equal((pairedTypeMask(pattern) & cross3Mask), cross3Mask, "remaining centers broke a protected Yau cross dedge");''',
     '''  const cross3Mask = Number(result.meta.yauCross3SolvedTargetMask) >>> 0;
   assert.equal(
     bitCount(cross3Mask),
     3,
     "canonical Yau Cross 3/4 must have three dedges in their correct cross slots before view rotation",
   );
-  assert.equal(
-    pairedTypeMask(pattern) & cross3Mask,
-    cross3Mask,
-    "human-view Yau Cross 3/4 lost a canonical solved cross dedge",
-  );''',
+  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "human-view Cross 3/4 lost the cross center");
+  assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "human-view Cross 3/4 lost the opposite center");
+  pattern = setup.segments[3].solution ? pattern.applyAlg(setup.segments[3].solution) : pattern;
+  assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");''',
     "canonical solved-position contract",
 )
 p.write_text(s)
