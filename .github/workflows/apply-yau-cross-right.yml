@@ -42,48 +42,129 @@ jobs:
           PY
       - name: Apply cross-right patch
         run: python tools/apply-yau-cross-right.py
-      - name: Keep one cross-down grip through Yau 3-2-3
+      - name: Carry Yau grip through 3-2-3
         run: |
           python - <<'PY'
           import re
           from pathlib import Path
           p = Path('solver/solver444.js')
           s = p.read_text()
-          pattern = r'''function buildHumanYauEdgePresentation444\(segments, crossColor\) \{.*?\n\}\n\nfunction buildHumanYawPresentation444'''
-          replacement = r'''function buildHumanYauEdgePresentation444(segments, crossColor) {
-            if (!Array.isArray(segments) || !segments.length) return null;
-            const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
-            const opposite = OPPOSITE_FACE_444[normalizedCross];
-            const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
-              (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-            );
+          pattern = r'''async function humanizeMappedYauStages444\(publicScramble, sourceStages, crossColor\) \{.*?\n\}\n\nfunction simplifyCfop444OuterMoves'''
+          replacement = r'''async function humanizeMappedYauStages444(publicScramble, sourceStages, crossColor) {
+            const baselineStages = structuredClone(Array.isArray(sourceStages) ? sourceStages : []);
+            const stages = structuredClone(baselineStages);
+            const fallback = () => ({
+              stages: baselineStages,
+              humanViewpointApplied: false,
+              viewpointRotationCount: 0,
+              yauHumanGripApplied: false,
+              yauViewpointRotationCount: 0,
+            });
+            try {
+              const centerStage = stages.find((stage) => stage?.id === "centers");
+              const edgeStage = stages.find((stage) => stage?.id === "edges");
+              const cfopStage = stages.find((stage) => stage?.id === "threeByThree");
+              if (!centerStage?.segments?.length || !edgeStage?.segments?.length) return fallback();
 
-            // During Yau 3-2-3 a speedsolver normally keeps the completed cross
-            // down and changes only the yaw when it is actually useful.  The old
-            // per-segment DP could bounce between several cross-down y-views,
-            // producing artificial regrips.  Pick one cross-down yaw for the
-            // whole edge stage, then restore the public frame once at the end.
-            let best = null;
-            for (const candidate of crossDownCandidates) {
-              const human = humanizeAbsoluteSegments444(
-                segments,
-                segments.map(() => [candidate]),
+              const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+              const opposite = OPPOSITE_FACE_444[normalizedCross];
+              const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.U === normalizedCross,
               );
-              if (!human?.segments?.length) continue;
-              const tokenCount = human.segments.reduce(
-                (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
-                0,
+              const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
               );
-              const score = human.rotationCount * 100000 + tokenCount;
-              if (!best || score < best.score) best = { ...human, score };
+              const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
+              );
+              const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+              );
+              if (!firstCenterCandidates.length || !oppositeCenterCandidates.length ||
+                  !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
+
+              // Keep one speedsolver-style grip from Cross 4/4 through the whole
+              // 3-2-3 stage.  We evaluate each possible cross-down yaw, choose the
+              // cheapest full Yau presentation, and restore the public frame only
+              // after edge pairing is finished.
+              let bestYau = null;
+              for (const edgeGrip of crossDownCandidates) {
+                const combined = [...centerStage.segments, ...edgeStage.segments];
+                const candidateSets = [];
+                for (let index = 0; index < centerStage.segments.length; index += 1) {
+                  if (index === 0) candidateSets.push(firstCenterCandidates);
+                  else if (index === 1) candidateSets.push(oppositeCenterCandidates);
+                  else if (index === 2 || index === 3) candidateSets.push(crossRightCandidates);
+                  else candidateSets.push([edgeGrip]);
+                }
+                for (let index = 0; index < edgeStage.segments.length; index += 1) {
+                  candidateSets.push([edgeGrip]);
+                }
+                const human = humanizeAbsoluteSegments444(combined, candidateSets);
+                if (!human?.segments?.length) continue;
+                const tokenCount = human.segments.reduce(
+                  (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
+                  0,
+                );
+                const score = human.rotationCount * 100000 + tokenCount;
+                if (!bestYau || score < bestYau.score) bestYau = { ...human, score };
+              }
+              if (!bestYau) return fallback();
+
+              const centerCount = centerStage.segments.length;
+              centerStage.segments = bestYau.segments.slice(0, centerCount);
+              edgeStage.segments = bestYau.segments.slice(centerCount);
+              centerStage.solution = centerStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+              edgeStage.solution = edgeStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+
+              let cfopRotationCount = 0;
+              if (cfopStage?.segments?.length) {
+                const cfopHuman = buildHumanCfopPresentation444(cfopStage.segments, crossColor);
+                if (cfopHuman) {
+                  cfopStage.segments = cfopHuman.segments;
+                  cfopStage.solution = cfopHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+                  cfopRotationCount = cfopHuman.rotationCount;
+                }
+              }
+
+              // Center+edge is one presentation-equivalence boundary because the
+              // intended human grip remains rotated between those two UI stages.
+              // Edge pairing restores the public frame before CFOP begins.
+              const baselineCheck = [
+                {
+                  solution: baselineStages
+                    .filter((stage) => stage?.id === "centers" || stage?.id === "edges")
+                    .map((stage) => String(stage?.solution || "").trim())
+                    .filter(Boolean)
+                    .join(" "),
+                },
+                {
+                  solution: String(baselineStages.find((stage) => stage?.id === "threeByThree")?.solution || "").trim(),
+                },
+              ];
+              const candidateCheck = [
+                { solution: [centerStage.solution, edgeStage.solution].filter(Boolean).join(" ") },
+                { solution: String(cfopStage?.solution || "").trim() },
+              ];
+              const verified = await verifyEquivalent444Presentation(publicScramble, baselineCheck, candidateCheck);
+              if (!verified) return fallback();
+
+              return {
+                stages,
+                humanViewpointApplied: bestYau.rotationCount + cfopRotationCount > 0,
+                viewpointRotationCount: bestYau.rotationCount + cfopRotationCount,
+                yauHumanGripApplied: bestYau.rotationCount > 0,
+                yauViewpointRotationCount: bestYau.rotationCount,
+              };
+            } catch (_) {
+              return fallback();
             }
-            return best ? { segments: best.segments, rotationCount: best.rotationCount } : null;
           }
 
-          function buildHumanYawPresentation444'''
+          function simplifyCfop444OuterMoves'''
           s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
           if n != 1:
-              raise SystemExit(f'Yau edge presentation replacement count={n}')
+              raise SystemExit(f'Yau mapped humanizer replacement count={n}')
           p.write_text(s2)
           PY
       - name: Syntax check
