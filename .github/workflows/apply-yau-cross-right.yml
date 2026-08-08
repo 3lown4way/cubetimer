@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/apply-yau-cross-right.yml"
       - "tools/apply-yau-cross-right.py"
+      - "tools/apply-yau-grip-carry.py"
 
 permissions:
   contents: write
@@ -19,10 +20,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Calibrate patch for post-canonical physical frame
+
+      - name: Calibrate R-face presentation after canonical mapping
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -40,152 +43,18 @@ jobs:
           )
           p.write_text(s)
           PY
-      - name: Apply cross-right patch
-        run: python tools/apply-yau-cross-right.py
-      - name: Carry Yau grip through 3-2-3
+
+      - name: Apply Yau presentation changes
         run: |
-          python - <<'PY'
-          import re
-          from pathlib import Path
-          p = Path('solver/solver444.js')
-          s = p.read_text()
-          pattern = r'''async function humanizeMappedYauStages444\(publicScramble, sourceStages, crossColor\) \{.*?\n\}\n\nfunction simplifyCfop444OuterMoves'''
-          replacement = r'''async function humanizeMappedYauStages444(publicScramble, sourceStages, crossColor) {
-            const baselineStages = structuredClone(Array.isArray(sourceStages) ? sourceStages : []);
-            const stages = structuredClone(baselineStages);
-            const fallback = () => ({
-              stages: baselineStages,
-              humanViewpointApplied: false,
-              viewpointRotationCount: 0,
-              yauHumanGripApplied: false,
-              yauViewpointRotationCount: 0,
-            });
-            try {
-              const centerStage = stages.find((stage) => stage?.id === "centers");
-              const edgeStage = stages.find((stage) => stage?.id === "edges");
-              const cfopStage = stages.find((stage) => stage?.id === "threeByThree");
-              if (!centerStage?.segments?.length || !edgeStage?.segments?.length) return fallback();
+          python tools/apply-yau-cross-right.py
+          python tools/apply-yau-grip-carry.py
 
-              const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
-              const opposite = OPPOSITE_FACE_444[normalizedCross];
-              const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-                (entry) => entry.map.U === normalizedCross,
-              );
-              const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-              );
-              const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
-                (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
-              );
-              const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
-                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-              );
-              if (!firstCenterCandidates.length || !oppositeCenterCandidates.length ||
-                  !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
-
-              // Cross 3/4 and the remaining centers use a right-face grip. Cross
-              // 4/4 then moves to one fixed cross-down yaw which is held through
-              // all of Yau 3-2-3. Restore the public frame only after edge pairing.
-              let bestYau = null;
-              for (const edgeGrip of crossDownCandidates) {
-                const combined = [...centerStage.segments, ...edgeStage.segments];
-                const candidateSets = [];
-                for (let index = 0; index < centerStage.segments.length; index += 1) {
-                  if (index === 0) candidateSets.push(firstCenterCandidates);
-                  else if (index === 1) candidateSets.push(oppositeCenterCandidates);
-                  else if (index === 2 || index === 3) candidateSets.push(crossRightCandidates);
-                  else candidateSets.push([edgeGrip]);
-                }
-                for (let index = 0; index < edgeStage.segments.length; index += 1) {
-                  candidateSets.push([edgeGrip]);
-                }
-                const human = humanizeAbsoluteSegments444(combined, candidateSets);
-                if (!human?.segments?.length) continue;
-                const tokenCount = human.segments.reduce(
-                  (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
-                  0,
-                );
-                const score = human.rotationCount * 100000 + tokenCount;
-                if (!bestYau || score < bestYau.score) bestYau = { ...human, score };
-              }
-              if (!bestYau) return fallback();
-
-              const centerCount = centerStage.segments.length;
-              centerStage.segments = bestYau.segments.slice(0, centerCount);
-              edgeStage.segments = bestYau.segments.slice(centerCount);
-              centerStage.solution = centerStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-              edgeStage.solution = edgeStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-
-              let cfopRotationCount = 0;
-              if (cfopStage?.segments?.length) {
-                const cfopHuman = buildHumanCfopPresentation444(cfopStage.segments, crossColor);
-                if (cfopHuman) {
-                  cfopStage.segments = cfopHuman.segments;
-                  cfopStage.solution = cfopHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-                  cfopRotationCount = cfopHuman.rotationCount;
-                }
-              }
-
-              const baselineCheck = [
-                {
-                  solution: baselineStages
-                    .filter((stage) => stage?.id === "centers" || stage?.id === "edges")
-                    .map((stage) => String(stage?.solution || "").trim())
-                    .filter(Boolean)
-                    .join(" "),
-                },
-                {
-                  solution: String(baselineStages.find((stage) => stage?.id === "threeByThree")?.solution || "").trim(),
-                },
-              ];
-              const candidateCheck = [
-                { solution: [centerStage.solution, edgeStage.solution].filter(Boolean).join(" ") },
-                { solution: String(cfopStage?.solution || "").trim() },
-              ];
-              const verified = await verifyEquivalent444Presentation(publicScramble, baselineCheck, candidateCheck);
-              if (!verified) return fallback();
-
-              return {
-                stages,
-                humanViewpointApplied: bestYau.rotationCount + cfopRotationCount > 0,
-                viewpointRotationCount: bestYau.rotationCount + cfopRotationCount,
-                yauHumanGripApplied: bestYau.rotationCount > 0,
-                yauViewpointRotationCount: bestYau.rotationCount,
-              };
-            } catch (_) {
-              return fallback();
-            }
-          }
-
-          function simplifyCfop444OuterMoves'''
-          s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
-          if n != 1:
-              raise SystemExit(f'Yau mapped humanizer replacement count={n}')
-          p.write_text(s2)
-          PY
-      - name: Verify Cross 4 in human-held frame
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tools/verify-444-yau.mjs')
-          s = p.read_text()
-          old = '''  assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
-          assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not align the completed cross");'''
-          new = '''  assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
-          assert.equal(
-            pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
-            targetMask,
-            "Yau Cross 4/4 is not a complete cross around the D-face cross center",
-          );'''
-          if old not in s:
-              raise SystemExit('missing Cross 4 absolute-slot assertion')
-          p.write_text(s.replace(old, new, 1))
-          PY
       - name: Syntax check
         run: |
           node --check solver/solver444.js
           node --check tools/verify-444-yau.mjs
-      - name: Measure presentation rotations
+
+      - name: Measure Yau grip rotations
         run: |
           node --input-type=module <<'JS'
           import { solve444 } from './solver/solver444.js';
@@ -194,24 +63,29 @@ jobs:
             ["F", "Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2"],
           ];
           for (const [crossColor, scramble] of cases) {
-            const result = await solve444(scramble, null, { method444: 'yau', crossColor, deadlineTs: Date.now() + 60000 });
-            console.log('ROTATION_DIAG', crossColor, 'ok=', result.ok, 'view=', result.meta?.viewpointRotationCount, 'yau=', result.meta?.yauViewpointRotationCount, 'frame=', result.meta?.yauFrameSpin);
-            for (const stage of result.stages || []) {
-              console.log('STAGE', crossColor, stage.id, (stage.segments || []).map(s => `${s.name}:${s.viewpointRotations ?? 0}`).join('|'));
-            }
+            const result = await solve444(scramble, null, {
+              method444: 'yau', crossColor, deadlineTs: Date.now() + 60000,
+            });
+            console.log('YAU_GRIP', crossColor,
+              'ok=', result.ok,
+              'all=', result.meta?.viewpointRotationCount,
+              'yau=', result.meta?.yauViewpointRotationCount);
           }
           JS
+
       - name: Verify Yau regressions
         run: |
           node tools/verify-444-yau.mjs
           node tools/verify-444-edge-323.mjs
           node tools/verify-444-public-notation.mjs
           git diff --check
+
       - name: Commit implementation
         run: |
-          rm -f tools/apply-yau-cross-right.py
+          rm -f tools/apply-yau-cross-right.py tools/apply-yau-grip-carry.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver/solver444.js tools/verify-444-yau.mjs tools/apply-yau-cross-right.py
+          git add solver/solver444.js tools/verify-444-yau.mjs \
+            tools/apply-yau-cross-right.py tools/apply-yau-grip-carry.py
           git commit -m "Keep Yau 3-cross on the right face"
           git push origin HEAD:main
