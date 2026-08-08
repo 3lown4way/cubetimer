@@ -8,109 +8,89 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rust edge helpers: distinguish "paired somewhere" from "paired in its home
-# cross slot".  Yau remaining-center work must keep the first three cross
-# dedges attached to the cross center, not merely re-pair them later.
+# Rust edge invariant for Yau centers.
+#
+# "Keep the 3-cross" means the same three selected cross dedges stay paired
+# in three of the four edge slots touching the selected cross-center face.
+# Their order around that face may rotate/permutate; they are NOT frozen to
+# their final color-home slots during center work.
 # ---------------------------------------------------------------------------
 p = Path("solver444-wasm/src/edges.rs")
 s = p.read_text()
-anchor = '''fn edge_home_paired(inventory: &WingInventory, edge_type: usize) -> bool {
-    let [first, second] = EDGE_SLOTS[edge_type];
-    inventory.edge_type[first as usize] == edge_type as u8
-        && inventory.edge_type[second as usize] == edge_type as u8
-        && inventory.orientation[first as usize] == inventory.orientation[second as usize]
-}
-
-pub(crate) fn paired_edge_type_mask(state: &Cube444) -> Result<u16, EdgeSolveError> {'''
-replacement = '''fn edge_home_paired(inventory: &WingInventory, edge_type: usize) -> bool {
-    let [first, second] = EDGE_SLOTS[edge_type];
-    inventory.edge_type[first as usize] == edge_type as u8
-        && inventory.edge_type[second as usize] == edge_type as u8
-        && inventory.orientation[first as usize] == inventory.orientation[second as usize]
-}
-
-pub(crate) fn home_paired_edge_type_mask(state: &Cube444) -> Result<u16, EdgeSolveError> {
-    let inventory = wing_inventory(state)?;
-    let mut mask = 0u16;
-    for edge_type in 0..EDGE_TYPE_COUNT {
-        if edge_home_paired(&inventory, edge_type) {
-            mask |= 1u16 << edge_type;
-        }
-    }
-    Ok(mask)
-}
-
-pub(crate) fn home_paired_cross_edge_type_mask(
+old = '''pub(crate) fn paired_cross_edge_type_mask(
     state: &Cube444,
     cross_color: u8,
 ) -> Result<u16, EdgeSolveError> {
-    let home_paired = home_paired_edge_type_mask(state)?;
+    let paired = paired_edge_type_mask(state)?;
     let mut cross_mask = 0u16;
     for (edge_type, colors) in EDGE_COLOR_PAIRS.iter().enumerate() {
         if colors.contains(&cross_color) {
             cross_mask |= 1u16 << edge_type;
         }
     }
-    Ok(home_paired & cross_mask)
-}
+    Ok(paired & cross_mask)
+}'''
+new = '''pub(crate) fn paired_cross_edge_type_mask(
+    state: &Cube444,
+    cross_color: u8,
+) -> Result<u16, EdgeSolveError> {
+    // Keep paired_edge_type_mask in the contract as an independent inventory
+    // check, then additionally require the pair to occupy one of the four
+    // physical edge slots adjacent to the selected cross-center face.
+    let paired_anywhere = paired_edge_type_mask(state)?;
+    let inventory = wing_inventory(state)?;
+    let mut parked_on_cross_face = 0u16;
 
-pub(crate) fn paired_edge_type_mask(state: &Cube444) -> Result<u16, EdgeSolveError> {'''
-s = replace_once(s, anchor, replacement, "home-paired edge helpers")
+    for (slot, &[first, second]) in EDGE_SLOTS.iter().enumerate() {
+        if !EDGE_COLOR_PAIRS[slot].contains(&cross_color) {
+            continue;
+        }
+        let first_type = inventory.edge_type[first as usize];
+        let second_type = inventory.edge_type[second as usize];
+        if first_type == u8::MAX
+            || first_type != second_type
+            || inventory.orientation[first as usize] != inventory.orientation[second as usize]
+        {
+            continue;
+        }
+        if EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color) {
+            parked_on_cross_face |= 1u16 << first_type;
+        }
+    }
+
+    Ok(parked_on_cross_face & paired_anywhere)
+}'''
+s = replace_once(s, old, new, "cross-face parked dedge invariant")
 p.write_text(s)
 
 
 # ---------------------------------------------------------------------------
-# Rust Yau center search: hard-lock the three home cross slots after EVERY
-# atomic center move.  The previous predicate only required the dedges to stay
-# paired somewhere on the cube, which is not a human Yau 3-cross invariant.
+# Rust Yau center search. The existing search already calls preserves_cross()
+# after EVERY atomic center move. With the strengthened edge helper above,
+# that predicate now means the same three dedges remain paired around the
+# cross-center face, while allowing them to rotate among its four slots.
 # ---------------------------------------------------------------------------
 p = Path("solver444-wasm/src/centers.rs")
 s = p.read_text()
 s = replace_once(
     s,
-    'use crate::edges::paired_cross_edge_type_mask;',
-    'use crate::edges::home_paired_cross_edge_type_mask;',
-    "center edge import",
-)
-s = replace_once(
-    s,
-    '''        paired_cross_edge_type_mask(state, self.cross_color)
-            .map(|mask| mask & self.protected_cross_mask == self.protected_cross_mask)
-            .unwrap_or(false)''',
-    '''        home_paired_cross_edge_type_mask(state, self.cross_color)
-            .map(|mask| mask & self.protected_cross_mask == self.protected_cross_mask)
-            .unwrap_or(false)''',
-    "per-move Yau cross predicate",
-)
-s = replace_once(
-    s,
-    '''    let protected_cross_mask = paired_cross_edge_type_mask(state, cross_color)
-        .map_err(|_| CenterSolveError::CoordinateNotReachable("yau-cross-wings"))?;
-    if protected_cross_mask.count_ones() < 3 {
+    '''    if protected_cross_mask.count_ones() < 3 {
         return Err(CenterSolveError::CoordinateNotReachable("yau-cross3"));
     }''',
-    '''    let protected_cross_mask = home_paired_cross_edge_type_mask(state, cross_color)
-        .map_err(|_| CenterSolveError::CoordinateNotReachable("yau-cross-wings"))?;
-    if protected_cross_mask.count_ones() != 3 {
-        return Err(CenterSolveError::CoordinateNotReachable("yau-cross3-home-slots"));
+    '''    if protected_cross_mask.count_ones() != 3 {
+        return Err(CenterSolveError::CoordinateNotReachable(
+            "yau-cross3-cross-face",
+        ));
     }''',
-    "initial Yau cross hard lock",
-)
-s = replace_once(
-    s,
-    '''            let protected_after = paired_cross_edge_type_mask(&working, cross_color)
-                .map_err(|_| CenterSolveError::VerificationFailed)?;''',
-    '''            let protected_after = home_paired_cross_edge_type_mask(&working, cross_color)
-                .map_err(|_| CenterSolveError::VerificationFailed)?;''',
-    "final Yau cross hard lock",
+    "require exactly three parked cross dedges",
 )
 p.write_text(s)
 
 
 # ---------------------------------------------------------------------------
-# WASM boundary: independently replay the remaining-center solution one move at
-# a time and fail if any move ejects one of the three cross dedges from its
-# home cross slot.  This guards against future search regressions.
+# WASM boundary independently replays the returned remaining-center solution
+# move by move. A result is accepted only if those same three cross dedges are
+# still parked around the cross center after every atomic move.
 # ---------------------------------------------------------------------------
 p = Path("solver444-wasm/src/api.rs")
 s = p.read_text()
@@ -137,14 +117,6 @@ s = replace_once(
         cross_locked_every_move: false,
         phase_move_counts: [0; 4],''',
     "Yau error cross lock field",
-)
-s = replace_once(
-    s,
-    '''    let protected_before =
-        crate::edges::paired_cross_edge_type_mask(&state, cross_color).unwrap_or(0);''',
-    '''    let protected_before =
-        crate::edges::home_paired_cross_edge_type_mask(&state, cross_color).unwrap_or(0);''',
-    "Yau initial home cross mask",
 )
 old_verify = '''    let mut verified_state = state;
     verified_state.apply_moves(&result.moves);
@@ -176,21 +148,15 @@ new_verify = '''    let mut verified_state = state;
     let mut cross_locked_every_move = protected_count == 3;
     for mv in &result.moves {
         verified_state.apply_move(*mv);
-        let protected_step = crate::edges::home_paired_cross_edge_type_mask(
-            &verified_state,
-            cross_color,
-        )
-        .unwrap_or(0);
+        let protected_step =
+            crate::edges::paired_cross_edge_type_mask(&verified_state, cross_color).unwrap_or(0);
         if protected_step & protected_before != protected_before {
             cross_locked_every_move = false;
             break;
         }
     }
-    let protected_after = crate::edges::home_paired_cross_edge_type_mask(
-        &verified_state,
-        cross_color,
-    )
-    .unwrap_or(0);
+    let protected_after =
+        crate::edges::paired_cross_edge_type_mask(&verified_state, cross_color).unwrap_or(0);
     let verified = cross_locked_every_move
         && verified_state.centers_solved()
         && verified_state.validate().is_ok()
@@ -198,7 +164,7 @@ new_verify = '''    let mut verified_state = state;
     if !verified {
         return yau_remaining_error(
             "error",
-            "444_YAU_CENTER_CROSS_LOCK_VERIFICATION_FAILED".to_string(),
+            "444_YAU_CENTER_CROSS_FACE_LOCK_FAILED".to_string(),
             protected_count,
         );
     }
@@ -215,13 +181,12 @@ new_verify = '''    let mut verified_state = state;
         table_build_ms: result.table_build_ms,
         search_ms: result.search_ms,
     })'''
-s = replace_once(s, old_verify, new_verify, "Yau per-move boundary verification")
+s = replace_once(s, old_verify, new_verify, "Yau per-move cross-face verification")
 p.write_text(s)
 
 
 # ---------------------------------------------------------------------------
-# JS orchestrator: require the new hard-lock boundary contract and surface it
-# in the stage/meta diagnostics.
+# JS orchestration requires the WASM hard-lock proof and exposes it publicly.
 # ---------------------------------------------------------------------------
 p = Path("solver/solver444.js")
 s = p.read_text()
@@ -272,9 +237,9 @@ p.write_text(s)
 
 
 # ---------------------------------------------------------------------------
-# Permanent JS regression: during every displayed Remaining 4 Centers token,
-# the same three cross dedges must remain paired AND adjacent to the currently
-# displayed cross center. This directly catches the visual breakage reported.
+# Permanent regression: replay Remaining 4 Centers token-by-token in the
+# displayed human viewpoint. The same three selected cross dedges must stay
+# paired in the four edge slots adjacent to wherever the cross center is now.
 # ---------------------------------------------------------------------------
 p = Path("tools/verify-444-yau.mjs")
 s = p.read_text()
@@ -308,8 +273,8 @@ function pairedCrossTypesAdjacentToCenter(pattern, crossColor) {
   const edges = pattern.patternData.EDGES;
   let mask = 0;
   for (let slot = 0; slot < EDGE_SLOT_PAIRS.length; slot += 1) {
-    const cubieName = EDGE_NAMES_333[EDGE_SLOT_TO_333[slot]];
-    if (!cubieName.includes(crossFace)) continue;
+    const slotFacePair = EDGE_NAMES_333[EDGE_SLOT_TO_333[slot]];
+    if (!slotFacePair.includes(crossFace)) continue;
     const [a, b] = EDGE_SLOT_PAIRS[slot];
     const ta = EDGE_TYPE_BY_WING[Number(edges.pieces[a])];
     const tb = EDGE_TYPE_BY_WING[Number(edges.pieces[b])];
@@ -355,8 +320,8 @@ s = replace_once(
     );
   }
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");''',
-    "per-display-move cross lock assertion",
+    "per-displayed-move cross lock assertion",
 )
 p.write_text(s)
 
-print("Yau remaining-center 3-cross hard lock patch applied")
+print("Yau remaining-center cross-face 3-cross lock patch applied")
