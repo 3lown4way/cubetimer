@@ -12,6 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        cross: [U, R, F, D, L, B]
         face: [R, F, B, L]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -41,6 +42,8 @@ jobs:
           p.write_text(s2)
           PY
       - name: Run diagnostic
+        env:
+          CROSS: ${{ matrix.cross }}
         run: |
-          echo "CANDIDATE=${{ matrix.face }}"
-          node tools/diag-yau-view.mjs | grep -E 'Cross Edges 3/4|Remaining 4 Centers|Cross Edge 4/4|^ok'
+          echo "CROSS=${{ matrix.cross }} CANDIDATE=${{ matrix.face }}"
+          node tools/diag-yau-view.mjs | grep -E 'Cross Edges 3/4|Remaining 4 Centers|Cross Edge 4/4|crossColor'
