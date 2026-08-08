@@ -1,0 +1,43 @@
+name: Apply Yau cross-right presentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-yau-cross-right.yml"
+      - "tools/apply-yau-cross-right.py"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply cross-right patch
+        run: python tools/apply-yau-cross-right.py
+      - name: Syntax check
+        run: |
+          node --check solver/solver444.js
+          node --check tools/verify-444-yau.mjs
+      - name: Verify Yau regressions
+        run: |
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-public-notation.mjs
+          git diff --check
+      - name: Commit implementation
+        run: |
+          rm -f tools/apply-yau-cross-right.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/solver444.js tools/verify-444-yau.mjs tools/apply-yau-cross-right.py
+          git commit -m "Keep Yau 3-cross on the right face"
+          git push origin HEAD:main
