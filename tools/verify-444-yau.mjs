@@ -126,8 +126,12 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   if (expectNatural) {
     assert.equal(result.meta.yauNaturalCross3Applied, true, `natural Cross 3/4 was not used for ${crossColor}: ${result.meta.yauNaturalCross3FallbackReason}`);
     assert.equal(result.meta.yauRemainingCentersRecomputed, true);
-    assert.equal(result.meta.yauCross3Method, "Yau Natural Slice Cross 3/4");
-    assert.ok(Number(result.meta.yauCross3MoveCount) <= 14);
+    assert.equal(result.meta.yauCross3Method, "Yau Human Cross 3/4");
+    assert.equal(result.meta.yauHumanCross3Applied, true);
+    assert.ok(Number(result.meta.yauCross3HumanStepCount) >= 1);
+    assert.ok(Number(result.meta.yauCross3HumanStepCount) <= 3);
+    assert.equal(bitCount(Number(result.meta.yauCross3SolvedTargetMask) >>> 0), 3);
+    assert.ok(Number(result.meta.yauCross3MoveCount) <= 30);
     assert.ok(Number(result.meta.yauProtectedCenterSearchMs) >= 0);
   }
   assert.equal(result.meta.humanViewpointApplied, true);
@@ -159,12 +163,31 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   pattern = setup.segments[1].solution ? pattern.applyAlg(setup.segments[1].solution) : pattern;
   assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not preserved");
   assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
+  const cross3Tokens = String(setup.segments[2].solution || "").trim().split(/\s+/).filter(Boolean);
+  const cross3WideTokens = cross3Tokens.filter((token) => /^[URFDLB]w(?:2|')?$/.test(token));
+  assert.ok(cross3WideTokens.length >= 2, "human Yau Cross 3/4 did not use a working slice");
+  assert.equal(
+    cross3WideTokens.length,
+    Number(result.meta.yauCross3HumanStepCount) * 2,
+    "human Yau Cross 3/4 must use one working-slice open/close pair per committed cross edge",
+  );
+  for (let index = 0; index < cross3WideTokens.length; index += 2) {
+    const open = cross3WideTokens[index];
+    const close = cross3WideTokens[index + 1];
+    const inverse = open.endsWith("2") ? open : open.endsWith("'") ? open.slice(0, -1) : `${open}'`;
+    assert.equal(close, inverse, `human Yau Cross 3/4 did not restore its working slice: ${open} ... ${close}`);
+  }
   pattern = setup.segments[2].solution ? pattern.applyAlg(setup.segments[2].solution) : pattern;
-  assert.ok(bitCount(pairedTypeMask(pattern) & targetMask) >= 3, "Yau Cross 3/4 did not pair three cross dedges");
-  const cross3Mask = pairedTypeMask(pattern) & targetMask;
+  const cross3Mask = Number(result.meta.yauCross3SolvedTargetMask) >>> 0;
+  assert.equal(
+    bitCount(cross3Mask),
+    3,
+    "canonical Yau Cross 3/4 must have three dedges in their correct cross slots before view rotation",
+  );
+  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "human-view Cross 3/4 lost the cross center");
+  assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "human-view Cross 3/4 lost the opposite center");
   pattern = setup.segments[3].solution ? pattern.applyAlg(setup.segments[3].solution) : pattern;
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
-  assert.equal((pairedTypeMask(pattern) & cross3Mask), cross3Mask, "remaining centers broke a protected Yau cross dedge");
   pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
   assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not align the completed cross");

@@ -979,7 +979,7 @@ async function preferYauReduction444(
       publicScramble, firstTwoCenters, targetTypeMask,
       {
         deadlineTs,
-        timeBudgetMs: options?.__yauFastFrameProbe === true ? 650 : 1400,
+        timeBudgetMs: options?.__yauFastFrameProbe === true ? 950 : 2400,
         protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
       },
     );
@@ -1033,18 +1033,13 @@ async function preferYauReduction444(
     }
   }
 
-  if (!cross3) {
-    cross3 = await edgeModule.solveTargetEdgeTypes444(
-      publicScramble, firstTwoCenters, targetTypeMask,
-      {
-        targetCount: 3, deadlineTs, maxMacros: 8, postSequence: remainingCenters,
-        enableRescue: options?.__yauFastFrameProbe !== true,
-        projectTargetState: options?.__yauFastFrameProbe === true,
-      },
-    );
-  }
   if (!cross3?.ok) {
-    return yauFailure444(reduction, "444_YAU_CROSS3_FAILED", cross3?.reason || cross3?.detail, deadlineTs);
+    return yauFailure444(
+      reduction,
+      "444_YAU_HUMAN_CROSS3_FAILED",
+      naturalCross3FallbackReason || cross3?.reason || cross3?.detail || "HUMAN_CROSS3_REQUIRED",
+      deadlineTs,
+    );
   }
 
   const beforeCross4 = [firstTwoCenters, cross3.solution, effectiveRemainingCenters]
@@ -1259,8 +1254,15 @@ async function preferYauReduction444(
       yauFallbackReason: null,
       yauCrossTypeMask: targetTypeMask,
       yauCross3MoveCount: Number(cross3.moveCount) || 0,
+      yauCross3HumanStepCount: Number(cross3.humanStepCount) || 0,
+      yauCross3HumanWorkingSlices: Array.isArray(cross3.steps)
+        ? cross3.steps.map((step) => String(step?.workingSlice || ""))
+        : [],
+      yauCross3SolvedTargetMask: Number(cross3.solvedTargetMask) || 0,
+      yauCross3PairedTargetMask: Number(cross3.pairedTargetMask) || 0,
       yauCross3Method: String(cross3.method || "Yau Cross Edges"),
       yauNaturalCross3Applied: naturalCross3Applied,
+      yauHumanCross3Applied: naturalCross3Applied && cross3.method === "Yau Human Cross 3/4",
       yauNaturalCross3FallbackReason: naturalCross3FallbackReason,
       yauRemainingCentersRecomputed: remainingCentersRecomputed,
       yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,
