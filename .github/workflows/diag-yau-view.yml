@@ -1,0 +1,21 @@
+name: Diagnose Yau view
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/diag-yau-view.yml"
+      - "tools/diag-yau-view.mjs"
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/diag-yau-view.mjs
