@@ -6,7 +6,9 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"missing anchor: {label}")
     return text.replace(old, new, 1)
 
-# Expose the human step count/working slices in solver diagnostics.
+# Expose canonical, pre-view-rotation Cross 3 diagnostics.  The public human
+# presentation rotates the whole cube to put the cross center on the side, so
+# fixed physical-slot solvedness must be asserted here, before presentation.
 p = Path("solver/solver444.js")
 s = p.read_text()
 s = replace_once(
@@ -18,14 +20,17 @@ s = replace_once(
       yauCross3HumanWorkingSlices: Array.isArray(cross3.steps)
         ? cross3.steps.map((step) => String(step?.workingSlice || ""))
         : [],
+      yauCross3SolvedTargetMask: Number(cross3.solvedTargetMask) || 0,
+      yauCross3PairedTargetMask: Number(cross3.pairedTargetMask) || 0,
       yauCross3Method: String(cross3.method || "Yau Cross Edges"),''',
     "human step diagnostics",
 )
 p.write_text(s)
 
-# Fix the regression: after presentation/remapping, the literal wide face can
-# be F/B/U/D/L/R depending on the chosen cube grip.  What must remain true is
-# one open/close working-slice pair per human cross-edge step.
+# After presentation/remapping, the literal wide face can be F/B/U/D/L/R
+# depending on cube grip.  What must remain true is one working-slice
+# open/close pair per committed cross edge.  Correct-slot placement is checked
+# with the canonical mask above rather than against rotated physical slots.
 p = Path("tools/verify-444-yau.mjs")
 s = p.read_text()
 s = replace_once(
@@ -36,6 +41,7 @@ s = replace_once(
     '''    assert.equal(result.meta.yauHumanCross3Applied, true);
     assert.ok(Number(result.meta.yauCross3HumanStepCount) >= 1);
     assert.ok(Number(result.meta.yauCross3HumanStepCount) <= 3);
+    assert.equal(bitCount(Number(result.meta.yauCross3SolvedTargetMask) >>> 0), 3);
     assert.ok(Number(result.meta.yauCross3MoveCount) <= 30);
     assert.ok(Number(result.meta.yauProtectedCenterSearchMs) >= 0);''',
     "human step count assertion",
@@ -62,6 +68,27 @@ s = replace_once(
   }
   pattern = setup.segments[2].solution ? pattern.applyAlg(setup.segments[2].solution) : pattern;''',
     "working slice pair assertion",
+)
+s = replace_once(
+    s,
+    '''  assert.equal(
+    bitCount(solvedTypeMask(pattern) & targetMask),
+    3,
+    "Yau Cross 3/4 must place three paired dedges directly into their correct cross slots",
+  );
+  const cross3Mask = solvedTypeMask(pattern) & targetMask;''',
+    '''  const cross3Mask = Number(result.meta.yauCross3SolvedTargetMask) >>> 0;
+  assert.equal(
+    bitCount(cross3Mask),
+    3,
+    "canonical Yau Cross 3/4 must have three dedges in their correct cross slots before view rotation",
+  );
+  assert.equal(
+    pairedTypeMask(pattern) & cross3Mask,
+    cross3Mask,
+    "human-view Yau Cross 3/4 lost a canonical solved cross dedge",
+  );''',
+    "canonical solved-position contract",
 )
 p.write_text(s)
 print("finalized human Yau Cross 3 contracts")
