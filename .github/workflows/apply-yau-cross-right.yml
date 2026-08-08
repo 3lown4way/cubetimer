@@ -46,6 +46,22 @@ jobs:
         run: |
           node --check solver/solver444.js
           node --check tools/verify-444-yau.mjs
+      - name: Measure presentation rotations
+        run: |
+          node --input-type=module <<'JS'
+          import { solve444 } from './solver/solver444.js';
+          const cases = [
+            ["D", "Rw U2 F' Lw D B2"],
+            ["F", "Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2"],
+          ];
+          for (const [crossColor, scramble] of cases) {
+            const result = await solve444(scramble, null, { method444: 'yau', crossColor, deadlineTs: Date.now() + 60000 });
+            console.log('ROTATION_DIAG', crossColor, 'ok=', result.ok, 'view=', result.meta?.viewpointRotationCount, 'yau=', result.meta?.yauViewpointRotationCount, 'frame=', result.meta?.yauFrameSpin);
+            for (const stage of result.stages || []) {
+              console.log('STAGE', crossColor, stage.id, (stage.segments || []).map(s => `${s.name}:${s.viewpointRotations ?? 0}`).join('|'));
+            }
+          }
+          JS
       - name: Verify Yau regressions
         run: |
           node tools/verify-444-yau.mjs
