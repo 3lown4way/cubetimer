@@ -6,43 +6,24 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"missing anchor: {label}")
     return text.replace(old, new, 1)
 
-# Rust edge invariant: a protected cross edge must stay paired AND physically
-# attached to the face that carries the cross center.  Pairing somewhere else
-# on the cube is not a Yau cross.
+# Strengthen the existing Yau cross mask. It already requires the pair to sit
+# in one of the four slots adjacent to the selected cross-center face, but it
+# still accepted a paired/flipped dedge whose cross-color stickers faced away
+# from the cross center. That looks like the 3-cross being broken in replay.
 p = Path("solver444-wasm/src/edges.rs")
 s = p.read_text()
-anchor = '''pub(crate) fn paired_cross_edge_type_mask(
+old = '''pub(crate) fn paired_cross_edge_type_mask(
     state: &Cube444,
     cross_color: u8,
 ) -> Result<u16, EdgeSolveError> {
-    let paired = paired_edge_type_mask(state)?;
-    let mut cross_mask = 0u16;
-    for (edge_type, colors) in EDGE_COLOR_PAIRS.iter().enumerate() {
-        if colors.contains(&cross_color) {
-            cross_mask |= 1u16 << edge_type;
-        }
-    }
-    Ok(paired & cross_mask)
-}
-'''
-insert = anchor + '''
-/// Returns cross-color dedges that are visibly present as spokes around the
-/// selected cross center.  Unlike `paired_cross_edge_type_mask`, this rejects
-/// a pair that wandered to a non-cross slot while remaining internally paired.
-pub(crate) fn cross_spoke_edge_type_mask(
-    state: &Cube444,
-    cross_color: u8,
-) -> Result<u16, EdgeSolveError> {
-    if cross_color >= 6 {
-        return Err(EdgeSolveError::InvalidWingInventory);
-    }
+    // Keep paired_edge_type_mask in the contract as an independent inventory
+    // check, then additionally require the pair to occupy one of the four
+    // physical edge slots adjacent to the selected cross-center face.
+    let paired_anywhere = paired_edge_type_mask(state)?;
     let inventory = wing_inventory(state)?;
-    let facelets = wing_facelets();
-    let mut mask = 0u16;
+    let mut parked_on_cross_face = 0u16;
 
     for (slot, &[first, second]) in EDGE_SLOTS.iter().enumerate() {
-        // Only the four edge slots geometrically adjacent to the cross-center
-        // face can count as visible Yau cross spokes.
         if !EDGE_COLOR_PAIRS[slot].contains(&cross_color) {
             continue;
         }
@@ -50,52 +31,69 @@ pub(crate) fn cross_spoke_edge_type_mask(
         let second_type = inventory.edge_type[second as usize];
         if first_type == u8::MAX
             || first_type != second_type
-            || !EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color)
             || inventory.orientation[first as usize] != inventory.orientation[second as usize]
         {
             continue;
         }
+        if EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color) {
+            parked_on_cross_face |= 1u16 << first_type;
+        }
+    }
 
-        // Both wings must actually show the selected cross color on the cross
-        // face; a paired-but-flipped dedge is not a visible cross spoke.
+    Ok(parked_on_cross_face & paired_anywhere)
+}
+'''
+new = '''pub(crate) fn paired_cross_edge_type_mask(
+    state: &Cube444,
+    cross_color: u8,
+) -> Result<u16, EdgeSolveError> {
+    if cross_color >= 6 {
+        return Err(EdgeSolveError::InvalidWingInventory);
+    }
+    // A Yau cross edge must satisfy all three conditions simultaneously:
+    // 1) its two wings are paired,
+    // 2) that pair occupies one of the four slots around the cross center,
+    // 3) the selected cross-color sticker on BOTH wings actually faces the
+    //    cross-center face. A paired-but-flipped dedge is not a visible spoke.
+    let paired_anywhere = paired_edge_type_mask(state)?;
+    let inventory = wing_inventory(state)?;
+    let facelets = wing_facelets();
+    let mut visible_cross_spokes = 0u16;
+
+    for (slot, &[first, second]) in EDGE_SLOTS.iter().enumerate() {
+        if !EDGE_COLOR_PAIRS[slot].contains(&cross_color) {
+            continue;
+        }
+        let first_type = inventory.edge_type[first as usize];
+        let second_type = inventory.edge_type[second as usize];
+        if first_type == u8::MAX
+            || first_type != second_type
+            || inventory.orientation[first as usize] != inventory.orientation[second as usize]
+            || !EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color)
+        {
+            continue;
+        }
+
         let cross_sticker_faces_cross = |wing: u8| {
             facelets[wing as usize].iter().any(|&facelet| {
                 facelet / 16 == cross_color as usize && state.stickers()[facelet] == cross_color
             })
         };
         if cross_sticker_faces_cross(first) && cross_sticker_faces_cross(second) {
-            mask |= 1u16 << first_type;
+            visible_cross_spokes |= 1u16 << first_type;
         }
     }
-    Ok(mask)
+
+    Ok(visible_cross_spokes & paired_anywhere)
 }
 '''
-s = replace_once(s, anchor, insert, "cross-spoke helper")
-p.write_text(s)
-
-# The Yau remaining-center search must use the visual cross-spoke invariant at
-# every node, not the weaker 'paired anywhere' invariant.
-p = Path("solver444-wasm/src/centers.rs")
-s = p.read_text()
-s = s.replace(
-    "use crate::edges::paired_cross_edge_type_mask;",
-    "use crate::edges::cross_spoke_edge_type_mask;",
-)
-s = s.replace("paired_cross_edge_type_mask", "cross_spoke_edge_type_mask")
-p.write_text(s)
-
-# Keep the WASM boundary verification consistent with the solver itself.
-p = Path("solver444-wasm/src/api.rs")
-s = p.read_text()
-s = s.replace(
-    "crate::edges::paired_cross_edge_type_mask",
-    "crate::edges::cross_spoke_edge_type_mask",
-)
+s = replace_once(s, old, new, "visible cross-spoke invariant")
 p.write_text(s)
 
 # Permanent JS regression: replay every single move in Remaining 4 Centers and
-# assert that all three protected cross dedges stay on the face carrying the
-# cross center.  This catches the exact visual breakage reported in the UI.
+# assert that the same three protected cross dedges remain in slots adjacent to
+# the face currently carrying the cross center. This is deliberately per-move,
+# not merely a start/end check.
 p = Path("tools/verify-444-yau.mjs")
 s = p.read_text()
 helper_anchor = '''function pairedTypeMask(pattern) {
@@ -151,7 +149,7 @@ new = '''  const protectedCross3Mask = cross3Mask;
   assert.equal(
     crossSpokePairedTypeMask(pattern, crossColor) & protectedCross3Mask,
     protectedCross3Mask,
-    "Yau Cross 3/4 was not visibly attached to the cross center before remaining centers",
+    "Yau Cross 3/4 was not attached to the cross center before remaining centers",
   );
   const remainingCenterTokens = String(setup.segments[3].solution || "").trim().split(/\\s+/).filter(Boolean);
   for (const token of remainingCenterTokens) {
@@ -159,7 +157,7 @@ new = '''  const protectedCross3Mask = cross3Mask;
     assert.equal(
       crossSpokePairedTypeMask(pattern, crossColor) & protectedCross3Mask,
       protectedCross3Mask,
-      `Yau remaining centers broke the visible 3-cross after ${token}`,
+      `Yau remaining centers broke the 3-cross after ${token}`,
     );
   }
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
@@ -167,4 +165,4 @@ new = '''  const protectedCross3Mask = cross3Mask;
 s = replace_once(s, old, new, "per-move cross-spoke regression")
 p.write_text(s)
 
-print("Yau cross-spoke hard lock patch applied")
+print("Yau visible cross-spoke hard lock patch applied")
