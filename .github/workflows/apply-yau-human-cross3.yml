@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/apply-yau-human-cross3.yml"
       - "tools/apply-yau-human-cross3.py"
+      - "tools/refine-yau-human-cross3.py"
 
 permissions:
   contents: write
@@ -24,7 +25,9 @@ jobs:
           node-version: 22
 
       - name: Apply human Yau Cross 3 patch
-        run: python tools/apply-yau-human-cross3.py
+        run: |
+          python tools/apply-yau-human-cross3.py
+          python tools/refine-yau-human-cross3.py
 
       - name: Syntax check
         run: |
@@ -41,9 +44,9 @@ jobs:
 
       - name: Commit implementation
         run: |
-          rm -f tools/apply-yau-human-cross3.py
+          rm -f tools/apply-yau-human-cross3.py tools/refine-yau-human-cross3.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver/edgePairing444.js solver/solver444.js tools/verify-444-yau.mjs tools/apply-yau-human-cross3.py
+          git add solver/edgePairing444.js solver/solver444.js tools/verify-444-yau.mjs tools/apply-yau-human-cross3.py tools/refine-yau-human-cross3.py
           git commit -m "Make Yau first three cross edges human-style"
           git push origin HEAD:main
