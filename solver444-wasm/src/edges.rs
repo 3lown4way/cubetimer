@@ -781,12 +781,17 @@ pub(crate) fn paired_cross_edge_type_mask(
     state: &Cube444,
     cross_color: u8,
 ) -> Result<u16, EdgeSolveError> {
-    // Keep paired_edge_type_mask in the contract as an independent inventory
-    // check, then additionally require the pair to occupy one of the four
-    // physical edge slots adjacent to the selected cross-center face.
+    if cross_color >= 6 {
+        return Err(EdgeSolveError::InvalidWingInventory);
+    }
+    // A Yau cross spoke is stricter than a paired dedge near the cross center:
+    // both wing stickers of the selected cross color must actually face the
+    // cross-center face. This prevents the remaining-center search from
+    // accepting a paired-but-flipped edge as if the visible 3-cross survived.
     let paired_anywhere = paired_edge_type_mask(state)?;
     let inventory = wing_inventory(state)?;
-    let mut parked_on_cross_face = 0u16;
+    let facelets = wing_facelets();
+    let mut visible_cross_spokes = 0u16;
 
     for (slot, &[first, second]) in EDGE_SLOTS.iter().enumerate() {
         if !EDGE_COLOR_PAIRS[slot].contains(&cross_color) {
@@ -797,15 +802,22 @@ pub(crate) fn paired_cross_edge_type_mask(
         if first_type == u8::MAX
             || first_type != second_type
             || inventory.orientation[first as usize] != inventory.orientation[second as usize]
+            || !EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color)
         {
             continue;
         }
-        if EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color) {
-            parked_on_cross_face |= 1u16 << first_type;
+
+        let cross_sticker_faces_cross = |wing: u8| {
+            facelets[wing as usize].iter().any(|&facelet| {
+                facelet / 16 == cross_color as usize && state.stickers()[facelet] == cross_color
+            })
+        };
+        if cross_sticker_faces_cross(first) && cross_sticker_faces_cross(second) {
+            visible_cross_spokes |= 1u16 << first_type;
         }
     }
 
-    Ok(parked_on_cross_face & paired_anywhere)
+    Ok(visible_cross_spokes & paired_anywhere)
 }
 
 impl Cube444 {
