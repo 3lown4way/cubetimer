@@ -163,4 +163,4 @@ jobs:
       - name: Validate repository diff
         run: git diff --check
 
-# Permanent contracts include human Yau Cross 3/4 edge-at-a-time pairing/insertion, the same three cross dedges staying paired around the cross center after every Remaining 4 Centers move, human grip transitions, and bounded/retryable Worker bootstrap.
+# Permanent contracts include human Yau Cross 3/4 edge-at-a-time pairing/insertion; those three cross spokes must stay paired, adjacent to the cross center, and visibly oriented with the cross-color stickers facing that center after every Remaining 4 Centers move; human grip transitions and bounded/retryable Worker bootstrap are also covered.
