@@ -216,6 +216,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   );
   assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "human-view Cross 3/4 lost the cross center");
   assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "human-view Cross 3/4 lost the opposite center");
+  assert.equal(centerFaceForColor(pattern, crossColor), "R", "human-view Cross 3/4 must keep the cross center on the R face");
   const displayedCross3Mask = pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask;
   assert.equal(bitCount(displayedCross3Mask), 3, "displayed Yau Cross 3/4 is not attached to the cross center");
   assert.equal(setup.segments[3].crossLockedEveryMove, true);
@@ -229,9 +230,15 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     );
   }
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
+  assert.equal(centerFaceForColor(pattern, crossColor), "R", "Yau remaining centers must keep the 3-cross on the R face");
   pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
+  assert.equal(centerFaceForColor(pattern, crossColor), "D", "Yau Cross 4/4 must return the cross center to the D face before 3-2-3");
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
-  assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not align the completed cross");
+  assert.equal(
+    pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
+    targetMask,
+    "Yau Cross 4/4 is not a complete cross around the D-face cross center",
+  );
 
   const edge = result.stages[1];
   assert.equal(edge.id, "edges");
