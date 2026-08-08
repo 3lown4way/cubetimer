@@ -95,6 +95,35 @@ function centerColorGroupedSomewhere(pattern, color) {
   ));
 }
 
+function centerFaceForColor(pattern, color) {
+  const centers = pattern.patternData.CENTERS;
+  return FACES.find((face) => CENTER_POSITIONS_BY_FACE[face].every(
+    (position) => CENTER_FACE_BY_PIECE.get(Number(centers.pieces[position])) === color,
+  )) || null;
+}
+
+function pairedCrossTypesAdjacentToCenter(pattern, crossColor) {
+  const crossFace = centerFaceForColor(pattern, crossColor);
+  if (!crossFace) return 0;
+  const edges = pattern.patternData.EDGES;
+  let mask = 0;
+  for (let slot = 0; slot < EDGE_SLOT_PAIRS.length; slot += 1) {
+    const slotFacePair = EDGE_NAMES_333[EDGE_SLOT_TO_333[slot]];
+    if (!slotFacePair.includes(crossFace)) continue;
+    const [a, b] = EDGE_SLOT_PAIRS[slot];
+    const ta = EDGE_TYPE_BY_WING[Number(edges.pieces[a])];
+    const tb = EDGE_TYPE_BY_WING[Number(edges.pieces[b])];
+    if (
+      ta !== 255 && ta === tb &&
+      (crossTypeMask(crossColor) & (1 << ta)) !== 0 &&
+      Number(edges.orientation[a]) === Number(edges.orientation[b])
+    ) {
+      mask |= 1 << ta;
+    }
+  }
+  return mask;
+}
+
 function allCentersGrouped(pattern) {
   const centers = pattern.patternData.CENTERS;
   const groupedColors = [];
@@ -133,6 +162,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     assert.equal(bitCount(Number(result.meta.yauCross3SolvedTargetMask) >>> 0), 3);
     assert.ok(Number(result.meta.yauCross3MoveCount) <= 30);
     assert.ok(Number(result.meta.yauProtectedCenterSearchMs) >= 0);
+    assert.equal(result.meta.yauRemainingCentersCrossLockedEveryMove, true);
   }
   assert.equal(result.meta.humanViewpointApplied, true);
   assert.equal(result.meta.yauHumanGripApplied, true);
@@ -186,7 +216,18 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   );
   assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "human-view Cross 3/4 lost the cross center");
   assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "human-view Cross 3/4 lost the opposite center");
-  pattern = setup.segments[3].solution ? pattern.applyAlg(setup.segments[3].solution) : pattern;
+  const displayedCross3Mask = pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask;
+  assert.equal(bitCount(displayedCross3Mask), 3, "displayed Yau Cross 3/4 is not attached to the cross center");
+  assert.equal(setup.segments[3].crossLockedEveryMove, true);
+  const remainingCenterTokens = String(setup.segments[3].solution || "").trim().split(/\s+/).filter(Boolean);
+  for (const token of remainingCenterTokens) {
+    pattern = pattern.applyAlg(token);
+    assert.equal(
+      pairedCrossTypesAdjacentToCenter(pattern, crossColor) & displayedCross3Mask,
+      displayedCross3Mask,
+      `Yau remaining centers broke the 3-cross after move ${token}`,
+    );
+  }
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
   pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");

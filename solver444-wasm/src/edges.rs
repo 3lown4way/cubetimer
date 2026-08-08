@@ -781,14 +781,31 @@ pub(crate) fn paired_cross_edge_type_mask(
     state: &Cube444,
     cross_color: u8,
 ) -> Result<u16, EdgeSolveError> {
-    let paired = paired_edge_type_mask(state)?;
-    let mut cross_mask = 0u16;
-    for (edge_type, colors) in EDGE_COLOR_PAIRS.iter().enumerate() {
-        if colors.contains(&cross_color) {
-            cross_mask |= 1u16 << edge_type;
+    // Keep paired_edge_type_mask in the contract as an independent inventory
+    // check, then additionally require the pair to occupy one of the four
+    // physical edge slots adjacent to the selected cross-center face.
+    let paired_anywhere = paired_edge_type_mask(state)?;
+    let inventory = wing_inventory(state)?;
+    let mut parked_on_cross_face = 0u16;
+
+    for (slot, &[first, second]) in EDGE_SLOTS.iter().enumerate() {
+        if !EDGE_COLOR_PAIRS[slot].contains(&cross_color) {
+            continue;
+        }
+        let first_type = inventory.edge_type[first as usize];
+        let second_type = inventory.edge_type[second as usize];
+        if first_type == u8::MAX
+            || first_type != second_type
+            || inventory.orientation[first as usize] != inventory.orientation[second as usize]
+        {
+            continue;
+        }
+        if EDGE_COLOR_PAIRS[first_type as usize].contains(&cross_color) {
+            parked_on_cross_face |= 1u16 << first_type;
         }
     }
-    Ok(paired & cross_mask)
+
+    Ok(parked_on_cross_face & paired_anywhere)
 }
 
 impl Cube444 {

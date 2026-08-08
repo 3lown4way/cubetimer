@@ -454,6 +454,7 @@ struct YauRemainingCentersResponse {
     move_count: usize,
     verified: bool,
     protected_cross_pair_count: u32,
+    cross_locked_every_move: bool,
     phase_move_counts: [usize; 4],
     table_build_ms: f64,
     search_ms: f64,
@@ -461,7 +462,7 @@ struct YauRemainingCentersResponse {
 
 fn serialize_yau_remaining(value: &YauRemainingCentersResponse) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| {
-        r#"{"ok":false,"status":"error","reason":"444_YAU_CENTER_SERIALIZATION_FAILED","solution":"","moveCount":0,"verified":false,"protectedCrossPairCount":0,"phaseMoveCounts":[0,0,0,0],"tableBuildMs":0,"searchMs":0}"#.to_string()
+        r#"{"ok":false,"status":"error","reason":"444_YAU_CENTER_SERIALIZATION_FAILED","solution":"","moveCount":0,"verified":false,"protectedCrossPairCount":0,"crossLockedEveryMove":false,"phaseMoveCounts":[0,0,0,0],"tableBuildMs":0,"searchMs":0}"#.to_string()
     })
 }
 
@@ -474,6 +475,7 @@ fn yau_remaining_error(status: &'static str, reason: String, protected_count: u3
         move_count: 0,
         verified: false,
         protected_cross_pair_count: protected_count,
+        cross_locked_every_move: false,
         phase_move_counts: [0; 4],
         table_build_ms: 0.0,
         search_ms: 0.0,
@@ -540,16 +542,26 @@ pub fn solve_444_yau_remaining_centers_boundary(request_json: &str) -> String {
         }
     };
     let mut verified_state = state;
-    verified_state.apply_moves(&result.moves);
+    let mut cross_locked_every_move = protected_count == 3;
+    for mv in &result.moves {
+        verified_state.apply_move(*mv);
+        let protected_step =
+            crate::edges::paired_cross_edge_type_mask(&verified_state, cross_color).unwrap_or(0);
+        if protected_step & protected_before != protected_before {
+            cross_locked_every_move = false;
+            break;
+        }
+    }
     let protected_after =
         crate::edges::paired_cross_edge_type_mask(&verified_state, cross_color).unwrap_or(0);
-    let verified = verified_state.centers_solved()
+    let verified = cross_locked_every_move
+        && verified_state.centers_solved()
         && verified_state.validate().is_ok()
         && protected_after & protected_before == protected_before;
     if !verified {
         return yau_remaining_error(
             "error",
-            "444_YAU_CENTER_VERIFICATION_FAILED".to_string(),
+            "444_YAU_CENTER_CROSS_FACE_LOCK_FAILED".to_string(),
             protected_count,
         );
     }
@@ -561,6 +573,7 @@ pub fn solve_444_yau_remaining_centers_boundary(request_json: &str) -> String {
         move_count: result.moves.len(),
         verified: true,
         protected_cross_pair_count: protected_count,
+        cross_locked_every_move,
         phase_move_counts: result.phase_move_counts,
         table_build_ms: result.table_build_ms,
         search_ms: result.search_ms,

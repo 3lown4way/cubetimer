@@ -969,6 +969,7 @@ async function preferYauReduction444(
   let naturalCross3FallbackReason = null;
   let recomputedCenterPhaseMoveCounts = null;
   let protectedCenterSearchMs = 0;
+  let remainingCentersCrossLockedEveryMove = false;
 
   if (
     !deadlineReached(deadlineTs) &&
@@ -1002,7 +1003,12 @@ async function preferYauReduction444(
       } catch (error) {
         naturalCross3FallbackReason = `PROTECTED_CENTER_CALL:${String(error?.message || error)}`;
       }
-      if (protectedResult?.ok === true && protectedResult?.verified === true) {
+      if (
+        protectedResult?.ok === true &&
+        protectedResult?.verified === true &&
+        protectedResult?.crossLockedEveryMove === true &&
+        Number(protectedResult?.protectedCrossPairCount) === 3
+      ) {
         const candidateRemainingCenters = translate444MoveConvention(protectedResult.solution || "");
         const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]
           .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
@@ -1022,6 +1028,7 @@ async function preferYauReduction444(
             ? [...protectedResult.phaseMoveCounts]
             : null;
           protectedCenterSearchMs = Number(protectedResult.searchMs) || 0;
+          remainingCentersCrossLockedEveryMove = true;
         } else {
           naturalCross3FallbackReason = preserved?.reason || "PROTECTED_CENTER_JS_VERIFY_FAILED";
         }
@@ -1187,6 +1194,7 @@ async function preferYauReduction444(
     }),
     makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", effectiveRemainingCenters, {
       recomputedAfterCross3: remainingCentersRecomputed,
+      crossLockedEveryMove: remainingCentersCrossLockedEveryMove,
     }),
     makeSetupSegment("yauCross4", "Yau · Cross Edge 4/4", cross4.solution, {
       crossEdgeCount: 4,
@@ -1267,6 +1275,7 @@ async function preferYauReduction444(
       yauRemainingCentersRecomputed: remainingCentersRecomputed,
       yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,
       yauProtectedCenterSearchMs: protectedCenterSearchMs,
+      yauRemainingCentersCrossLockedEveryMove: remainingCentersCrossLockedEveryMove,
       yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
       yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
       yauCross4MoveCount: Number(cross4.moveCount) || 0,

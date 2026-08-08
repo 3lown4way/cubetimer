@@ -1002,8 +1002,10 @@ pub fn solve_remaining_centers_for_yau(
 
     let protected_cross_mask = paired_cross_edge_type_mask(state, cross_color)
         .map_err(|_| CenterSolveError::CoordinateNotReachable("yau-cross-wings"))?;
-    if protected_cross_mask.count_ones() < 3 {
-        return Err(CenterSolveError::CoordinateNotReachable("yau-cross3"));
+    if protected_cross_mask.count_ones() != 3 {
+        return Err(CenterSolveError::CoordinateNotReachable(
+            "yau-cross3-cross-face",
+        ));
     }
 
     let search_started = now_ms();
