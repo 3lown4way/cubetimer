@@ -42,6 +42,116 @@ jobs:
           PY
       - name: Apply cross-right patch
         run: python tools/apply-yau-cross-right.py
+      - name: Remove stage-boundary grip resets
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          p = Path('solver/solver444.js')
+          s = p.read_text()
+          pattern = r'''async function humanizeMappedYauStages444\(publicScramble, sourceStages, crossColor\) \{.*?\n\}\n\nfunction simplifyCfop444OuterMoves'''
+          replacement = r'''async function humanizeMappedYauStages444(publicScramble, sourceStages, crossColor) {
+            const baselineStages = structuredClone(Array.isArray(sourceStages) ? sourceStages : []);
+            const stages = structuredClone(baselineStages);
+            const fallback = () => ({
+              stages: baselineStages,
+              humanViewpointApplied: false,
+              viewpointRotationCount: 0,
+              yauHumanGripApplied: false,
+              yauViewpointRotationCount: 0,
+            });
+            try {
+              const centerStage = stages.find((stage) => stage?.id === "centers");
+              const edgeStage = stages.find((stage) => stage?.id === "edges");
+              const cfopStage = stages.find((stage) => stage?.id === "threeByThree");
+              if (!centerStage?.segments?.length || !edgeStage?.segments?.length || !cfopStage?.segments?.length) {
+                return fallback();
+              }
+
+              const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
+              const opposite = OPPOSITE_FACE_444[normalizedCross];
+              const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.U === normalizedCross,
+              );
+              const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+              );
+              const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
+              );
+              const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
+              );
+              const cfopCrossDownCandidates = VIEW_ORIENTATIONS_444.filter(
+                (entry) => entry.map.D === normalizedCross,
+              );
+
+              const combinedSegments = [];
+              const candidateSets = [];
+              for (let index = 0; index < centerStage.segments.length; index += 1) {
+                combinedSegments.push(centerStage.segments[index]);
+                if (index === 0) candidateSets.push(firstCenterCandidates);
+                else if (index === 1) candidateSets.push(oppositeCenterCandidates);
+                else if (index === 2 || index === 3) candidateSets.push(crossRightCandidates);
+                else candidateSets.push(crossDownCandidates);
+              }
+              const centerCount = combinedSegments.length;
+
+              for (const segment of edgeStage.segments) {
+                combinedSegments.push(segment);
+                candidateSets.push(crossDownCandidates);
+              }
+              const edgeCount = combinedSegments.length - centerCount;
+
+              for (const segment of cfopStage.segments) {
+                combinedSegments.push(segment);
+                candidateSets.push(cfopCrossDownCandidates);
+              }
+
+              const human = humanizeAbsoluteSegments444(combinedSegments, candidateSets);
+              if (!human?.segments?.length || human.segments.length !== combinedSegments.length) return fallback();
+
+              let cursor = 0;
+              centerStage.segments = human.segments.slice(cursor, cursor + centerCount);
+              cursor += centerCount;
+              edgeStage.segments = human.segments.slice(cursor, cursor + edgeCount);
+              cursor += edgeCount;
+              cfopStage.segments = human.segments.slice(cursor);
+              for (const stage of [centerStage, edgeStage, cfopStage]) {
+                stage.solution = stage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
+              }
+
+              const baselineFlat = [{
+                solution: baselineStages.map((stage) => String(stage?.solution || "").trim()).filter(Boolean).join(" "),
+              }];
+              const candidateFlat = [{
+                solution: stages.map((stage) => String(stage?.solution || "").trim()).filter(Boolean).join(" "),
+              }];
+              const verified = await verifyEquivalent444Presentation(publicScramble, baselineFlat, candidateFlat);
+              if (!verified) return fallback();
+
+              const yauSegmentCount = centerCount + edgeCount;
+              const yauViewpointRotationCount = human.segments
+                .slice(0, yauSegmentCount)
+                .reduce((sum, segment) => sum + (Number(segment?.viewpointRotations) || 0), 0);
+              return {
+                stages,
+                humanViewpointApplied: human.rotationCount > 0,
+                viewpointRotationCount: human.rotationCount,
+                yauHumanGripApplied: yauViewpointRotationCount > 0,
+                yauViewpointRotationCount,
+              };
+            } catch (_) {
+              return fallback();
+            }
+          }
+
+          function simplifyCfop444OuterMoves'''
+          s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'unified grip helper replacement count={n}')
+          p.write_text(s2)
+          PY
       - name: Syntax check
         run: |
           node --check solver/solver444.js
