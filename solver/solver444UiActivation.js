@@ -206,7 +206,11 @@ export function installSolver444UiActivation() {
   let solution = "";
   let moves = [];
   let moveIndex = 0;
-  let playbackTimer = 0;
+  let playbackRaf = 0;
+  let playbackPlaying = false;
+  let playbackStartWallMs = 0;
+  let playbackStartTimelineMs = 0;
+  const PLAYBACK_TEMPO_SCALE = 1.7;
   let player = null;
   let playerScramble = "";
   let lastStatusText = "";
@@ -224,8 +228,9 @@ export function installSolver444UiActivation() {
   }
 
   function stopPlayback() {
-    if (playbackTimer) window.clearInterval(playbackTimer);
-    playbackTimer = 0;
+    if (playbackRaf) window.cancelAnimationFrame(playbackRaf);
+    playbackRaf = 0;
+    playbackPlaying = false;
     solverPlayBtn.dataset.playing = "false";
     solverPlayBtn.title = "자동 재생";
     player?.pause?.();
@@ -272,6 +277,7 @@ export function installSolver444UiActivation() {
       background: "none",
       controlPanel: "none",
       hintFacelets: "none",
+      experimentalSetupAnchor: "start",
     });
     player.dataset.solver444Ui = "true";
     player.style.width = "100%";
@@ -286,12 +292,30 @@ export function installSolver444UiActivation() {
     return player;
   }
 
-  function updateFrame() {
-    if (!player) return;
-    player.experimentalSetupAlg = playerScramble;
-    player.alg = joinMoves(moves.slice(0, moveIndex));
-    player.timestamp = "end";
-    player.pause();
+  function moveDurationTimelineMs(move) {
+    return String(move || "").includes("2") ? 1500 : 1000;
+  }
+
+  function timelineMsForMoveIndex(index) {
+    let total = 0;
+    const end = Math.max(0, Math.min(moves.length, Math.floor(Number(index) || 0)));
+    for (let i = 0; i < end; i += 1) total += moveDurationTimelineMs(moves[i]);
+    return total;
+  }
+
+  function moveIndexForTimelineMs(timestampMs) {
+    const target = Math.max(0, Number(timestampMs) || 0);
+    let total = 0;
+    let index = 0;
+    while (index < moves.length) {
+      total += moveDurationTimelineMs(moves[index]);
+      if (target < total) break;
+      index += 1;
+    }
+    return index;
+  }
+
+  function updatePlaybackControlsOnly() {
     solverStepLabel.textContent = `${moveIndex}/${moves.length} 수`;
     solverStepResetBtn.disabled = moveIndex === 0;
     solverStepPrevBtn.disabled = moveIndex === 0;
@@ -299,28 +323,68 @@ export function installSolver444UiActivation() {
     solverPlayBtn.disabled = moves.length === 0;
   }
 
+  function loadFullPlaybackTimeline() {
+    if (!player) return;
+    player.experimentalSetupAlg = playerScramble;
+    player.alg = solution;
+    player.tempoScale = PLAYBACK_TEMPO_SCALE;
+  }
+
+  function updateFrame() {
+    if (!player) return;
+    loadFullPlaybackTimeline();
+    player.timestamp = timelineMsForMoveIndex(moveIndex);
+    player.pause();
+    updatePlaybackControlsOnly();
+  }
+
   function setMoveIndex(nextIndex) {
-    moveIndex = Math.max(0, Math.min(moves.length, Number(nextIndex) || 0));
+    moveIndex = Math.max(0, Math.min(moves.length, Math.floor(Number(nextIndex) || 0)));
     updateFrame();
     if (moveIndex >= moves.length) stopPlayback();
   }
 
-  function togglePlayback() {
-    if (!ownsPlayback()) return;
-    if (playbackTimer) {
+  function tickPlayback(now) {
+    if (!playbackPlaying || !player || !is444()) {
       stopPlayback();
       return;
     }
-    if (moveIndex >= moves.length) setMoveIndex(0);
+    const timelineMs = playbackStartTimelineMs
+      + Math.max(0, now - playbackStartWallMs) * PLAYBACK_TEMPO_SCALE;
+    const nextIndex = moveIndexForTimelineMs(timelineMs);
+    if (nextIndex !== moveIndex) {
+      moveIndex = nextIndex;
+      updatePlaybackControlsOnly();
+    }
+    if (moveIndex >= moves.length) {
+      moveIndex = moves.length;
+      updatePlaybackControlsOnly();
+      stopPlayback();
+      return;
+    }
+    playbackRaf = window.requestAnimationFrame(tickPlayback);
+  }
+
+  function togglePlayback() {
+    if (!ownsPlayback()) return;
+    if (playbackPlaying) {
+      stopPlayback();
+      updatePlaybackControlsOnly();
+      return;
+    }
+    if (moveIndex >= moves.length) moveIndex = 0;
+    loadFullPlaybackTimeline();
+    const startTimeline = timelineMsForMoveIndex(moveIndex);
+    player.timestamp = startTimeline;
+    player.tempoScale = PLAYBACK_TEMPO_SCALE;
+    playbackStartTimelineMs = startTimeline;
+    playbackStartWallMs = performance.now();
+    playbackPlaying = true;
     solverPlayBtn.dataset.playing = "true";
     solverPlayBtn.title = "정지";
-    playbackTimer = window.setInterval(() => {
-      if (!is444() || moveIndex >= moves.length) {
-        stopPlayback();
-        return;
-      }
-      setMoveIndex(moveIndex + 1);
-    }, 420);
+    updatePlaybackControlsOnly();
+    player.play({ autoSkipToOtherEndIfStartingAtBoundary: false });
+    playbackRaf = window.requestAnimationFrame(tickPlayback);
   }
 
   function clearOwnedStages() {
