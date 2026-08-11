@@ -1770,7 +1770,7 @@ function resetSolverState() {
           : "스크램블을 기다리는 중입니다.";
       }
     } else {
-      solverStatus.textContent = "현재는 2x2, 3x3에서만 solver를 지원합니다.";
+      solverStatus.textContent = "";
     }
   }
   if (solverSolution) {
