@@ -1,0 +1,45 @@
+name: Remove outdated solver support message
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/remove-outdated-solver-support-message.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Remove outdated message
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('main.js')
+          s = p.read_text()
+          old = 'solverStatus.textContent = "현재는 2x2, 3x3에서만 solver를 지원합니다.";'
+          new = 'solverStatus.textContent = "";'
+          if old not in s:
+              raise SystemExit('target message not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          ! grep -Fq '현재는 2x2, 3x3에서만 solver를 지원합니다.' main.js
+          node --check main.js
+          git diff --check
+
+      - name: Commit change
+        run: |
+          rm -f .github/workflows/remove-outdated-solver-support-message.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add main.js .github/workflows/remove-outdated-solver-support-message.yml
+          git commit -m "Remove outdated solver support message"
+          git push origin HEAD:main
