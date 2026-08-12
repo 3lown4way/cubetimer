@@ -14,6 +14,7 @@ on:
       - "tools/rewrite-yau-last-eight-v9.py"
       - "tools/rewrite-yau-last-eight-v10.py"
       - "tools/rewrite-yau-last-eight-v11.py"
+      - "tools/rewrite-yau-last-eight-v12.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -31,8 +32,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply Yau special-case rewrite
-        run: python tools/rewrite-yau-last-eight-v11.py
+      - name: Apply staged Yau rewrite
+        run: python tools/rewrite-yau-last-eight-v12.py
       - name: Check syntax
         run: |
           node --check solver/solver444.js
