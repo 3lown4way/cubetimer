@@ -202,9 +202,14 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
 
   const inverseUpperBoundLength = splitMoves(inverseScramble).length;
   const rejectLiteralInverse = inverseUpperBoundLength > LITERAL_INVERSE_EXEMPT_MOVE_COUNT;
-  let incumbentSolution = rejectLiteralInverse ? "" : inverseScramble;
+
+  // The literal inverse is always a mathematically valid HTM upper bound. Keep it
+  // as the incumbent even when ordinary Two-Phase output policy forbids displaying
+  // it. Exact MinMove only searches strictly below the incumbent, so preserving
+  // this bound avoids turning an N-move scramble into an artificial N+1 proof.
+  let incumbentSolution = inverseScramble;
   let incumbentLength = inverseUpperBoundLength;
-  let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound_only" : "short_inverse_exception";
+  let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound" : "short_inverse_exception";
   let totalNodes = 0;
   let proofAttempts = 0;
 
@@ -240,7 +245,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
     const candidateSolution = direction.invert ? invertAlgorithm(seed.solution) : seed.solution.trim();
     const candidateLength = splitMoves(candidateSolution).length;
-    if (!candidateSolution || (incumbentSolution && candidateLength > incumbentLength)) continue;
+    if (!candidateSolution || candidateLength > incumbentLength) continue;
     if (shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)) continue;
     if (!(await verifySolution(normalizedScramble, candidateSolution))) continue;
     incumbentSolution = candidateSolution;
@@ -248,22 +253,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     incumbentSource = direction.source;
   }
 
-  if (!incumbentSolution) {
-    return {
-      ok: false,
-      reason: "MINMOVE_NONTRIVIAL_SEED_NOT_FOUND",
-      solution: "",
-      moveCount: 0,
-      inverseUpperBoundLength,
-      optimalityProven: false,
-      fallbackReason: null,
-      elapsedMs: Date.now() - startedAt,
-    };
-  }
-  if (
-    shouldRejectLiteralInverseSolution(normalizedScramble, incumbentSolution)
-    || !(await verifySolution(normalizedScramble, incumbentSolution))
-  ) {
+  if (!(await verifySolution(normalizedScramble, incumbentSolution))) {
     return { ok: false, reason: "MINMOVE_SEED_INVALID" };
   }
 
@@ -404,9 +394,6 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         proofSource: "exact_twophase_exhaustion",
         nodes: totalNodes,
       });
-      if (shouldRejectLiteralInverseSolution(normalizedScramble, incumbentSolution)) {
-        return { ok: false, reason: "MINMOVE_LITERAL_INVERSE_REJECTED" };
-      }
       return {
         ok: true,
         solution: incumbentSolution,
