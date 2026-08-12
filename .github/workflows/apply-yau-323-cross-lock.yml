@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/apply-yau-safe-wide-macros-v2.py"
+      - "tools/apply-yau-conjugated-safe-macros.py"
       - ".github/workflows/apply-yau-323-cross-lock.yml"
 
 permissions:
@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply safe-wide Yau patch
-        run: python tools/apply-yau-safe-wide-macros-v2.py
+      - name: Apply conjugated Yau patch
+        run: python tools/apply-yau-conjugated-safe-macros.py
       - name: Verify syntax
         run: |
           node --check solver/solver444.js
