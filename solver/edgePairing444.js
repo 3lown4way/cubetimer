@@ -1350,7 +1350,7 @@ function humanYauCrossCandidate444(
 
 export async function solveYauCross4Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
   const globalDeadlineTs = Number(options?.deadlineTs) || 0;
-  const budgetMs = Math.max(250, Math.min(2400, Number(options?.timeBudgetMs) || 1500));
+  const budgetMs = Math.max(250, Math.min(2600, Number(options?.timeBudgetMs) || 1700));
   const startedAt = Date.now();
   const localDeadlineTs = globalDeadlineTs > 0
     ? Math.min(globalDeadlineTs, startedAt + budgetMs)
@@ -1369,37 +1369,55 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
   if (!centersSolved(initialState, model.solvedCompact.centerPieces)) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS4_CENTERS_NOT_READY" };
   }
-  if (!maskContains(solvedEdgeTypeMask(initialState), requiredMask)) {
-    return { ok: false, reason: "444_YAU_HUMAN_CROSS4_THREE_CROSS_NOT_READY" };
+  if (!maskContains(pairedEdgeTypeMask(initialState), requiredMask)) {
+    return { ok: false, reason: "444_YAU_HUMAN_CROSS4_THREE_CROSS_NOT_PAIRED" };
   }
 
-  const missingMask = targetMask & ~requiredMask;
-  if (bitCount(missingMask) !== 1) {
-    return { ok: false, reason: "444_YAU_HUMAN_CROSS4_MISSING_EDGE_INVALID" };
-  }
-  let missingType = -1;
-  for (let edgeType = 0; edgeType < 12; edgeType += 1) {
-    if (missingMask & (1 << edgeType)) {
-      missingType = edgeType;
-      break;
-    }
+  // The completed cross itself is the protected 3-2-3 bank in the canonical
+  // Yau frame.  Finish Cross 4/4 with one human free-slice cycle and require
+  // the cycle boundary to be the fully solved cross.  Existing three spokes
+  // may move inside the cycle; there is no separate generic alignment phase.
+  const sliceFamily = model.sliceFamilies.find((family) => family.bankMask === targetMask);
+  if (!sliceFamily) {
+    return { ok: false, reason: "444_YAU_HUMAN_CROSS4_SLICE_FRAME_MISSING" };
   }
 
-  // Reuse the same structured Yau pairing candidate that builds Cross 3/4:
-  // short outer setup -> one U/D working-slice macro -> optional AUF/post.
-  // Unlike Remaining Centers, Cross 4/4 is allowed to move the existing three
-  // spokes temporarily. The hard requirement is that all centers and all four
-  // solved cross dedges are restored at the segment boundary.
-  const candidate = humanYauCrossCandidate444(
+  let cycle = searchSliceCycle(
     initialState,
     requiredMask,
-    targetMask,
-    missingType,
+    4,
+    sliceFamily,
     model,
-    ["U", "R", "F", "D", "L", "B"],
     localDeadlineTs,
+    7,
+    targetMask,
+    {
+      targetTypeMask: targetMask,
+      exactTargetCount: true,
+      requireAllCenters: true,
+      requiredPairedEveryMoveMask: 0,
+    },
   );
-  if (!candidate) {
+  if (!cycle && !deadlineReached(localDeadlineTs)) {
+    cycle = searchSliceCycle(
+      initialState,
+      requiredMask,
+      4,
+      sliceFamily,
+      model,
+      localDeadlineTs,
+      9,
+      targetMask,
+      {
+        targetTypeMask: targetMask,
+        exactTargetCount: true,
+        requireAllCenters: true,
+        requiredPairedEveryMoveMask: 0,
+      },
+    );
+  }
+
+  if (!cycle) {
     return {
       ok: false,
       reason: deadlineReached(localDeadlineTs)
@@ -1409,7 +1427,8 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     };
   }
 
-  const solution = candidate.moves.join(" ");
+  const moves = simplifyOuterSequence(cycle.moves);
+  const solution = moves.join(" ");
   let verified = pattern;
   if (solution) verified = verified.applyAlg(solution);
   const verifiedState = compactStateFromPattern(verified);
@@ -1425,7 +1444,7 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     ok: true,
     reason: null,
     solution,
-    moveCount: candidate.moves.length,
+    moveCount: moves.length,
     pairedTargetMask: pairedEdgeTypeMask(verifiedState) & targetMask,
     lockedTypeMask: targetMask,
     solvedTargetMask: verifiedSolved,
@@ -1437,7 +1456,7 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     alignmentRescueUsed: false,
     method: "Yau Human Cross 4/4",
     humanStepCount: 1,
-    workingSlice: candidate.workingSlice,
+    workingSlice: sliceFamily.openMoves[0][0],
     elapsedMs: Date.now() - startedAt,
   };
 }
