@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20260808-444-bootstrap-1";
+const WORKER_BUILD_TOKEN = "20260813-yau-cross3-recovery-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const STAGE_LABELS = Object.freeze({

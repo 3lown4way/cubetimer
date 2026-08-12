@@ -1473,76 +1473,118 @@ export async function solveYauCross3Natural444(publicScramble, publicSetupSoluti
   let pattern = model.solved;
   if (publicScramble) pattern = pattern.applyAlg(String(publicScramble));
   if (publicSetupSolution) pattern = pattern.applyAlg(String(publicSetupSolution));
-  let state = compactStateFromPattern(pattern);
+  const initialState = compactStateFromPattern(pattern);
   const targetMask = Number(targetTypeMask) >>> 0;
   const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces)
     ? options.protectedCenterFaces
     : ["D", "U"];
-  if (!protectedCenterFacesSolved444(state, model, protectedCenterFaces)) {
+  if (!protectedCenterFacesSolved444(initialState, model, protectedCenterFaces)) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS3_CENTERS_NOT_READY" };
   }
   if (!humanYauCrossMacros444(model).length) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS3_MACRO_BANK_EMPTY" };
   }
 
-  let solvedMask = solvedEdgeTypeMask(state) & targetMask;
-  let solvedCount = bitCount(solvedMask);
-  if (solvedCount > 3) {
+  const initialSolvedMask = solvedEdgeTypeMask(initialState) & targetMask;
+  const initialSolvedCount = bitCount(initialSolvedMask);
+  if (initialSolvedCount > 3) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS3_OVERSHOOT_START" };
   }
 
-  const moves = [];
-  const steps = [];
-  while (solvedCount < 3 && !deadlineReached(localDeadlineTs)) {
-    let best = null;
-    for (let edgeType = 0; edgeType < 12; edgeType += 1) {
-      const bit = 1 << edgeType;
-      if (!(targetMask & bit) || (solvedMask & bit)) continue;
-      const candidate = humanYauCrossCandidate444(
-        state,
-        solvedMask,
-        targetMask,
-        edgeType,
-        model,
-        protectedCenterFaces,
-        localDeadlineTs,
-      );
-      if (candidate && (!best || candidate.cost < best.cost)) {
-        best = { ...candidate, edgeType };
+  // Normal cases still take the cheapest local edge first.  The difference is
+  // that we keep the other edge choices on a tiny DFS stack.  If a locally
+  // cheapest first/second edge makes the next cross edge impossible, we
+  // backtrack to another *edge order* instead of failing the whole Yau solve.
+  // This is at most 4*3*2 leaf orders; it does not widen the underlying move
+  // search or introduce generic reduction macros.
+  const stack = [{
+    state: initialState,
+    solvedMask: initialSolvedMask,
+    moves: [],
+    steps: [],
+    candidates: null,
+    nextIndex: 0,
+  }];
+  let solvedNode = null;
+  let expandedNodes = 0;
+  let backtrackCount = 0;
+
+  while (stack.length && !deadlineReached(localDeadlineTs)) {
+    const node = stack[stack.length - 1];
+    const solvedCount = bitCount(node.solvedMask);
+    if (solvedCount === 3) {
+      solvedNode = node;
+      break;
+    }
+
+    if (node.candidates == null) {
+      const candidates = [];
+      for (let edgeType = 0; edgeType < 12; edgeType += 1) {
+        const bit = 1 << edgeType;
+        if (!(targetMask & bit) || (node.solvedMask & bit)) continue;
+        const candidate = humanYauCrossCandidate444(
+          node.state,
+          node.solvedMask,
+          targetMask,
+          edgeType,
+          model,
+          protectedCenterFaces,
+          localDeadlineTs,
+        );
+        if (candidate) candidates.push({ ...candidate, edgeType });
+        if (deadlineReached(localDeadlineTs)) break;
       }
-      if (deadlineReached(localDeadlineTs)) break;
+      candidates.sort((left, right) => left.cost - right.cost || left.moves.length - right.moves.length);
+      node.candidates = candidates;
+      node.nextIndex = 0;
+      expandedNodes += 1;
     }
 
-    if (!best) {
-      return {
-        ok: false,
-        reason: deadlineReached(localDeadlineTs)
-          ? "444_YAU_HUMAN_CROSS3_TIMEOUT"
-          : "444_YAU_HUMAN_CROSS3_EDGE_NOT_FOUND",
-        moveCount: moves.length,
-        solvedCrossCount: solvedCount,
-        elapsedMs: Date.now() - startedAt,
-      };
+    if (node.nextIndex >= node.candidates.length) {
+      stack.pop();
+      if (stack.length) backtrackCount += 1;
+      continue;
     }
 
-    state = best.state;
-    solvedMask = best.solvedMask;
-    solvedCount = bitCount(solvedMask);
-    moves.push(...best.moves);
-    steps.push({
-      edgeType: best.edgeType,
-      workingSlice: best.workingSlice,
-      moveCount: best.moves.length,
-      solvedCrossCount: solvedCount,
-      macro: best.macro,
+    const candidate = node.candidates[node.nextIndex++];
+    const nextSolvedCount = bitCount(candidate.solvedMask);
+    stack.push({
+      state: candidate.state,
+      solvedMask: candidate.solvedMask,
+      moves: [...node.moves, ...candidate.moves],
+      steps: [...node.steps, {
+        edgeType: candidate.edgeType,
+        workingSlice: candidate.workingSlice,
+        moveCount: candidate.moves.length,
+        solvedCrossCount: nextSolvedCount,
+        macro: candidate.macro,
+      }],
+      candidates: null,
+      nextIndex: 0,
     });
   }
 
-  // Each committed candidate is already simplified. Keep the boundaries
-  // between human edge-insertion steps intact rather than cancelling across
-  // them; the presentation layer may then regrip between steps while the
-  // cross center stays on the R face.
-  const simplified = [...moves];
+  if (!solvedNode) {
+    const deepest = stack.reduce((best, node) =>
+      bitCount(node.solvedMask) > bitCount(best.solvedMask) ? node : best,
+      { solvedMask: initialSolvedMask },
+    );
+    return {
+      ok: false,
+      reason: deadlineReached(localDeadlineTs)
+        ? "444_YAU_HUMAN_CROSS3_TIMEOUT"
+        : "444_YAU_HUMAN_CROSS3_EDGE_ORDER_EXHAUSTED",
+      moveCount: 0,
+      solvedCrossCount: bitCount(deepest.solvedMask),
+      elapsedMs: Date.now() - startedAt,
+      expandedNodes,
+      backtrackCount,
+    };
+  }
+
+  // Keep human insertion boundaries intact so the presentation layer can
+  // regrip between cross-edge insertions while the cross center stays on R.
+  const simplified = [...solvedNode.moves];
   const solution = simplified.join(" ");
   let verified = pattern;
   if (solution) verified = verified.applyAlg(solution);
@@ -1565,9 +1607,11 @@ export async function solveYauCross3Natural444(publicScramble, publicSetupSoluti
     lockedTypeMask: verifiedSolvedMask,
     pairedTargetMask: verifiedPairedMask,
     solvedTargetMask: verifiedSolvedMask,
-    humanStepCount: steps.length,
-    steps,
+    humanStepCount: solvedNode.steps.length,
+    steps: solvedNode.steps,
     elapsedMs: Date.now() - startedAt,
+    searchExpandedNodes: expandedNodes,
+    searchBacktrackCount: backtrackCount,
     method: "Yau Human Cross 3/4",
   };
 }

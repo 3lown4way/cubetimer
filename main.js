@@ -1,7 +1,7 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
 import { TwistyPlayer } from "cubing/twisty";
-import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js";
+import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js?v=20260813-yau-cross3-recovery-1";
 import { experimentalCountMetricMoves } from "cubing/notation";
 import { cube3x3x3 } from "cubing/puzzles";
 import { Alg } from "cubing/alg";

@@ -92,7 +92,7 @@ function getWasmSolverModule() {
 
 function getSolver444Module() {
   if (!solver444ModulePromise) {
-    solver444ModulePromise = import("./solver444.js");
+    solver444ModulePromise = import("./solver444.js?v=20260813-yau-cross3-recovery-1");
   }
   return solver444ModulePromise;
 }

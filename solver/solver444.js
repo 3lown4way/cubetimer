@@ -958,7 +958,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   const started = Date.now();
   let human;
   try {
-    const { solveEdgePairing323 } = await import("./edgePairing444.js");
+    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20260813-yau-cross3-recovery-1");
     human = await solveEdgePairing323(
       publicScramble,
       translate444MoveConvention(centerStage.solution),
@@ -1130,7 +1130,7 @@ async function preferYauReduction444(
 
   let edgeModule;
   try {
-    edgeModule = await import("./edgePairing444.js");
+    edgeModule = await import("./edgePairing444.js?v=20260813-yau-cross3-recovery-1");
   } catch (error) {
     return yauFailure444(reduction, "444_YAU_EDGE_MODULE_FAILED", error?.message || error, deadlineTs);
   }
