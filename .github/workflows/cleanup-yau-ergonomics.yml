@@ -1,0 +1,32 @@
+name: Clean Yau ergonomics tooling
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-yau-ergonomics.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remove temporary diagnostics and patchers
+        run: |
+          git rm -f --ignore-unmatch tools/diag-yau-ergonomics.mjs
+          git rm -f --ignore-unmatch tools/refine-yau-*.py
+          git rm -f --ignore-unmatch .github/workflows/diag-yau-ergonomics.yml
+          git rm -f --ignore-unmatch .github/workflows/refine-yau-ergonomics.yml
+          git rm -f --ignore-unmatch .github/workflows/cleanup-yau-ergonomics.yml
+      - name: Commit clean tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove temporary Yau ergonomics tooling"
+          git push origin HEAD:main
