@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tools/rewrite-yau-last-eight-v2.py"
+      - "tools/rewrite-yau-last-eight-v3.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -23,7 +24,7 @@ jobs:
         with:
           node-version: 22
       - name: Apply true Yau rewrite
-        run: python tools/rewrite-yau-last-eight-v2.py
+        run: python tools/rewrite-yau-last-eight-v3.py
       - name: Check syntax
         run: |
           node --check solver/solver444.js
@@ -37,7 +38,7 @@ jobs:
           node tools/verify-444-public-notation.mjs
       - name: Commit verified rewrite
         run: |
-          rm -f tools/rewrite-yau-last-eight-v2.py .github/workflows/rewrite-yau-last-eight.yml
+          rm -f tools/rewrite-yau-last-eight-v2.py tools/rewrite-yau-last-eight-v3.py .github/workflows/rewrite-yau-last-eight.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
