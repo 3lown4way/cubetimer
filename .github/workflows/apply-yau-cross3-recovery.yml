@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tools/apply-yau-cross3-recovery.py"
+      - "tools/adjust-yau-cross3-budget.py"
       - ".github/workflows/apply-yau-cross3-recovery.yml"
 
 permissions:
@@ -22,7 +23,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply patch
-        run: python tools/apply-yau-cross3-recovery.py
+        run: |
+          python tools/apply-yau-cross3-recovery.py
+          python tools/adjust-yau-cross3-budget.py
       - name: Syntax check
         run: |
           node --check solver/edgePairing444.js
