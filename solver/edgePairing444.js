@@ -1350,7 +1350,7 @@ function humanYauCrossCandidate444(
 
 export async function solveYauCross4Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
   const globalDeadlineTs = Number(options?.deadlineTs) || 0;
-  const budgetMs = Math.max(250, Math.min(2200, Number(options?.timeBudgetMs) || 1400));
+  const budgetMs = Math.max(250, Math.min(2400, Number(options?.timeBudgetMs) || 1500));
   const startedAt = Date.now();
   const localDeadlineTs = globalDeadlineTs > 0
     ? Math.min(globalDeadlineTs, startedAt + budgetMs)
@@ -1363,7 +1363,7 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
   const targetMask = Number(targetTypeMask) >>> 0;
   const requiredMask = Number(options?.requiredTypeMask) >>> 0;
 
-  if (bitCount(targetMask) !== 4 || bitCount(requiredMask) !== 3) {
+  if (bitCount(targetMask) !== 4 || bitCount(requiredMask) !== 3 || !maskContains(targetMask, requiredMask)) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS4_MASK_INVALID" };
   }
   if (!centersSolved(initialState, model.solvedCompact.centerPieces)) {
@@ -1373,51 +1373,33 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     return { ok: false, reason: "444_YAU_HUMAN_CROSS4_THREE_CROSS_NOT_READY" };
   }
 
-  const macros = humanYauCrossMacros444(model);
-  if (!macros.length) return { ok: false, reason: "444_YAU_HUMAN_CROSS4_MACRO_BANK_EMPTY" };
-
-  const postMoves = ["", "U", "U'", "U2", "D", "D'", "D2", ...OUTER_MOVES_444];
-  const setupTiers = [
-    L2E_SETUP_PATHS.filter((path) => path.length <= 2),
-    L2E_SETUP_PATHS.filter((path) => path.length === 3),
-  ];
-  let best = null;
-  let inspected = 0;
-
-  for (let tier = 0; tier < setupTiers.length && !best; tier += 1) {
-    for (const setup of setupTiers[tier]) {
-      if ((inspected++ & 0x00ff) === 0 && deadlineReached(localDeadlineTs)) break;
-      for (const macro of macros) {
-        for (const post of postMoves) {
-          const rawMoves = [
-            ...setup,
-            ...splitAlgorithm(macro.algorithm),
-            ...(post ? [post] : []),
-          ];
-          // The already-built three dedges may move around the D cross while
-          // inserting #4, but must never split. This mirrors a real Yau insert.
-          const finalState = applyTokenPathPreservingPairedTypes444(
-            initialState,
-            rawMoves,
-            model,
-            requiredMask,
-          );
-          if (!finalState) continue;
-          if (!centersSolved(finalState, model.solvedCompact.centerPieces)) continue;
-          const solvedMask = solvedEdgeTypeMask(finalState) & targetMask;
-          if (!maskContains(solvedMask, targetMask)) continue;
-          const moves = simplifyOuterSequence(rawMoves);
-          const cost = humanYauCrossCandidateCost444(moves, setup.length, Boolean(post));
-          if (!best || cost < best.cost) {
-            best = { state: finalState, moves, macro: macro.algorithm, cost };
-          }
-        }
-      }
-      if (deadlineReached(localDeadlineTs)) break;
+  const missingMask = targetMask & ~requiredMask;
+  if (bitCount(missingMask) !== 1) {
+    return { ok: false, reason: "444_YAU_HUMAN_CROSS4_MISSING_EDGE_INVALID" };
+  }
+  let missingType = -1;
+  for (let edgeType = 0; edgeType < 12; edgeType += 1) {
+    if (missingMask & (1 << edgeType)) {
+      missingType = edgeType;
+      break;
     }
   }
 
-  if (!best) {
+  // Reuse the same structured Yau pairing candidate that builds Cross 3/4:
+  // short outer setup -> one U/D working-slice macro -> optional AUF/post.
+  // Unlike Remaining Centers, Cross 4/4 is allowed to move the existing three
+  // spokes temporarily. The hard requirement is that all centers and all four
+  // solved cross dedges are restored at the segment boundary.
+  const candidate = humanYauCrossCandidate444(
+    initialState,
+    requiredMask,
+    targetMask,
+    missingType,
+    model,
+    ["U", "R", "F", "D", "L", "B"],
+    localDeadlineTs,
+  );
+  if (!candidate) {
     return {
       ok: false,
       reason: deadlineReached(localDeadlineTs)
@@ -1427,13 +1409,14 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     };
   }
 
-  const solution = best.moves.join(" ");
+  const solution = candidate.moves.join(" ");
   let verified = pattern;
   if (solution) verified = verified.applyAlg(solution);
   const verifiedState = compactStateFromPattern(verified);
+  const verifiedSolved = solvedEdgeTypeMask(verifiedState) & targetMask;
   if (
     !centersSolved(verifiedState, model.solvedCompact.centerPieces) ||
-    !maskContains(solvedEdgeTypeMask(verifiedState), targetMask)
+    !maskContains(verifiedSolved, targetMask)
   ) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS4_VERIFY_FAILED" };
   }
@@ -1442,10 +1425,10 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     ok: true,
     reason: null,
     solution,
-    moveCount: best.moves.length,
+    moveCount: candidate.moves.length,
     pairedTargetMask: pairedEdgeTypeMask(verifiedState) & targetMask,
     lockedTypeMask: targetMask,
-    solvedTargetMask: solvedEdgeTypeMask(verifiedState) & targetMask,
+    solvedTargetMask: verifiedSolved,
     targetCount: 4,
     macroCount: 1,
     alignmentMoveCount: 0,
@@ -1453,6 +1436,8 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
     searchMaxMacros: 1,
     alignmentRescueUsed: false,
     method: "Yau Human Cross 4/4",
+    humanStepCount: 1,
+    workingSlice: candidate.workingSlice,
     elapsedMs: Date.now() - startedAt,
   };
 }
