@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   invertOuterAlgorithm,
   isLiteralInverseSolution,
+  normalizeOuterAlgorithm,
   shouldRejectLiteralInverseSolution,
 } from "./solver/inverseSolutionPolicy.js";
 import { solveMinmoveExactV2 } from "./solver/minmoveExactV2.js";
@@ -26,6 +27,33 @@ const shortScramble = "R U R' U'";
 const shortInverse = invertOuterAlgorithm(shortScramble);
 assert.equal(isLiteralInverseSolution(shortScramble, shortInverse), true);
 assert.equal(shouldRejectLiteralInverseSolution(shortScramble, shortInverse), false);
+
+// Regression: a phase-boundary split such as R R2 is still R'.
+// This exact UI report previously bypassed the inverse-solution guard because
+// the old policy compared move-token strings without same-face reduction.
+const REDUCIBLE_INVERSE_SCRAMBLE = "U' F2 D' B2 U' F2 U F2 U' R B D L' R D' L' D";
+const REDUCIBLE_INVERSE_CANONICAL = "D' L D R' L D' B' R' U F2 U' F2 U B2 D F2 U";
+const REDUCIBLE_INVERSE_REPORTED = "D' L D R' L D' B' R R2 U F2 U' F2 U B2 D F2 U";
+assert.equal(
+  invertOuterAlgorithm(REDUCIBLE_INVERSE_SCRAMBLE),
+  REDUCIBLE_INVERSE_CANONICAL,
+  "reducible regression fixture must canonicalize to the true inverse",
+);
+assert.equal(
+  normalizeOuterAlgorithm(REDUCIBLE_INVERSE_REPORTED),
+  REDUCIBLE_INVERSE_CANONICAL,
+  "same-face phase-boundary moves must be reduced canonically",
+);
+assert.equal(
+  isLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED),
+  true,
+  "decomposed inverse must still be detected",
+);
+assert.equal(
+  shouldRejectLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED),
+  true,
+  "decomposed inverse must be rejected",
+);
 
 const workerSource = fs.readFileSync(new URL("./solver/solverWorker.js", import.meta.url), "utf8");
 assert.match(workerSource, /excludedSolution:\s*countAlgorithmMoves\(scramble\)\s*>\s*4\s*\?\s*inverseSolution\s*:\s*undefined/);
