@@ -4,22 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/rewrite-yau-last-eight-v2.py"
-      - "tools/rewrite-yau-last-eight-v3.py"
-      - "tools/rewrite-yau-last-eight-v4.py"
-      - "tools/rewrite-yau-last-eight-v5.py"
-      - "tools/rewrite-yau-last-eight-v6.py"
-      - "tools/rewrite-yau-last-eight-v7.py"
-      - "tools/rewrite-yau-last-eight-v8.py"
-      - "tools/rewrite-yau-last-eight-v9.py"
-      - "tools/rewrite-yau-last-eight-v10.py"
-      - "tools/rewrite-yau-last-eight-v11.py"
-      - "tools/rewrite-yau-last-eight-v12.py"
-      - "tools/rewrite-yau-last-eight-v13.py"
-      - "tools/rewrite-yau-last-eight-v14.py"
-      - "tools/rewrite-yau-last-eight-v17.py"
-      - "tools/rewrite-yau-last-eight-v19.py"
-      - "tools/rewrite-yau-last-eight-v20.py"
+      - "tools/rewrite-yau-last-eight-v21.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -37,8 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply continuous-grip true Yau rewrite
-        run: python tools/rewrite-yau-last-eight-v20.py
+      - name: Apply clean true Yau rewrite
+        run: python tools/rewrite-yau-last-eight-v21.py
       - name: Check syntax
         run: |
           node --check solver/solver444.js
@@ -50,3 +35,12 @@ jobs:
           node tools/verify-444-yau.mjs
           node tools/verify-444-edge-323.mjs
           node tools/verify-444-public-notation.mjs
+      - name: Commit clean implementation
+        run: |
+          rm -f tools/rewrite-yau-last-eight-v*.py .github/workflows/rewrite-yau-last-eight.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Rewrite Yau last-eight 3-2-3 core"
+          git push origin HEAD:main
