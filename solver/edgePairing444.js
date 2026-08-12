@@ -1537,7 +1537,11 @@ export async function solveYauCross3Natural444(publicScramble, publicSetupSoluti
     });
   }
 
-  const simplified = simplifyOuterSequence(moves);
+  // Each committed candidate is already simplified. Keep the boundaries
+  // between human edge-insertion steps intact rather than cancelling across
+  // them; the presentation layer may then regrip between steps while the
+  // cross center stays on the R face.
+  const simplified = [...moves];
   const solution = simplified.join(" ");
   let verified = pattern;
   if (solution) verified = verified.applyAlg(solution);
