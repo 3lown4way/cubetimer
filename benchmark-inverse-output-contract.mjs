@@ -52,7 +52,7 @@ assert.equal(
 assert.equal(
   shouldRejectLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED),
   true,
-  "decomposed inverse must be rejected",
+  "decomposed inverse must be rejected by ordinary solver output policy",
 );
 
 const workerSource = fs.readFileSync(new URL("./solver/solverWorker.js", import.meta.url), "utf8");
@@ -60,6 +60,14 @@ assert.match(workerSource, /excludedSolution:\s*countAlgorithmMoves\(scramble\)\
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*searched\.solution\)/);
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*solution\)/);
 assert.doesNotMatch(workerSource, /excludedSolution:\s*noFallback\s*\?/);
+
+// Exact MinMove has a different contract from ordinary Two-Phase output: the
+// literal inverse remains a valid mathematical upper bound. It may only become
+// public output after exact search proves that no shorter HTM solution exists.
+const minmoveSource = fs.readFileSync(new URL("./solver/minmoveExactV2.js", import.meta.url), "utf8");
+assert.match(minmoveSource, /let\s+incumbentSolution\s*=\s*inverseScramble\s*;/);
+assert.match(minmoveSource, /if\s*\(!candidateSolution\s*\|\|\s*candidateLength\s*>\s*incumbentLength\)\s*continue\s*;/);
+assert.doesNotMatch(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {
   frontierLimits: [2, 12, 48, 192, 768],
@@ -84,10 +92,14 @@ const minmove = await solveMinmoveExactV2(SCRAMBLE, null, {
   timeBudgetMs: MINMOVE_CONTRACT_BUDGET_MS,
 });
 
+const inverseMoveCount = inverse.split(/\s+/).filter(Boolean).length;
 let minmoveContractSolution = "";
 if (minmove?.ok) {
   assert.equal(minmove.optimalityProven, true, "successful Minmove result is not proven");
-  assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "Minmove returned literal inverse");
+  assert.ok(
+    Number(minmove.moveCount) <= inverseMoveCount,
+    "proven Minmove result exceeded the literal-inverse upper bound",
+  );
   const minmoveVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.solution);
   assert.equal(minmoveVerification?.solved, true, "Minmove regression solution is invalid");
   minmoveContractSolution = minmove.solution;
@@ -111,10 +123,9 @@ if (minmove?.ok) {
   );
   assert.equal(typeof minmove?.candidateSolution, "string", "unproven result lost candidate metadata");
   assert.ok(minmove.candidateSolution.trim(), "unproven result has an empty candidate");
-  assert.equal(
-    isLiteralInverseSolution(SCRAMBLE, minmove.candidateSolution),
-    false,
-    "Minmove candidate is the rejected literal inverse",
+  assert.ok(
+    Number(minmove?.candidateMoveCount) <= inverseMoveCount,
+    "Minmove candidate exceeded the literal-inverse upper bound",
   );
   const candidateVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.candidateSolution);
   assert.equal(candidateVerification?.solved, true, "Minmove candidate metadata is invalid");
