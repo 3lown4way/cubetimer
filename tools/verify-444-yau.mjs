@@ -244,12 +244,18 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   const edge = result.stages[1];
   assert.equal(edge.id, "edges");
   assert.equal(edge.method, "Yau 3-2-3");
-  assert.ok(Array.isArray(edge.segments) && edge.segments.length >= 3);
-  assert.equal(edge.segments[0].name, "Yau Cross Bank 4/12");
-  assert.equal(edge.segments[0].alreadyPaired, true);
+  assert.deepEqual(edge.segments.map((segment) => segment.name), [
+    "3-2-3 · First 3",
+    "3-2-3 · Next 2",
+    "3-2-3 · Last 3",
+  ]);
   assert.equal(edge.segments.at(-1).pairEnd, 12);
-  assert.equal(result.meta.yauEdge323ProtectedCrossBank, true, "Yau must keep the original four-cross bank");
+  assert.equal(result.meta.yauEdge323ProtectedCrossBank, true);
   assert.equal(result.meta.yauEdge323ProtectedBankFallbackReason, null);
+  assert.equal(result.meta.yauLastEightOnly, true, "Yau edge pairing must target only the last eight edges");
+  assert.equal(result.meta.yauCrossSolvedAtEdgeSegmentBoundaries, true);
+  assert.equal(Number(result.meta.yauCrossRestoreMoveCount), 0, "true Yau must not need Cross Restore");
+  assert.ok(!edge.segments.some((segment) => /Cross Restore/i.test(segment.name)), "Cross Restore must not exist in Yau");
   for (const segment of edge.segments) {
     const tokens = String(segment.solution || "").trim().split(/\s+/).filter(Boolean);
     for (const token of tokens) {
@@ -260,9 +266,14 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
         `Yau cross dedge split during ${segment.name} at ${token}`,
       );
     }
+    assert.equal(centerFaceForColor(pattern, crossColor), "D", `${segment.name} must finish with the cross on D`);
+    assert.equal(
+      pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
+      targetMask,
+      `${segment.name} did not restore the complete D-face cross`,
+    );
   }
   assert.equal(bitCount(pairedTypeMask(pattern)), 12, "Yau remaining edge stage did not pair all dedges");
-  assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau 3-2-3 disturbed the solved cross");
 
   const cfop = result.stages[2];
   assert.equal(cfop.id, "threeByThree");
@@ -285,4 +296,4 @@ const crossFrameRegression = await verifyCase(
 );
 assert.ok(Number(crossFrameRegression.meta?.yauFrameAttemptCount) >= 2, "Yau cross regression did not exercise frame selection");
 
-console.log("4x4 Yau order, protected cross, cross-frame retry, 3-2-3 edges, LL parity, and final verification passed");
+console.log("4x4 true Yau last-eight 3-2-3, D-cross boundaries, LL parity, and final verification passed");

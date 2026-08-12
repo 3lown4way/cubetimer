@@ -516,27 +516,41 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
     if (!firstCenterCandidates.length || !oppositeCenterCandidates.length ||
         !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
 
-    // Human Yau grip policy:
-    //   Center 1           : cross color on U
-    //   Opposite center    : cross color on D
-    //   Cross 3/4 + centers: cross color on visible R
-    //   Cross 4/4 + 3-2-3  : one fixed cross-down yaw
-    // Restore the public frame only after edge pairing is complete.
+    // One continuous human grip path for the entire Yau solve:
+    //   first center              -> cross color U
+    //   opposite center           -> cross color D
+    //   Cross 3/4 + last centers  -> cross color visible R
+    //   Cross 4/4                 -> cross color D
+    //   complete 3-2-3            -> keep the SAME cross-down grip
+    //   CFOP                       -> remain cross-down; yaw changes are allowed
+    // The public/identity frame is restored only after the final CFOP move.
+    // This avoids the old edge-stage reset that visibly moved an F/B/R/L
+    // cross off D between Last 3 and CFOP.
     let bestYau = null;
     for (const edgeGrip of crossDownCandidates) {
-      const combined = [...centerStage.segments, ...edgeStage.segments];
+      const centerSegments = centerStage.segments;
+      const edgeSegments = edgeStage.segments;
+      const cfopSegments = Array.isArray(cfopStage?.segments) ? cfopStage.segments : [];
+      const combined = [...centerSegments, ...edgeSegments, ...cfopSegments];
       const candidateSets = [];
-      for (let index = 0; index < centerStage.segments.length; index += 1) {
+
+      for (let index = 0; index < centerSegments.length; index += 1) {
         if (index === 0) candidateSets.push(firstCenterCandidates);
         else if (index === 1) candidateSets.push(oppositeCenterCandidates);
         else if (index === 2 || index === 3) candidateSets.push(crossRightCandidates);
         else candidateSets.push([edgeGrip]);
       }
-      for (let index = 0; index < edgeStage.segments.length; index += 1) {
+      for (let index = 0; index < edgeSegments.length; index += 1) {
         candidateSets.push([edgeGrip]);
       }
+      for (let index = 0; index < cfopSegments.length; index += 1) {
+        // All of these orientations keep the cross on D. Changing between
+        // them is therefore only a yaw/regrip while preserving cross-down.
+        candidateSets.push(crossDownCandidates);
+      }
+
       const human = humanizeAbsoluteSegments444(combined, candidateSets);
-      if (!human?.segments?.length) continue;
+      if (!human?.segments?.length || human.segments.length !== combined.length) continue;
       const tokenCount = human.segments.reduce(
         (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
         0,
@@ -547,46 +561,42 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
     if (!bestYau) return fallback();
 
     const centerCount = centerStage.segments.length;
+    const edgeCount = edgeStage.segments.length;
+    const cfopCount = Array.isArray(cfopStage?.segments) ? cfopStage.segments.length : 0;
+    const edgeStart = centerCount;
+    const cfopStart = centerCount + edgeCount;
+
     centerStage.segments = bestYau.segments.slice(0, centerCount);
-    edgeStage.segments = bestYau.segments.slice(centerCount);
+    edgeStage.segments = bestYau.segments.slice(edgeStart, cfopStart);
     centerStage.solution = centerStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
     edgeStage.solution = edgeStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-
-    let cfopRotationCount = 0;
-    if (cfopStage?.segments?.length) {
-      const cfopHuman = buildHumanCfopPresentation444(cfopStage.segments, crossColor);
-      if (cfopHuman) {
-        cfopStage.segments = cfopHuman.segments;
-        cfopStage.solution = cfopHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-        cfopRotationCount = cfopHuman.rotationCount;
-      }
+    if (cfopStage && cfopCount) {
+      cfopStage.segments = bestYau.segments.slice(cfopStart, cfopStart + cfopCount);
+      cfopStage.solution = cfopStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
     }
 
-    // Center and edge presentation intentionally share a rotated grip. They
-    // must be equivalent as one block; the edge stage restores the frame.
-    const baselineCheck = [
-      {
-        solution: baselineStages
-          .filter((stage) => stage?.id === "centers" || stage?.id === "edges")
-          .map((stage) => String(stage?.solution || "").trim())
-          .filter(Boolean)
-          .join(" "),
-      },
-      {
-        solution: String(baselineStages.find((stage) => stage?.id === "threeByThree")?.solution || "").trim(),
-      },
-    ];
-    const candidateCheck = [
-      { solution: [centerStage.solution, edgeStage.solution].filter(Boolean).join(" ") },
-      { solution: String(cfopStage?.solution || "").trim() },
-    ];
-    const verified = await verifyEquivalent444Presentation(publicScramble, baselineCheck, candidateCheck);
+    // Grip rotations intentionally cross stage boundaries now. Validate the
+    // whole Yau solve as one exact transformation instead of forcing centers,
+    // edges, and CFOP to each return to the public frame independently.
+    const baselineCombined = baselineStages
+      .map((stage) => String(stage?.solution || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const candidateCombined = stages
+      .map((stage) => String(stage?.solution || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const verified = await verifyEquivalent444Presentation(
+      publicScramble,
+      [{ solution: baselineCombined }],
+      [{ solution: candidateCombined }],
+    );
     if (!verified) return fallback();
 
     return {
       stages,
-      humanViewpointApplied: bestYau.rotationCount + cfopRotationCount > 0,
-      viewpointRotationCount: bestYau.rotationCount + cfopRotationCount,
+      humanViewpointApplied: bestYau.rotationCount > 0,
+      viewpointRotationCount: bestYau.rotationCount,
       yauHumanGripApplied: bestYau.rotationCount > 0,
       yauViewpointRotationCount: bestYau.rotationCount,
     };
@@ -1216,55 +1226,27 @@ async function preferYauReduction444(
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
-  let remainingEdges = await edgeModule.solveEdgePairing323(
+  const remainingEdges = await edgeModule.solveYauLastEight323444(
     publicScramble,
     yauSetupPublic,
     {
       deadlineTs,
-      requiredTypeMask: targetTypeMask,
+      crossTypeMask: targetTypeMask,
     },
   );
   const yauEdge323ProtectedCrossBank = true;
   const yauEdge323ProtectedBankFallbackReason = null;
 
   if (!remainingEdges?.ok) {
-    let frameDiagnostics = [];
-    try {
-      frameDiagnostics = await edgeModule.debugEdge323Frames444();
-    } catch (_) {}
     const detail = JSON.stringify({
       reason: remainingEdges?.reason || remainingEdges?.detail || null,
-      diagnostics: remainingEdges?.meta || remainingEdges?.detail || null,
-      protectedBankFailure: yauEdge323ProtectedBankFallbackReason,
+      diagnostics: remainingEdges?.meta || null,
       targetTypeMask,
-      frames: frameDiagnostics,
     });
     return yauFailure444(reduction, "444_YAU_EDGE_PAIRING_FAILED", detail, deadlineTs);
   }
 
-  const beforeCrossRestore = [yauSetupPublic, remainingEdges.solution]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(" ");
-  const crossRestore = await edgeModule.solveTargetEdgeTypes444(
-    publicScramble,
-    beforeCrossRestore,
-    targetTypeMask,
-    {
-      targetCount: 4,
-      requiredTypeMask: targetTypeMask,
-      alignSolved: true,
-      deadlineTs,
-      maxMacros: 0,
-    },
-  );
-  if (!crossRestore?.ok) {
-    return yauFailure444(reduction, "444_YAU_CROSS_RESTORE_FAILED", crossRestore?.reason || crossRestore?.detail, deadlineTs);
-  }
-  const yauRemainingEdgePublic = [remainingEdges.solution, crossRestore.solution]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(" ");
+  const yauRemainingEdgePublic = String(remainingEdges.solution || "").trim();
 
   const internalYauSetup = translate444MoveConvention(yauSetupPublic);
   const internalYauEdges = translate444MoveConvention(yauRemainingEdgePublic);
@@ -1338,18 +1320,6 @@ async function preferYauReduction444(
     solution: translate444MoveConvention(segment?.solution || ""),
     verified: true,
   }));
-  if (crossRestore.solution) {
-    internalEdgeSegments.push({
-      id: "yauCrossRestore",
-      name: "Yau · Cross Restore",
-      solution: translate444MoveConvention(crossRestore.solution),
-      moveCount: splitAlgorithm(crossRestore.solution).length,
-      pairStart: 12,
-      pairEnd: 12,
-      alreadyPaired: true,
-      verified: true,
-    });
-  }
   const yauEdgeStage = {
     id: "edges",
     name: "Edge Pairing · Yau 3-2-3",
@@ -1405,9 +1375,11 @@ async function preferYauReduction444(
       yauCross4SearchMaxMacros: Number(cross4.searchMaxMacros) || 0,
       yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
       yauCrossAlignmentRescueUsed: cross4.alignmentRescueUsed === true,
-      yauCrossRestoreMoveCount: Number(crossRestore.moveCount) || 0,
+      yauCrossRestoreMoveCount: 0,
       yauEdge323ProtectedCrossBank,
       yauEdge323ProtectedBankFallbackReason,
+      yauLastEightOnly: remainingEdges.meta?.lastEightOnly === true,
+      yauCrossSolvedAtEdgeSegmentBoundaries: remainingEdges.meta?.crossSolvedAtSegmentBoundaries === true,
       yauPureCenterMoveCount: publicCenterMoves.length,
       yauRemainingCenterMoveCount: splitAlgorithm(effectiveRemainingCenters).length,
       yauEdge323: remainingEdges.meta && typeof remainingEdges.meta === "object"
