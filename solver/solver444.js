@@ -415,8 +415,8 @@ function buildHumanYauSetupPresentation444(segments, crossColor) {
   // Human Yau grip sequence:
   // 1) build the first center on U,
   // 2) flip so the first center is D while building its opposite on U,
-  // 3) hold the cross center on the visible R face for Cross 3/4 and the last four centers,
-  // 4) put the cross on D before Cross 4/4 and the remaining edge stage.
+  // 3) hold the cross center on the visible R face for Cross 3/4, the last four centers, and Cross 4/4,
+  // 4) only after Cross 4/4, regrip the completed cross to D for 3-2-3.
   const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
     (entry) => entry.map.U === normalizedCross,
   );
@@ -434,8 +434,7 @@ function buildHumanYauSetupPresentation444(segments, crossColor) {
   const candidateSets = segments.map((_, index) => {
     if (index === 0) return firstCenterCandidates;
     if (index === 1) return oppositeCenterCandidates;
-    if (index === 2 || index === 3) return crossRightCandidates;
-    return crossDownCandidates;
+    return crossRightCandidates;
   });
   return humanizeAbsoluteSegments444(segments, candidateSets);
 }
@@ -517,12 +516,12 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
         !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
 
     // One continuous human grip path for the entire Yau solve:
-    //   first center              -> cross color U
-    //   opposite center           -> cross color D
-    //   Cross 3/4 + last centers  -> cross color visible R
-    //   Cross 4/4                 -> cross color D
-    //   complete 3-2-3            -> keep the SAME cross-down grip
-    //   CFOP                       -> remain cross-down; yaw changes are allowed
+    //   first center                         -> cross color U
+    //   opposite center                      -> cross color D
+    //   Cross 3/4 + last centers + Cross 4/4 -> cross color visible R
+    //   enter 3-2-3                          -> regrip the completed cross to D
+    //   complete 3-2-3                       -> keep the SAME cross-down grip
+    //   CFOP                                  -> remain cross-down; yaw changes are allowed
     // The public/identity frame is restored only after the final CFOP move.
     // This avoids the old edge-stage reset that visibly moved an F/B/R/L
     // cross off D between Last 3 and CFOP.
@@ -558,7 +557,8 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
     }
 
     let bestYau = null;
-    for (const edgeGrip of crossDownCandidates) {
+    for (const rightGrip of crossRightCandidates) {
+      for (const edgeGrip of crossDownCandidates) {
       const edgeSegments = edgeStage.segments;
       const cfopSegments = Array.isArray(cfopStage?.segments) ? cfopStage.segments : [];
       const combined = [...expandedCenterSegments, ...edgeSegments, ...cfopSegments];
@@ -568,8 +568,8 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
         const parent = expandedCenterParents[index];
         if (parent === 0) candidateSets.push(firstCenterCandidates);
         else if (parent === 1) candidateSets.push(oppositeCenterCandidates);
-        else if (parent === 2 || parent === 3) candidateSets.push(crossRightCandidates);
-        else candidateSets.push([edgeGrip]);
+        else if (parent === 2) candidateSets.push(crossRightCandidates);
+        else candidateSets.push([rightGrip]);
       }
       for (let index = 0; index < edgeSegments.length; index += 1) {
         candidateSets.push([edgeGrip]);
@@ -598,6 +598,7 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
       // it removes a genuinely ugly block of B/L turns.
       const score = human.rotationCount * 10000 + ergonomicPenalty * 100 + tokenCount;
       if (!bestYau || score < bestYau.score) bestYau = { ...human, score };
+      }
     }
     if (!bestYau) return fallback();
 

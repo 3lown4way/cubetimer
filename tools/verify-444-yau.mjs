@@ -168,7 +168,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(result.meta.humanViewpointApplied, true);
   assert.equal(result.meta.yauHumanGripApplied, true);
   assert.ok(Number(result.meta.yauViewpointRotationCount) >= 3, "Yau human grip did not reorient enough between method phases");
-  assert.ok(Number(result.meta.yauViewpointRotationCount) <= 12, "Yau human grip inserted excessive cube rotations");
+  assert.ok(Number(result.meta.yauViewpointRotationCount) <= 13, "Yau human grip inserted excessive cube rotations");
   assert.equal(result.stages.length, 3);
 
   const setup = result.stages[0];
@@ -185,7 +185,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(setup.segments.map((segment) => segment.solution).filter(Boolean).join(" "), setup.solution);
   assert.ok(Number(setup.segments[1].viewpointRotations) >= 1, "Yau opposite center did not flip the first center down");
   assert.ok(Number(setup.segments[2].viewpointRotations) >= 1, "Yau Cross 3/4 did not regrip with the cross center on the side");
-  assert.ok(Number(setup.segments[4].viewpointRotations) >= 1, "Yau Cross 4/4 did not return the cross to the bottom");
+  assert.equal(centerFaceForColor(solved.applyAlg(scramble).applyAlg(setup.solution), crossColor), "R", "Yau setup must finish Cross 4/4 with the cross still on R");
 
   const targetMask = crossTypeMask(crossColor);
   let pattern = solved.applyAlg(scramble);
@@ -233,12 +233,12 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
   assert.equal(centerFaceForColor(pattern, crossColor), "R", "Yau remaining centers must keep the 3-cross on the R face");
   pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
-  assert.equal(centerFaceForColor(pattern, crossColor), "D", "Yau Cross 4/4 must return the cross center to the D face before 3-2-3");
+  assert.equal(centerFaceForColor(pattern, crossColor), "R", "Yau Cross 4/4 must finish with the completed cross still on R");
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
   assert.equal(
     pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
     targetMask,
-    "Yau Cross 4/4 is not a complete cross around the D-face cross center",
+    "Yau Cross 4/4 is not a complete cross around the R-face cross center",
   );
 
   const edge = result.stages[1];
@@ -250,15 +250,26 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     "3-2-3 · Last 3",
   ]);
   assert.equal(edge.segments.at(-1).pairEnd, 12);
+  assert.ok(Number(edge.segments[0].viewpointRotations) >= 1, "Yau 3-2-3 must begin by regripping the completed cross from R to D");
+  const first323Tokens = String(edge.segments[0].solution || "").trim().split(/\s+/).filter(Boolean);
+  let first323TurnIndex = 0;
+  while (first323TurnIndex < first323Tokens.length && /^[xyz](?:2|')?$/.test(first323Tokens[first323TurnIndex])) {
+    pattern = pattern.applyAlg(first323Tokens[first323TurnIndex]);
+    first323TurnIndex += 1;
+  }
+  assert.ok(first323TurnIndex >= 1, "Yau 3-2-3 did not expose a leading cross-down regrip");
+  assert.equal(centerFaceForColor(pattern, crossColor), "D", "Yau 3-2-3 must put the cross on D before its first pairing turn");
   assert.equal(result.meta.yauEdge323ProtectedCrossBank, true);
   assert.equal(result.meta.yauEdge323ProtectedBankFallbackReason, null);
   assert.equal(result.meta.yauLastEightOnly, true, "Yau edge pairing must target only the last eight edges");
   assert.equal(result.meta.yauCrossSolvedAtEdgeSegmentBoundaries, true);
   assert.equal(Number(result.meta.yauCrossRestoreMoveCount), 0, "true Yau must not need Cross Restore");
   assert.ok(!edge.segments.some((segment) => /Cross Restore/i.test(segment.name)), "Cross Restore must not exist in Yau");
-  for (const segment of edge.segments) {
+  for (let segmentIndex = 0; segmentIndex < edge.segments.length; segmentIndex += 1) {
+    const segment = edge.segments[segmentIndex];
     const tokens = String(segment.solution || "").trim().split(/\s+/).filter(Boolean);
-    for (const token of tokens) {
+    const startIndex = segmentIndex === 0 ? first323TurnIndex : 0;
+    for (const token of tokens.slice(startIndex)) {
       pattern = pattern.applyAlg(token);
       assert.equal(
         pairedTypeMask(pattern) & targetMask,
@@ -296,4 +307,4 @@ const crossFrameRegression = await verifyCase(
 );
 assert.ok(Number(crossFrameRegression.meta?.yauFrameAttemptCount) >= 2, "Yau cross regression did not exercise frame selection");
 
-console.log("4x4 true Yau last-eight 3-2-3, D-cross boundaries, LL parity, and final verification passed");
+console.log("4x4 true Yau R-face Cross 4/4, explicit cross-down 3-2-3 regrip, LL parity, and final verification passed");
