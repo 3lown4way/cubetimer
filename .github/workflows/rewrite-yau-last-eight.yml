@@ -10,6 +10,7 @@ on:
       - "tools/rewrite-yau-last-eight-v5.py"
       - "tools/rewrite-yau-last-eight-v6.py"
       - "tools/rewrite-yau-last-eight-v7.py"
+      - "tools/rewrite-yau-last-eight-v8.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -28,7 +29,7 @@ jobs:
         with:
           node-version: 22
       - name: Apply instrumented Yau rewrite
-        run: python tools/rewrite-yau-last-eight-v7.py
+        run: python tools/rewrite-yau-last-eight-v8.py
       - name: Check syntax
         run: |
           node --check solver/solver444.js
