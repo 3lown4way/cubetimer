@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/apply-yau-323-cross-lock-v8.py"
+      - "tools/apply-yau-323-cross-lock-v9.py"
       - ".github/workflows/apply-yau-323-cross-lock.yml"
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
       - name: Apply Yau cross-bank lock
-        run: python tools/apply-yau-323-cross-lock-v8.py
+        run: python tools/apply-yau-323-cross-lock-v9.py
       - name: Verify syntax
         run: |
           node --check solver/solver444.js
@@ -37,9 +37,9 @@ jobs:
           node tools/verify-444-public-notation.mjs
       - name: Commit implementation
         run: |
-          rm -f tools/apply-yau-323-cross-lock.py tools/apply-yau-323-cross-lock-v2.py tools/apply-yau-323-cross-lock-v3.py tools/apply-yau-323-cross-lock-v4.py tools/apply-yau-323-cross-lock-v5.py tools/apply-yau-323-cross-lock-v6.py tools/apply-yau-323-cross-lock-v7.py tools/apply-yau-323-cross-lock-v8.py .github/workflows/apply-yau-323-cross-lock.yml
+          rm -f tools/apply-yau-323-cross-lock.py tools/apply-yau-323-cross-lock-v2.py tools/apply-yau-323-cross-lock-v3.py tools/apply-yau-323-cross-lock-v4.py tools/apply-yau-323-cross-lock-v5.py tools/apply-yau-323-cross-lock-v6.py tools/apply-yau-323-cross-lock-v7.py tools/apply-yau-323-cross-lock-v8.py tools/apply-yau-323-cross-lock-v9.py .github/workflows/apply-yau-323-cross-lock.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add solver/solver444.js solver/edgePairing444.js tools/verify-444-yau.mjs tools/apply-yau-323-cross-lock.py tools/apply-yau-323-cross-lock-v2.py tools/apply-yau-323-cross-lock-v3.py tools/apply-yau-323-cross-lock-v4.py tools/apply-yau-323-cross-lock-v5.py tools/apply-yau-323-cross-lock-v6.py tools/apply-yau-323-cross-lock-v7.py tools/apply-yau-323-cross-lock-v8.py .github/workflows/apply-yau-323-cross-lock.yml
+          git add solver/solver444.js solver/edgePairing444.js tools/verify-444-yau.mjs tools/apply-yau-323-cross-lock.py tools/apply-yau-323-cross-lock-v2.py tools/apply-yau-323-cross-lock-v3.py tools/apply-yau-323-cross-lock-v4.py tools/apply-yau-323-cross-lock-v5.py tools/apply-yau-323-cross-lock-v6.py tools/apply-yau-323-cross-lock-v7.py tools/apply-yau-323-cross-lock-v8.py tools/apply-yau-323-cross-lock-v9.py .github/workflows/apply-yau-323-cross-lock.yml
           git commit -m "Keep Yau cross paired through 3-2-3"
           git push origin HEAD:main
