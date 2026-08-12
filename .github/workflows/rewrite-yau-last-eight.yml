@@ -17,8 +17,7 @@ on:
       - "tools/rewrite-yau-last-eight-v12.py"
       - "tools/rewrite-yau-last-eight-v13.py"
       - "tools/rewrite-yau-last-eight-v14.py"
-      - "tools/rewrite-yau-last-eight-v15.py"
-      - "tools/rewrite-yau-last-eight-v16.py"
+      - "tools/rewrite-yau-last-eight-v17.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -36,8 +35,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply deeper positional rewrite
-        run: python tools/rewrite-yau-last-eight-v16.py
+      - name: Apply F2L-trigger Yau rewrite
+        run: python tools/rewrite-yau-last-eight-v17.py
       - name: Keep only F-cross regression for diagnosis
         run: |
           python - <<'PY'
@@ -48,7 +47,7 @@ jobs:
           pos = s.find(marker)
           if pos < 0:
               raise SystemExit('verifier tail marker not found')
-          s = s[:pos] + '''await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });\nconsole.log("F-only deeper Yau First3 diagnostic passed");\n'''
+          s = s[:pos] + '''await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });\nconsole.log("F-only F2L-trigger Yau diagnostic passed");\n'''
           p.write_text(s)
           PY
       - name: Check syntax
