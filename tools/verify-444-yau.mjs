@@ -146,6 +146,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     deadlineTs: Date.now() + 60_000,
     crossColor,
     method444: "yau",
+    __yauProtectedCenterBudgetMs: 6000,
   });
   assert.equal(result.ok, true, `Yau failed for ${crossColor}: ${result.reason} ${result.detail || ""}`);
   assert.equal(result.verified, true);
@@ -247,7 +248,19 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(edge.segments[0].name, "Yau Cross Bank 4/12");
   assert.equal(edge.segments[0].alreadyPaired, true);
   assert.equal(edge.segments.at(-1).pairEnd, 12);
-  pattern = edge.solution ? pattern.applyAlg(edge.solution) : pattern;
+  assert.equal(result.meta.yauEdge323ProtectedCrossBank, true, "Yau must keep the original four-cross bank");
+  assert.equal(result.meta.yauEdge323ProtectedBankFallbackReason, null);
+  for (const segment of edge.segments) {
+    const tokens = String(segment.solution || "").trim().split(/\s+/).filter(Boolean);
+    for (const token of tokens) {
+      pattern = pattern.applyAlg(token);
+      assert.equal(
+        pairedTypeMask(pattern) & targetMask,
+        targetMask,
+        `Yau cross dedge split during ${segment.name} at ${token}`,
+      );
+    }
+  }
   assert.equal(bitCount(pairedTypeMask(pattern)), 12, "Yau remaining edge stage did not pair all dedges");
   assert.equal((solvedTypeMask(pattern) & targetMask), targetMask, "Yau 3-2-3 disturbed the solved cross");
 

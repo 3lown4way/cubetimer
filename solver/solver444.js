@@ -1102,9 +1102,14 @@ async function preferYauReduction444(
         .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
       const protectedCenterScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]
         .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+      const defaultProtectedBudgetMs = options?.__yauFastFrameProbe === true ? 900 : 2200;
+      const protectedBudgetMs = Math.max(
+        defaultProtectedBudgetMs,
+        Math.min(8000, Number(options?.__yauProtectedCenterBudgetMs) || defaultProtectedBudgetMs),
+      );
       const protectedDeadlineTs = deadlineTs > 0
-        ? Math.min(deadlineTs, Date.now() + (options?.__yauFastFrameProbe === true ? 900 : 2200))
-        : Date.now() + (options?.__yauFastFrameProbe === true ? 900 : 2200);
+        ? Math.min(deadlineTs, Date.now() + protectedBudgetMs)
+        : Date.now() + protectedBudgetMs;
       let protectedResult = null;
       try {
         const rawProtected = api.solveYauRemainingCenters({
@@ -1219,43 +1224,8 @@ async function preferYauReduction444(
       requiredTypeMask: targetTypeMask,
     },
   );
-  let yauEdge323ProtectedCrossBank = true;
-  let yauEdge323ProtectedBankFallbackReason = null;
-
-  // Prefer a true Yau 4-cross bank, but do not fail the whole solve merely
-  // because that bounded 3-2-3 search cannot find a plan from this exact
-  // frame. Retry the same human 3-2-3 planner with a freely chosen bank; all
-  // centers remain solved, all 12 dedges are verified at the end, and the
-  // completed cross is restored immediately afterwards.
-  if (!remainingEdges?.ok && !deadlineReached(deadlineTs)) {
-    yauEdge323ProtectedBankFallbackReason =
-      remainingEdges?.detail || remainingEdges?.reason || "444_323_NO_PLAN";
-    let rescue = null;
-    try {
-      rescue = await edgeModule.solveEdgePairing323(
-        publicScramble,
-        yauSetupPublic,
-        { deadlineTs },
-      );
-    } catch (error) {
-      rescue = {
-        ok: false,
-        reason: "444_YAU_EDGE_323_RESCUE_FAILED",
-        detail: String(error?.message || error),
-      };
-    }
-    if (rescue?.ok) {
-      remainingEdges = {
-        ...rescue,
-        meta: {
-          ...(rescue.meta && typeof rescue.meta === "object" ? rescue.meta : {}),
-          yauProtectedCrossBank: false,
-          yauProtectedBankFallbackReason: yauEdge323ProtectedBankFallbackReason,
-        },
-      };
-      yauEdge323ProtectedCrossBank = false;
-    }
-  }
+  const yauEdge323ProtectedCrossBank = true;
+  const yauEdge323ProtectedBankFallbackReason = null;
 
   if (!remainingEdges?.ok) {
     let frameDiagnostics = [];

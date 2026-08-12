@@ -197,6 +197,69 @@ function transformSlotMask(mask, action) {
   return transformed;
 }
 
+const CUBE_ROTATION_FACE_MAPS_444 = Object.freeze({
+  x: Object.freeze({ U: "B", B: "D", D: "F", F: "U", R: "R", L: "L" }),
+  y: Object.freeze({ U: "U", R: "B", B: "L", L: "F", F: "R", D: "D" }),
+  z: Object.freeze({ U: "R", R: "D", D: "L", L: "U", F: "F", B: "B" }),
+});
+
+function composeFaceMap444(faceMap, rotationMap) {
+  const result = {};
+  for (const face of "URFDLB") result[face] = rotationMap[faceMap[face]];
+  return result;
+}
+
+function buildCubeOrientationFaceMaps444() {
+  const identity = { U: "U", R: "R", F: "F", D: "D", L: "L", B: "B" };
+  const keyFor = (faceMap) => [..."URFDLB"].map((face) => faceMap[face]).join("");
+  const queue = [identity];
+  const maps = [];
+  const seen = new Set();
+  while (queue.length) {
+    const faceMap = queue.shift();
+    const key = keyFor(faceMap);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    maps.push(Object.freeze({ ...faceMap }));
+    for (const rotation of ["x", "y", "z"]) {
+      queue.push(composeFaceMap444(faceMap, CUBE_ROTATION_FACE_MAPS_444[rotation]));
+    }
+  }
+  if (maps.length !== 24) throw new Error(`444_ORIENTATION_FACE_MAP_COUNT:${maps.length}`);
+  return Object.freeze(maps);
+}
+
+const CUBE_ORIENTATION_FACE_MAPS_444 = buildCubeOrientationFaceMaps444();
+
+function remapMoveToken444(token, faceMap) {
+  const match = /^([URFDLB])(w)?(2|')?$/.exec(String(token || ""));
+  if (!match) return token;
+  return `${faceMap[match[1]]}${match[2] || ""}${match[3] || ""}`;
+}
+
+function remapAlgorithmToWideFace444(algorithm, targetWideFace) {
+  const tokens = splitAlgorithm(algorithm);
+  const wideFaces = [...new Set(tokens.filter((token) => /^[URFDLB]w/.test(token)).map((token) => token[0]))];
+  if (wideFaces.length !== 1) return null;
+  const sourceWideFace = wideFaces[0];
+  const targetFace = String(targetWideFace || "").charAt(0).toUpperCase();
+  const faceMap = CUBE_ORIENTATION_FACE_MAPS_444.find((candidate) => candidate[sourceWideFace] === targetFace);
+  if (!faceMap) return null;
+  return tokens.map((token) => remapMoveToken444(token, faceMap)).join(" ");
+}
+
+function conjugatedActionPoolForWideFace444(baseActions, targetWideFace, model) {
+  const seen = new Set();
+  const pool = [];
+  for (const base of baseActions) {
+    const algorithm = remapAlgorithmToWideFace444(base.algorithm, targetWideFace);
+    if (!algorithm || seen.has(algorithm)) continue;
+    seen.add(algorithm);
+    pool.push({ algorithm, action: model.actionFor(algorithm) });
+  }
+  return pool;
+}
+
 function compactActionsEqual(left, right) {
   for (const key of ["edgePermutation", "edgeOrientationDelta", "centerPermutation", "centerOrientationDelta"]) {
     const a = left[key];
@@ -750,15 +813,40 @@ function applyMovePath(state, moves, model) {
   return current;
 }
 
-function findL2E(initialState, model, deadlineTs, requiredSolvedTypeMask = 0) {
+function applyTokenPathPreservingPairedTypes444(state, moves, model, requiredPairedMask = 0) {
+  let current = state;
+  for (const move of moves) {
+    current = applyCompactAction(current, model.actionFor(move), true);
+    if (requiredPairedMask && !maskContains(pairedEdgeTypeMask(current), requiredPairedMask)) return null;
+  }
+  return current;
+}
+
+function findL2E(
+  initialState,
+  model,
+  deadlineTs,
+  requiredSolvedTypeMask = 0,
+  actionPool = null,
+  requiredPairedEveryMoveMask = 0,
+) {
   const solvedCenters = model.solvedCompact;
+  const l2eActions = Array.isArray(actionPool) ? actionPool : model.l2eActions;
   for (let setupIndex = 0; setupIndex < L2E_SETUP_PATHS.length; setupIndex += 1) {
     if ((setupIndex & 0x01ff) === 0 && deadlineReached(deadlineTs)) return null;
     const setup = L2E_SETUP_PATHS[setupIndex];
     const setupState = applyMovePath(initialState, setup, model);
     const undo = setup.slice().reverse().map(invertMoveToken);
-    for (const l2e of model.l2eActions) {
-      let candidate = applyCompactAction(setupState, l2e.action, true);
+    for (const l2e of l2eActions) {
+      let candidate = requiredPairedEveryMoveMask
+        ? applyTokenPathPreservingPairedTypes444(
+            setupState,
+            splitAlgorithm(l2e.algorithm),
+            model,
+            requiredPairedEveryMoveMask,
+          )
+        : applyCompactAction(setupState, l2e.action, true);
+      if (!candidate) continue;
       candidate = applyMovePath(candidate, undo, model);
       if (
         bitCount(pairedSlotMask(candidate)) === 12 &&
@@ -831,6 +919,8 @@ function searchTargetEdgeTypes444(
   beamWidth = YAU_TARGET_BEAM_WIDTH,
   centerAwareKey = false,
   projectTargetState = false,
+  actionPool = null,
+  requiredPairedEveryMoveMask = 0,
 ) {
   const evaluate = (node) => {
     const pairedMask = pairedEdgeTypeMask(node.state);
@@ -854,6 +944,8 @@ function searchTargetEdgeTypes444(
     };
   };
 
+  const searchActions = Array.isArray(actionPool) ? actionPool : model.seedActions;
+  if (!searchActions.length) return null;
   let beam = [evaluate({ state: initialState, path: [] })];
   let overshoot = null;
   for (let depth = 0; depth <= maxMacros; depth += 1) {
@@ -877,8 +969,17 @@ function searchTargetEdgeTypes444(
 
     const seen = new Map();
     for (const node of beam) {
-      for (let actionIndex = 0; actionIndex < model.seedActions.length; actionIndex += 1) {
-        const nextState = applyCompactAction(node.state, model.seedActions[actionIndex].action, true);
+      for (let actionIndex = 0; actionIndex < searchActions.length; actionIndex += 1) {
+        const searchAction = searchActions[actionIndex];
+        const nextState = requiredPairedEveryMoveMask
+          ? applyTokenPathPreservingPairedTypes444(
+              node.state,
+              splitAlgorithm(searchAction.algorithm),
+              model,
+              requiredPairedEveryMoveMask,
+            )
+          : applyCompactAction(node.state, searchAction.action, true);
+        if (!nextState) continue;
         const pairedMask = pairedEdgeTypeMask(nextState);
         if (!maskContains(pairedMask, requiredTypeMask)) continue;
         if (bitCount(pairedMask) < minPairCount) continue;
@@ -1371,8 +1472,11 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
     return { ok: true, reason: null, solution: "", moveCount: 0, segments: [], method: edgeMethod };
   }
 
+  const candidateFamilies = yauBank
+    ? model.sliceFamilies.filter((family) => family.bankMask === requiredTypeMask)
+    : model.sliceFamilies;
   const diagnostics = {
-    frameCount: model.sliceFamilies.length,
+    frameCount: candidateFamilies.length,
     seedCandidates: 0,
     firstThreeFailures: 0,
     nextTwoFailures: 0,
@@ -1381,9 +1485,9 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
     verificationFailures: 0,
   };
 
-  for (let frameIndex = 0; frameIndex < model.sliceFamilies.length; frameIndex += 1) {
+  for (let frameIndex = 0; frameIndex < candidateFamilies.length; frameIndex += 1) {
     if (deadlineReached(deadlineTs)) break;
-    const sliceFamily = model.sliceFamilies[frameIndex];
+    const sliceFamily = candidateFamilies[frameIndex];
     const seedCandidates = yauBank
       ? [{ state: initialState, path: [], score: Number.MAX_SAFE_INTEGER }]
       : collectSeedCandidates(initialState, sliceFamily.bankMask, model, deadlineTs);
@@ -1421,6 +1525,12 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
 
       const eighthTarget = 8;
       const secondTarget = 9;
+      const yauSeedActions = yauBank
+        ? conjugatedActionPoolForWideFace444(model.seedActions, sliceFamily.openMoves[0][0], model)
+        : model.seedActions;
+      const yauL2EActions = yauBank
+        ? conjugatedActionPoolForWideFace444(model.l2eActions, sliceFamily.openMoves[0][0], model)
+        : model.l2eActions;
       let nextTwo;
       let secondLockedMask;
       if (yauBank) {
@@ -1434,6 +1544,11 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
           2,
           null,
           7,
+          YAU_TARGET_BEAM_WIDTH,
+          false,
+          false,
+          yauSeedActions,
+          requiredTypeMask,
         );
         if (!nextTwoFirst) {
           diagnostics.nextTwoFailures += 1;
@@ -1459,6 +1574,11 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
           2,
           null,
           8,
+          YAU_TARGET_BEAM_WIDTH,
+          false,
+          false,
+          yauSeedActions,
+          requiredTypeMask,
         );
         if (!nextTwoSecond) {
           diagnostics.nextTwoFailures += 1;
@@ -1475,10 +1595,10 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
         }
 
         const firstMoves = nextTwoFirst.path.flatMap((actionIndex) =>
-          splitAlgorithm(model.seedActions[actionIndex].algorithm)
+          splitAlgorithm(yauSeedActions[actionIndex].algorithm)
         );
         const secondMoves = nextTwoSecond.path.flatMap((actionIndex) =>
-          splitAlgorithm(model.seedActions[actionIndex].algorithm)
+          splitAlgorithm(yauSeedActions[actionIndex].algorithm)
         );
         nextTwo = {
           state: nextTwoSecond.state,
@@ -1565,13 +1685,18 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
             3,
             null,
             9,
+            YAU_TARGET_BEAM_WIDTH,
+            false,
+            false,
+            yauSeedActions,
+            requiredTypeMask,
           );
           finalSetup = multiCycle
             ? {
                 state: multiCycle.state,
                 mask: multiCycle.pairedMask,
                 moves: multiCycle.path.flatMap((actionIndex) =>
-                  splitAlgorithm(model.seedActions[actionIndex].algorithm)
+                  splitAlgorithm(yauSeedActions[actionIndex].algorithm)
                 ),
                 sliceFamily: nextTwo.sliceFamily || sliceFamily,
                 frameRotation: nextTwo.frameRotation || sliceFamily.rotation,
@@ -1610,7 +1735,14 @@ export async function solveEdgePairing323(publicScramble, publicCenterSolution, 
       const beforeL2ETypeCount = bitCount(pairedEdgeTypeMask(beforeL2E.state));
       const l2e = beforeL2ETypeCount === 12
         ? { state: beforeL2E.state, moves: [] }
-        : findL2E(beforeL2E.state, model, deadlineTs, requiredSolvedTypeMask);
+        : findL2E(
+            beforeL2E.state,
+            model,
+            deadlineTs,
+            requiredSolvedTypeMask,
+            yauBank ? yauL2EActions : null,
+            yauBank ? requiredTypeMask : 0,
+          );
       if (!l2e) {
         diagnostics.l2eFailures += 1;
         continue;
