@@ -1,0 +1,48 @@
+name: Apply Yau Cross3 recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/apply-yau-cross3-recovery.py"
+      - ".github/workflows/apply-yau-cross3-recovery.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply patch
+        run: python tools/apply-yau-cross3-recovery.py
+      - name: Syntax check
+        run: |
+          node --check solver/edgePairing444.js
+          node --check solver/solver444.js
+          node --check solver/solverWorker.js
+          node --check solver/solver444UiActivation.js
+          node --check solver/nxnTwistyPreview.js
+          node --check main.js
+          node --check tools/verify-444-ui-worker-bootstrap.mjs
+          git diff --check
+      - name: Verify 4x4 contracts
+        run: |
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-public-notation.mjs
+          node tools/verify-444-ui-worker-bootstrap.mjs
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add solver/edgePairing444.js solver/solver444.js solver/solverWorker.js solver/solver444UiActivation.js solver/nxnTwistyPreview.js main.js index.html tools/verify-444-ui-worker-bootstrap.mjs
+          git commit -m "Recover Yau Cross3 edge order and bust 4x4 caches"
+          git push origin HEAD:main
