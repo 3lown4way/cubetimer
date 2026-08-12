@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/refine-yau-cross4-v2.py"
+      - "tools/refine-yau-cross4-v3.py"
       - ".github/workflows/refine-yau-ergonomics.yml"
 
 permissions:
@@ -21,8 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply Cross 4 v2
-        run: python tools/refine-yau-cross4-v2.py
+      - name: Apply one-cycle Cross 4
+        run: python tools/refine-yau-cross4-v3.py
       - name: Syntax check
         run: |
           node --check solver/solver444.js
@@ -40,5 +40,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add solver/edgePairing444.js
-          git commit -m "Use human Yau Cross 4 insertion"
+          git commit -m "Solve Yau Cross 4 in one slice cycle"
           git push origin HEAD:main
