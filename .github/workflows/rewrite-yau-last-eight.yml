@@ -37,26 +37,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply continuous-grip Yau rewrite
+      - name: Apply continuous-grip true Yau rewrite
         run: python tools/rewrite-yau-last-eight-v20.py
-      - name: Keep only F-cross regression for diagnosis
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tools/verify-444-yau.mjs')
-          s = p.read_text()
-          marker = 'await verifyCase("Rw U2 F\' Lw D B2", "D", { expectNatural: true });'
-          pos = s.find(marker)
-          if pos < 0:
-              raise SystemExit('verifier tail marker not found')
-          s = s[:pos] + '''await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });\nconsole.log("F-only continuous-grip true Yau diagnostic passed");\n'''
-          p.write_text(s)
-          PY
       - name: Check syntax
         run: |
           node --check solver/solver444.js
           node --check solver/edgePairing444.js
           node --check tools/verify-444-yau.mjs
           git diff --check
-      - name: Diagnose F-cross Yau
-        run: node tools/verify-444-yau.mjs
+      - name: Verify all 4x4 contracts
+        run: |
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-public-notation.mjs
