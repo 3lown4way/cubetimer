@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/apply-yau-cross-bank-minimal.py"
+      - "tools/apply-yau-safe-wide-macros.py"
       - ".github/workflows/apply-yau-323-cross-lock.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   patch:
@@ -22,12 +22,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply minimal protected-bank fix
-        run: python tools/apply-yau-cross-bank-minimal.py
+      - name: Apply safe-wide Yau patch
+        run: python tools/apply-yau-safe-wide-macros.py
       - name: Verify syntax
         run: |
           node --check solver/solver444.js
+          node --check solver/edgePairing444.js
           node --check tools/verify-444-yau.mjs
           git diff --check
-      - name: Diagnose and verify Yau protected bank
-        run: node tools/verify-444-yau.mjs
+      - name: Verify Yau cross never splits
+        run: |
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-public-notation.mjs
