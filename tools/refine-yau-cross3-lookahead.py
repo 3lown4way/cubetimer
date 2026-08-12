@@ -8,7 +8,6 @@ s = p.read_text()
 # original single-best wrapper so Cross4/fallback callers remain compatible.
 start = s.index('function humanYauCrossCandidate444(')
 end = s.index('\nexport async function solveYauCross4Natural444', start)
-old = s[start:end]
 new = r'''function humanYauCrossCandidateAlternatives444(
   initialState,
   solvedMask,
@@ -81,7 +80,6 @@ new = r'''function humanYauCrossCandidateAlternatives444(
 
   runSetups(L2E_SETUP_PATHS.filter((path) => path.length <= 2), true);
   if (!candidates.size && !deadlineReached(deadlineTs)) {
-    // Structured rescue only: one extra outer setup move, then one Yau macro.
     runSetups(L2E_SETUP_PATHS.filter((path) => path.length === 3), false);
   }
 
@@ -113,8 +111,6 @@ function humanYauCrossCandidate444(
 '''
 s = s[:start] + new + s[end:]
 
-# Replace greedy Cross3 solver with a shallow global beam across all remaining
-# spokes. Cost includes a small penalty for switching working-slice families.
 pattern = re.compile(r'export async function solveYauCross3Natural444\(publicScramble, publicSetupSolution, targetTypeMask, options = \{\}\) \{.*?\n\}\n\nfunction buildSegment', re.S)
 replacement = r'''export async function solveYauCross3Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
   const globalDeadlineTs = Number(options?.deadlineTs) || 0;
@@ -156,7 +152,7 @@ replacement = r'''export async function solveYauCross3Natural444(publicScramble,
       humanStepCount: 0,
       steps: [],
       elapsedMs: Date.now() - startedAt,
-      method: "Yau Human Cross 3/4 · Global Lookahead",
+      method: "Yau Human Cross 3/4",
     };
   }
 
@@ -262,7 +258,7 @@ replacement = r'''export async function solveYauCross3Natural444(publicScramble,
     humanStepCount: best.steps.length,
     steps: best.steps,
     elapsedMs: Date.now() - startedAt,
-    method: "Yau Human Cross 3/4 · Global Lookahead",
+    method: "Yau Human Cross 3/4",
   };
 }
 
