@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tools/apply-yau-323-crossdown-regrip.py"
+      - "tools/adjust-yau-regrip-rotation-cap.py"
       - ".github/workflows/apply-yau-323-crossdown-regrip.yml"
 
 permissions:
@@ -22,7 +23,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply grip-boundary patch
-        run: python tools/apply-yau-323-crossdown-regrip.py
+        run: |
+          python tools/apply-yau-323-crossdown-regrip.py
+          python tools/adjust-yau-regrip-rotation-cap.py
       - name: Syntax check
         run: |
           node --check solver/solver444.js
