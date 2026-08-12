@@ -9,6 +9,44 @@ function splitOuterMoves(sequence) {
     .map((token) => token.endsWith("2'") ? `${token[0]}2` : token);
 }
 
+function outerMoveTurnAmount(token) {
+  const normalized = String(token || "").trim();
+  if (!/^[URFDLB](2|'|2')?$/.test(normalized)) return null;
+  if (normalized.endsWith("2") || normalized.endsWith("2'")) return 2;
+  if (normalized.endsWith("'")) return 3;
+  return 1;
+}
+
+function outerMoveFromTurnAmount(face, amount) {
+  const normalized = ((Number(amount) % 4) + 4) % 4;
+  if (normalized === 0) return "";
+  if (normalized === 1) return face;
+  if (normalized === 2) return `${face}2`;
+  return `${face}'`;
+}
+
+function canonicalizeOuterMoves(moves) {
+  const canonical = [];
+  for (const token of moves) {
+    const amount = outerMoveTurnAmount(token);
+    if (amount === null) return null;
+    const face = token[0];
+    const previous = canonical[canonical.length - 1];
+    if (previous && previous[0] === face) {
+      const previousAmount = outerMoveTurnAmount(previous);
+      const combined = outerMoveFromTurnAmount(face, previousAmount + amount);
+      if (combined) {
+        canonical[canonical.length - 1] = combined;
+      } else {
+        canonical.pop();
+      }
+      continue;
+    }
+    canonical.push(outerMoveFromTurnAmount(face, amount));
+  }
+  return canonical;
+}
+
 function invertOuterMove(token) {
   const normalized = String(token || "").trim();
   if (!/^[URFDLB](2|'|2')?$/.test(normalized)) return "";
@@ -19,8 +57,8 @@ function invertOuterMove(token) {
 
 export function normalizeOuterAlgorithm(sequence) {
   const moves = splitOuterMoves(sequence);
-  if (moves.some((token) => !/^[URFDLB](2|'|2')?$/.test(token))) return "";
-  return moves.join(" ");
+  const canonical = canonicalizeOuterMoves(moves);
+  return canonical ? canonical.join(" ") : "";
 }
 
 export function invertOuterAlgorithm(sequence) {
@@ -32,7 +70,7 @@ export function invertOuterAlgorithm(sequence) {
     if (!inverted) return "";
     inverse.push(inverted);
   }
-  return inverse.join(" ");
+  return normalizeOuterAlgorithm(inverse.join(" "));
 }
 
 export function isSameOuterAlgorithm(left, right) {
