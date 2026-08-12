@@ -555,7 +555,19 @@ async function humanizeMappedYauStages444(publicScramble, sourceStages, crossCol
         (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
         0,
       );
-      const score = human.rotationCount * 100000 + tokenCount;
+      const ergonomicPenalty = human.segments.reduce((sum, segment) => {
+        for (const token of splitAlgorithm(segment?.solution)) {
+          if (/^[xyz](?:2|')?$/.test(token)) continue;
+          if (/^B/.test(token)) sum += 24;
+          else if (/^L/.test(token)) sum += 7;
+          if (/^Bw/.test(token)) sum += 12;
+          else if (/^Lw/.test(token)) sum += 4;
+        }
+        return sum;
+      }, 0);
+      // Rotations remain expensive, but one extra yaw is allowed to win when
+      // it removes a genuinely ugly block of B/L turns.
+      const score = human.rotationCount * 10000 + ergonomicPenalty * 100 + tokenCount;
       if (!bestYau || score < bestYau.score) bestYau = { ...human, score };
     }
     if (!bestYau) return fallback();
@@ -1181,20 +1193,36 @@ async function preferYauReduction444(
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
-  const cross4 = await edgeModule.solveTargetEdgeTypes444(
+  let cross4 = await edgeModule.solveYauCross4Natural444(
     publicScramble,
     beforeCross4,
     targetTypeMask,
     {
-      targetCount: 4,
       requiredTypeMask: cross3.lockedTypeMask,
-      alignSolved: true,
       deadlineTs,
-      maxMacros: 6,
-      enableRescue: options?.__yauFastFrameProbe !== true,
-      projectTargetState: options?.__yauFastFrameProbe === true,
+      timeBudgetMs: options?.__yauFastFrameProbe === true ? 500 : 1500,
     },
   );
+  const naturalCross4Applied = cross4?.ok === true;
+  const naturalCross4FallbackReason = naturalCross4Applied
+    ? null
+    : String(cross4?.reason || "444_YAU_HUMAN_CROSS4_NOT_FOUND");
+  if (!cross4?.ok) {
+    cross4 = await edgeModule.solveTargetEdgeTypes444(
+      publicScramble,
+      beforeCross4,
+      targetTypeMask,
+      {
+        targetCount: 4,
+        requiredTypeMask: cross3.lockedTypeMask,
+        alignSolved: true,
+        deadlineTs,
+        maxMacros: 6,
+        enableRescue: options?.__yauFastFrameProbe !== true,
+        projectTargetState: options?.__yauFastFrameProbe === true,
+      },
+    );
+  }
   if (!cross4?.ok) {
     return yauFailure444(reduction, "444_YAU_CROSS4_FAILED", cross4?.reason || cross4?.detail, deadlineTs);
   }
@@ -1371,6 +1399,9 @@ async function preferYauReduction444(
       yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
       yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
       yauCross4MoveCount: Number(cross4.moveCount) || 0,
+      yauCross4Method: String(cross4.method || "Yau Cross Edges"),
+      yauHumanCross4Applied: naturalCross4Applied,
+      yauNaturalCross4FallbackReason: naturalCross4FallbackReason,
       yauCross4SearchRescueUsed: cross4.searchRescueUsed === true,
       yauCross4SearchMaxMacros: Number(cross4.searchMaxMacros) || 0,
       yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
