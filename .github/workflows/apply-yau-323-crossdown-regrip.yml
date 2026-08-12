@@ -6,6 +6,7 @@ on:
     paths:
       - "tools/apply-yau-323-crossdown-regrip.py"
       - "tools/adjust-yau-regrip-rotation-cap.py"
+      - "tools/lock-yau-cross4-right-grip.py"
       - ".github/workflows/apply-yau-323-crossdown-regrip.yml"
 
 permissions:
@@ -25,6 +26,7 @@ jobs:
       - name: Apply grip-boundary patch
         run: |
           python tools/apply-yau-323-crossdown-regrip.py
+          python tools/lock-yau-cross4-right-grip.py
           python tools/adjust-yau-regrip-rotation-cap.py
       - name: Syntax check
         run: |
