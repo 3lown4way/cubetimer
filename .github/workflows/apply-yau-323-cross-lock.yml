@@ -1,0 +1,45 @@
+name: Apply Yau 3-2-3 cross lock
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/apply-yau-323-cross-lock.py"
+      - ".github/workflows/apply-yau-323-cross-lock.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply Yau cross-bank lock
+        run: python tools/apply-yau-323-cross-lock.py
+      - name: Verify syntax
+        run: |
+          node --check solver/solver444.js
+          node --check solver/edgePairing444.js
+          node --check tools/verify-444-yau.mjs
+          git diff --check
+      - name: Verify Yau and 3-2-3 regressions
+        run: |
+          node tools/verify-444-edge-323.mjs
+          node tools/verify-444-yau.mjs
+          node tools/verify-444-public-notation.mjs
+      - name: Commit implementation
+        run: |
+          rm -f tools/apply-yau-323-cross-lock.py .github/workflows/apply-yau-323-cross-lock.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add solver/solver444.js solver/edgePairing444.js tools/verify-444-yau.mjs tools/apply-yau-323-cross-lock.py .github/workflows/apply-yau-323-cross-lock.yml
+          git commit -m "Keep Yau cross paired through 3-2-3"
+          git push origin HEAD:main
