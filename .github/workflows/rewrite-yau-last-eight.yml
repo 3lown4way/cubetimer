@@ -11,6 +11,7 @@ on:
       - "tools/rewrite-yau-last-eight-v6.py"
       - "tools/rewrite-yau-last-eight-v7.py"
       - "tools/rewrite-yau-last-eight-v8.py"
+      - "tools/rewrite-yau-last-eight-v9.py"
       - ".github/workflows/rewrite-yau-last-eight.yml"
 
 permissions:
@@ -28,8 +29,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply instrumented Yau rewrite
-        run: python tools/rewrite-yau-last-eight-v8.py
+      - name: Apply Yau lookahead rewrite
+        run: python tools/rewrite-yau-last-eight-v9.py
       - name: Check syntax
         run: |
           node --check solver/solver444.js
