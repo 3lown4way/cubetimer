@@ -1,0 +1,23 @@
+name: Diagnose Yau ergonomics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/diag-yau-ergonomics.mjs"
+      - ".github/workflows/diag-yau-ergonomics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run ergonomics diagnostic
+        run: node tools/diag-yau-ergonomics.mjs
