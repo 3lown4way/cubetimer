@@ -4,11 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "tools/apply-yau-conjugated-safe-macros-v3.py"
       - ".github/workflows/apply-yau-323-cross-lock.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   patch:
@@ -22,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply conjugated Yau patch
+      - name: Apply verified cross lock
         run: python tools/apply-yau-conjugated-safe-macros-v3.py
       - name: Verify syntax
         run: |
@@ -35,3 +34,12 @@ jobs:
           node tools/verify-444-yau.mjs
           node tools/verify-444-edge-323.mjs
           node tools/verify-444-public-notation.mjs
+      - name: Commit implementation and clean diagnostics
+        run: |
+          rm -f tools/apply-yau-*.py .github/workflows/apply-yau-323-cross-lock.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Keep Yau cross paired through 3-2-3"
+          git push origin HEAD:main
