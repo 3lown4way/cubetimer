@@ -1,9 +1,16 @@
 import { FMC_EXTREME_PROFILE } from "../solver/fmcExtremeProfile.js";
 
 const FALLBACK_MARKER = /(?:FALLBACK|RETRY|EXTERNAL_CUBING_SEARCH)/i;
+const MINMOVE_TARGET_HTM = 18;
+const MINMOVE_MAX_HTM = 20;
 
 function normalizeAlgorithm(value) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).join(" ");
+}
+
+function countMoves(value) {
+  const normalized = normalizeAlgorithm(value);
+  return normalized ? normalized.split(" ").length : 0;
 }
 
 function invertMove(token) {
@@ -66,11 +73,23 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
     }
   }
   if (mode === "minmove") {
-    // MinMove is intentionally best-effort: a verified near-optimal HTM result
-    // is valid even when exact optimality was not proven within the time budget.
-    // Keep the anti-cheat policy focused on the literal inverse instead.
+    // MinMove is best-effort rather than proof-only, but the output contract is
+    // strict: target <=18 HTM, hard maximum <=20 HTM, and no literal inverse.
+    const normalizedSolution = normalizeAlgorithm(result?.solution);
+    const moveCount = Number.isFinite(Number(result?.moveCount))
+      ? Math.floor(Number(result.moveCount))
+      : countMoves(normalizedSolution);
+    if (!normalizedSolution || moveCount <= 0) {
+      return reject("MINMOVE_INVALID_RESULT");
+    }
+    if (moveCount > MINMOVE_MAX_HTM || countMoves(normalizedSolution) > MINMOVE_MAX_HTM) {
+      return reject("MINMOVE_OVER_20_REJECTED");
+    }
+    if (result?.targetReached === true && moveCount > MINMOVE_TARGET_HTM) {
+      return reject("MINMOVE_TARGET_FLAG_MISMATCH");
+    }
     const inverse = invertBenchmarkScramble(scramble);
-    if (inverse && normalizeAlgorithm(result?.solution) === inverse) {
+    if (inverse && normalizedSolution === inverse) {
       return reject("MINMOVE_TRIVIAL_INVERSE_REJECTED");
     }
   }
