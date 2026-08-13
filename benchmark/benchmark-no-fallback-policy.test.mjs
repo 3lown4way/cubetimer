@@ -30,11 +30,41 @@ assert.equal(enforceBenchmarkNoFallback({
 }).reason, "BENCHMARK_METHOD_SOURCE_MISMATCH");
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "minmove" },
-  result: { ok: true, source: "MINMOVE_333_WASM", optimalityProven: false },
-}).reason, "MINMOVE_UNPROVEN_RESULT_REJECTED");
+  scramble: "R U2 F'",
+  result: {
+    ok: true,
+    source: "MINMOVE_333_BEST_EFFORT",
+    proofSource: "best_effort_twophase",
+    optimalityProven: false,
+    approximate: true,
+    solution: "R U R'",
+    moveCount: 3,
+  },
+}).ok, true);
 assert.equal(enforceBenchmarkNoFallback({
   config: { mode: "minmove" },
-  result: { ok: true, source: "MINMOVE_333_WASM", proofSource: "exact_search", optimalityProven: true },
+  scramble: "R U2 F'",
+  result: {
+    ok: true,
+    source: "MINMOVE_333_BEST_EFFORT",
+    proofSource: "best_effort_twophase",
+    optimalityProven: false,
+    approximate: true,
+    solution: "F U2 R'",
+    moveCount: 3,
+  },
+}).reason, "MINMOVE_TRIVIAL_INVERSE_REJECTED");
+assert.equal(enforceBenchmarkNoFallback({
+  config: { mode: "minmove" },
+  scramble: "R U2 F'",
+  result: {
+    ok: true,
+    source: "MINMOVE_333_WASM",
+    proofSource: "exact_search",
+    optimalityProven: true,
+    solution: "R U R'",
+    moveCount: 3,
+  },
 }).ok, true);
 
 assert.equal(enforceBenchmarkNoFallback({
