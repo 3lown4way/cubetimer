@@ -43,13 +43,16 @@ assert.match(workerSource, /excludedSolution:\s*countAlgorithmMoves\(scramble\)\
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*searched\.solution\)/);
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*solution\)/);
 
-// MinMove is intentionally best-effort now: exact proof is optional, but a
-// successful result must be valid and must not be the literal inverse.
+// MinMove is best-effort: exact proof is optional, target is 18 HTM, hard cap
+// is 20 HTM, and literal/canonical inverse output is always forbidden.
 const minmoveSource = fs.readFileSync(new URL("./solver/minmoveExactV2.js", import.meta.url), "utf8");
-assert.match(minmoveSource, /DEFAULT_APPROX_SLACK\s*=\s*4/);
+assert.match(minmoveSource, /const TARGET_HTM = 18;/);
+assert.match(minmoveSource, /const MAX_RETURN_HTM = 20;/);
+assert.match(minmoveSource, /candidateLength > MAX_RETURN_HTM/);
 assert.match(minmoveSource, /MINMOVE_333_BEST_EFFORT/);
 assert.match(minmoveSource, /approximate:\s*meta\.optimalityProven\s*!==\s*true/);
 assert.match(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
+assert.match(minmoveSource, /MINMOVE_NO_SOLUTION_WITHIN_20/);
 assert.doesNotMatch(minmoveSource, /reason:\s*"MINMOVE_NOT_PROVEN"/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {
@@ -75,10 +78,12 @@ const minmove = await solveMinmoveExactV2(SCRAMBLE, null, {
   timeBudgetMs: MINMOVE_CONTRACT_BUDGET_MS,
 });
 
-const inverseMoveCount = inverse.split(/\s+/).filter(Boolean).length;
 if (minmove?.ok) {
   assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "MinMove returned literal inverse");
-  assert.ok(Number(minmove.moveCount) <= inverseMoveCount + 8, "MinMove best-effort result exceeded relaxed ceiling");
+  assert.ok(Number(minmove.moveCount) >= 1 && Number(minmove.moveCount) <= 20, "MinMove escaped the 20 HTM hard cap");
+  assert.equal(minmove.targetMoveCount, 18, "MinMove target metadata changed");
+  assert.equal(minmove.maxMoveCount, 20, "MinMove cap metadata changed");
+  assert.equal(minmove.targetReached, Number(minmove.moveCount) <= 18, "MinMove targetReached metadata mismatch");
   assert.equal(typeof minmove.optimalityProven, "boolean", "MinMove proof metadata missing");
   if (!minmove.optimalityProven) {
     assert.equal(minmove.approximate, true, "unproven best-effort result was not marked approximate");
@@ -87,7 +92,7 @@ if (minmove?.ok) {
   assert.equal(minmoveVerification?.solved, true, "MinMove regression solution is invalid");
 } else {
   assert.ok(
-    ["MINMOVE_NO_NONINVERSE_SOLUTION", "MINMOVE_TWOPHASE_UNAVAILABLE"].includes(minmove?.reason),
+    ["MINMOVE_NO_SOLUTION_WITHIN_20", "MINMOVE_TWOPHASE_UNAVAILABLE"].includes(minmove?.reason),
     `unexpected MinMove failure: ${minmove?.reason || "unknown"}`,
   );
   assert.equal(minmove?.solution, "", "failed MinMove leaked a public solution");
@@ -106,6 +111,9 @@ console.log(JSON.stringify({
     reason: minmove.reason || null,
     solution: minmove.solution || "",
     moveCount: minmove.moveCount || 0,
+    targetMoveCount: minmove.targetMoveCount || 18,
+    maxMoveCount: minmove.maxMoveCount || 20,
+    targetReached: minmove.targetReached === true,
     approximate: minmove.approximate === true,
     optimalityProven: minmove.optimalityProven === true,
     proofSource: minmove.proofSource || null,
