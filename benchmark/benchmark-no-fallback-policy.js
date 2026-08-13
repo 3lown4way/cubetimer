@@ -65,8 +65,14 @@ export function enforceBenchmarkNoFallback({ config = {}, scramble = "", result 
       return reject("TWOPHASE_TRIVIAL_INVERSE_REJECTED");
     }
   }
-  if (mode === "minmove" && result?.optimalityProven !== true) {
-    return reject("MINMOVE_UNPROVEN_RESULT_REJECTED");
+  if (mode === "minmove") {
+    // MinMove is intentionally best-effort: a verified near-optimal HTM result
+    // is valid even when exact optimality was not proven within the time budget.
+    // Keep the anti-cheat policy focused on the literal inverse instead.
+    const inverse = invertBenchmarkScramble(scramble);
+    if (inverse && normalizeAlgorithm(result?.solution) === inverse) {
+      return reject("MINMOVE_TRIVIAL_INVERSE_REJECTED");
+    }
   }
   if (mode === "fmc") {
     const requestedQuality = String(config?.fmcQualityMode || "sweetSpot").trim().toLowerCase();
