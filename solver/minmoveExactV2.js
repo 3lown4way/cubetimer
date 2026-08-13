@@ -13,42 +13,22 @@ import {
   verifyFmcSolutionWasm,
 } from "./wasmSolver.js";
 
-const DEFAULT_TIME_BUDGET_MS = 90_000;
+const DEFAULT_TIME_BUDGET_MS = 60_000;
+const DEFAULT_APPROX_SLACK = 4;
+const DEFAULT_GOOD_ENOUGH_SLACK = 2;
+const DEFAULT_SEED_BUDGET_MS = 14_000;
+const DEFAULT_IMPROVEMENT_BUDGET_MS = 16_000;
+
 const DEFAULT_SEED_CONFIGS = [
   { maxPhase1Solutions: 96, phase1MaxDepth: 15, phase1NodeLimit: 2_000_000, phase2NodeLimit: 12_000_000 },
   { maxPhase1Solutions: 384, phase1MaxDepth: 18, phase1NodeLimit: 8_000_000, phase2NodeLimit: 40_000_000 },
   { maxPhase1Solutions: 768, phase1MaxDepth: 18, phase1NodeLimit: 16_000_000, phase2NodeLimit: 80_000_000 },
 ];
-const DEFAULT_EXACT_PROFILES = [
+
+const DEFAULT_IMPROVEMENT_PROFILES = [
   { phase1NodeLimit: 1_000_000, phase2NodeLimit: 8_000_000 },
   { phase1NodeLimit: 4_000_000, phase2NodeLimit: 32_000_000 },
-  { phase1NodeLimit: 16_000_000, phase2NodeLimit: 128_000_000 },
 ];
-const DEADLINE_ONLY_EXACT_PROFILE = Object.freeze({
-  phase1NodeLimit: 0,
-  phase2NodeLimit: 0,
-  deadlineOnly: true,
-});
-
-function normalizeNodeLimit(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
-}
-
-function buildExactProfiles(configuredProfiles, useFullProofBudget) {
-  const profiles = configuredProfiles.map((profile) => ({
-    phase1NodeLimit: normalizeNodeLimit(profile?.phase1NodeLimit),
-    phase2NodeLimit: normalizeNodeLimit(profile?.phase2NodeLimit),
-    deadlineOnly: profile?.deadlineOnly === true,
-  }));
-  if (
-    useFullProofBudget
-    && !profiles.some((profile) => profile.phase1NodeLimit === 0 && profile.phase2NodeLimit === 0)
-  ) {
-    profiles.push({ ...DEADLINE_ONLY_EXACT_PROFILE });
-  }
-  return profiles;
-}
 
 function splitMoves(sequence) {
   return String(sequence || "")
@@ -105,13 +85,16 @@ async function verifySolution(scramble, solution) {
 
 async function findTwoPhaseSeed(
   scramble,
-  incumbentLength,
+  ceilingLength,
   seedConfigs,
   excludedSolution = "",
   deadlineTs = null,
 ) {
   const normalizedExcluded = normalizeOuterAlgorithm(excludedSolution);
+  let best = null;
+
   for (const config of seedConfigs) {
+    if (Number.isFinite(deadlineTs) && Date.now() >= deadlineTs) break;
     let searchId = null;
     try {
       const prepared = await prepareTwophase333(scramble, {
@@ -122,20 +105,23 @@ async function findTwoPhaseSeed(
       });
       if (!prepared?.ok || !Number.isFinite(prepared.searchId)) continue;
       searchId = prepared.searchId;
+
       const searched = await searchTwophase333(searchId, {
-        incumbentLength,
+        incumbentLength: ceilingLength,
         excludedSolution: normalizedExcluded || undefined,
         strictIncumbent: false,
         phase2MaxDepth: 20,
         phase2NodeLimit: config.phase2NodeLimit,
         ...(Number.isFinite(deadlineTs) ? { deadlineTs } : {}),
       });
-      if (searched?.ok && typeof searched.solution === "string") {
-        const normalizedSolution = normalizeOuterAlgorithm(searched.solution);
-        const candidateLength = splitMoves(normalizedSolution).length;
-        if (!normalizedSolution) continue;
-        if (normalizedExcluded && normalizedSolution === normalizedExcluded) continue;
-        return {
+
+      if (!searched?.ok || typeof searched.solution !== "string") continue;
+      const normalizedSolution = normalizeOuterAlgorithm(searched.solution);
+      const candidateLength = splitMoves(normalizedSolution).length;
+      if (!normalizedSolution || candidateLength > ceilingLength) continue;
+      if (normalizedExcluded && normalizedSolution === normalizedExcluded) continue;
+      if (!best || candidateLength < best.moveCount) {
+        best = {
           ...searched,
           solution: normalizedSolution,
           moveCount: candidateLength,
@@ -149,54 +135,48 @@ async function findTwoPhaseSeed(
       }
     }
   }
-  return null;
+
+  return best;
 }
 
-function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
+function approximateResult(solution, moveCount, meta = {}) {
   return {
-    ok: false,
-    reason: "MINMOVE_NOT_PROVEN",
-    solution: "",
-    moveCount: 0,
-    candidateSolution,
-    candidateMoveCount,
+    ok: true,
+    solution,
+    moveCount,
     nodes: Number.isFinite(meta.nodes) ? meta.nodes : 0,
-    bound: Number.isFinite(meta.bound) ? meta.bound : Math.max(0, candidateMoveCount - 1),
-    source: "MINMOVE_333_EXACT_TWOPHASE_V2",
+    bound: moveCount,
+    source: "MINMOVE_333_BEST_EFFORT",
     metric: "HTM",
-    optimalityProven: false,
-    upperBoundLength: candidateMoveCount,
-    proofSource: "exact_twophase_incomplete",
+    optimalityProven: meta.optimalityProven === true,
+    approximate: meta.optimalityProven !== true,
+    upperBoundLength: moveCount,
+    inverseUpperBoundLength: Number.isFinite(meta.inverseUpperBoundLength)
+      ? meta.inverseUpperBoundLength
+      : null,
+    proofSource: meta.optimalityProven === true
+      ? "exact_twophase_exhaustion"
+      : "best_effort_twophase",
     fallbackReason: null,
-    interruptedReason: meta.interruptedReason ? String(meta.interruptedReason) : null,
+    seedSource: meta.seedSource || "twophase_seed",
     proofAttempts: Number.isFinite(meta.proofAttempts) ? Math.max(0, Math.floor(meta.proofAttempts)) : 0,
     timeBudgetMs: Number.isFinite(meta.timeBudgetMs) ? Math.max(0, Math.floor(meta.timeBudgetMs)) : 0,
-    budgetExhausted: meta.budgetExhausted === true,
     elapsedMs: Number.isFinite(meta.elapsedMs) ? meta.elapsedMs : 0,
   };
 }
 
-function provenLengthWithoutOutputResult(optimalMoveCount, meta = {}) {
+function failureResult(reason, meta = {}) {
   return {
     ok: false,
-    reason: "MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND",
+    reason,
     solution: "",
     moveCount: 0,
-    candidateSolution: "",
-    candidateMoveCount: optimalMoveCount,
     nodes: Number.isFinite(meta.nodes) ? meta.nodes : 0,
-    bound: optimalMoveCount,
-    source: "MINMOVE_333_EXACT_TWOPHASE_V2",
+    source: "MINMOVE_333_BEST_EFFORT",
     metric: "HTM",
-    optimalityProven: true,
-    optimalMoveCount,
-    upperBoundLength: optimalMoveCount,
-    proofSource: "exact_twophase_exhaustion",
+    optimalityProven: false,
+    approximate: true,
     fallbackReason: null,
-    interruptedReason: meta.interruptedReason ? String(meta.interruptedReason) : null,
-    proofAttempts: Number.isFinite(meta.proofAttempts) ? Math.max(0, Math.floor(meta.proofAttempts)) : 0,
-    timeBudgetMs: Number.isFinite(meta.timeBudgetMs) ? Math.max(0, Math.floor(meta.timeBudgetMs)) : 0,
-    budgetExhausted: meta.budgetExhausted === true,
     elapsedMs: Number.isFinite(meta.elapsedMs) ? meta.elapsedMs : 0,
   };
 }
@@ -205,47 +185,53 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const normalizedScramble = splitMoves(scramble).join(" ");
   const inverseScramble = invertAlgorithm(normalizedScramble);
   if (!normalizedScramble || !inverseScramble) {
-    return { ok: false, reason: "MINMOVE_BAD_SCRAMBLE" };
+    return failureResult("MINMOVE_BAD_SCRAMBLE");
   }
 
   const startedAt = Date.now();
   const timeBudgetMs = Number.isFinite(Number(options.timeBudgetMs))
     ? Math.max(1_000, Math.floor(Number(options.timeBudgetMs)))
     : DEFAULT_TIME_BUDGET_MS;
-  const deadlineTs = startedAt + timeBudgetMs;
+  const globalDeadlineTs = startedAt + timeBudgetMs;
+
+  const approxSlack = Number.isFinite(Number(options.approxSlack))
+    ? Math.max(0, Math.floor(Number(options.approxSlack)))
+    : DEFAULT_APPROX_SLACK;
+  const goodEnoughSlack = Number.isFinite(Number(options.goodEnoughSlack))
+    ? Math.max(0, Math.floor(Number(options.goodEnoughSlack)))
+    : DEFAULT_GOOD_ENOUGH_SLACK;
   const seedConfigs = Array.isArray(options.seedConfigs) && options.seedConfigs.length
     ? options.seedConfigs
     : DEFAULT_SEED_CONFIGS;
-  const configuredExactProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
+  const improvementProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
     ? options.exactProfiles
-    : DEFAULT_EXACT_PROFILES;
-  const useFullProofBudget = options.useFullProofBudget !== false;
-  const exactProfiles = buildExactProfiles(configuredExactProfiles, useFullProofBudget);
+    : DEFAULT_IMPROVEMENT_PROFILES;
 
   const ready = await ensureTwophase333Ready().catch(() => null);
-  if (!ready) return { ok: false, reason: "MINMOVE_TWOPHASE_UNAVAILABLE" };
+  if (!ready) return failureResult("MINMOVE_TWOPHASE_UNAVAILABLE");
 
   const inverseUpperBoundLength = splitMoves(inverseScramble).length;
   const rejectLiteralInverse = inverseUpperBoundLength > LITERAL_INVERSE_EXEMPT_MOVE_COUNT;
+  const practicalCeiling = inverseUpperBoundLength + approxSlack;
+  const seedDeadlineTs = Math.min(
+    globalDeadlineTs,
+    startedAt + Math.min(DEFAULT_SEED_BUDGET_MS, Math.max(4_000, Math.floor(timeBudgetMs * 0.45))),
+  );
 
-  // The literal inverse is a valid mathematical HTM upper bound, but for normal
-  // MinMove scrambles it is proof metadata only. It must never leak into public
-  // solver output; a displayable non-inverse solution is tracked separately.
-  let incumbentSolution = inverseScramble;
-  let incumbentLength = inverseUpperBoundLength;
-  let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound" : "short_inverse_exception";
-  let displaySolution = rejectLiteralInverse ? "" : inverseScramble;
-  let displaySource = rejectLiteralInverse ? "" : "short_inverse_exception";
+  let bestSolution = rejectLiteralInverse ? "" : inverseScramble;
+  let bestMoveCount = bestSolution ? inverseUpperBoundLength : Number.POSITIVE_INFINITY;
+  let bestSource = bestSolution ? "short_inverse_exception" : "";
   let totalNodes = 0;
   let proofAttempts = 0;
 
   emitProgress(onProgress, {
     type: "upper_bound_start",
-    stageName: "Exact minmove v2 seed",
-    upperBoundLength: incumbentLength,
+    stageName: "MinMove HTM best effort",
+    inverseUpperBoundLength,
+    practicalCeiling,
   });
 
-  for (const direction of [
+  const directions = [
     {
       scramble: normalizedScramble,
       invert: false,
@@ -258,279 +244,199 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       source: "inverse_twophase_seed",
       excludedSolution: rejectLiteralInverse ? normalizedScramble : "",
     },
-  ]) {
-    if (Date.now() >= deadlineTs) break;
+  ];
+
+  for (const direction of directions) {
+    if (Date.now() >= seedDeadlineTs) break;
     const seed = await findTwoPhaseSeed(
       direction.scramble,
-      incumbentLength,
+      practicalCeiling,
       seedConfigs,
       direction.excludedSolution,
-      deadlineTs,
+      seedDeadlineTs,
     );
     if (!seed?.ok || typeof seed.solution !== "string") continue;
+
     totalNodes += Number.isFinite(seed.nodes) ? seed.nodes : 0;
-    const candidateSolution = direction.invert ? invertAlgorithm(seed.solution) : seed.solution.trim();
+    const candidateSolution = normalizeOuterAlgorithm(
+      direction.invert ? invertAlgorithm(seed.solution) : seed.solution,
+    );
     const candidateLength = splitMoves(candidateSolution).length;
-    if (!candidateSolution || candidateLength > incumbentLength) continue;
+    if (!candidateSolution || candidateLength > practicalCeiling) continue;
     if (shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)) continue;
     if (!(await verifySolution(normalizedScramble, candidateSolution))) continue;
-    incumbentSolution = candidateSolution;
-    incumbentLength = candidateLength;
-    incumbentSource = direction.source;
-    displaySolution = candidateSolution;
-    displaySource = direction.source;
+
+    if (candidateLength < bestMoveCount) {
+      bestSolution = candidateSolution;
+      bestMoveCount = candidateLength;
+      bestSource = direction.source;
+      emitProgress(onProgress, {
+        type: "exact_search_improved",
+        moveCount: bestMoveCount,
+        nodes: totalNodes,
+        approximate: true,
+      });
+    }
   }
 
-  if (!(await verifySolution(normalizedScramble, incumbentSolution))) {
-    return { ok: false, reason: "MINMOVE_SEED_INVALID" };
+  if (
+    bestSolution
+    && bestMoveCount <= inverseUpperBoundLength + goodEnoughSlack
+    && !shouldRejectLiteralInverseSolution(normalizedScramble, bestSolution)
+  ) {
+    return approximateResult(bestSolution, bestMoveCount, {
+      nodes: totalNodes,
+      inverseUpperBoundLength,
+      seedSource: bestSource,
+      proofAttempts,
+      timeBudgetMs,
+      elapsedMs: Date.now() - startedAt,
+    });
   }
 
-  emitProgress(onProgress, {
-    type: "upper_bound_done",
-    upperBoundLength: incumbentLength,
-    upperBoundSource: incumbentSource,
-  });
-  emitProgress(onProgress, {
-    type: "exact_search_start",
-    upperBoundLength: incumbentLength,
-    proofEngine: "exact_twophase_v2",
-  });
+  // Spend a bounded amount of time looking below the known inverse upper bound.
+  // This is an improvement pass, not a requirement for returning a usable result.
+  const improvementDeadlineTs = Math.min(
+    globalDeadlineTs,
+    Date.now() + Math.min(DEFAULT_IMPROVEMENT_BUDGET_MS, Math.max(3_000, Math.floor(timeBudgetMs * 0.35))),
+  );
+  let targetBound = Math.max(0, Math.min(
+    inverseUpperBoundLength - 1,
+    Number.isFinite(bestMoveCount) ? bestMoveCount - 1 : inverseUpperBoundLength - 1,
+  ));
+  let lastExhaustedBound = null;
 
-  while (incumbentLength > 0 && Date.now() < deadlineTs) {
-    const targetBound = incumbentLength - 1;
-    let exhausted = false;
+  while (targetBound >= 0 && Date.now() < improvementDeadlineTs) {
     let improved = false;
-    let lastReason = "";
+    let exhausted = false;
 
     emitProgress(onProgress, {
       type: "bound_update",
       bound: targetBound,
-      upperBoundLength: incumbentLength,
+      upperBoundLength: Number.isFinite(bestMoveCount) ? bestMoveCount : practicalCeiling,
       nodes: totalNodes,
     });
 
-    for (let profileIndex = 0; profileIndex < exactProfiles.length; profileIndex += 1) {
-      if (Date.now() >= deadlineTs) break;
-      const profile = exactProfiles[profileIndex];
+    for (const profile of improvementProfiles) {
+      if (Date.now() >= improvementDeadlineTs) break;
       proofAttempts += 1;
-      emitProgress(onProgress, {
-        type: "proof_profile_start",
-        bound: targetBound,
-        profileIndex,
-        phase1NodeLimit: profile.phase1NodeLimit,
-        phase2NodeLimit: profile.phase2NodeLimit,
-        deadlineOnly: profile.deadlineOnly === true,
-        remainingMs: Math.max(0, deadlineTs - Date.now()),
-      });
-
       const searched = await searchTwophaseExact333(normalizedScramble, {
         maxTotalDepth: targetBound,
         excludedSolution: rejectLiteralInverse ? inverseScramble : undefined,
-        phase1NodeLimit: profile.phase1NodeLimit,
-        phase2NodeLimit: profile.phase2NodeLimit,
-        deadlineTs,
+        phase1NodeLimit: Number.isFinite(Number(profile?.phase1NodeLimit))
+          ? Math.max(0, Math.floor(Number(profile.phase1NodeLimit)))
+          : 0,
+        phase2NodeLimit: Number.isFinite(Number(profile?.phase2NodeLimit))
+          ? Math.max(0, Math.floor(Number(profile.phase2NodeLimit)))
+          : 0,
+        deadlineTs: improvementDeadlineTs,
       }).catch(() => null);
-      const searchedReason = searched?.reason || "MINMOVE_EXACT_SEARCH_FAILED";
-      const searchedNodes = Number.isFinite(searched?.nodes) ? searched.nodes : 0;
-      totalNodes += searchedNodes;
-      const timedOut = searched?.timedOut === true || searchedReason === "TWOPHASE_DEADLINE_REACHED";
-      if (timedOut) {
-        lastReason = "TWOPHASE_DEADLINE_REACHED";
-        emitProgress(onProgress, {
-          type: "proof_profile_done",
-          bound: targetBound,
-          profileIndex,
-          status: "timeout",
-          reason: lastReason,
-          nodes: searchedNodes,
-        });
-        break;
-      }
-      if (!searched?.ok) {
-        lastReason = searchedReason;
-        emitProgress(onProgress, {
-          type: "proof_profile_done",
-          bound: targetBound,
-          profileIndex,
-          status: "failed",
-          reason: lastReason,
-          nodes: searchedNodes,
-        });
-        continue;
-      }
+
+      totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
+      if (!searched?.ok) continue;
+
       if (searched.found && typeof searched.solution === "string") {
         const candidateSolution = normalizeOuterAlgorithm(searched.solution);
         const candidateLength = splitMoves(candidateSolution).length;
         if (
           candidateSolution
           && candidateLength <= targetBound
-          && candidateLength < incumbentLength
           && !shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)
           && await verifySolution(normalizedScramble, candidateSolution)
         ) {
-          incumbentSolution = candidateSolution;
-          incumbentLength = candidateLength;
-          incumbentSource = "exact_twophase_bound";
-          displaySolution = candidateSolution;
-          displaySource = "exact_twophase_bound";
+          bestSolution = candidateSolution;
+          bestMoveCount = candidateLength;
+          bestSource = "exact_twophase_improvement";
           improved = true;
           emitProgress(onProgress, {
-            type: "proof_profile_done",
-            bound: targetBound,
-            profileIndex,
-            status: "improved",
-            moveCount: incumbentLength,
-            nodes: searchedNodes,
-          });
-          emitProgress(onProgress, {
             type: "exact_search_improved",
-            moveCount: incumbentLength,
-            bound: targetBound,
+            moveCount: bestMoveCount,
             nodes: totalNodes,
+            approximate: true,
           });
           break;
         }
-        return { ok: false, reason: "MINMOVE_EXACT_RESULT_INVALID" };
       }
 
-      if (!searched.interrupted) {
+      if (!searched.interrupted && !searched.found) {
         exhausted = true;
-        emitProgress(onProgress, {
-          type: "proof_profile_done",
-          bound: targetBound,
-          profileIndex,
-          status: "exhausted",
-          nodes: searchedNodes,
-        });
+        lastExhaustedBound = targetBound;
         break;
       }
-      lastReason = searchedReason || "MINMOVE_EXACT_SEARCH_LIMIT";
-      emitProgress(onProgress, {
-        type: "proof_profile_done",
-        bound: targetBound,
-        profileIndex,
-        status: "interrupted",
-        reason: lastReason,
-        nodes: searchedNodes,
-      });
     }
 
-    if (improved) continue;
-    if (exhausted) {
-      // Exhausting incumbentLength - 1 proves the optimal HTM length. If the
-      // proof incumbent is still the literal inverse, recover a different
-      // solution at that proven length before exposing anything to the UI.
-      if (rejectLiteralInverse && (!displaySolution || splitMoves(displaySolution).length !== incumbentLength)) {
-        emitProgress(onProgress, {
-          type: "noninverse_recovery_start",
-          moveCount: incumbentLength,
-          remainingMs: Math.max(0, deadlineTs - Date.now()),
-        });
-
-        for (let profileIndex = 0; profileIndex < exactProfiles.length; profileIndex += 1) {
-          if (Date.now() >= deadlineTs) break;
-          const profile = exactProfiles[profileIndex];
-          proofAttempts += 1;
-          const recovered = await searchTwophaseExact333(normalizedScramble, {
-            maxTotalDepth: incumbentLength,
-            excludedSolution: inverseScramble,
-            phase1NodeLimit: profile.phase1NodeLimit,
-            phase2NodeLimit: profile.phase2NodeLimit,
-            deadlineTs,
-          }).catch(() => null);
-          const recoveredNodes = Number.isFinite(recovered?.nodes) ? recovered.nodes : 0;
-          totalNodes += recoveredNodes;
-          if (recovered?.found && typeof recovered.solution === "string") {
-            const candidateSolution = normalizeOuterAlgorithm(recovered.solution);
-            const candidateLength = splitMoves(candidateSolution).length;
-            if (
-              candidateSolution
-              && candidateLength === incumbentLength
-              && !shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)
-              && await verifySolution(normalizedScramble, candidateSolution)
-            ) {
-              displaySolution = candidateSolution;
-              displaySource = "exact_twophase_noninverse_recovery";
-              break;
-            }
-            if (candidateSolution && shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)) {
-              continue;
-            }
-          }
-          const recoveredReason = recovered?.reason || "";
-          if (recovered?.timedOut === true || recoveredReason === "TWOPHASE_DEADLINE_REACHED") {
-            lastReason = "TWOPHASE_DEADLINE_REACHED";
-            break;
-          }
-          if (recovered?.ok && !recovered.interrupted && !recovered.found) {
-            lastReason = "MINMOVE_NO_NONINVERSE_OPTIMAL_SOLUTION";
-            break;
-          }
-        }
-      }
-
-      const elapsedMs = Date.now() - startedAt;
-      if (rejectLiteralInverse && (!displaySolution || shouldRejectLiteralInverseSolution(normalizedScramble, displaySolution))) {
-        return provenLengthWithoutOutputResult(incumbentLength, {
-          nodes: totalNodes,
-          interruptedReason: lastReason || "MINMOVE_NONINVERSE_RECOVERY_INCOMPLETE",
-          proofAttempts,
-          timeBudgetMs,
-          budgetExhausted: Date.now() >= deadlineTs || lastReason === "TWOPHASE_DEADLINE_REACHED",
-          elapsedMs,
-        });
-      }
-
-      if (!(await verifySolution(normalizedScramble, displaySolution))) {
-        return { ok: false, reason: "MINMOVE_DISPLAY_SOLUTION_INVALID" };
-      }
-      if (shouldRejectLiteralInverseSolution(normalizedScramble, displaySolution)) {
-        return { ok: false, reason: "MINMOVE_LITERAL_INVERSE_REJECTED" };
-      }
-
-      emitProgress(onProgress, {
-        type: "optimality_proven",
-        moveCount: incumbentLength,
-        proofSource: "exact_twophase_exhaustion",
-        nodes: totalNodes,
-      });
-      return {
-        ok: true,
-        solution: displaySolution,
-        moveCount: incumbentLength,
-        nodes: totalNodes,
-        bound: incumbentLength,
-        source: "MINMOVE_333_EXACT_TWOPHASE_V2",
-        metric: "HTM",
-        optimalityProven: true,
-        upperBoundLength: incumbentLength,
-        proofSource: "exact_twophase_exhaustion",
-        fallbackReason: null,
-        seedSource: displaySource || incumbentSource,
-        proofAttempts,
-        timeBudgetMs,
-        elapsedMs,
-      };
+    if (improved) {
+      if (bestMoveCount <= inverseUpperBoundLength + goodEnoughSlack) break;
+      targetBound = Math.max(0, bestMoveCount - 1);
+      continue;
     }
+    if (exhausted) break;
+    break;
+  }
 
-    return notProvenResult(incumbentSolution, incumbentLength, {
+  // If the tight search found nothing displayable, deliberately relax the
+  // ceiling. A near-minimal non-inverse solution is better than MINMOVE_NOT_PROVEN.
+  if (!bestSolution && Date.now() < globalDeadlineTs) {
+    const relaxedCeiling = inverseUpperBoundLength + Math.max(approxSlack + 4, 8);
+    const relaxed = await findTwoPhaseSeed(
+      normalizedScramble,
+      relaxedCeiling,
+      seedConfigs,
+      rejectLiteralInverse ? inverseScramble : "",
+      globalDeadlineTs,
+    );
+    if (relaxed?.ok && typeof relaxed.solution === "string") {
+      totalNodes += Number.isFinite(relaxed.nodes) ? relaxed.nodes : 0;
+      const candidateSolution = normalizeOuterAlgorithm(relaxed.solution);
+      const candidateLength = splitMoves(candidateSolution).length;
+      if (
+        candidateSolution
+        && !shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)
+        && await verifySolution(normalizedScramble, candidateSolution)
+      ) {
+        bestSolution = candidateSolution;
+        bestMoveCount = candidateLength;
+        bestSource = "relaxed_twophase_seed";
+      }
+    }
+  }
+
+  if (!bestSolution) {
+    return failureResult("MINMOVE_NO_NONINVERSE_SOLUTION", {
       nodes: totalNodes,
-      bound: targetBound,
-      interruptedReason: lastReason || "MINMOVE_EXACT_SEARCH_LIMIT",
-      proofAttempts,
-      timeBudgetMs,
-      budgetExhausted: Date.now() >= deadlineTs || lastReason === "TWOPHASE_DEADLINE_REACHED",
+      elapsedMs: Date.now() - startedAt,
+    });
+  }
+  if (shouldRejectLiteralInverseSolution(normalizedScramble, bestSolution)) {
+    return failureResult("MINMOVE_LITERAL_INVERSE_REJECTED", {
+      nodes: totalNodes,
+      elapsedMs: Date.now() - startedAt,
+    });
+  }
+  if (!(await verifySolution(normalizedScramble, bestSolution))) {
+    return failureResult("MINMOVE_DISPLAY_SOLUTION_INVALID", {
+      nodes: totalNodes,
       elapsedMs: Date.now() - startedAt,
     });
   }
 
-  return notProvenResult(incumbentSolution, incumbentLength, {
+  const optimalityProven = Number.isFinite(lastExhaustedBound)
+    && bestMoveCount === lastExhaustedBound + 1;
+
+  emitProgress(onProgress, {
+    type: optimalityProven ? "optimality_proven" : "best_effort_done",
+    moveCount: bestMoveCount,
+    optimalityProven,
     nodes: totalNodes,
-    bound: Math.max(0, incumbentLength - 1),
-    interruptedReason: "MINMOVE_EXACT_TIMEOUT",
+  });
+
+  return approximateResult(bestSolution, bestMoveCount, {
+    nodes: totalNodes,
+    inverseUpperBoundLength,
+    seedSource: bestSource,
     proofAttempts,
     timeBudgetMs,
-    budgetExhausted: true,
     elapsedMs: Date.now() - startedAt,
+    optimalityProven,
   });
 }
