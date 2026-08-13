@@ -33,17 +33,21 @@ if (worker.includes("TWOPHASE_TRIVIAL_INVERSE_REJECTED")) {
   throw new Error("worker still rejects trivial inverse after search completion");
 }
 for (const token of [
-  'reason: "MINMOVE_NOT_PROVEN"',
-  'solution: ""',
-  "optimalityProven: false",
-  "optimalityProven: true",
-  'proofSource: "exact_twophase_exhaustion"',
-  "fallbackReason: null",
+  'source: "MINMOVE_333_BEST_EFFORT"',
+  'metric: "HTM"',
+  "optimalityProven: meta.optimalityProven === true",
+  "approximate: meta.optimalityProven !== true",
+  'proofSource: "best_effort_twophase"',
+  "DEFAULT_APPROX_SLACK",
+  "shouldRejectLiteralInverseSolution",
 ]) {
-  if (!minmoveExactV2.includes(token)) throw new Error(`exact minmove v2 contract token missing: ${token}`);
+  if (!minmoveExactV2.includes(token)) throw new Error(`best-effort minmove contract token missing: ${token}`);
+}
+if (minmoveExactV2.includes('reason: "MINMOVE_NOT_PROVEN"')) {
+  throw new Error("best-effort minmove still rejects unproven usable results");
 }
 if (minmoveExactV2.includes("MINMOVE_FALLBACK_RESULT_REJECTED")) {
-  throw new Error("exact minmove v2 still depends on fallback-success rejection");
+  throw new Error("best-effort minmove still depends on fallback-success rejection");
 }
 if ((worker.match(/enableRecovery: !benchmarkNoFallback,/g) || []).length !== 2) {
   throw new Error("Roux benchmark recovery is not disabled on both attempts");
@@ -143,4 +147,4 @@ for (const token of [
 if (!fmcSolver.includes("unlimitedTimeBudget")) {
   throw new Error("FMC solver no longer supports explicit unlimited custom searches");
 }
-console.log("benchmark no-fallback routing, exact minmove v2, and FMC Extreme progressive 120-second contract verified");
+console.log("benchmark no-fallback routing, best-effort minmove, and FMC Extreme progressive 120-second contract verified");
