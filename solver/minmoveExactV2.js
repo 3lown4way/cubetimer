@@ -17,14 +17,19 @@ const TARGET_HTM = 18;
 const MAX_RETURN_HTM = 20;
 // Kept as a compatibility marker for static benchmark contract checks.
 const DEFAULT_APPROX_SLACK = MAX_RETURN_HTM - TARGET_HTM;
-const DEFAULT_TARGET_SEED_BUDGET_MS = 10_000;
-const DEFAULT_ACCEPTABLE_SEED_BUDGET_MS = 12_000;
-const DEFAULT_TARGET_EXACT_BUDGET_MS = 20_000;
+const DEFAULT_TARGET_SEED_BUDGET_MS = 8_000;
+const DEFAULT_ACCEPTABLE_SEED_BUDGET_MS = 14_000;
+const DEADLINE_ONLY_EXACT_PROFILE = Object.freeze({
+  phase1NodeLimit: 0,
+  phase2NodeLimit: 0,
+  deadlineOnly: true,
+});
 
 const DEFAULT_SEED_CONFIGS = [
   { maxPhase1Solutions: 96, phase1MaxDepth: 15, phase1NodeLimit: 2_000_000, phase2NodeLimit: 12_000_000 },
   { maxPhase1Solutions: 384, phase1MaxDepth: 18, phase1NodeLimit: 8_000_000, phase2NodeLimit: 40_000_000 },
-  { maxPhase1Solutions: 768, phase1MaxDepth: 18, phase1NodeLimit: 16_000_000, phase2NodeLimit: 80_000_000 },
+  { maxPhase1Solutions: 1536, phase1MaxDepth: 18, phase1NodeLimit: 24_000_000, phase2NodeLimit: 120_000_000 },
+  { maxPhase1Solutions: 4096, phase1MaxDepth: 18, phase1NodeLimit: 0, phase2NodeLimit: 0 },
 ];
 
 const DEFAULT_EXACT_PROFILES = [
@@ -195,7 +200,20 @@ function failureResult(reason, meta = {}) {
     maxMoveCount: MAX_RETURN_HTM,
     targetReached: false,
     fallbackReason: null,
+    timeBudgetMs: Number.isFinite(meta.timeBudgetMs) ? Math.max(0, Math.floor(meta.timeBudgetMs)) : 0,
     elapsedMs: Number.isFinite(meta.elapsedMs) ? meta.elapsedMs : 0,
+  };
+}
+
+function normalizeExactProfile(profile) {
+  return {
+    phase1NodeLimit: Number.isFinite(Number(profile?.phase1NodeLimit))
+      ? Math.max(0, Math.floor(Number(profile.phase1NodeLimit)))
+      : 0,
+    phase2NodeLimit: Number.isFinite(Number(profile?.phase2NodeLimit))
+      ? Math.max(0, Math.floor(Number(profile.phase2NodeLimit)))
+      : 0,
+    deadlineOnly: profile?.deadlineOnly === true,
   };
 }
 
@@ -214,12 +232,16 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const seedConfigs = Array.isArray(options.seedConfigs) && options.seedConfigs.length
     ? options.seedConfigs
     : DEFAULT_SEED_CONFIGS;
-  const exactProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
+  const configuredExactProfiles = Array.isArray(options.exactProfiles) && options.exactProfiles.length
     ? options.exactProfiles
     : DEFAULT_EXACT_PROFILES;
+  const exactProfiles = [
+    ...configuredExactProfiles.map(normalizeExactProfile),
+    DEADLINE_ONLY_EXACT_PROFILE,
+  ];
 
   const ready = await ensureTwophase333Ready().catch(() => null);
-  if (!ready) return failureResult("MINMOVE_TWOPHASE_UNAVAILABLE");
+  if (!ready) return failureResult("MINMOVE_TWOPHASE_UNAVAILABLE", { timeBudgetMs });
 
   const inverseUpperBoundLength = splitMoves(inverseScramble).length;
   const canonicalInverse = normalizeOuterAlgorithm(inverseScramble);
@@ -254,7 +276,9 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       bestSource = source;
       emitProgress(onProgress, {
         type: "exact_search_improved",
-        stageName: candidateLength <= TARGET_HTM ? "MinMove 18 HTM target reached" : "MinMove <=20 HTM candidate",
+        stageName: candidateLength <= TARGET_HTM
+          ? "MinMove 18 HTM target reached"
+          : `MinMove ${candidateLength} HTM candidate; improving`,
         moveCount: bestMoveCount,
         targetMoveCount: TARGET_HTM,
         maxMoveCount: MAX_RETURN_HTM,
@@ -263,7 +287,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         approximate: true,
       });
     }
-    return candidateLength <= TARGET_HTM;
+    return bestMoveCount <= TARGET_HTM;
   };
 
   const finishBest = (optimalityProven = false) => approximateResult(bestSolution, bestMoveCount, {
@@ -278,11 +302,12 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
 
   emitProgress(onProgress, {
     type: "upper_bound_start",
-    stageName: "MinMove HTM: target 18 / hard cap 20",
+    stageName: "MinMove HTM: target 18 / hard cap 20 / full-budget improvement",
     inverseUpperBoundLength,
     targetMoveCount: TARGET_HTM,
     maxMoveCount: MAX_RETURN_HTM,
     practicalCeiling: MAX_RETURN_HTM,
+    timeBudgetMs,
   });
 
   const directions = [
@@ -300,10 +325,10 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     },
   ];
 
-  // Pass 1: attack the 18 HTM target directly.
+  // Pass 1: take a short shot at the 18 HTM target. Only <=18 may return early.
   const targetSeedDeadlineTs = Math.min(
     globalDeadlineTs,
-    startedAt + Math.min(DEFAULT_TARGET_SEED_BUDGET_MS, Math.max(3_000, Math.floor(timeBudgetMs * 0.2))),
+    startedAt + Math.min(DEFAULT_TARGET_SEED_BUDGET_MS, Math.max(2_500, Math.floor(timeBudgetMs * 0.15))),
   );
   for (const direction of directions) {
     if (Date.now() >= targetSeedDeadlineTs) break;
@@ -322,10 +347,11 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     }
   }
 
-  // Pass 2: secure a valid <=20 result, while still preferring <=18.
+  // Pass 2: prioritize securing a non-inverse <=20 candidate before spending the
+  // rest of the budget on exact improvement.
   const acceptableSeedDeadlineTs = Math.min(
     globalDeadlineTs,
-    Date.now() + Math.min(DEFAULT_ACCEPTABLE_SEED_BUDGET_MS, Math.max(4_000, Math.floor(timeBudgetMs * 0.24))),
+    Date.now() + Math.min(DEFAULT_ACCEPTABLE_SEED_BUDGET_MS, Math.max(5_000, Math.floor(timeBudgetMs * 0.25))),
   );
   for (const direction of directions) {
     if (Date.now() >= acceptableSeedDeadlineTs) break;
@@ -344,127 +370,125 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     }
   }
 
-  // Pass 3: spend a substantial bounded slice trying to hit <=18 exactly.
-  const targetExactDeadlineTs = Math.min(
-    globalDeadlineTs,
-    Date.now() + Math.min(DEFAULT_TARGET_EXACT_BUDGET_MS, Math.max(5_000, Math.floor(timeBudgetMs * 0.36))),
-  );
-  for (const profile of exactProfiles) {
-    if (Date.now() >= targetExactDeadlineTs) break;
-    proofAttempts += 1;
-    const searched = await searchTwophaseExact333(normalizedScramble, {
-      maxTotalDepth: TARGET_HTM,
-      excludedSolution: inverseScramble,
-      phase1NodeLimit: Number.isFinite(Number(profile?.phase1NodeLimit))
-        ? Math.max(0, Math.floor(Number(profile.phase1NodeLimit)))
-        : 0,
-      phase2NodeLimit: Number.isFinite(Number(profile?.phase2NodeLimit))
-        ? Math.max(0, Math.floor(Number(profile.phase2NodeLimit)))
-        : 0,
-      deadlineTs: targetExactDeadlineTs,
-    }).catch(() => null);
+  // Pass 3: use every remaining millisecond unless <=18 is reached or a tighter
+  // bound is exhaustively proven impossible. The final profile has zero node
+  // limits, so node caps can no longer cause an early MINMOVE_NO_SOLUTION_WITHIN_20.
+  while (Date.now() < globalDeadlineTs && bestMoveCount > TARGET_HTM) {
+    const searchBound = bestSolution
+      ? Math.max(TARGET_HTM, bestMoveCount - 1)
+      : MAX_RETURN_HTM;
+    let improvedThisRound = false;
+    let exhaustedThisRound = false;
+    let attemptedThisRound = false;
 
-    totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
-    if (!searched?.ok) continue;
+    emitProgress(onProgress, {
+      type: "proof_round_start",
+      stageName: bestSolution
+        ? `MinMove improving ${bestMoveCount} -> <=${searchBound} HTM`
+        : `MinMove securing <=${searchBound} HTM`,
+      bound: searchBound,
+      moveCount: bestSolution ? bestMoveCount : null,
+      targetMoveCount: TARGET_HTM,
+      maxMoveCount: MAX_RETURN_HTM,
+      elapsedMs: Date.now() - startedAt,
+      remainingMs: Math.max(0, globalDeadlineTs - Date.now()),
+    });
 
-    if (searched.found && typeof searched.solution === "string") {
-      if (await considerCandidate(searched.solution, "exact_twophase_target18", false)) {
-        return finishBest(false);
-      }
-    }
-
-    if (!searched.interrupted && !searched.found) {
-      lastExhaustedBound = TARGET_HTM;
-      break;
-    }
-  }
-
-  // A 19-move incumbent is already acceptable. If <=18 was exhaustively ruled
-  // out, it is also proven optimal.
-  if (bestSolution && bestMoveCount === 19) {
-    return finishBest(lastExhaustedBound === TARGET_HTM);
-  }
-
-  // Pass 4a: if we have 20, use the remaining time to hunt <=19.
-  if (bestSolution && bestMoveCount === MAX_RETURN_HTM && Date.now() < globalDeadlineTs) {
     for (const profile of exactProfiles) {
       if (Date.now() >= globalDeadlineTs) break;
+      attemptedThisRound = true;
       proofAttempts += 1;
+      emitProgress(onProgress, {
+        type: "proof_profile_start",
+        stageName: profile.deadlineOnly
+          ? `MinMove <=${searchBound}: deadline-only exact search`
+          : `MinMove <=${searchBound}: bounded exact search`,
+        bound: searchBound,
+        deadlineOnly: profile.deadlineOnly === true,
+        phase1NodeLimit: profile.phase1NodeLimit,
+        phase2NodeLimit: profile.phase2NodeLimit,
+        elapsedMs: Date.now() - startedAt,
+        remainingMs: Math.max(0, globalDeadlineTs - Date.now()),
+      });
+
       const searched = await searchTwophaseExact333(normalizedScramble, {
-        maxTotalDepth: 19,
+        maxTotalDepth: searchBound === MAX_RETURN_HTM ? MAX_RETURN_HTM : searchBound,
         excludedSolution: inverseScramble,
-        phase1NodeLimit: Number.isFinite(Number(profile?.phase1NodeLimit))
-          ? Math.max(0, Math.floor(Number(profile.phase1NodeLimit)))
-          : 0,
-        phase2NodeLimit: Number.isFinite(Number(profile?.phase2NodeLimit))
-          ? Math.max(0, Math.floor(Number(profile.phase2NodeLimit)))
-          : 0,
+        phase1NodeLimit: profile.phase1NodeLimit,
+        phase2NodeLimit: profile.phase2NodeLimit,
         deadlineTs: globalDeadlineTs,
       }).catch(() => null);
 
       totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
-      if (!searched?.ok) continue;
-      if (searched.found && typeof searched.solution === "string") {
-        const targetReached = await considerCandidate(searched.solution, "exact_twophase_under20", false);
-        if (targetReached) return finishBest(false);
-        if (bestMoveCount === 19) return finishBest(false);
+      if (!searched?.ok) {
+        if (Date.now() >= globalDeadlineTs) break;
+        continue;
       }
+
+      if (searched.found && typeof searched.solution === "string") {
+        const previousBest = bestMoveCount;
+        const targetReached = await considerCandidate(
+          searched.solution,
+          profile.deadlineOnly ? "exact_twophase_deadline_only" : "exact_twophase_bounded",
+          false,
+        );
+        if (targetReached) return finishBest(false);
+        if (bestMoveCount < previousBest) {
+          improvedThisRound = true;
+          break;
+        }
+      }
+
       if (!searched.interrupted && !searched.found) {
-        lastExhaustedBound = 19;
+        lastExhaustedBound = searchBound;
+        exhaustedThisRound = true;
         break;
       }
     }
-  }
 
-  // Pass 4b: if no <=20 seed was found, the last resort is an exact <=20
-  // search. Never relax above 20.
-  if (!bestSolution && Date.now() < globalDeadlineTs) {
-    for (const profile of exactProfiles) {
-      if (Date.now() >= globalDeadlineTs) break;
-      proofAttempts += 1;
-      const searched = await searchTwophaseExact333(normalizedScramble, {
-        maxTotalDepth: MAX_RETURN_HTM,
-        excludedSolution: inverseScramble,
-        phase1NodeLimit: Number.isFinite(Number(profile?.phase1NodeLimit))
-          ? Math.max(0, Math.floor(Number(profile.phase1NodeLimit)))
-          : 0,
-        phase2NodeLimit: Number.isFinite(Number(profile?.phase2NodeLimit))
-          ? Math.max(0, Math.floor(Number(profile.phase2NodeLimit)))
-          : 0,
-        deadlineTs: globalDeadlineTs,
-      }).catch(() => null);
+    if (improvedThisRound) {
+      continue;
+    }
 
-      totalNodes += Number.isFinite(searched?.nodes) ? searched.nodes : 0;
-      if (!searched?.ok) continue;
-      if (searched.found && typeof searched.solution === "string") {
-        await considerCandidate(searched.solution, "exact_twophase_cap20", false);
-        if (bestSolution) break;
+    if (exhaustedThisRound) {
+      if (bestSolution && bestMoveCount === searchBound + 1) {
+        return finishBest(true);
       }
-      if (!searched.interrupted && !searched.found) break;
+      break;
+    }
+
+    // The deadline-only profile should consume the remaining budget when it
+    // cannot finish. Avoid spinning if an unexpected API failure returns early.
+    if (!attemptedThisRound || Date.now() < globalDeadlineTs) {
+      break;
     }
   }
 
   if (!bestSolution) {
     return failureResult("MINMOVE_NO_SOLUTION_WITHIN_20", {
       nodes: totalNodes,
+      timeBudgetMs,
       elapsedMs: Date.now() - startedAt,
     });
   }
   if (bestMoveCount > MAX_RETURN_HTM) {
     return failureResult("MINMOVE_OVER_20_REJECTED", {
       nodes: totalNodes,
+      timeBudgetMs,
       elapsedMs: Date.now() - startedAt,
     });
   }
   if (isForbiddenInverse(bestSolution)) {
     return failureResult("MINMOVE_LITERAL_INVERSE_REJECTED", {
       nodes: totalNodes,
+      timeBudgetMs,
       elapsedMs: Date.now() - startedAt,
     });
   }
   if (!(await verifySolution(normalizedScramble, bestSolution))) {
     return failureResult("MINMOVE_DISPLAY_SOLUTION_INVALID", {
       nodes: totalNodes,
+      timeBudgetMs,
       elapsedMs: Date.now() - startedAt,
     });
   }
@@ -476,13 +500,15 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     type: optimalityProven ? "optimality_proven" : "best_effort_done",
     stageName: bestMoveCount <= TARGET_HTM
       ? "MinMove 18 HTM target reached"
-      : "MinMove <=20 HTM accepted",
+      : `MinMove ${bestMoveCount} HTM accepted after full-budget improvement`,
     moveCount: bestMoveCount,
     targetMoveCount: TARGET_HTM,
     maxMoveCount: MAX_RETURN_HTM,
     targetReached: bestMoveCount <= TARGET_HTM,
     optimalityProven,
     nodes: totalNodes,
+    elapsedMs: Date.now() - startedAt,
+    timeBudgetMs,
   });
 
   return finishBest(optimalityProven);
