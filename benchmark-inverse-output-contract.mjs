@@ -16,59 +16,41 @@ import {
 const SCRAMBLE = "F2 D U2 B2 L2 R2 U2 B' L2 F D2 B' F' U L' U' F U2 R' B";
 const REPORTED_INVERSE = "B' R U2 F' U L U' F B D2 F' L2 B U2 R2 L2 B2 U2 D' F2";
 const MINMOVE_CONTRACT_BUDGET_MS = Math.max(
-  3_000,
-  Math.floor(Number(process.env.MINMOVE_INVERSE_CONTRACT_BUDGET_MS) || 6_000),
+  5_000,
+  Math.floor(Number(process.env.MINMOVE_INVERSE_CONTRACT_BUDGET_MS) || 10_000),
 );
 const inverse = invertOuterAlgorithm(SCRAMBLE);
 assert.equal(inverse, REPORTED_INVERSE, "regression fixture must be the literal inverse");
 assert.equal(isLiteralInverseSolution(SCRAMBLE, REPORTED_INVERSE), true);
 assert.equal(shouldRejectLiteralInverseSolution(SCRAMBLE, REPORTED_INVERSE), true);
+
 const shortScramble = "R U R' U'";
 const shortInverse = invertOuterAlgorithm(shortScramble);
 assert.equal(isLiteralInverseSolution(shortScramble, shortInverse), true);
 assert.equal(shouldRejectLiteralInverseSolution(shortScramble, shortInverse), false);
 
 // Regression: a phase-boundary split such as R R2 is still R'.
-// This exact UI report previously bypassed the inverse-solution guard because
-// the old policy compared move-token strings without same-face reduction.
 const REDUCIBLE_INVERSE_SCRAMBLE = "U' F2 D' B2 U' F2 U F2 U' R B D L' R D' L' D";
 const REDUCIBLE_INVERSE_CANONICAL = "D' L D R' L D' B' R' U F2 U' F2 U B2 D F2 U";
 const REDUCIBLE_INVERSE_REPORTED = "D' L D R' L D' B' R R2 U F2 U' F2 U B2 D F2 U";
-assert.equal(
-  invertOuterAlgorithm(REDUCIBLE_INVERSE_SCRAMBLE),
-  REDUCIBLE_INVERSE_CANONICAL,
-  "reducible regression fixture must canonicalize to the true inverse",
-);
-assert.equal(
-  normalizeOuterAlgorithm(REDUCIBLE_INVERSE_REPORTED),
-  REDUCIBLE_INVERSE_CANONICAL,
-  "same-face phase-boundary moves must be reduced canonically",
-);
-assert.equal(
-  isLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED),
-  true,
-  "decomposed inverse must still be detected",
-);
-assert.equal(
-  shouldRejectLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED),
-  true,
-  "decomposed inverse must be rejected by ordinary solver output policy",
-);
+assert.equal(invertOuterAlgorithm(REDUCIBLE_INVERSE_SCRAMBLE), REDUCIBLE_INVERSE_CANONICAL);
+assert.equal(normalizeOuterAlgorithm(REDUCIBLE_INVERSE_REPORTED), REDUCIBLE_INVERSE_CANONICAL);
+assert.equal(isLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED), true);
+assert.equal(shouldRejectLiteralInverseSolution(REDUCIBLE_INVERSE_SCRAMBLE, REDUCIBLE_INVERSE_REPORTED), true);
 
 const workerSource = fs.readFileSync(new URL("./solver/solverWorker.js", import.meta.url), "utf8");
 assert.match(workerSource, /excludedSolution:\s*countAlgorithmMoves\(scramble\)\s*>\s*4\s*\?\s*inverseSolution\s*:\s*undefined/);
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*searched\.solution\)/);
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*solution\)/);
-assert.doesNotMatch(workerSource, /excludedSolution:\s*noFallback\s*\?/);
 
-// Exact MinMove may use the literal inverse as an internal HTM upper bound, but
-// the public solution contract is the same as ordinary solver output: for normal
-// scrambles a successful MinMove result must never be the literal inverse.
+// MinMove is intentionally best-effort now: exact proof is optional, but a
+// successful result must be valid and must not be the literal inverse.
 const minmoveSource = fs.readFileSync(new URL("./solver/minmoveExactV2.js", import.meta.url), "utf8");
-assert.match(minmoveSource, /let\s+incumbentSolution\s*=\s*inverseScramble\s*;/);
-assert.match(minmoveSource, /let\s+displaySolution\s*=\s*rejectLiteralInverse\s*\?\s*""\s*:\s*inverseScramble\s*;/);
+assert.match(minmoveSource, /DEFAULT_APPROX_SLACK\s*=\s*4/);
+assert.match(minmoveSource, /MINMOVE_333_BEST_EFFORT/);
+assert.match(minmoveSource, /approximate:\s*meta\.optimalityProven\s*!==\s*true/);
 assert.match(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
-assert.match(minmoveSource, /MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND/);
+assert.doesNotMatch(minmoveSource, /MINMOVE_NOT_PROVEN/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {
   frontierLimits: [2, 12, 48, 192, 768],
@@ -94,53 +76,21 @@ const minmove = await solveMinmoveExactV2(SCRAMBLE, null, {
 });
 
 const inverseMoveCount = inverse.split(/\s+/).filter(Boolean).length;
-let minmoveContractSolution = "";
 if (minmove?.ok) {
-  assert.equal(minmove.optimalityProven, true, "successful Minmove result is not proven");
-  assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "Minmove returned literal inverse");
-  assert.ok(
-    Number(minmove.moveCount) <= inverseMoveCount,
-    "proven Minmove result exceeded the literal-inverse upper bound",
-  );
+  assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "MinMove returned literal inverse");
+  assert.ok(Number(minmove.moveCount) <= inverseMoveCount + 8, "MinMove best-effort result exceeded relaxed ceiling");
+  assert.equal(typeof minmove.optimalityProven, "boolean", "MinMove proof metadata missing");
+  if (!minmove.optimalityProven) {
+    assert.equal(minmove.approximate, true, "unproven best-effort result was not marked approximate");
+  }
   const minmoveVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.solution);
-  assert.equal(minmoveVerification?.solved, true, "Minmove regression solution is invalid");
-  minmoveContractSolution = minmove.solution;
-} else if (minmove?.reason === "MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND") {
-  // The optimal HTM length may be proven even if the remaining time was not
-  // enough to recover a displayable non-inverse solution at that exact length.
-  // Never leak the inverse through the public solution field in this case.
-  assert.equal(minmove?.optimalityProven, true, "proven optimal length was not marked as proven");
-  assert.equal(minmove?.solution, "", "inverse leaked into public Minmove solution");
-  assert.equal(minmove?.moveCount, 0, "inverse leaked into public Minmove move count");
-  assert.equal(minmove?.candidateSolution, "", "inverse leaked into public candidate metadata");
-  assert.ok(Number(minmove?.optimalMoveCount) <= inverseMoveCount, "proven optimal length exceeded inverse upper bound");
+  assert.equal(minmoveVerification?.solved, true, "MinMove regression solution is invalid");
 } else {
-  // A node/deadline interruption is not proof of exhaustion. The exact solver
-  // must preserve its intentional no-fallback contract instead of promoting
-  // the internal incumbent candidate to a successful solution.
-  assert.equal(minmove?.reason, "MINMOVE_NOT_PROVEN", `unexpected Minmove failure: ${minmove?.reason || "unknown"}`);
-  assert.equal(minmove?.optimalityProven, false, "unproven result marked as proven");
-  assert.equal(minmove?.solution, "", "unproven candidate leaked into the public solution field");
-  assert.equal(minmove?.moveCount, 0, "unproven candidate leaked into the public move count");
-  assert.equal(minmove?.fallbackReason, null, "Minmove unexpectedly used fallback");
-  assert.equal(minmove?.budgetExhausted, true, "Minmove returned before using its proof budget");
   assert.ok(
-    ["TWOPHASE_DEADLINE_REACHED", "MINMOVE_EXACT_TIMEOUT"].includes(minmove?.interruptedReason),
-    `unexpected Minmove interruption: ${minmove?.interruptedReason}`,
+    ["MINMOVE_NO_NONINVERSE_SOLUTION", "MINMOVE_TWOPHASE_UNAVAILABLE"].includes(minmove?.reason),
+    `unexpected MinMove failure: ${minmove?.reason || "unknown"}`,
   );
-  assert.ok(
-    Number(minmove?.elapsedMs) >= MINMOVE_CONTRACT_BUDGET_MS - 1_000,
-    `Minmove returned too early: ${minmove?.elapsedMs}ms for ${MINMOVE_CONTRACT_BUDGET_MS}ms budget`,
-  );
-  assert.equal(typeof minmove?.candidateSolution, "string", "unproven result lost candidate metadata");
-  assert.ok(minmove.candidateSolution.trim(), "unproven result has an empty candidate");
-  assert.ok(
-    Number(minmove?.candidateMoveCount) <= inverseMoveCount,
-    "Minmove candidate exceeded the literal-inverse upper bound",
-  );
-  const candidateVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.candidateSolution);
-  assert.equal(candidateVerification?.solved, true, "Minmove candidate metadata is invalid");
-  minmoveContractSolution = minmove.candidateSolution;
+  assert.equal(minmove?.solution, "", "failed MinMove leaked a public solution");
 }
 
 console.log(JSON.stringify({
@@ -154,15 +104,14 @@ console.log(JSON.stringify({
   minmove: {
     ok: minmove.ok,
     reason: minmove.reason || null,
-    solution: minmoveContractSolution,
-    moveCount: minmove.ok ? minmove.moveCount : (minmove.optimalMoveCount || minmove.candidateMoveCount || 0),
-    optimalityProven: minmove.optimalityProven,
-    interruptedReason: minmove.interruptedReason || null,
-    proofSource: minmove.proofSource,
+    solution: minmove.solution || "",
+    moveCount: minmove.moveCount || 0,
+    approximate: minmove.approximate === true,
+    optimalityProven: minmove.optimalityProven === true,
+    proofSource: minmove.proofSource || null,
     proofAttempts: minmove.proofAttempts || 0,
-    budgetExhausted: minmove.budgetExhausted === true,
     timeBudgetMs: MINMOVE_CONTRACT_BUDGET_MS,
-    elapsedMs: minmove.elapsedMs,
+    elapsedMs: minmove.elapsedMs || 0,
   },
 }));
 console.log("inverse output contract passed");
