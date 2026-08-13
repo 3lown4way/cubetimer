@@ -176,6 +176,31 @@ function notProvenResult(candidateSolution, candidateMoveCount, meta = {}) {
   };
 }
 
+function provenLengthWithoutOutputResult(optimalMoveCount, meta = {}) {
+  return {
+    ok: false,
+    reason: "MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND",
+    solution: "",
+    moveCount: 0,
+    candidateSolution: "",
+    candidateMoveCount: optimalMoveCount,
+    nodes: Number.isFinite(meta.nodes) ? meta.nodes : 0,
+    bound: optimalMoveCount,
+    source: "MINMOVE_333_EXACT_TWOPHASE_V2",
+    metric: "HTM",
+    optimalityProven: true,
+    optimalMoveCount,
+    upperBoundLength: optimalMoveCount,
+    proofSource: "exact_twophase_exhaustion",
+    fallbackReason: null,
+    interruptedReason: meta.interruptedReason ? String(meta.interruptedReason) : null,
+    proofAttempts: Number.isFinite(meta.proofAttempts) ? Math.max(0, Math.floor(meta.proofAttempts)) : 0,
+    timeBudgetMs: Number.isFinite(meta.timeBudgetMs) ? Math.max(0, Math.floor(meta.timeBudgetMs)) : 0,
+    budgetExhausted: meta.budgetExhausted === true,
+    elapsedMs: Number.isFinite(meta.elapsedMs) ? meta.elapsedMs : 0,
+  };
+}
+
 export async function solveMinmoveExactV2(scramble, onProgress = null, options = {}) {
   const normalizedScramble = splitMoves(scramble).join(" ");
   const inverseScramble = invertAlgorithm(normalizedScramble);
@@ -203,13 +228,14 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
   const inverseUpperBoundLength = splitMoves(inverseScramble).length;
   const rejectLiteralInverse = inverseUpperBoundLength > LITERAL_INVERSE_EXEMPT_MOVE_COUNT;
 
-  // The literal inverse is always a mathematically valid HTM upper bound. Keep it
-  // as the incumbent even when ordinary Two-Phase output policy forbids displaying
-  // it. Exact MinMove only searches strictly below the incumbent, so preserving
-  // this bound avoids turning an N-move scramble into an artificial N+1 proof.
+  // The literal inverse is a valid mathematical HTM upper bound, but for normal
+  // MinMove scrambles it is proof metadata only. It must never leak into public
+  // solver output; a displayable non-inverse solution is tracked separately.
   let incumbentSolution = inverseScramble;
   let incumbentLength = inverseUpperBoundLength;
   let incumbentSource = rejectLiteralInverse ? "inverse_upper_bound" : "short_inverse_exception";
+  let displaySolution = rejectLiteralInverse ? "" : inverseScramble;
+  let displaySource = rejectLiteralInverse ? "" : "short_inverse_exception";
   let totalNodes = 0;
   let proofAttempts = 0;
 
@@ -251,6 +277,8 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
     incumbentSolution = candidateSolution;
     incumbentLength = candidateLength;
     incumbentSource = direction.source;
+    displaySolution = candidateSolution;
+    displaySource = direction.source;
   }
 
   if (!(await verifySolution(normalizedScramble, incumbentSolution))) {
@@ -331,7 +359,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         continue;
       }
       if (searched.found && typeof searched.solution === "string") {
-        const candidateSolution = searched.solution.trim();
+        const candidateSolution = normalizeOuterAlgorithm(searched.solution);
         const candidateLength = splitMoves(candidateSolution).length;
         if (
           candidateSolution
@@ -343,6 +371,8 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
           incumbentSolution = candidateSolution;
           incumbentLength = candidateLength;
           incumbentSource = "exact_twophase_bound";
+          displaySolution = candidateSolution;
+          displaySource = "exact_twophase_bound";
           improved = true;
           emitProgress(onProgress, {
             type: "proof_profile_done",
@@ -387,7 +417,77 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
 
     if (improved) continue;
     if (exhausted) {
+      // Exhausting incumbentLength - 1 proves the optimal HTM length. If the
+      // proof incumbent is still the literal inverse, recover a different
+      // solution at that proven length before exposing anything to the UI.
+      if (rejectLiteralInverse && (!displaySolution || splitMoves(displaySolution).length !== incumbentLength)) {
+        emitProgress(onProgress, {
+          type: "noninverse_recovery_start",
+          moveCount: incumbentLength,
+          remainingMs: Math.max(0, deadlineTs - Date.now()),
+        });
+
+        for (let profileIndex = 0; profileIndex < exactProfiles.length; profileIndex += 1) {
+          if (Date.now() >= deadlineTs) break;
+          const profile = exactProfiles[profileIndex];
+          proofAttempts += 1;
+          const recovered = await searchTwophaseExact333(normalizedScramble, {
+            maxTotalDepth: incumbentLength,
+            excludedSolution: inverseScramble,
+            phase1NodeLimit: profile.phase1NodeLimit,
+            phase2NodeLimit: profile.phase2NodeLimit,
+            deadlineTs,
+          }).catch(() => null);
+          const recoveredNodes = Number.isFinite(recovered?.nodes) ? recovered.nodes : 0;
+          totalNodes += recoveredNodes;
+          if (recovered?.found && typeof recovered.solution === "string") {
+            const candidateSolution = normalizeOuterAlgorithm(recovered.solution);
+            const candidateLength = splitMoves(candidateSolution).length;
+            if (
+              candidateSolution
+              && candidateLength === incumbentLength
+              && !shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)
+              && await verifySolution(normalizedScramble, candidateSolution)
+            ) {
+              displaySolution = candidateSolution;
+              displaySource = "exact_twophase_noninverse_recovery";
+              break;
+            }
+            if (candidateSolution && shouldRejectLiteralInverseSolution(normalizedScramble, candidateSolution)) {
+              continue;
+            }
+          }
+          const recoveredReason = recovered?.reason || "";
+          if (recovered?.timedOut === true || recoveredReason === "TWOPHASE_DEADLINE_REACHED") {
+            lastReason = "TWOPHASE_DEADLINE_REACHED";
+            break;
+          }
+          if (recovered?.ok && !recovered.interrupted && !recovered.found) {
+            lastReason = "MINMOVE_NO_NONINVERSE_OPTIMAL_SOLUTION";
+            break;
+          }
+        }
+      }
+
       const elapsedMs = Date.now() - startedAt;
+      if (rejectLiteralInverse && (!displaySolution || shouldRejectLiteralInverseSolution(normalizedScramble, displaySolution))) {
+        return provenLengthWithoutOutputResult(incumbentLength, {
+          nodes: totalNodes,
+          interruptedReason: lastReason || "MINMOVE_NONINVERSE_RECOVERY_INCOMPLETE",
+          proofAttempts,
+          timeBudgetMs,
+          budgetExhausted: Date.now() >= deadlineTs || lastReason === "TWOPHASE_DEADLINE_REACHED",
+          elapsedMs,
+        });
+      }
+
+      if (!(await verifySolution(normalizedScramble, displaySolution))) {
+        return { ok: false, reason: "MINMOVE_DISPLAY_SOLUTION_INVALID" };
+      }
+      if (shouldRejectLiteralInverseSolution(normalizedScramble, displaySolution)) {
+        return { ok: false, reason: "MINMOVE_LITERAL_INVERSE_REJECTED" };
+      }
+
       emitProgress(onProgress, {
         type: "optimality_proven",
         moveCount: incumbentLength,
@@ -396,7 +496,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
       });
       return {
         ok: true,
-        solution: incumbentSolution,
+        solution: displaySolution,
         moveCount: incumbentLength,
         nodes: totalNodes,
         bound: incumbentLength,
@@ -406,7 +506,7 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         upperBoundLength: incumbentLength,
         proofSource: "exact_twophase_exhaustion",
         fallbackReason: null,
-        seedSource: incumbentSource,
+        seedSource: displaySource || incumbentSource,
         proofAttempts,
         timeBudgetMs,
         elapsedMs,
