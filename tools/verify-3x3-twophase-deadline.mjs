@@ -24,22 +24,20 @@ requireText(lib, "activate_twophase_deadline(options.deadline_ts)", "WASM deadli
 requireText(lib, 'result.reason == "TWOPHASE_DEADLINE_REACHED"', "WASM timeout status");
 requireText(wasmSolver, 'status === "timeout"', "JS timeout normalization");
 requireText(wasmSolver, "...(deadlineTs !== null ? { deadlineTs } : {})", "Adaptive deadline propagation");
-requireText(minmove, "deadlineTs,", "Exact minmove deadline propagation");
-requireText(minmove, 'reason: "MINMOVE_NOT_PROVEN"', "No-fallback result contract");
-requireText(minmove, 'solution: ""', "No-fallback empty solution");
+requireText(minmove, "deadlineTs: targetExactDeadlineTs", "18-target exact deadline propagation");
+requireText(minmove, "deadlineTs: globalDeadlineTs", "20-cap rescue deadline propagation");
+requireText(minmove, "const TARGET_HTM = 18;", "MinMove target contract");
+requireText(minmove, "const MAX_RETURN_HTM = 20;", "MinMove hard-cap contract");
+requireText(minmove, "candidateLength > MAX_RETURN_HTM", "MinMove candidate cap enforcement");
+requireText(minmove, 'failureResult("MINMOVE_NO_SOLUTION_WITHIN_20"', "MinMove capped failure contract");
+requireText(minmove, 'solution: ""', "MinMove failure empty solution");
 requireText(generated, "search_twophase_exact_333", "Generated WASM exact API");
 
-const notProvenStart = minmove.indexOf("function notProvenResult");
-const solveStart = minmove.indexOf("export async function solveMinmoveExactV2");
-if (notProvenStart < 0 || solveStart <= notProvenStart) {
-  throw new Error("No-fallback helper boundaries missing");
+if (minmove.includes('reason: "MINMOVE_NOT_PROVEN"')) {
+  throw new Error("MinMove still exposes the removed proof-only rejection contract");
 }
-const notProvenBody = minmove.slice(notProvenStart, solveStart);
-if (!notProvenBody.includes("ok: false") || !notProvenBody.includes('solution: ""')) {
-  throw new Error("Minmove no-fallback contract changed");
-}
-if (notProvenBody.includes("solution: candidateSolution")) {
-  throw new Error("Candidate solution must not be returned as a successful solution");
+if (minmove.includes("inverseUpperBoundLength + Math.max")) {
+  throw new Error("MinMove still contains an above-20 relaxed ceiling path");
 }
 
-console.log("3x3 Two-Phase deadline and no-fallback contract verified");
+console.log("3x3 Two-Phase deadlines and MinMove 18-target/20-cap contract verified");
