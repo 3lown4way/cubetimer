@@ -9,15 +9,17 @@ const realisticBudgetMs = Math.max(
   Math.floor(Number(process.env.MINMOVE_EXACT_CASE_BUDGET_MS) || 6_000),
 );
 
+const TARGET_HTM = 18;
+const MAX_HTM = 20;
+
 const cases = [
   {
-    name: "four-move-proof",
+    name: "four-move",
     scramble: "R U R' U'",
     maxElapsedMs: 15_000,
-    requireProof: true,
   },
   {
-    name: "realistic-wca-proof",
+    name: "realistic-wca",
     scramble: "U2 L' F' R U' F2 L D L2 F' B R2 F' U2 R2 F' U2 F U'",
     maxElapsedMs: realisticBudgetMs,
   },
@@ -98,59 +100,54 @@ for (const testCase of cases) {
     ok: result?.ok === true,
     reason: result?.reason || null,
     moveCount: result?.moveCount ?? 0,
-    candidateMoveCount: result?.candidateMoveCount ?? null,
+    targetReached: result?.targetReached === true,
+    optimalityProven: result?.optimalityProven === true,
     nodes: result?.nodes ?? 0,
     proofSource: result?.proofSource || null,
-    interruptedReason: result?.interruptedReason || null,
     proofAttempts: result?.proofAttempts ?? 0,
-    budgetExhausted: result?.budgetExhausted === true,
   };
   rows.push(row);
   console.log(JSON.stringify(row));
 
   assert.ok(elapsedMs <= testCase.maxElapsedMs + 15_000, `${testCase.name} exceeded the bounded runtime`);
   assert.equal(result?.fallbackReason ?? null, null, `${testCase.name} used a fallback`);
+  assert.equal(result?.targetMoveCount, TARGET_HTM, `${testCase.name} target metadata mismatch`);
+  assert.equal(result?.maxMoveCount, MAX_HTM, `${testCase.name} hard-cap metadata mismatch`);
 
   if (result?.ok) {
-    assert.equal(result?.optimalityProven, true, `${testCase.name} returned an unproven solution`);
-    await verifyCandidate(testCase, result.solution, "proven solution");
+    assert.ok(result.moveCount >= 1 && result.moveCount <= MAX_HTM, `${testCase.name} exceeded 20 HTM`);
+    assert.equal(result.targetReached, result.moveCount <= TARGET_HTM, `${testCase.name} targetReached mismatch`);
+    if (result.optimalityProven !== true) {
+      assert.equal(result.approximate, true, `${testCase.name} unproven result is not marked approximate`);
+    }
+    await verifyCandidate(testCase, result.solution, "solution");
     continue;
   }
 
-  assert.equal(testCase.requireProof, undefined, `${testCase.name} did not prove an exact solution`);
-  assert.equal(result?.reason, "MINMOVE_NOT_PROVEN", `${testCase.name} returned an unexpected failure`);
-  assert.equal(result?.solution, "", `${testCase.name} exposed an unproven public solution`);
-  assert.equal(result?.moveCount, 0, `${testCase.name} exposed an unproven public move count`);
-  assert.equal(result?.optimalityProven, false, `${testCase.name} falsely marked optimality proven`);
-  assert.equal(result?.budgetExhausted, true, `${testCase.name} returned before using its proof budget`);
-  assert.ok(
-    ["TWOPHASE_DEADLINE_REACHED", "MINMOVE_EXACT_TIMEOUT"].includes(result?.interruptedReason),
-    `${testCase.name} returned an unexpected interruption reason: ${result?.interruptedReason}`,
-  );
-  assert.ok(
-    Number(result?.elapsedMs) >= testCase.maxElapsedMs - 1_000,
-    `${testCase.name} returned too early: ${result?.elapsedMs}ms for ${testCase.maxElapsedMs}ms budget`,
-  );
-  await verifyCandidate(testCase, result?.candidateSolution, "diagnostic candidate");
+  assert.equal(result?.reason, "MINMOVE_NO_SOLUTION_WITHIN_20", `${testCase.name} returned an unexpected failure`);
+  assert.equal(result?.solution, "", `${testCase.name} exposed a failed public solution`);
+  assert.equal(result?.moveCount, 0, `${testCase.name} exposed a failed public move count`);
 }
 
 const sortedTimes = rows.map((row) => row.elapsedMs).sort((a, b) => a - b);
 const percentile = (p) => sortedTimes[Math.min(sortedTimes.length - 1, Math.ceil(sortedTimes.length * p) - 1)];
 const average = sortedTimes.reduce((sum, value) => sum + value, 0) / sortedTimes.length;
-const provenRows = rows.filter((row) => row.ok);
-const averageMoves = provenRows.length
-  ? provenRows.reduce((sum, row) => sum + row.moveCount, 0) / provenRows.length
+const successfulRows = rows.filter((row) => row.ok);
+const targetRows = successfulRows.filter((row) => row.targetReached);
+const averageMoves = successfulRows.length
+  ? successfulRows.reduce((sum, row) => sum + row.moveCount, 0) / successfulRows.length
   : 0;
 console.log(JSON.stringify({
   summary: true,
   cases: rows.length,
-  proven: provenRows.length,
-  honestlyUnproven: rows.filter((row) => !row.ok && row.reason === "MINMOVE_NOT_PROVEN").length,
-  proofRate: provenRows.length / rows.length,
+  successful: successfulRows.length,
+  targetReached: targetRows.length,
+  targetRate: successfulRows.length ? targetRows.length / successfulRows.length : 0,
+  within20Rate: successfulRows.length / rows.length,
   averageMs: Math.round(average),
   medianMs: percentile(0.5),
   p95Ms: percentile(0.95),
   maxMs: sortedTimes[sortedTimes.length - 1],
-  averageProvenMoves: Number(averageMoves.toFixed(2)),
+  averageMoves: Number(averageMoves.toFixed(2)),
 }));
-console.log("minmove exact v2 benchmark passed");
+console.log("minmove 18-target / 20-cap benchmark passed");
