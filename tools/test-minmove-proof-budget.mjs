@@ -12,11 +12,13 @@ const SCRAMBLE = "F2 D U2 B2 L2 R2 U2 B' L2 F D2 B' F' U L' U' F U2 R' B";
 const timeBudgetMs = Math.max(3_000, Number(process.env.MINMOVE_PROOF_TEST_BUDGET_MS) || 6_000);
 const source = fs.readFileSync(new URL("../solver/minmoveExactV2.js", import.meta.url), "utf8");
 
-assert.match(source, /DEADLINE_ONLY_EXACT_PROFILE/);
-assert.match(source, /phase1NodeLimit:\s*0/);
-assert.match(source, /phase2NodeLimit:\s*0/);
-assert.match(source, /useFullProofBudget\s*=\s*options\.useFullProofBudget\s*!==\s*false/);
-assert.match(source, /solution:\s*""/);
+assert.match(source, /const TARGET_HTM = 18;/);
+assert.match(source, /const MAX_RETURN_HTM = 20;/);
+assert.match(source, /maxTotalDepth:\s*TARGET_HTM/);
+assert.match(source, /maxTotalDepth:\s*MAX_RETURN_HTM/);
+assert.match(source, /candidateLength > MAX_RETURN_HTM/);
+assert.match(source, /MINMOVE_NO_SOLUTION_WITHIN_20/);
+assert.doesNotMatch(source, /reason:\s*"MINMOVE_NOT_PROVEN"/);
 assert.match(source, /fallbackReason:\s*null/);
 
 const ready = await ensureTwophase333Ready();
@@ -35,52 +37,34 @@ const result = await solveMinmoveExactV2(
   },
 );
 const wallElapsedMs = Date.now() - startedAt;
-const deadlineProfileStarts = progress.filter(
-  (event) => event?.type === "proof_profile_start" && event.deadlineOnly === true,
-);
 
-assert.ok(deadlineProfileStarts.length >= 1, "deadline-only proof profile was not attempted");
-assert.ok(Number(result?.proofAttempts) >= 2, "staged and deadline-only profiles were not both attempted");
-assert.equal(result?.fallbackReason ?? null, null, "Minmove must not expose a fallback");
+assert.ok(wallElapsedMs <= timeBudgetMs + 5_000, "MinMove exceeded its bounded runtime envelope");
+assert.equal(result?.fallbackReason ?? null, null, "MinMove must not expose a fallback");
+assert.equal(result?.targetMoveCount, 18, "MinMove target must be 18 HTM");
+assert.equal(result?.maxMoveCount, 20, "MinMove hard cap must be 20 HTM");
 
 if (result?.ok) {
-  assert.equal(result.optimalityProven, true, "successful Minmove result must be proven");
-  assert.ok(result.solution, "proven result must contain a solution");
+  assert.ok(result.solution, "successful result must contain a solution");
+  assert.ok(result.moveCount >= 1 && result.moveCount <= 20, `result escaped the 20 HTM cap: ${result.moveCount}`);
+  assert.equal(result.targetReached, result.moveCount <= 18, "targetReached does not match the 18 HTM target");
   assert.equal(
     shouldRejectLiteralInverseSolution(SCRAMBLE, result.solution),
     false,
-    "proven result must not be the rejected literal inverse",
+    "result must not be the rejected literal inverse",
   );
   const verification = await verifyFmcSolutionWasm(SCRAMBLE, result.solution);
-  assert.equal(verification?.solved, true, "proven solution is invalid");
+  assert.equal(verification?.solved, true, "returned MinMove solution is invalid");
 } else {
-  assert.equal(result?.reason, "MINMOVE_NOT_PROVEN");
+  assert.equal(result?.reason, "MINMOVE_NO_SOLUTION_WITHIN_20", `unexpected MinMove failure: ${result?.reason}`);
   assert.equal(result?.solution, "");
   assert.equal(result?.moveCount, 0);
   assert.equal(result?.optimalityProven, false);
-  assert.equal(result?.budgetExhausted, true, "unproven result must consume the proof budget");
-  assert.ok(
-    ["TWOPHASE_DEADLINE_REACHED", "MINMOVE_EXACT_TIMEOUT"].includes(result?.interruptedReason),
-    `unexpected interruption reason: ${result?.interruptedReason}`,
-  );
-  assert.ok(
-    Number(result?.elapsedMs) >= timeBudgetMs - 1_000,
-    `solver returned too early: ${result?.elapsedMs}ms for ${timeBudgetMs}ms budget`,
-  );
-  assert.ok(
-    wallElapsedMs >= timeBudgetMs - 1_000,
-    `wall clock returned too early: ${wallElapsedMs}ms for ${timeBudgetMs}ms budget`,
-  );
-  if (result?.candidateSolution) {
-    assert.equal(
-      shouldRejectLiteralInverseSolution(SCRAMBLE, result.candidateSolution),
-      false,
-      "diagnostic candidate must not be the rejected literal inverse",
-    );
-    const verification = await verifyFmcSolutionWasm(SCRAMBLE, result.candidateSolution);
-    assert.equal(verification?.solved, true, "diagnostic candidate is invalid");
-  }
 }
+
+assert.ok(
+  progress.some((event) => event?.targetMoveCount === 18 || event?.stageName?.includes("target 18")),
+  "18 HTM target progress metadata missing",
+);
 
 console.log(JSON.stringify({
   ok: true,
@@ -90,13 +74,12 @@ console.log(JSON.stringify({
     ok: result?.ok === true,
     reason: result?.reason || null,
     moveCount: result?.moveCount ?? 0,
-    candidateMoveCount: result?.candidateMoveCount ?? null,
+    targetMoveCount: result?.targetMoveCount ?? null,
+    maxMoveCount: result?.maxMoveCount ?? null,
+    targetReached: result?.targetReached === true,
     optimalityProven: result?.optimalityProven === true,
     proofAttempts: result?.proofAttempts ?? 0,
-    interruptedReason: result?.interruptedReason || null,
-    budgetExhausted: result?.budgetExhausted === true,
     elapsedMs: result?.elapsedMs ?? null,
     nodes: result?.nodes ?? 0,
   },
-  deadlineProfileAttempts: deadlineProfileStarts.length,
 }, null, 2));
