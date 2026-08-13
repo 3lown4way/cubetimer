@@ -61,13 +61,14 @@ assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*sear
 assert.match(workerSource, /shouldRejectLiteralInverseSolution\(scramble,\s*solution\)/);
 assert.doesNotMatch(workerSource, /excludedSolution:\s*noFallback\s*\?/);
 
-// Exact MinMove has a different contract from ordinary Two-Phase output: the
-// literal inverse remains a valid mathematical upper bound. It may only become
-// public output after exact search proves that no shorter HTM solution exists.
+// Exact MinMove may use the literal inverse as an internal HTM upper bound, but
+// the public solution contract is the same as ordinary solver output: for normal
+// scrambles a successful MinMove result must never be the literal inverse.
 const minmoveSource = fs.readFileSync(new URL("./solver/minmoveExactV2.js", import.meta.url), "utf8");
 assert.match(minmoveSource, /let\s+incumbentSolution\s*=\s*inverseScramble\s*;/);
-assert.match(minmoveSource, /if\s*\(!candidateSolution\s*\|\|\s*candidateLength\s*>\s*incumbentLength\)\s*continue\s*;/);
-assert.doesNotMatch(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
+assert.match(minmoveSource, /let\s+displaySolution\s*=\s*rejectLiteralInverse\s*\?\s*""\s*:\s*inverseScramble\s*;/);
+assert.match(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
+assert.match(minmoveSource, /MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {
   frontierLimits: [2, 12, 48, 192, 768],
@@ -96,6 +97,7 @@ const inverseMoveCount = inverse.split(/\s+/).filter(Boolean).length;
 let minmoveContractSolution = "";
 if (minmove?.ok) {
   assert.equal(minmove.optimalityProven, true, "successful Minmove result is not proven");
+  assert.equal(isLiteralInverseSolution(SCRAMBLE, minmove.solution), false, "Minmove returned literal inverse");
   assert.ok(
     Number(minmove.moveCount) <= inverseMoveCount,
     "proven Minmove result exceeded the literal-inverse upper bound",
@@ -103,10 +105,19 @@ if (minmove?.ok) {
   const minmoveVerification = await verifyFmcSolutionWasm(SCRAMBLE, minmove.solution);
   assert.equal(minmoveVerification?.solved, true, "Minmove regression solution is invalid");
   minmoveContractSolution = minmove.solution;
+} else if (minmove?.reason === "MINMOVE_NONINVERSE_OPTIMAL_NOT_FOUND") {
+  // The optimal HTM length may be proven even if the remaining time was not
+  // enough to recover a displayable non-inverse solution at that exact length.
+  // Never leak the inverse through the public solution field in this case.
+  assert.equal(minmove?.optimalityProven, true, "proven optimal length was not marked as proven");
+  assert.equal(minmove?.solution, "", "inverse leaked into public Minmove solution");
+  assert.equal(minmove?.moveCount, 0, "inverse leaked into public Minmove move count");
+  assert.equal(minmove?.candidateSolution, "", "inverse leaked into public candidate metadata");
+  assert.ok(Number(minmove?.optimalMoveCount) <= inverseMoveCount, "proven optimal length exceeded inverse upper bound");
 } else {
   // A node/deadline interruption is not proof of exhaustion. The exact solver
   // must preserve its intentional no-fallback contract instead of promoting
-  // the incumbent candidate to a successful solution.
+  // the internal incumbent candidate to a successful solution.
   assert.equal(minmove?.reason, "MINMOVE_NOT_PROVEN", `unexpected Minmove failure: ${minmove?.reason || "unknown"}`);
   assert.equal(minmove?.optimalityProven, false, "unproven result marked as proven");
   assert.equal(minmove?.solution, "", "unproven candidate leaked into the public solution field");
@@ -144,7 +155,7 @@ console.log(JSON.stringify({
     ok: minmove.ok,
     reason: minmove.reason || null,
     solution: minmoveContractSolution,
-    moveCount: minmove.ok ? minmove.moveCount : minmove.candidateMoveCount,
+    moveCount: minmove.ok ? minmove.moveCount : (minmove.optimalMoveCount || minmove.candidateMoveCount || 0),
     optimalityProven: minmove.optimalityProven,
     interruptedReason: minmove.interruptedReason || null,
     proofSource: minmove.proofSource,
