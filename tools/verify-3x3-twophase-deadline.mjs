@@ -24,8 +24,11 @@ requireText(lib, "activate_twophase_deadline(options.deadline_ts)", "WASM deadli
 requireText(lib, 'result.reason == "TWOPHASE_DEADLINE_REACHED"', "WASM timeout status");
 requireText(wasmSolver, 'status === "timeout"', "JS timeout normalization");
 requireText(wasmSolver, "...(deadlineTs !== null ? { deadlineTs } : {})", "Adaptive deadline propagation");
-requireText(minmove, "deadlineTs: targetExactDeadlineTs", "18-target exact deadline propagation");
-requireText(minmove, "deadlineTs: globalDeadlineTs", "20-cap rescue deadline propagation");
+requireText(minmove, "DEADLINE_ONLY_EXACT_PROFILE", "Full-budget exact profile");
+requireText(minmove, "phase1NodeLimit: 0", "Unlimited phase-one deadline profile");
+requireText(minmove, "phase2NodeLimit: 0", "Unlimited phase-two deadline profile");
+requireText(minmove, "deadlineTs: globalDeadlineTs", "MinMove full-budget deadline propagation");
+requireText(minmove, "while (Date.now() < globalDeadlineTs && bestMoveCount > TARGET_HTM)", "MinMove improvement loop");
 requireText(minmove, "const TARGET_HTM = 18;", "MinMove target contract");
 requireText(minmove, "const MAX_RETURN_HTM = 20;", "MinMove hard-cap contract");
 requireText(minmove, "candidateLength > MAX_RETURN_HTM", "MinMove candidate cap enforcement");
@@ -40,4 +43,4 @@ if (minmove.includes("inverseUpperBoundLength + Math.max")) {
   throw new Error("MinMove still contains an above-20 relaxed ceiling path");
 }
 
-console.log("3x3 Two-Phase deadlines and MinMove 18-target/20-cap contract verified");
+console.log("3x3 Two-Phase deadlines and MinMove full-budget 18-target/20-cap contract verified");
