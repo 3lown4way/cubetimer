@@ -295,9 +295,15 @@ export async function solveMinmoveExactV2(scramble, onProgress = null, options =
         remainingMs: Math.max(0, deadlineTs - Date.now()),
       });
 
+      // The literal inverse has inverseUpperBoundLength moves. Exact proof always searches
+      // targetBound = incumbentLength - 1, with incumbentLength <= inverseUpperBoundLength,
+      // so that literal inverse cannot occur inside this search tree. Passing it as an
+      // exclusion unnecessarily disables exact-search fail caching in the WASM engine.
+      const exactExcludedSolution =
+        rejectLiteralInverse && inverseUpperBoundLength <= targetBound ? inverseScramble : undefined;
       const searched = await searchTwophaseExact333(normalizedScramble, {
         maxTotalDepth: targetBound,
-        excludedSolution: rejectLiteralInverse ? inverseScramble : undefined,
+        excludedSolution: exactExcludedSolution,
         phase1NodeLimit: profile.phase1NodeLimit,
         phase2NodeLimit: profile.phase2NodeLimit,
         deadlineTs,
