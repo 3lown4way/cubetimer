@@ -14,8 +14,12 @@ const source = fs.readFileSync(new URL("../solver/minmoveExactV2.js", import.met
 
 assert.match(source, /const TARGET_HTM = 18;/);
 assert.match(source, /const MAX_RETURN_HTM = 20;/);
-assert.match(source, /maxTotalDepth:\s*TARGET_HTM/);
-assert.match(source, /maxTotalDepth:\s*MAX_RETURN_HTM/);
+assert.match(source, /DEADLINE_ONLY_EXACT_PROFILE/);
+assert.match(source, /phase1NodeLimit:\s*0/);
+assert.match(source, /phase2NodeLimit:\s*0/);
+assert.match(source, /bestMoveCount - 1/);
+assert.match(source, /maxTotalDepth:\s*searchBound === MAX_RETURN_HTM \? MAX_RETURN_HTM : searchBound/);
+assert.match(source, /while \(Date\.now\(\) < globalDeadlineTs && bestMoveCount > TARGET_HTM\)/);
 assert.match(source, /candidateLength > MAX_RETURN_HTM/);
 assert.match(source, /MINMOVE_NO_SOLUTION_WITHIN_20/);
 assert.doesNotMatch(source, /reason:\s*"MINMOVE_NOT_PROVEN"/);
