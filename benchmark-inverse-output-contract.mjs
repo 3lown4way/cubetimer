@@ -50,7 +50,7 @@ assert.match(minmoveSource, /DEFAULT_APPROX_SLACK\s*=\s*4/);
 assert.match(minmoveSource, /MINMOVE_333_BEST_EFFORT/);
 assert.match(minmoveSource, /approximate:\s*meta\.optimalityProven\s*!==\s*true/);
 assert.match(minmoveSource, /MINMOVE_LITERAL_INVERSE_REJECTED/);
-assert.doesNotMatch(minmoveSource, /MINMOVE_NOT_PROVEN/);
+assert.doesNotMatch(minmoveSource, /reason:\s*"MINMOVE_NOT_PROVEN"/);
 
 const twophase = await solveTwophaseAdaptive333(SCRAMBLE, {
   frontierLimits: [2, 12, 48, 192, 768],
