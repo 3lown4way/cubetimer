@@ -855,6 +855,89 @@ fn solve_phase2_excluding(
     }
 }
 
+// Phase 1 and Phase 2 each forbid consecutive same-face moves internally,
+// but the phase boundary can still produce sequences such as R | R2.
+// Do not assume a fixed numeric move-index layout here: the loaded MoveData is
+// the source of truth for move names and face identity.
+fn turn_amount_from_move_name(name: &str) -> Option<u8> {
+    let normalized = name.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.ends_with("2") {
+        Some(2)
+    } else if normalized.ends_with("'") {
+        Some(3)
+    } else {
+        Some(1)
+    }
+}
+
+fn find_move_index_for_face_turn(
+    face: u8,
+    turn: u8,
+    move_data: &crate::minmove_core::MoveData,
+) -> Option<u8> {
+    move_data
+        .move_face
+        .iter()
+        .enumerate()
+        .find_map(|(index, &candidate_face)| {
+            if candidate_face != face {
+                return None;
+            }
+            let name = move_data.move_names.get(index)?;
+            (turn_amount_from_move_name(name) == Some(turn)).then_some(index as u8)
+        })
+}
+
+fn canonicalize_twophase_path(path: &[u8], move_data: &crate::minmove_core::MoveData) -> Vec<u8> {
+    let mut canonical: Vec<u8> = Vec::with_capacity(path.len());
+    for &move_index in path {
+        let Some(&face) = move_data.move_face.get(move_index as usize) else {
+            canonical.push(move_index);
+            continue;
+        };
+        let Some(turn) = move_data
+            .move_names
+            .get(move_index as usize)
+            .and_then(|name| turn_amount_from_move_name(name))
+        else {
+            canonical.push(move_index);
+            continue;
+        };
+
+        if let Some(&previous) = canonical.last() {
+            if move_data.move_face.get(previous as usize).copied() == Some(face) {
+                let Some(previous_turn) = move_data
+                    .move_names
+                    .get(previous as usize)
+                    .and_then(|name| turn_amount_from_move_name(name))
+                else {
+                    canonical.push(move_index);
+                    continue;
+                };
+                let combined = (previous_turn + turn) % 4;
+                canonical.pop();
+                if combined != 0 {
+                    if let Some(combined_move) =
+                        find_move_index_for_face_turn(face, combined, move_data)
+                    {
+                        canonical.push(combined_move);
+                    } else {
+                        // Preserve correctness if a nonstandard move table is ever loaded.
+                        canonical.push(previous);
+                        canonical.push(move_index);
+                    }
+                }
+                continue;
+            }
+        }
+        canonical.push(move_index);
+    }
+    canonical
+}
+
 pub(crate) fn solve_phase2(
     input: &Phase2Input,
     tables: &TwophaseTables,
@@ -923,7 +1006,11 @@ fn run_phase2_pass(
         for &phase2_move in &phase2.moves {
             full_path.push(tables.phase2_move_indices[phase2_move as usize]);
         }
+        let full_path = canonicalize_twophase_path(&full_path, &tables.move_data);
         let total = full_path.len();
+        if target_total.map_or(false, |target| total >= target) {
+            continue;
+        }
         if excluded_path.map_or(false, |excluded| full_path.as_slice() == excluded) {
             continue;
         }
@@ -1276,7 +1363,8 @@ impl TwophaseSession {
         let excluded_path = options
             .excluded_solution
             .as_deref()
-            .and_then(|solution| parse_scramble(solution, &tables.move_data).ok());
+            .and_then(|solution| parse_scramble(solution, &tables.move_data).ok())
+            .map(|path| canonicalize_twophase_path(&path, &tables.move_data));
 
         let mut timed_out = run_phase2_pass(
             &self.candidates,
@@ -1352,6 +1440,19 @@ impl TwophaseSession {
                 "PHASE2_NOT_FOUND".into()
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod canonical_path_tests {
+    use super::turn_amount_from_move_name;
+
+    #[test]
+    fn parses_move_turn_amounts() {
+        assert_eq!(turn_amount_from_move_name("R"), Some(1));
+        assert_eq!(turn_amount_from_move_name("R2"), Some(2));
+        assert_eq!(turn_amount_from_move_name("R'"), Some(3));
+        assert_eq!(turn_amount_from_move_name(""), None);
     }
 }
 

@@ -3,6 +3,7 @@ import {
   ensureTwophase333Ready,
   solveTwophaseAdaptive333,
 } from "./solver/wasmSolver.js";
+import { isLiteralInverseSolution } from "./solver/inverseSolutionPolicy.js";
 
 const FACES = ["U", "R", "F", "D", "L", "B"];
 const SUFFIXES = ["", "2", "'"];
@@ -56,7 +57,8 @@ if (!ready) throw new Error("TWOPHASE_RELIABILITY_WASM_NOT_READY");
 
 const kpuzzle = await cube3x3x3.kpuzzle();
 const solved = kpuzzle.defaultPattern();
-const scrambles = generateScrambles(100, 20);
+const REPORTED_REDUCIBLE_INVERSE_SCRAMBLE = "U' F2 D' B2 U' F2 U F2 U' R B D L' R D' L' D";
+const scrambles = [REPORTED_REDUCIBLE_INVERSE_SCRAMBLE, ...generateScrambles(100, 20)];
 const rows = [];
 
 for (const [index, scramble] of scrambles.entries()) {
@@ -84,7 +86,7 @@ for (const [index, scramble] of scrambles.entries()) {
       .applyAlg(scramble)
       .applyAlg(solution)
       .experimentalIsSolved({ ignorePuzzleOrientation: false });
-  const nontrivial = solution !== inverse;
+  const nontrivial = !isLiteralInverseSolution(scramble, solution);
   rows.push({
     index,
     ok: solvedState && nontrivial,
