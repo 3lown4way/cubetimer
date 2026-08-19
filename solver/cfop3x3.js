@@ -118,10 +118,13 @@ const CROSS_RANK_FACTORS = [990, 90, 9, 1];
 const CROSS_COLOR_ROTATION_CANDIDATES = {
   D: [""],
   U: ["x2"],
-  F: ["x", "x'"],
-  B: ["x'", "x"],
-  R: ["z'", "z"],
-  L: ["z", "z'"],
+  // Rotate the requested physical cross face onto D exactly once.
+  // x behaves like R: B -> D, so F -> D requires x'.
+  F: ["x'"],
+  B: ["x"],
+  // z behaves like F: R -> D, so L -> D requires z'.
+  R: ["z"],
+  L: ["z'"],
 };
 const CROSS_COLOR_LABELS = {
   D: "Yellow",
