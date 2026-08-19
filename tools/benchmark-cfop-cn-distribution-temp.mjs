@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { randomScrambleForEvent } from "../vendor/cubing/scramble/index.js";
 import { getDefaultPattern } from "../solver/context.js";
 import {
@@ -92,8 +93,7 @@ const oppositePairs = {
 };
 const representativeSide = counts.D + counts.F + counts.R;
 const oppositeSide = counts.U + counts.B + counts.L;
-
-console.log("CN_DISTRIBUTION_RESULT " + JSON.stringify({
+const summary = {
   requested: N,
   successes,
   failureCount: failures.length,
@@ -113,6 +113,9 @@ console.log("CN_DISTRIBUTION_RESULT " + JSON.stringify({
   failures: failures.slice(0, 20),
   malformedDiagnostics: malformedDiagnostics.slice(0, 20),
   selectedSamples,
-}, null, 2));
+};
+
+fs.writeFileSync("tools/cn-distribution-result-temp.json", `${JSON.stringify(summary, null, 2)}\n`);
+console.log("CN_DISTRIBUTION_RESULT " + JSON.stringify(summary, null, 2));
 
 if (successes < Math.floor(N * 0.95)) process.exitCode = 2;
