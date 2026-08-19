@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { cube3x3x3 } from "./vendor/cubing/puzzles/index.js";
 import {
   prewarm3x3StrictCfopLibraries,
@@ -14,6 +15,17 @@ const scrambles = [
   "B2 D2 L2 U' B2 D2 F2 U' F2 L2 U' R B' D2 B' R' B2 D2 R2 F",
   "U2 R2 D' L2 B2 D' R2 F2 U B2 L' D B' R' D2 U L F2 U",
 ];
+
+// Every physical cross color must map to one unique orientation that puts that
+// face on D. Opposite side colors must never share the same x/z candidate pool,
+// otherwise the earlier color wins every tie (Green over Blue, Red over Orange).
+const cfopSource = fs.readFileSync(new URL("./solver/cfop3x3.js", import.meta.url), "utf8");
+assert.match(cfopSource, /F:\s*\["x'"\]/, "Green cross must map to x'");
+assert.match(cfopSource, /B:\s*\["x"\]/, "Blue cross must map to x");
+assert.match(cfopSource, /R:\s*\["z"\]/, "Red cross must map to z");
+assert.match(cfopSource, /L:\s*\["z'"\]/, "Orange cross must map to z'");
+assert.doesNotMatch(cfopSource, /F:\s*\["x",\s*"x'"\]/, "Green/Blue must not share both x rotations");
+assert.doesNotMatch(cfopSource, /R:\s*\["z'",\s*"z"\]/, "Red/Orange must not share both z rotations");
 
 const kpuzzle = await cube3x3x3.kpuzzle();
 const solved = kpuzzle.defaultPattern();
