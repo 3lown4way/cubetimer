@@ -1,4 +1,4 @@
-name: Temporary fix CFOP full color neutral
+name: Temporary verify CFOP full color neutral
 
 on:
   push:
@@ -11,54 +11,26 @@ permissions:
   contents: write
 
 jobs:
-  fix-and-verify:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Fix opposite-face cross orientation mapping
-        shell: bash
+      - name: Syntax check
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('solver/cfop3x3.js')
-          text = path.read_text()
-          old = '''const CROSS_COLOR_ROTATION_CANDIDATES = {
-  D: [""],
-  U: ["x2"],
-  F: ["x", "x'"],
-  B: ["x'", "x"],
-  R: ["z'", "z"],
-  L: ["z", "z'"],
-};'''
-          new = '''const CROSS_COLOR_ROTATION_CANDIDATES = {
-  D: [""],
-  U: ["x2"],
-  // Rotate the requested physical cross face onto D exactly once.
-  // x behaves like R: B -> D, so F -> D requires x'.
-  F: ["x'"],
-  B: ["x"],
-  // z behaves like F: R -> D, so L -> D requires z'.
-  R: ["z"],
-  L: ["z'"],
-};'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one old CN rotation block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
-          PY
-      - name: Existing color-neutral contract
+          node --check solver/cfop3x3.js
+          node --check benchmark-color-neutral-contract.mjs
+      - name: Verify permanent color-neutral contract
         run: node benchmark-color-neutral-contract.mjs
-      - name: Verify 1000-scramble six-color distribution
-        run: node tools/benchmark-cfop-cn-fix-temp.mjs
-      - name: Commit verified fix and benchmark result
+      - name: Record successful verification
         shell: bash
         run: |
+          printf '{"ok":true,"contract":"benchmark-color-neutral-contract.mjs"}\n' > tools/cn-contract-verified-temp.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add solver/cfop3x3.js tools/cn-fix-result-temp.json
-          git diff --cached --check
-          git commit -m "Fix full color-neutral cross orientations"
+          git add tools/cn-contract-verified-temp.json
+          git commit -m "Verify CFOP color-neutral regression contract"
           git push
