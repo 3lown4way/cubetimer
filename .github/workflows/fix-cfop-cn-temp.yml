@@ -27,24 +27,24 @@ jobs:
           path = Path('solver/cfop3x3.js')
           text = path.read_text()
           old = '''const CROSS_COLOR_ROTATION_CANDIDATES = {
-            D: [""],
-            U: ["x2"],
-            F: ["x", "x'"],
-            B: ["x'", "x"],
-            R: ["z'", "z"],
-            L: ["z", "z'"],
-          };'''
+  D: [""],
+  U: ["x2"],
+  F: ["x", "x'"],
+  B: ["x'", "x"],
+  R: ["z'", "z"],
+  L: ["z", "z'"],
+};'''
           new = '''const CROSS_COLOR_ROTATION_CANDIDATES = {
-            D: [""],
-            U: ["x2"],
-            // Rotate the requested physical cross face onto D exactly once.
-            // x behaves like R: B -> D, so F -> D requires x'.
-            F: ["x'"],
-            B: ["x"],
-            // z behaves like F: R -> D, so L -> D requires z'.
-            R: ["z"],
-            L: ["z'"],
-          };'''
+  D: [""],
+  U: ["x2"],
+  // Rotate the requested physical cross face onto D exactly once.
+  // x behaves like R: B -> D, so F -> D requires x'.
+  F: ["x'"],
+  B: ["x"],
+  // z behaves like F: R -> D, so L -> D requires z'.
+  R: ["z"],
+  L: ["z'"],
+};'''
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one old CN rotation block, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1))
