@@ -46,6 +46,8 @@ jobs:
           node --check benchmark/benchmark-fmc-extreme-120s-ui.js
           node --check benchmark/benchmark-copy-record.js
           node --check benchmark/benchmark-copy-record.test.mjs
+          node --check benchmark/benchmark-fmc-cancellation-view.js
+          node --check benchmark/benchmark-fmc-detail-view.test.mjs
           node --check benchmark/benchmark-no-fallback-policy.js
           node --check benchmark/benchmark-no-fallback-policy.test.mjs
           node --check benchmark-fmc-extreme-anytime-plan.mjs
@@ -127,6 +129,9 @@ jobs:
 
       - name: Verify benchmark copy record formatting
         run: node benchmark/benchmark-copy-record.test.mjs
+
+      - name: Verify FMC insertion detail display
+        run: node benchmark/benchmark-fmc-detail-view.test.mjs
 
       - name: Verify benchmark no-fallback policy
         run: |
