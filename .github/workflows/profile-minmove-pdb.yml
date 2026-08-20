@@ -1,0 +1,19 @@
+name: Profile minmove PDB
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Profile loading and warm exact proof
+        run: node benchmark-minmove-pdb-profile.mjs
