@@ -1,0 +1,35 @@
+name: Minmove inverse fast diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "benchmark-minmove-inverse-fast.mjs"
+      - ".github/workflows/minmove-inverse-fast-diagnostic.yml"
+      - "solver/minmoveExactV2.js"
+      - "solver-wasm/src/twophase_search.rs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minmove-inverse-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate diagnostic syntax
+        run: node --check benchmark-minmove-inverse-fast.mjs
+
+      - name: Search for shorter non-inverse solutions
+        run: node benchmark-minmove-inverse-fast.mjs
