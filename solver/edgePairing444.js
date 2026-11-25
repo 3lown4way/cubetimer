@@ -104,11 +104,21 @@ function invertAlgorithm(sequence) {
 
 function actionFromTransformation(transformation) {
   const data = transformation.transformationData;
+  const centerPermutation = Uint8Array.from(data.CENTERS.permutation);
+  const centerOrientationDelta = Uint8Array.from(data.CENTERS.orientationDelta);
+  let centerPermutationIdentity = true;
+  let centerOrientationIdentity = true;
+  for (let position = 0; position < 24; position += 1) {
+    if (centerPermutation[position] !== position) centerPermutationIdentity = false;
+    if (centerOrientationDelta[position] !== 0) centerOrientationIdentity = false;
+  }
   return {
     edgePermutation: Uint8Array.from(data.EDGES.permutation),
     edgeOrientationDelta: Uint8Array.from(data.EDGES.orientationDelta),
-    centerPermutation: Uint8Array.from(data.CENTERS.permutation),
-    centerOrientationDelta: Uint8Array.from(data.CENTERS.orientationDelta),
+    centerPermutation,
+    centerOrientationDelta,
+    centerPermutationIdentity,
+    centerOrientationIdentity,
   };
 }
 
@@ -139,12 +149,23 @@ function applyCompactAction(state, action, includeCenters = true) {
     };
   }
 
-  const centerPieces = new Uint8Array(24);
-  const centerOrientation = new Uint8Array(24);
-  for (let position = 0; position < 24; position += 1) {
-    const source = action.centerPermutation[position];
-    centerPieces[position] = state.centerPieces[source];
-    centerOrientation[position] = state.centerOrientation[source] ^ action.centerOrientationDelta[position];
+  const centerPieces = action.centerPermutationIdentity
+    ? state.centerPieces
+    : new Uint8Array(24);
+  const centerOrientation = action.centerOrientationIdentity
+    ? state.centerOrientation
+    : new Uint8Array(24);
+  if (!action.centerPermutationIdentity) {
+    for (let position = 0; position < 24; position += 1) {
+      const source = action.centerPermutation[position];
+      centerPieces[position] = state.centerPieces[source];
+    }
+  }
+  if (!action.centerOrientationIdentity) {
+    for (let position = 0; position < 24; position += 1) {
+      const source = action.centerPermutation[position];
+      centerOrientation[position] = state.centerOrientation[source] ^ action.centerOrientationDelta[position];
+    }
   }
   return { edgePieces, edgeOrientation, centerPieces, centerOrientation };
 }
@@ -491,15 +512,10 @@ function buildEdgePairDistanceTable444(closeMove, model) {
   return distance;
 }
 
-function edgeTypeSignature444(state, edgeType) {
+function edgeTypeSignature444(state, edgeType, positionByPiece) {
   const [firstPiece, secondPiece] = EDGE_SLOT_PAIRS_444[edgeType];
-  let firstPosition = -1;
-  let secondPosition = -1;
-  for (let position = 0; position < 24; position += 1) {
-    if (state.edgePieces[position] === firstPiece) firstPosition = position;
-    if (state.edgePieces[position] === secondPiece) secondPosition = position;
-  }
-  if (firstPosition < 0 || secondPosition < 0) return -1;
+  const firstPosition = positionByPiece[firstPiece];
+  const secondPosition = positionByPiece[secondPiece];
   return encodeEdgePairSignature444(
     firstPosition,
     secondPosition,
@@ -512,11 +528,15 @@ function edgePairDistanceHeuristic444(state, lockedTypeMask, targetCount, closeM
   const needed = Math.max(0, targetCount - bitCount(lockedTypeMask & targetTypeMask));
   if (!needed) return 0;
   const table = buildEdgePairDistanceTable444(closeMove, model);
+  const positionByPiece = new Uint8Array(24);
+  for (let position = 0; position < 24; position += 1) {
+    positionByPiece[state.edgePieces[position]] = position;
+  }
   const distances = [];
   for (let edgeType = 0; edgeType < 12; edgeType += 1) {
     if (!(targetTypeMask & (1 << edgeType))) continue;
     if (lockedTypeMask & (1 << edgeType)) continue;
-    const signature = edgeTypeSignature444(state, edgeType);
+    const signature = edgeTypeSignature444(state, edgeType, positionByPiece);
     if (signature < 0) continue;
     const value = table[signature];
     if (value !== 255) distances.push(value);
@@ -538,14 +558,16 @@ function centersSolved(state, solvedCenterPieces) {
 }
 
 function compactStateKey(state, includeCenters = false) {
-  const values = [
-    ...state.edgePieces,
-    ...state.edgeOrientation,
-  ];
+  // Keep the original byte order, but avoid the temporary 48/96-element array
+  // and variadic spread on this hot path.
+  let key = "";
+  for (let index = 0; index < 24; index += 1) key += String.fromCharCode(state.edgePieces[index]);
+  for (let index = 0; index < 24; index += 1) key += String.fromCharCode(state.edgeOrientation[index]);
   if (includeCenters) {
-    values.push(...state.centerPieces, ...state.centerOrientation);
+    for (let index = 0; index < 24; index += 1) key += String.fromCharCode(state.centerPieces[index]);
+    for (let index = 0; index < 24; index += 1) key += String.fromCharCode(state.centerOrientation[index]);
   }
-  return String.fromCharCode(...values);
+  return key;
 }
 
 function simplifyOuterSequence(tokens) {
@@ -717,6 +739,14 @@ function protectedCenterFacesSolved444(state, model, faces) {
   return true;
 }
 
+function sliceCyclePath444(node) {
+  const moves = [];
+  for (let current = node; current?.parent; current = current.parent) {
+    moves.push(current.move);
+  }
+  return moves.reverse();
+}
+
 function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, model, deadlineTs, maxOuterMoves = SLICE_MAX_OUTER_MOVES, requiredSolvedTypeMask = 0, options = {}) {
   const solvedCenters = model.solvedCompact;
   const openMoves = sliceFamily.openMoves;
@@ -743,7 +773,8 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
     ) continue;
     let beam = [{
       state: openedState,
-      path: [],
+      parent: null,
+      move: "",
       lastFace: "",
       score: 0,
     }];
@@ -764,7 +795,7 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
           return {
             state: closedState,
             mask: closedMask,
-            moves: [openMove, ...node.path, closeMove],
+            moves: [openMove, ...sliceCyclePath444(node), closeMove],
           };
         }
         if (depth === maxOuterMoves) continue;
@@ -791,7 +822,8 @@ function searchSliceCycle(initialState, lockedMask, targetCount, sliceFamily, mo
           if (!previous || previous.score < score) {
             seen.set(key, {
               state: nextState,
-              path: [...node.path, move],
+              parent: node,
+              move,
               lastFace: move[0],
               score,
             });
@@ -1351,7 +1383,7 @@ function humanYauCrossCandidate444(
 
 export async function solveYauCross4Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
   const globalDeadlineTs = Number(options?.deadlineTs) || 0;
-  const budgetMs = Math.max(250, Math.min(2600, Number(options?.timeBudgetMs) || 1700));
+  const budgetMs = Math.max(250, Math.min(8000, Number(options?.timeBudgetMs) || 1700));
   const startedAt = Date.now();
   const localDeadlineTs = globalDeadlineTs > 0
     ? Math.min(globalDeadlineTs, startedAt + budgetMs)
@@ -1464,7 +1496,7 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
 
 export async function solveYauCross3Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
   const globalDeadlineTs = Number(options?.deadlineTs) || 0;
-  const budgetMs = Math.max(350, Math.min(4200, Number(options?.timeBudgetMs) || 2400));
+  const budgetMs = Math.max(350, Math.min(12000, Number(options?.timeBudgetMs) || 2400));
   const startedAt = Date.now();
   const localDeadlineTs = globalDeadlineTs > 0
     ? Math.min(globalDeadlineTs, startedAt + budgetMs)
@@ -1505,16 +1537,80 @@ export async function solveYauCross3Natural444(publicScramble, publicSetupSoluti
     candidates: null,
     nextIndex: 0,
   }];
-  let solvedNode = null;
+  // A caller may vet every solved candidate (for example by re-solving the
+  // remaining centers while the cross edges stay paired). The search then keeps
+  // walking edge orders until one candidate is accepted instead of betting the
+  // whole Yau attempt on the first cross-3 layout it happens to find.
+  const onCandidate = typeof options?.onCandidate === "function" ? options.onCandidate : null;
+  let acceptedCandidate = null;
+  let candidateCount = 0;
+  let lastCandidateRejectReason = null;
   let expandedNodes = 0;
   let backtrackCount = 0;
+
+  const buildCandidate = (node) => {
+    const solution = [...node.moves].join(" ");
+    let verified = pattern;
+    if (solution) verified = verified.applyAlg(solution);
+    const verifiedState = compactStateFromPattern(verified);
+    const verifiedSolvedMask = solvedEdgeTypeMask(verifiedState) & targetMask;
+    const verifiedPairedMask = pairedEdgeTypeMask(verifiedState) & targetMask;
+    if (
+      bitCount(verifiedSolvedMask) !== 3 ||
+      !maskContains(verifiedPairedMask, verifiedSolvedMask) ||
+      !protectedCenterFacesSolved444(verifiedState, model, protectedCenterFaces)
+    ) {
+      return { candidate: null, reason: "444_YAU_HUMAN_CROSS3_VERIFY_FAILED" };
+    }
+    return {
+      reason: null,
+      candidate: {
+        ok: true,
+        reason: null,
+        solution,
+        moveCount: node.moves.length,
+        lockedTypeMask: verifiedSolvedMask,
+        pairedTargetMask: verifiedPairedMask,
+        solvedTargetMask: verifiedSolvedMask,
+        humanStepCount: node.steps.length,
+        steps: node.steps,
+        searchExpandedNodes: expandedNodes,
+        searchBacktrackCount: backtrackCount,
+        method: "Yau Human Cross 3/4",
+      },
+    };
+  };
 
   while (stack.length && !deadlineReached(localDeadlineTs)) {
     const node = stack[stack.length - 1];
     const solvedCount = bitCount(node.solvedMask);
     if (solvedCount === 3) {
-      solvedNode = node;
-      break;
+      const built = buildCandidate(node);
+      if (!built.candidate) {
+        lastCandidateRejectReason = built.reason;
+      } else if (!onCandidate) {
+        acceptedCandidate = built.candidate;
+        break;
+      } else {
+        candidateCount += 1;
+        let accepted = false;
+        let rejection = null;
+        try {
+          const verdict = await onCandidate(built.candidate);
+          if (verdict === true) accepted = true;
+          else if (typeof verdict === "string" && verdict) rejection = verdict;
+        } catch (error) {
+          rejection = String(error?.message || error);
+        }
+        if (accepted) {
+          acceptedCandidate = built.candidate;
+          break;
+        }
+        lastCandidateRejectReason = rejection || "444_YAU_HUMAN_CROSS3_CANDIDATE_REJECTED";
+      }
+      // Backtrack instead of stopping so alternative cross-3 layouts are tried.
+      stack.pop();
+      continue;
     }
 
     if (node.candidates == null) {
@@ -1564,55 +1660,30 @@ export async function solveYauCross3Natural444(publicScramble, publicSetupSoluti
     });
   }
 
-  if (!solvedNode) {
-    const deepest = stack.reduce((best, node) =>
-      bitCount(node.solvedMask) > bitCount(best.solvedMask) ? node : best,
-      { solvedMask: initialSolvedMask },
-    );
+  if (acceptedCandidate) {
     return {
-      ok: false,
-      reason: deadlineReached(localDeadlineTs)
-        ? "444_YAU_HUMAN_CROSS3_TIMEOUT"
-        : "444_YAU_HUMAN_CROSS3_EDGE_ORDER_EXHAUSTED",
-      moveCount: 0,
-      solvedCrossCount: bitCount(deepest.solvedMask),
+      ...acceptedCandidate,
       elapsedMs: Date.now() - startedAt,
-      expandedNodes,
-      backtrackCount,
+      candidateCount,
     };
   }
 
-  // Keep human insertion boundaries intact so the presentation layer can
-  // regrip between cross-edge insertions while the cross center stays on R.
-  const simplified = [...solvedNode.moves];
-  const solution = simplified.join(" ");
-  let verified = pattern;
-  if (solution) verified = verified.applyAlg(solution);
-  const verifiedState = compactStateFromPattern(verified);
-  const verifiedSolvedMask = solvedEdgeTypeMask(verifiedState) & targetMask;
-  const verifiedPairedMask = pairedEdgeTypeMask(verifiedState) & targetMask;
-  if (
-    bitCount(verifiedSolvedMask) !== 3 ||
-    !maskContains(verifiedPairedMask, verifiedSolvedMask) ||
-    !protectedCenterFacesSolved444(verifiedState, model, protectedCenterFaces)
-  ) {
-    return { ok: false, reason: "444_YAU_HUMAN_CROSS3_VERIFY_FAILED" };
-  }
-
+  const deepest = stack.reduce((best, node) =>
+    bitCount(node.solvedMask) > bitCount(best.solvedMask) ? node : best,
+    { solvedMask: initialSolvedMask },
+  );
   return {
-    ok: true,
-    reason: null,
-    solution,
-    moveCount: simplified.length,
-    lockedTypeMask: verifiedSolvedMask,
-    pairedTargetMask: verifiedPairedMask,
-    solvedTargetMask: verifiedSolvedMask,
-    humanStepCount: solvedNode.steps.length,
-    steps: solvedNode.steps,
+    ok: false,
+    reason: lastCandidateRejectReason || (deadlineReached(localDeadlineTs)
+      ? "444_YAU_HUMAN_CROSS3_TIMEOUT"
+      : "444_YAU_HUMAN_CROSS3_EDGE_ORDER_EXHAUSTED"),
+    searchExhausted: !deadlineReached(localDeadlineTs),
+    moveCount: 0,
+    solvedCrossCount: bitCount(deepest.solvedMask),
     elapsedMs: Date.now() - startedAt,
-    searchExpandedNodes: expandedNodes,
-    searchBacktrackCount: backtrackCount,
-    method: "Yau Human Cross 3/4",
+    expandedNodes,
+    backtrackCount,
+    candidateCount,
   };
 }
 
@@ -2174,9 +2245,10 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
   }
 
   const initialRemainingCount = bitCount(yauRemainingPairedMask444(state, crossMask));
+  const edgeBudgetMs = Math.max(1000, Math.min(20000, Number(options?.timeBudgetMs) || 12000));
   const edgeStageDeadline = deadlineTs > 0
-    ? Math.min(deadlineTs, startedAt + 7000)
-    : startedAt + 7000;
+    ? Math.min(deadlineTs, startedAt + edgeBudgetMs)
+    : startedAt + edgeBudgetMs;
 
   // FIRST 3: only the completed cross is sacred. Incidental non-cross pairs
   // are not locked; a human Yau solver may let those move while forming the

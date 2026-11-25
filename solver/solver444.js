@@ -35,6 +35,14 @@ function deadlineReached(deadlineTs) {
   return Number.isFinite(deadline) && deadline > 0 && Date.now() >= deadline;
 }
 
+// Yau stage budgets default to the historical values; internal options let the
+// frame scheduler (and benchmarks) widen them when a frame has time to spare.
+function resolveYauBudget444(options, key, fallback) {
+  const explicit = Number(options?.[key]);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  return fallback;
+}
+
 export function translate444MoveConvention(sequence) {
   return String(sequence || "")
     .trim()
@@ -1143,6 +1151,8 @@ async function preferYauReduction444(
   let naturalCross3FallbackReason = null;
   let recomputedCenterPhaseMoveCounts = null;
   let protectedCenterSearchMs = 0;
+  let protectedCenterAttemptCount = 0;
+  let cross3CandidateCount = 0;
   let remainingCentersCrossLockedEveryMove = false;
 
   if (
@@ -1150,73 +1160,101 @@ async function preferYauReduction444(
     typeof edgeModule.solveYauCross3Natural444 === "function" &&
     typeof api.solveYauRemainingCenters === "function"
   ) {
+    // The protected-center re-solve is the usual reason a cross-3 layout is
+    // unusable, so it is evaluated inside the cross-3 search. Every rejected
+    // layout simply makes the search try the next one within the same budget.
+    const cross3BudgetMs = resolveYauBudget444(
+      options,
+      "__yauCross3BudgetMs",
+      options?.__yauFastFrameProbe === true ? 950 : 2400,
+    );
+    const protectedBudgetMs = Math.max(
+      350,
+      Math.min(
+        12000,
+        resolveYauBudget444(
+          options,
+          "__yauProtectedCenterBudgetMs",
+          options?.__yauFastFrameProbe === true ? 900 : 2200,
+        ),
+      ),
+    );
+    const protectedPoolDeadlineTs = Date.now() + protectedBudgetMs;
+    let protectedCenterAttempts = 0;
+
     const natural = await edgeModule.solveYauCross3Natural444(
       publicScramble, firstTwoCenters, targetTypeMask,
       {
         deadlineTs,
-        timeBudgetMs: options?.__yauFastFrameProbe === true ? 950 : 2400,
+        timeBudgetMs: cross3BudgetMs,
         protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
-      },
-    );
-    if (natural?.ok) {
-      const stateBeforeRemainingCenters = [firstTwoCenters, natural.solution]
-        .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-      const protectedCenterScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]
-        .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-      const defaultProtectedBudgetMs = options?.__yauFastFrameProbe === true ? 900 : 2200;
-      const protectedBudgetMs = Math.max(
-        defaultProtectedBudgetMs,
-        Math.min(8000, Number(options?.__yauProtectedCenterBudgetMs) || defaultProtectedBudgetMs),
-      );
-      const protectedDeadlineTs = deadlineTs > 0
-        ? Math.min(deadlineTs, Date.now() + protectedBudgetMs)
-        : Date.now() + protectedBudgetMs;
-      let protectedResult = null;
-      try {
-        const rawProtected = api.solveYauRemainingCenters({
-          scramble: protectedCenterScramble,
-          crossColor,
-          deadlineTs: protectedDeadlineTs,
-        });
-        protectedResult = typeof rawProtected === "string" ? JSON.parse(rawProtected) : rawProtected;
-      } catch (error) {
-        naturalCross3FallbackReason = `PROTECTED_CENTER_CALL:${String(error?.message || error)}`;
-      }
-      if (
-        protectedResult?.ok === true &&
-        protectedResult?.verified === true &&
-        protectedResult?.crossLockedEveryMove === true &&
-        Number(protectedResult?.protectedCrossPairCount) === 3
-      ) {
-        const candidateRemainingCenters = translate444MoveConvention(protectedResult.solution || "");
-        const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]
-          .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-        const preserved = await edgeModule.solveTargetEdgeTypes444(
-          publicScramble, verifySetup, targetTypeMask,
-          {
-            targetCount: 3, requiredTypeMask: natural.lockedTypeMask, deadlineTs,
-            maxMacros: 0, enableRescue: false,
-          },
-        );
-        if (preserved?.ok) {
-          cross3 = natural;
+        onCandidate: async (candidate) => {
+          if (deadlineReached(deadlineTs)) return "444_DEADLINE_REACHED";
+          if (Date.now() >= protectedPoolDeadlineTs) return "444_YAU_PROTECTED_CENTER_BUDGET_EXHAUSTED";
+          protectedCenterAttempts += 1;
+
+          const stateBeforeRemainingCenters = [firstTwoCenters, candidate.solution]
+            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+          const protectedCenterScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]
+            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+          const protectedDeadlineTs = deadlineTs > 0
+            ? Math.min(deadlineTs, protectedPoolDeadlineTs)
+            : protectedPoolDeadlineTs;
+
+          let protectedResult = null;
+          try {
+            const rawProtected = api.solveYauRemainingCenters({
+              scramble: protectedCenterScramble,
+              crossColor,
+              deadlineTs: protectedDeadlineTs,
+            });
+            protectedResult = typeof rawProtected === "string" ? JSON.parse(rawProtected) : rawProtected;
+          } catch (error) {
+            return `PROTECTED_CENTER_CALL:${String(error?.message || error)}`;
+          }
+          protectedCenterSearchMs += Number(protectedResult?.searchMs) || 0;
+          if (
+            protectedResult?.ok !== true ||
+            protectedResult?.verified !== true ||
+            protectedResult?.crossLockedEveryMove !== true ||
+            Number(protectedResult?.protectedCrossPairCount) !== 3
+          ) {
+            return protectedResult?.reason || "PROTECTED_CENTER_SEARCH_FAILED";
+          }
+
+          const candidateRemainingCenters = translate444MoveConvention(protectedResult.solution || "");
+          const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]
+            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+          const preserved = await edgeModule.solveTargetEdgeTypes444(
+            publicScramble, verifySetup, targetTypeMask,
+            {
+              targetCount: 3, requiredTypeMask: candidate.lockedTypeMask, deadlineTs,
+              maxMacros: 0, enableRescue: false,
+            },
+          );
+          if (!preserved?.ok) {
+            return preserved?.reason || "PROTECTED_CENTER_JS_VERIFY_FAILED";
+          }
+
           effectiveRemainingCenters = candidateRemainingCenters;
           naturalCross3Applied = true;
           remainingCentersRecomputed = true;
           recomputedCenterPhaseMoveCounts = Array.isArray(protectedResult.phaseMoveCounts)
             ? [...protectedResult.phaseMoveCounts]
             : null;
-          protectedCenterSearchMs = Number(protectedResult.searchMs) || 0;
           remainingCentersCrossLockedEveryMove = true;
-        } else {
-          naturalCross3FallbackReason = preserved?.reason || "PROTECTED_CENTER_JS_VERIFY_FAILED";
-        }
-      } else if (!naturalCross3FallbackReason) {
-        naturalCross3FallbackReason = protectedResult?.reason || "PROTECTED_CENTER_SEARCH_FAILED";
-      }
+          return true;
+        },
+      },
+    );
+    if (natural?.ok) {
+      cross3 = natural;
+      naturalCross3FallbackReason = null;
     } else {
       naturalCross3FallbackReason = natural?.reason || "NATURAL_CROSS3_NOT_FOUND";
     }
+    protectedCenterAttemptCount = protectedCenterAttempts;
+    cross3CandidateCount = Number(natural?.candidateCount) || 0;
   }
 
   if (!cross3?.ok) {
@@ -1299,6 +1337,7 @@ async function preferYauReduction444(
     {
       deadlineTs,
       crossTypeMask: targetTypeMask,
+      timeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", 12000),
     },
   );
   const yauEdge323ProtectedCrossBank = true;
@@ -1437,6 +1476,8 @@ async function preferYauReduction444(
       yauRemainingCentersRecomputed: remainingCentersRecomputed,
       yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,
       yauProtectedCenterSearchMs: protectedCenterSearchMs,
+      yauProtectedCenterAttemptCount: protectedCenterAttemptCount,
+      yauCross3CandidateCount: cross3CandidateCount,
       yauRemainingCentersCrossLockedEveryMove: remainingCentersCrossLockedEveryMove,
       yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
       yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
@@ -1774,80 +1815,10 @@ async function solveYauCanonicalFrame444(
     };
   };
 
-  // Probe a frame and, once it demonstrates a valid Cross 4/4 setup, solve it
-  // immediately. This avoids paying for the other three probes when the first
-  // useful frame already works.
-  for (let frameIndex = 0; frameIndex < frameSpins.length; frameIndex += 1) {
-    if (deadlineReached(deadlineTs)) break;
-    const spin = frameSpins[frameIndex];
-    const orientation = buildOrientation(spin);
-    if (!orientation) continue;
-    const logicalScramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
-    if (logicalScramble == null) continue;
-    const candidate = { spin, orientation, logicalScramble };
-
-    const probeStarted = Date.now();
-    const hardDeadline = Number.isFinite(Number(deadlineTs)) && Number(deadlineTs) > 0
-      ? Number(deadlineTs)
-      : probeStarted + 60_000;
-    const probe = await solve444(logicalScramble, null, {
-      ...options,
-      method444: "yau",
-      crossColor: "D",
-      deadlineTs: Math.min(hardDeadline, probeStarted + 6_000),
-      __yauCanonicalFrame: true,
-      __yauProbeOnly: true,
-      __yauFastFrameProbe: true,
-    });
-    const probeOk = probe?.ok === true && probe?.status === "yau_probe";
-    attempts.push({
-      phase: "probe",
-      spin: spin || "identity",
-      elapsedMs: Math.max(0, Date.now() - probeStarted),
-      ok: probeOk,
-      reason: probe?.reason || null,
-    });
-    if (!probeOk) {
-      lastFailure = probe;
-      continue;
-    }
-
-    const fullStarted = Date.now();
-    const remaining = Math.max(0, hardDeadline - fullStarted);
-    const framesLeft = Math.max(1, frameSpins.length - frameIndex);
-    const fullBudget = Math.max(6_000, Math.min(14_000, Math.floor(remaining / framesLeft)));
-    const logicalResult = await solve444(logicalScramble, onProgress, {
-      ...options,
-      method444: "yau",
-      crossColor: "D",
-      deadlineTs: Math.min(hardDeadline, fullStarted + fullBudget),
-      __yauCanonicalFrame: true,
-      __yauProbeOnly: false,
-      __yauFastFrameProbe: false,
-      __skipHumanPresentation: true,
-    });
-    attempts.push({
-      phase: "full",
-      spin: spin || "identity",
-      elapsedMs: Math.max(0, Date.now() - fullStarted),
-      ok: logicalResult?.ok === true,
-      reason: logicalResult?.reason || null,
-    });
-    if (!logicalResult?.ok) {
-      lastFailure = logicalResult;
-      continue;
-    }
-    const mapped = await mapVerifiedSuccess(logicalResult, candidate);
-    if (mapped) return mapped;
-    lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", spin || "identity", {
-      method444: "yau",
-      crossColor,
-    });
-  }
-
-  // If no cheap probe succeeds, spend the remaining budget on bounded deep
-  // rescue attempts. Every frame gets a chance; no single hostile frame may
-  // consume the whole worker deadline.
+  // Solve each frame once. The old probe/full/rescue passes repeated the same
+  // center and cross searches and exhausted most of the deadline before a frame
+  // could finish. Budgets are divided by the frames that remain so an early
+  // failure leaves a fair share for the next orientation.
   for (let frameIndex = 0; frameIndex < frameSpins.length; frameIndex += 1) {
     if (deadlineReached(deadlineTs)) break;
     const spin = frameSpins[frameIndex];
@@ -1862,19 +1833,44 @@ async function solveYauCanonicalFrame444(
       : started + 60_000;
     const remaining = Math.max(0, hardDeadline - started);
     const framesLeft = Math.max(1, frameSpins.length - frameIndex);
-    const rescueBudget = Math.max(4_000, Math.min(10_000, Math.floor(remaining / framesLeft)));
+    const frameBudget = Math.max(8_000, Math.min(20_000, Math.floor(remaining / framesLeft)));
+    const finalFrame = framesLeft === 1;
     const logicalResult = await solve444(logicalScramble, onProgress, {
       ...options,
       method444: "yau",
       crossColor: "D",
-      deadlineTs: Math.min(hardDeadline, started + rescueBudget),
+      deadlineTs: Math.min(hardDeadline, started + frameBudget),
       __yauCanonicalFrame: true,
       __yauProbeOnly: false,
       __yauFastFrameProbe: false,
       __skipHumanPresentation: true,
+      __yauCross3BudgetMs: resolveYauBudget444(
+        options,
+        "__yauCross3BudgetMs",
+        finalFrame
+          ? Math.min(10_000, Math.max(6_000, Math.floor(remaining * 0.3)))
+          : Math.min(6_000, Math.max(2_400, Math.floor(frameBudget * 0.3))),
+      ),
+      __yauProtectedCenterBudgetMs: resolveYauBudget444(
+        options,
+        "__yauProtectedCenterBudgetMs",
+        finalFrame
+          ? Math.min(12_000, Math.max(8_000, Math.floor(remaining * 0.35)))
+          : 6_000,
+      ),
+      __yauCross4BudgetMs: resolveYauBudget444(
+        options,
+        "__yauCross4BudgetMs",
+        Math.min(3_000, Math.max(1_500, Math.floor(frameBudget * 0.1))),
+      ),
+      __yauEdgeBudgetMs: resolveYauBudget444(
+        options,
+        "__yauEdgeBudgetMs",
+        finalFrame ? 15_000 : 12_000,
+      ),
     });
     attempts.push({
-      phase: "rescue",
+      phase: "full",
       spin: spin || "identity",
       elapsedMs: Math.max(0, Date.now() - started),
       ok: logicalResult?.ok === true,
@@ -1886,6 +1882,10 @@ async function solveYauCanonicalFrame444(
     }
     const mapped = await mapVerifiedSuccess(logicalResult, candidate);
     if (mapped) return mapped;
+    lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", spin || "identity", {
+      method444: "yau",
+      crossColor,
+    });
   }
 
   if (deadlineReached(deadlineTs)) {
