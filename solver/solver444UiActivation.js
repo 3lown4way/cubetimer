@@ -9,6 +9,8 @@ const WORKER_CALL_GRACE_MS = 5_000;
 const WORKER_BUILD_TOKEN = "20261125-yau-method-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
+const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
+
 const STAGE_LABELS = Object.freeze({
   centers: "센터",
   edges: "엣지 페어링",
@@ -235,6 +237,7 @@ export function installSolver444UiActivation() {
   let lastMoveCountText = "";
 
   const is444 = () => eventSelect.value === EVENT_ID;
+  const selectedMethod = () => solver444MethodSelect?.value === "reduction" ? "reduction" : "yau";
   function currentScramble() {
     if (scramblePreview.getAttribute("event") !== EVENT_ID) return "";
     const scramble = normalizeScramble(scramblePreview.getAttribute("scramble"));
@@ -487,8 +490,8 @@ export function installSolver444UiActivation() {
     ensurePlayer(scramble);
     solverVisualPanel.hidden = false;
     updateFrame();
-    const methodLabel = result?.meta?.method444 === "yau" ? "Yau · " : "";
-    setStatus(`4×4 ${methodLabel}해를 찾았습니다. ${moveCount}수 · 96-facelet 검증 완료`);
+    const methodLabel = METHOD_LABELS[result.meta?.method444] || METHOD_LABELS[selectedMethod()];
+    setStatus(`4×4 ${methodLabel} 해를 찾았습니다. ${moveCount}수 · 96-facelet 검증 완료`);
   }
 
   function renderFailure(result) {
@@ -582,14 +585,14 @@ export function installSolver444UiActivation() {
       const result = await withUiTimeout(
         api.solve(
           {
-          scramble,
-          eventId: EVENT_ID,
-          deadlineTs,
-          crossColor: /^[URFDLB]$/i.test(String(crossColorSelect?.value || "D"))
-            ? String(crossColorSelect.value).toUpperCase()
-            : "D",
-          method444: solver444MethodSelect?.value === "yau" ? "yau" : "reduction",
-        },
+            scramble,
+            eventId: EVENT_ID,
+            deadlineTs,
+            crossColor: /^[URFDLB]$/i.test(String(crossColorSelect?.value || "D"))
+              ? String(crossColorSelect.value).toUpperCase()
+              : "D",
+            method444: selectedMethod(),
+          },
           proxy((progress) => {
             if (activeRun !== run || !is444()) return;
             setStatus(progressText(progress));
@@ -663,9 +666,7 @@ export function installSolver444UiActivation() {
       if (crossColorSelect?.value === "CN") crossColorSelect.value = "D";
       if (solver444MethodField) solver444MethodField.hidden = false;
       if (solveTitle) solveTitle.textContent = "4×4 해 찾기";
-      findSolutionBtn.title = solver444MethodSelect?.value === "yau"
-        ? "검증된 4×4 Yau 해 찾기"
-        : "검증된 4×4 Reduction 해 찾기";
+      findSolutionBtn.title = `검증된 4×4 ${METHOD_LABELS[selectedMethod()]} 해 찾기`;
       syncButton();
       return;
     }
@@ -675,7 +676,7 @@ export function installSolver444UiActivation() {
     disposeWorker();
     setThreeByThreeControlsHidden(false);
     if (solveTitle?.textContent === "4×4 해 찾기") solveTitle.textContent = "해 찾기";
-    if (findSolutionBtn.title === "검증된 4×4 해 찾기") findSolutionBtn.title = "해 찾기 시작";
+    if (findSolutionBtn.title?.startsWith("검증된 4×4 ")) findSolutionBtn.title = "해 찾기 시작";
     clearOwnedPresentationWhenLeaving();
   }
 
@@ -684,10 +685,7 @@ export function installSolver444UiActivation() {
     cancelActiveSolve();
     resetResultPresentation();
     setStatus("해를 다시 찾을 수 있습니다.");
-    findSolutionBtn.title = solver444MethodSelect.value === "yau"
-      ? "검증된 4×4 Yau 해 찾기"
-      : "검증된 4×4 Reduction 해 찾기";
-    syncButton();
+    syncEventUi();
   });
   crossColorSelect?.addEventListener("change", () => {
     if (!is444()) return;

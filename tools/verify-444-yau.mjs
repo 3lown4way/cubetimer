@@ -240,6 +240,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     "Yau · Cross Edge 4/4",
   ]);
   assert.equal(setup.segments.map((segment) => segment.solution).filter(Boolean).join(" "), setup.solution);
+  assert.ok(result.solution.startsWith(`${setup.solution} `), "full playback must use the displayed Yau setup order");
   assert.ok(Number(setup.segments[1].viewpointRotations) >= 1, "Yau opposite center did not flip the first center down");
   assert.ok(Number(setup.segments[2].viewpointRotations) >= 1, "Yau Cross 3/4 did not regrip with the cross center on the side");
   assert.equal(centerFaceForColor(solved.applyAlg(scramble).applyAlg(setup.solution), crossColor), "R", "Yau setup must finish Cross 4/4 with the cross still on R");
@@ -251,6 +252,11 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   pattern = setup.segments[1].solution ? pattern.applyAlg(setup.segments[1].solution) : pattern;
   assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not preserved");
   assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
+  if (expectNatural) {
+    assert.equal(allCentersGrouped(pattern), false, "remaining centers were already solved before Cross 3/4");
+    assert.ok(bitCount(pairedCrossTypesAdjacentToCenter(pattern, crossColor)) < 3,
+      "the Cross 3/4 fixture must start with fewer than three placed cross dedges");
+  }
   const cross3Tokens = String(setup.segments[2].solution || "").trim().split(/\s+/).filter(Boolean);
   const cross3WideTokens = cross3Tokens.filter((token) => /^[URFDLB]w(?:2|')?$/.test(token));
   const techniques = setup.segments[2].humanStepTechniques;
@@ -276,6 +282,9 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(centerFaceForColor(pattern, crossColor), "R", "human-view Cross 3/4 must keep the cross center on the R face");
   const displayedCross3Mask = pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask;
   assert.equal(bitCount(displayedCross3Mask), 3, "displayed Yau Cross 3/4 is not attached to the cross center");
+  if (expectNatural) {
+    assert.equal(allCentersGrouped(pattern), false, "Cross 3/4 must precede the remaining centers in this fixture");
+  }
   assert.equal(setup.segments[3].crossLockedEveryMove, true);
   const remainingCenterTokens = String(setup.segments[3].solution || "").trim().split(/\s+/).filter(Boolean);
   for (const token of remainingCenterTokens) {
