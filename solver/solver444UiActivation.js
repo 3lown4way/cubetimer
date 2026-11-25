@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261125-yau-method-1";
+const WORKER_BUILD_TOKEN = "20261125-yau-cross-lock-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -438,7 +438,8 @@ export function installSolver444UiActivation() {
         : stage?.technique === "pair-park-close"
           ? ` · 슬라이스 ${stage.pairedOnOpen}쌍 + 복원 ${stage.pairedOnClose}쌍`
           : "";
-    count.textContent = ` ${moveCount}수${detail}${stage?.verified === true ? " · 검증됨" : ""}`;
+    const crossLock = stage?.crossLockedEveryMove === true ? " · 크로스 3쌍 유지" : "";
+    count.textContent = ` ${moveCount}수${detail}${crossLock}${stage?.verified === true ? " · 검증됨" : ""}`;
     const algorithm = document.createElement("code");
     algorithm.textContent = String(stage?.solution || "").trim() || "0수";
     item.append(title, count, algorithm);

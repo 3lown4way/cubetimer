@@ -966,7 +966,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   const started = Date.now();
   let human;
   try {
-    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20261125-yau-method-1");
+    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20261125-yau-cross-lock-1");
     human = await solveEdgePairing323(
       publicScramble,
       translate444MoveConvention(centerStage.solution),
@@ -1132,7 +1132,7 @@ async function preferYauReduction444(
 
   let edgeModule;
   try {
-    edgeModule = await import("./edgePairing444.js?v=20261125-yau-method-1");
+    edgeModule = await import("./edgePairing444.js?v=20261125-yau-cross-lock-1");
   } catch (error) {
     return yauFailure444(reduction, "444_YAU_EDGE_MODULE_FAILED", error?.message || error, deadlineTs);
   }
@@ -1206,6 +1206,10 @@ async function preferYauReduction444(
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
+  // If the cross started complete, reserve one spoke for the working gap.
+  const protectedCrossTypeMask = cross3.completedCrossCount === 3
+    ? cross3.lockedTypeMask
+    : targetTypeMask & (targetTypeMask - 1);
   startStage("EDGES");
   const remainingEdges = await edgeModule.solveYauLastEight323444(
     publicScramble,
@@ -1213,6 +1217,7 @@ async function preferYauReduction444(
     {
       deadlineTs,
       crossTypeMask: targetTypeMask,
+      protectedCrossTypeMask,
       timeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", 12000),
     },
   );
@@ -1290,6 +1295,7 @@ async function preferYauReduction444(
     }),
     makeSetupSegment("yauCross4", "Yau · Cross Edge 4/4", cross4.solution, {
       crossEdgeCount: 4,
+      crossLockedEveryMove: true,
       alignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
       technique: cross4.technique,
       alreadyPaired: cross4.technique === "already-paired",

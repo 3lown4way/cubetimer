@@ -20,6 +20,11 @@ const OPPOSITE = { U: "D", R: "L", F: "B", D: "U", L: "R", B: "F" };
 
 const kpuzzle = await puzzles["4x4x4"].kpuzzle();
 const solved = kpuzzle.defaultPattern();
+const geometry = (await puzzles["4x4x4"].pg()).get3d();
+const wingStickerFaces = Array.from({ length: 24 }, () => []);
+for (const { orbit, ord, ori, face, isDup } of geometry.stickers) {
+  if (orbit === "EDGES" && !isDup) wingStickerFaces[ord][ori] = geometry.faces[face].name;
+}
 const CENTER_POSITIONS_BY_FACE = {};
 const CENTER_FACE_BY_PIECE = new Map();
 for (const face of FACES) {
@@ -111,15 +116,17 @@ function pairedCrossTypesAdjacentToCenter(pattern, crossColor) {
   const edges = pattern.patternData.EDGES;
   let mask = 0;
   for (let slot = 0; slot < EDGE_SLOT_PAIRS.length; slot += 1) {
-    const slotFacePair = EDGE_NAMES_333[EDGE_SLOT_TO_333[slot]];
-    if (!slotFacePair.includes(crossFace)) continue;
     const [a, b] = EDGE_SLOT_PAIRS[slot];
     const ta = EDGE_TYPE_BY_WING[Number(edges.pieces[a])];
     const tb = EDGE_TYPE_BY_WING[Number(edges.pieces[b])];
     if (
       ta !== 255 && ta === tb &&
       (crossTypeMask(crossColor) & (1 << ta)) !== 0 &&
-      Number(edges.orientation[a]) === Number(edges.orientation[b])
+      [a, b].every((wing) => {
+        const facelet = wingStickerFaces[wing].indexOf(crossFace);
+        const piece = Number(edges.pieces[wing]);
+        return facelet >= 0 && wingStickerFaces[piece][facelet ^ edges.orientation[wing]] === crossColor;
+      })
     ) {
       mask |= 1 << ta;
     }
@@ -147,7 +154,7 @@ function isSolved(pattern) {
 const TOP_SLOTS = crossTypeMask("U");
 const MIDDLE_SLOTS = 0x0fff ^ TOP_SLOTS ^ crossTypeMask("D");
 
-function verifyYauPairingSegment(pattern, segment, tokens, targetMask) {
+function verifyYauPairingSegment(pattern, segment, tokens, targetMask, { crossColor, lockedMask } = {}) {
   const before = pairedTypeMask(pattern);
   const singleCycle = segment.technique === "align-then-close" || segment.technique === "pair-park-close";
   const wide = tokens.filter((token) => /^[URFDLB]w/.test(token));
@@ -164,6 +171,13 @@ function verifyYauPairingSegment(pattern, segment, tokens, targetMask) {
     pattern = pattern.applyMove(token);
     if (singleCycle && token === wide[0]) opened = pattern;
     assert.equal(pairedTypeMask(pattern) & targetMask, targetMask, `cross split during ${segment.name} at ${token}`);
+    if (lockedMask) {
+      assert.equal(
+        pairedCrossTypesAdjacentToCenter(pattern, crossColor) & lockedMask,
+        lockedMask,
+        `${segment.name} lifted one of the three original cross edges after ${token}`,
+      );
+    }
   }
   const after = pairedTypeMask(pattern);
   assert.equal(after & before, before, `${segment.name} lost a completed pair at the checkpoint`);
@@ -297,7 +311,17 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   }
   assert.equal(allCentersGrouped(pattern), true, "Yau remaining centers did not finish all centers");
   assert.equal(centerFaceForColor(pattern, crossColor), "R", "Yau remaining centers must keep the 3-cross on the R face");
-  pattern = setup.segments[4].solution ? pattern.applyAlg(setup.segments[4].solution) : pattern;
+  assert.equal(setup.segments[4].crossLockedEveryMove, true);
+  const cross4Tokens = String(setup.segments[4].solution || "").trim().split(/\s+/).filter(Boolean);
+  for (const token of cross4Tokens) {
+    pattern = pattern.applyAlg(token);
+    assert.equal(
+      pairedCrossTypesAdjacentToCenter(pattern, crossColor) & displayedCross3Mask,
+      displayedCross3Mask,
+      `Yau Cross 4/4 lifted a completed cross edge after ${token} for ${crossColor}: ${scramble}`,
+    );
+  }
+  assert.equal(allCentersGrouped(pattern), true, "Yau Cross 4/4 disturbed the solved centers");
   assert.equal(centerFaceForColor(pattern, crossColor), "R", "Yau Cross 4/4 must finish with the completed cross still on R");
   assert.equal((pairedTypeMask(pattern) & targetMask), targetMask, "Yau Cross 4/4 did not pair all cross dedges");
   assert.equal(
@@ -318,6 +342,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   let first323TurnIndex = 0;
   while (first323TurnIndex < first323Tokens.length && /^[xyz](?:2|')?$/.test(first323Tokens[first323TurnIndex])) {
     pattern = pattern.applyAlg(first323Tokens[first323TurnIndex]);
+    assert.equal(pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask, targetMask);
     first323TurnIndex += 1;
   }
   assert.ok(first323TurnIndex >= 1, "Yau 3-2-3 did not expose a leading cross-down regrip");
@@ -332,7 +357,11 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     const segment = edge.segments[segmentIndex];
     const tokens = String(segment.solution || "").trim().split(/\s+/).filter(Boolean);
     const startIndex = segmentIndex === 0 ? first323TurnIndex : 0;
-    pattern = verifyYauPairingSegment(pattern, segment, tokens.slice(startIndex), targetMask);
+    assert.equal(segment.crossLockedEveryMove, true);
+    pattern = verifyYauPairingSegment(pattern, segment, tokens.slice(startIndex), targetMask, {
+      crossColor,
+      lockedMask: displayedCross3Mask,
+    });
     assert.equal(centerFaceForColor(pattern, crossColor), "D", `${segment.name} must finish with the cross on D`);
     assert.equal(
       pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
@@ -360,8 +389,10 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
 const nextTwoScramble = "B' L D' L F' U2 F2 L2 R B' R2 U2 D R2 U2 L2 D' L2 D' F2 U Lw2 D L2 Fw2 B2 L U Fw2 F2 L' U Fw' R F U' Fw' B Lw U B Lw2 Fw2 B Lw'";
 const nextTwoSetup = "Uw F Lw Fw Uw2 F Uw2 Rw' U2 Rw Rw B Rw' Fw R' Fw' L' F Dw F' D' F Dw' D R2 D2 Uw2 L' D L Uw2 D Uw' F' Uw F D2 B' Uw' B Uw2 B D2 F D' L Uw2 Uw D' L' D L Uw' D2 R' D' R F";
 const nextTwoCross = crossTypeMask("D");
+const nextTwoLockedCross = nextTwoCross & (nextTwoCross - 1);
 const nextTwoResult = await solveYauLastEight323444(nextTwoScramble, nextTwoSetup, {
   crossTypeMask: nextTwoCross,
+  protectedCrossTypeMask: nextTwoLockedCross,
   deadlineTs: Date.now() + 7_000,
 });
 assert.equal(nextTwoResult.ok, true, `${nextTwoResult.reason}: ${nextTwoResult.detail}`);
@@ -373,6 +404,7 @@ const expectedPairedCounts = [7, 9, 12];
 for (const [index, segment] of nextTwoResult.segments.entries()) {
   nextTwoPattern = verifyYauPairingSegment(
     nextTwoPattern, segment, segment.solution.split(/\s+/).filter(Boolean), nextTwoCross,
+    { crossColor: "D", lockedMask: nextTwoLockedCross },
   );
   assert.ok(allCentersSolved(nextTwoPattern));
   assert.equal(solvedTypeMask(nextTwoPattern) & nextTwoCross, nextTwoCross);
@@ -394,4 +426,4 @@ assert.equal(alreadyPaired.stages[0].segments[2].crossEdgeCount, 4);
 assert.ok(alreadyPaired.stages[1].segments.every((segment) => segment.alreadyPaired && segment.moveCount === 0));
 assert.ok(isSolved(solved.applyAlg("U").applyAlg(alreadyPaired.solution)));
 
-console.log("4x4 Yau gap centers, matching-wing slice cycles, L2E, and final verification passed");
+console.log("4x4 Yau three-spoke protection, 3-2-3 slice cycles, L2E, and final verification passed");

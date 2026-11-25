@@ -317,17 +317,18 @@ function pairedEdgeTypeMask(state, action = IDENTITY_EDGE_ACTION_444) {
   return pairedEdgeTypeMaskInSlots(state, 0x0fff, action);
 }
 
-function solvedEdgeTypeMask(state) {
+function solvedEdgeTypeMask(state, action = IDENTITY_EDGE_ACTION_444, slots = 0x0fff) {
   let mask = 0;
   for (let slot = 0; slot < EDGE_SLOT_PAIRS_444.length; slot += 1) {
+    if (!(slots & (1 << slot))) continue;
     const [first, second] = EDGE_SLOT_PAIRS_444[slot];
-    const firstType = EDGE_TYPE_BY_WING_444[state.edgePieces[first]];
-    const secondType = EDGE_TYPE_BY_WING_444[state.edgePieces[second]];
+    const firstSource = action.edgePermutation[first];
+    const secondSource = action.edgePermutation[second];
     if (
-      firstType === slot &&
-      secondType === slot &&
-      state.edgeOrientation[first] === 0 &&
-      state.edgeOrientation[second] === 0
+      EDGE_TYPE_BY_WING_444[state.edgePieces[firstSource]] === slot &&
+      EDGE_TYPE_BY_WING_444[state.edgePieces[secondSource]] === slot &&
+      state.edgeOrientation[firstSource] === action.edgeOrientationDelta[first] &&
+      state.edgeOrientation[secondSource] === action.edgeOrientationDelta[second]
     ) {
       mask |= 1 << slot;
     }
@@ -872,12 +873,16 @@ function findL2E(
   requiredSolvedTypeMask = 0,
   actionPool = null,
   requiredPairedEveryMoveMask = 0,
+  crossGap = null,
 ) {
   const solvedCenters = model.solvedCompact;
   const l2eActions = Array.isArray(actionPool) ? actionPool : model.l2eActions;
   for (let setupIndex = 0; setupIndex < L2E_SETUP_PATHS.length; setupIndex += 1) {
     if ((setupIndex & 0x01ff) === 0 && deadlineReached(deadlineTs)) return null;
-    const setup = L2E_SETUP_PATHS[setupIndex];
+    const rawSetup = L2E_SETUP_PATHS[setupIndex];
+    // In Yau the setup rotates D only to aim the working gap.
+    if (crossGap && rawSetup.some((turn) => turn[0] === "D")) continue;
+    const setup = crossGap ? aimYauCrossGap444(rawSetup, crossGap) : rawSetup;
     const setupState = applyMovePath(initialState, setup, model);
     for (const l2e of l2eActions) {
       // Outer setup/undo turns preserve pairing. Test the macro as a single
@@ -1385,14 +1390,21 @@ function humanYauCrossCandidates444(initialState, solvedMask, targetMask, model,
     left.cost - right.cost || left.moves.length - right.moves.length || left.edgeType - right.edgeType);
 }
 
+function crossFaceTurns444(model, face) {
+  return ["", face, `${face}2`, `${face}'`].map((turn) => ({ turn, action: model.actionFor(turn) }));
+}
+
+function crossBankAlignment444(state, faceTurns, lockedMask) {
+  return faceTurns.find(({ action }) => maskContains(solvedEdgeTypeMask(state, action, lockedMask), lockedMask));
+}
+
 // Turning the cross face moves the empty spoke to the face being worked on.
 // That setup does not affect any of the four side centers in the center plan.
 export async function applyYauCenterPlan444(scramble, setup, centerPlan, crossColor, lockedMask) {
   const model = await getPlannerModel();
-  const bankMask = crossEdgeTypeMask444(crossColor);
   const oppositeColor = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" }[crossColor];
   const endFaces = [crossColor, oppositeColor];
-  const gapTurns = ["", crossColor, `${crossColor}'`, `${crossColor}2`];
+  const gapTurns = crossFaceTurns444(model, crossColor);
   let state = compactStateFromPattern(model.solved.applyAlg(scramble).applyAlg(setup));
   if (!protectedCenterFacesSolved444(state, model, endFaces) || !maskContains(solvedEdgeTypeMask(state), lockedMask)) {
     return null;
@@ -1407,11 +1419,11 @@ export async function applyYauCenterPlan444(scramble, setup, centerPlan, crossCo
       if (turn[1] !== "w" && endFaces.includes(face)) continue;
       const turnAction = model.actionFor(turn);
       let advanced = false;
-      for (const gapTurn of gapTurns) {
-        const prepared = gapTurn ? applyCompactAction(state, model.actionFor(gapTurn)) : state;
+      for (const { turn: gapTurn, action } of gapTurns) {
+        const prepared = gapTurn ? applyCompactAction(state, action) : state;
         const next = applyCompactAction(prepared, turnAction);
         if (!protectedCenterFacesSolved444(next, model, endFaces) ||
-            !maskContains(pairedEdgeTypeMaskInSlots(next, bankMask), lockedMask)) continue;
+            !crossBankAlignment444(next, gapTurns, lockedMask)) continue;
         if (gapTurn) moves.push(gapTurn);
         moves.push(turn);
         state = next;
@@ -1423,13 +1435,10 @@ export async function applyYauCenterPlan444(scramble, setup, centerPlan, crossCo
     phaseMoveCounts.push(moves.length - start);
   }
   if (!centersSolved(state, model.solvedCompact.centerPieces)) return null;
-  const align = gapTurns.find((turn) => {
-    const next = turn ? applyCompactAction(state, model.actionFor(turn)) : state;
-    return maskContains(solvedEdgeTypeMask(next), lockedMask);
-  });
-  if (align === undefined) return null;
-  if (align) {
-    moves.push(align);
+  const alignment = crossBankAlignment444(state, gapTurns, lockedMask);
+  if (!alignment) return null;
+  if (alignment.turn) {
+    moves.push(alignment.turn);
     phaseMoveCounts[3] += 1;
   }
   return { solution: moves.join(" "), phaseMoveCounts };
@@ -1470,10 +1479,38 @@ function wingSignaturePairedIn444(signature, slots) {
   return ao === bo && a !== b && slot === EDGE_TYPE_BY_WING_444[b] && Boolean(slots & (1 << slot));
 }
 
-function planYauLastCrossEdge444(initial, model, sliceFamily, requiredMask, targetType, deadlineTs) {
+function yauCrossGap444(model, targetType, turns = crossFaceTurns444(model, "D")) {
+  const [gapWing] = EDGE_SLOT_PAIRS_444[targetType];
+  const offsets = {};
+  for (const [offset, { action }] of turns.entries()) {
+    const slot = EDGE_TYPE_BY_WING_444[action.edgePermutation.indexOf(gapWing)];
+    const face = EDGE_NAMES_333_444[EDGE_SLOT_TO_333_444[slot]].replace("D", "");
+    offsets[face] = offset;
+  }
+  return { targetType, turns, offsets };
+}
+
+// Turn the empty spoke under each side turn and restore the cross after
+// the trigger. U moves and the upper working slice leave the gap in place.
+function aimYauCrossGap444(moves, gap) {
+  let offset = 0;
+  const result = [];
+  for (const move of moves) {
+    const next = gap.offsets[move[0]] ?? offset;
+    if (next !== offset) result.push(gap.turns[(next - offset + 4) % 4].turn);
+    result.push(move);
+    offset = next;
+  }
+  if (offset) result.push(gap.turns[4 - offset].turn);
+  return result;
+}
+
+function planYauLastCrossEdge444(initial, model, sliceFamily, requiredMask, gap, deadlineTs) {
+  const targetType = gap.targetType;
   const targetSlot = EDGE_NAMES_333_444[EDGE_SLOT_TO_333_444[targetType]];
   const workingFace = targetSlot.replace("D", "");
-  const triggers = yauOuterInsertions444(model, requiredMask).map(({ moves }) => projectedWingMove444(model, moves));
+  const triggers = yauOuterInsertions444(model, requiredMask, gap)
+    .map(({ moves }) => projectedWingMove444(model, moves));
   const openers = sliceFamily.openMoves.map((open) => ({
     open: projectedWingMove444(model, [open]),
     close: projectedWingMove444(model, [invertMoveToken(open)]),
@@ -1535,14 +1572,23 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
   }
   const sliceFamily = model.sliceFamilies.find((family) => family.bankMask === targetMask);
   const targetType = 31 - Math.clz32(targetMask & ~requiredMask);
+  const gapTurns = crossFaceTurns444(model, "D");
   const plan = maskContains(solvedEdgeTypeMask(initial), targetMask)
     ? { moves: [], technique: "already-paired", insertionMoves: 0 }
-    : planYauLastCrossEdge444(initial, model, sliceFamily, requiredMask, targetType, localDeadline);
+    : planYauLastCrossEdge444(
+        initial, model, sliceFamily, requiredMask, yauCrossGap444(model, targetType, gapTurns), localDeadline,
+      );
   if (!plan) {
     return { ok: false, reason: deadlineReached(localDeadline) ? "444_YAU_HUMAN_CROSS4_TIMEOUT" : "444_YAU_HUMAN_CROSS4_NOT_FOUND" };
   }
-  const verified = applyTokenPathPreservingPairedTypes444(initial, plan.moves, model, requiredMask);
-  if (!verified || !centersSolved(verified, model.solvedCompact.centerPieces) || !maskContains(solvedEdgeTypeMask(verified), targetMask)) {
+  let verified = initial;
+  for (const move of plan.moves) {
+    verified = applyCompactAction(verified, model.actionFor(move));
+    if (!crossBankAlignment444(verified, gapTurns, requiredMask)) {
+      return { ok: false, reason: "444_YAU_HUMAN_CROSS4_CROSS_LOCK_FAILED", detail: move };
+    }
+  }
+  if (!centersSolved(verified, model.solvedCompact.centerPieces) || !maskContains(solvedEdgeTypeMask(verified), targetMask)) {
     return { ok: false, reason: "444_YAU_HUMAN_CROSS4_VERIFY_FAILED" };
   }
   return {
@@ -1743,30 +1789,31 @@ const YAU_OUTER_INSERTIONS_444 = Object.freeze((() => {
   return moves;
 })());
 
-function yauOuterInsertions444(model, crossMask) {
+function yauOuterInsertions444(model, crossMask, gap = null) {
   model.yauOuterInsertions ??= new Map();
-  if (!model.yauOuterInsertions.has(crossMask)) {
-    const insertions = YAU_OUTER_INSERTIONS_444.map((algorithm) => ({
-      algorithm,
-      moves: splitAlgorithm(algorithm),
-      action: model.actionFor(algorithm),
-      auf: algorithm.startsWith("U"),
-    })).filter(({ action }) => {
+  const key = `${crossMask}:${gap?.targetType ?? ""}`;
+  if (!model.yauOuterInsertions.has(key)) {
+    const insertions = YAU_OUTER_INSERTIONS_444.map((original) => {
+      const tokens = splitAlgorithm(original);
+      const moves = gap ? aimYauCrossGap444(tokens, gap) : tokens;
+      const algorithm = moves.join(" ");
+      return { algorithm, moves, action: model.actionFor(algorithm), auf: original.startsWith("U") };
+    }).filter(({ action }) => {
       const state = applyCompactAction(model.solvedCompact, action);
       return maskContains(solvedEdgeTypeMask(state), crossMask) &&
         centersSolved(state, model.solvedCompact.centerPieces);
     });
-    model.yauOuterInsertions.set(crossMask, insertions);
+    model.yauOuterInsertions.set(key, insertions);
   }
-  return model.yauOuterInsertions.get(crossMask);
+  return model.yauOuterInsertions.get(key);
 }
 
-function searchYauFirstThreeHuman444(initial, sliceFamily, model, deadlineTs, crossMask) {
+function searchYauFirstThreeHuman444(initial, model, deadlineTs, pairing) {
+  const { sliceFamily, crossMask, insertions } = pairing;
   const initialPairs = yauRemainingPairedMask444(initial, crossMask);
   if (bitCount(initialPairs) >= 3) {
     return [{ state: initial, moves: [], technique: "already-paired" }];
   }
-  const insertions = yauOuterInsertions444(model, crossMask);
   const alignments = new Map();
   const goals = new Map();
   let frontier = [];
@@ -1847,23 +1894,9 @@ function* yauOuterSetups444(initial, insertions) {
   }
 }
 
-function yauSliceClosers444(model, open, crossMask) {
-  model.yauSliceClosers ??= new Map();
-  const key = `${open}:${crossMask}`;
-  if (!model.yauSliceClosers.has(key)) {
-    const close = invertMoveToken(open);
-    const closers = yauOuterInsertions444(model, crossMask).map((insertion) => ({
-      ...insertion,
-      closedAction: model.actionFor(`${insertion.algorithm} ${close}`),
-    }));
-    model.yauSliceClosers.set(key, closers);
-  }
-  return model.yauSliceClosers.get(key);
-}
-
-function* searchYauPairingCycles444(initial, targetCount, sliceFamily, model, deadlineTs, crossMask) {
+function* searchYauPairingCycles444(initial, targetCount, model, deadlineTs, pairing) {
   const beforePairs = pairedEdgeTypeMask(initial);
-  const insertions = yauOuterInsertions444(model, crossMask);
+  const { sliceFamily, crossMask, insertions, closersByOpenTurn } = pairing;
   const seen = new Set();
   let prepareIndex = 0;
   for (const pre of yauOuterSetups444(initial, insertions)) {
@@ -1877,7 +1910,7 @@ function* searchYauPairingCycles444(initial, targetCount, sliceFamily, model, de
       if (!maskContains(solvedEdgeTypeMask(opened), crossMask)) continue;
       const pairedOnOpen = pairedEdgeTypeMaskInSlots(opened, sliceFamily.middleMask) & ~beforePairs;
       if (!pairedOnOpen) continue;
-      const closers = yauSliceClosers444(model, open, crossMask);
+      const closers = closersByOpenTurn.get(open);
       let frontier = [{ state: opened, moves: [], auf: false }];
       for (let depth = 0; depth < maxInsertions; depth += 1) {
         const next = [];
@@ -1911,23 +1944,34 @@ function* searchYauPairingCycles444(initial, targetCount, sliceFamily, model, de
   }
 }
 
-function* collectYauNextTwoCandidates444(first, sliceFamily, model, deadlineTs, crossMask) {
-  if (bitCount(yauRemainingPairedMask444(first, crossMask)) >= 5) {
+function* collectYauNextTwoCandidates444(first, model, deadlineTs, pairing) {
+  if (bitCount(yauRemainingPairedMask444(first, pairing.crossMask)) >= 5) {
     yield { state: first, moves: [], technique: "already-paired" };
     return;
   }
-  yield* searchYauPairingCycles444(first, 5, sliceFamily, model, deadlineTs, crossMask);
+  yield* searchYauPairingCycles444(first, 5, model, deadlineTs, pairing);
 }
 
-function finishYauLastThree444(initial, sliceFamily, model, deadlineTs, crossMask) {
+function finishYauLastThree444(initial, model, deadlineTs, pairing) {
+  const { crossMask, l2eActions, gap } = pairing;
   const pairedCount = bitCount(yauRemainingPairedMask444(initial, crossMask));
   if (pairedCount === 8) return { state: initial, moves: [], technique: "already-paired" };
   if (pairedCount >= 6) {
-    const l2e = findL2E(initial, model, deadlineTs, crossMask, null, crossMask);
+    const l2e = findL2E(initial, model, deadlineTs, crossMask, l2eActions, crossMask, gap);
     if (l2e) return { ...l2e, technique: "last-two-edges" };
   }
-  const direct = searchYauPairingCycles444(initial, 8, sliceFamily, model, deadlineTs, crossMask).next().value;
+  const direct = searchYauPairingCycles444(initial, 8, model, deadlineTs, pairing).next().value;
   return direct || null;
+}
+
+function yauGapL2EActions444(model, gap) {
+  // Put the L2E slice above the cross, where it cannot split the three spokes.
+  const rotations = CUBE_ORIENTATION_FACE_MAPS_444.filter((map) => map.R === "U");
+  return rotations.flatMap((rotation) => model.l2eActions.map(({ algorithm }) => {
+    const rotated = splitAlgorithm(algorithm).map((move) => remapMoveToken444(move, rotation));
+    const safe = aimYauCrossGap444(rotated, gap).join(" ");
+    return { algorithm: safe, action: model.actionFor(safe) };
+  }));
 }
 
 export async function solveYauLastEight323444(publicScramble, publicYauSetup, options = {}) {
@@ -1966,6 +2010,28 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
   if (!sliceFamily) {
     return { ok: false, reason: "444_YAU_LAST8_WORKING_SLICE_MISSING", solution: "", segments: [] };
   }
+  const protectedMask = Number(options.protectedCrossTypeMask) >>> 0;
+  if (protectedMask && (bitCount(protectedMask) !== 3 || !maskContains(crossMask, protectedMask) ||
+      crossMask !== crossEdgeTypeMask444("D"))) {
+    return { ok: false, reason: "444_YAU_LAST8_PROTECTED_CROSS_MASK_INVALID", solution: "", segments: [] };
+  }
+  const gap = protectedMask ? yauCrossGap444(model, 31 - Math.clz32(crossMask & ~protectedMask)) : null;
+  const insertions = yauOuterInsertions444(model, crossMask, gap);
+  const closersByOpenTurn = new Map(sliceFamily.openMoves.map((open) => {
+    const close = invertMoveToken(open);
+    return [open, insertions.map((insertion) => ({
+      ...insertion,
+      closedAction: model.actionFor(`${insertion.algorithm} ${close}`),
+    }))];
+  }));
+  const pairing = {
+    sliceFamily,
+    crossMask,
+    gap,
+    insertions,
+    l2eActions: gap ? yauGapL2EActions444(model, gap) : null,
+    closersByOpenTurn,
+  };
 
   const initialRemainingCount = bitCount(yauRemainingPairedMask444(state, crossMask));
   const budgetMs = Math.max(1000, Math.min(20000, Number(options?.timeBudgetMs) || 12000));
@@ -1976,7 +2042,7 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
   // are not locked; a human Yau solver may let those move while forming the
   // three stored pairs.
   const first3Candidates = searchYauFirstThreeHuman444(
-    state, sliceFamily, model, edgeStageDeadline, crossMask,
+    state, model, edgeStageDeadline, pairing,
   ).filter((candidate) => yauBoundaryOkay444(candidate.state, model, crossMask));
   if (!first3Candidates.length) {
     return { ok: false, reason: "444_YAU_LAST8_FIRST3_FAILED", solution: "", segments: [] };
@@ -1989,11 +2055,11 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
     const now = Date.now();
     const timePerCandidate = (edgeStageDeadline - now) / (first3Candidates.length - index);
     const firstDeadline = Math.min(edgeStageDeadline, now + Math.max(900, Math.floor(timePerCandidate)));
-    const next2Candidates = collectYauNextTwoCandidates444(first.state, sliceFamily, model, firstDeadline, crossMask);
+    const next2Candidates = collectYauNextTwoCandidates444(first.state, model, firstDeadline, pairing);
     for (const next of next2Candidates) {
       if (deadlineReached(firstDeadline)) break;
       nextCandidateCount += 1;
-      const finish = finishYauLastThree444(next.state, sliceFamily, model, firstDeadline, crossMask);
+      const finish = finishYauLastThree444(next.state, model, firstDeadline, pairing);
       if (finish) {
         chosenPipeline = { first, next, finish };
         break;
@@ -2027,7 +2093,7 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
     const segment = buildSegment(id, name, plan.moves, alreadyPaired ? pairedBefore : pairedBefore + 1, pairedAfter);
     const pairedAdded = pairedAfter - pairedBefore;
     pairedBefore = pairedAfter;
-    return { ...segment, technique: plan.technique, alreadyPaired, pairedAdded };
+    return { ...segment, technique: plan.technique, alreadyPaired, pairedAdded, crossLockedEveryMove: Boolean(gap) };
   });
   const solution = segments.map((segment) => segment.solution).filter(Boolean).join(" ");
 
@@ -2049,6 +2115,9 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
       if (singleCycle && move === wide[0]) opened = replayState;
       if (!maskContains(pairedEdgeTypeMask(replayState), crossMask)) {
         return { ok: false, reason: "444_YAU_LAST8_CROSS_SPLIT", detail: `${segment.name}:${move}`, solution: "", segments: [] };
+      }
+      if (gap && !crossBankAlignment444(replayState, gap.turns, protectedMask)) {
+        return { ok: false, reason: "444_YAU_LAST8_CROSS_LOCK_FAILED", detail: `${segment.name}:${move}`, solution: "", segments: [] };
       }
     }
     const after = pairedEdgeTypeMask(replayState);

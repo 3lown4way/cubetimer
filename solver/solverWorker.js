@@ -92,7 +92,7 @@ function getWasmSolverModule() {
 
 function getSolver444Module() {
   if (!solver444ModulePromise) {
-    solver444ModulePromise = import("./solver444.js?v=20261125-yau-method-1");
+    solver444ModulePromise = import("./solver444.js?v=20261125-yau-cross-lock-1");
   }
   return solver444ModulePromise;
 }
