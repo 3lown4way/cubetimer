@@ -966,7 +966,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   const started = Date.now();
   let human;
   try {
-    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20260813-yau-cross3-recovery-1");
+    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20261125-yau-method-1");
     human = await solveEdgePairing323(
       publicScramble,
       translate444MoveConvention(centerStage.solution),
@@ -1092,6 +1092,20 @@ function yauFailure444(reduction, reason, detail = null, deadlineTs = 0) {
   };
 }
 
+function get444CenterPlan(result) {
+  const stage = result.stages?.find((entry) => entry.id === "centers" && entry.verified === true);
+  const counts = result.meta?.centerPhaseMoveCounts;
+  if (!stage || !Array.isArray(counts) || counts.length !== 4 || !counts.every((count) => Number.isInteger(count) && count >= 0)) return null;
+  const moves = splitAlgorithm(translate444MoveConvention(stage.solution));
+  if (counts.reduce((total, count) => total + count, 0) !== moves.length) return null;
+  let start = 0;
+  return counts.map((count) => {
+    const phase = moves.slice(start, start + count);
+    start += count;
+    return phase;
+  });
+}
+
 async function preferYauReduction444(
   api,
   reduction,
@@ -1099,238 +1113,100 @@ async function preferYauReduction444(
   internalScramble,
   crossColor,
   deadlineTs,
-  options = {},
+  options,
+  onProgress,
 ) {
-  if (
-    reduction?.status !== "partial" ||
-    reduction?.reason !== "444_REDUCTION_INCOMPLETE" ||
-    reduction?.meta?.centersSolved !== true ||
-    reduction?.meta?.edgesPaired !== true
-  ) {
-    return yauFailure444(reduction, "444_YAU_REDUCTION_BASE_INVALID", reduction?.reason, deadlineTs);
+  const startStage = (stage) => emitProgress(onProgress, {
+    type: "444_stage_start",
+    eventId: "444",
+    stage,
+  });
+  const centerPlan = get444CenterPlan(reduction);
+  if (!centerPlan) {
+    return yauFailure444(reduction, "444_YAU_CENTER_SOURCE_MISSING", reduction.reason, deadlineTs);
   }
-
-  const sourceCenterStage = Array.isArray(reduction.stages)
-    ? reduction.stages.find((stage) => stage?.id === "centers" && stage?.verified === true)
-    : null;
-  if (!sourceCenterStage) {
-    return yauFailure444(reduction, "444_YAU_CENTER_SOURCE_MISSING", null, deadlineTs);
-  }
-
-  const phaseCounts = Array.isArray(reduction.meta?.centerPhaseMoveCounts)
-    ? reduction.meta.centerPhaseMoveCounts.map((value) => Math.max(0, Number(value) || 0))
-    : [];
-  if (phaseCounts.length !== 4) {
-    return yauFailure444(reduction, "444_YAU_CENTER_PHASES_MISSING", null, deadlineTs);
-  }
-  const publicCenterMoves = splitAlgorithm(translate444MoveConvention(sourceCenterStage.solution || ""));
-  if (phaseCounts.reduce((sum, value) => sum + value, 0) !== publicCenterMoves.length) {
-    return yauFailure444(reduction, "444_YAU_CENTER_PHASE_COUNT_MISMATCH", null, deadlineTs);
-  }
-
-  const p1End = phaseCounts[0];
-  const p2End = p1End + phaseCounts[1];
-  const p3End = p2End + phaseCounts[2];
-  const firstCenter = publicCenterMoves.slice(0, p1End).join(" ");
-  const oppositeCenter = publicCenterMoves.slice(p1End, p2End).join(" ");
-  const remainingCenters = publicCenterMoves.slice(p2End).join(" ");
-  const firstTwoCenters = [firstCenter, oppositeCenter].filter(Boolean).join(" ");
+  const phaseCounts = centerPlan.map((phase) => phase.length);
+  const firstCenter = centerPlan[0].join(" ");
+  const oppositeCenter = centerPlan[1].join(" ");
+  const firstTwoCenters = [...centerPlan[0], ...centerPlan[1]].join(" ");
 
   let edgeModule;
   try {
-    edgeModule = await import("./edgePairing444.js?v=20260813-yau-cross3-recovery-1");
+    edgeModule = await import("./edgePairing444.js?v=20261125-yau-method-1");
   } catch (error) {
     return yauFailure444(reduction, "444_YAU_EDGE_MODULE_FAILED", error?.message || error, deadlineTs);
   }
   const targetTypeMask = edgeModule.crossEdgeTypeMask444(crossColor);
 
-  let cross3 = null;
-  let effectiveRemainingCenters = remainingCenters;
-  let naturalCross3Applied = false;
-  let remainingCentersRecomputed = false;
-  let naturalCross3FallbackReason = null;
-  let recomputedCenterPhaseMoveCounts = null;
+  startStage("YAU_CROSS3");
+  const protectedBudgetMs = Math.max(350, Math.min(12000, resolveYauBudget444(options, "__yauProtectedCenterBudgetMs", 6000)));
+  const protectedDeadlineTs = Math.min(deadlineTs || Infinity, Date.now() + protectedBudgetMs);
+  let protectedCenters = null;
   let protectedCenterSearchMs = 0;
   let protectedCenterAttemptCount = 0;
-  let cross3CandidateCount = 0;
-  let remainingCentersCrossLockedEveryMove = false;
-
-  if (
-    !deadlineReached(deadlineTs) &&
-    typeof edgeModule.solveYauCross3Natural444 === "function" &&
-    typeof api.solveYauRemainingCenters === "function"
-  ) {
-    // The protected-center re-solve is the usual reason a cross-3 layout is
-    // unusable, so it is evaluated inside the cross-3 search. Every rejected
-    // layout simply makes the search try the next one within the same budget.
-    const cross3BudgetMs = resolveYauBudget444(
-      options,
-      "__yauCross3BudgetMs",
-      options?.__yauFastFrameProbe === true ? 950 : 2400,
-    );
-    const protectedBudgetMs = Math.max(
-      350,
-      Math.min(
-        12000,
-        resolveYauBudget444(
-          options,
-          "__yauProtectedCenterBudgetMs",
-          options?.__yauFastFrameProbe === true ? 900 : 2200,
-        ),
-      ),
-    );
-    const protectedPoolDeadlineTs = Date.now() + protectedBudgetMs;
-    let protectedCenterAttempts = 0;
-
-    const natural = await edgeModule.solveYauCross3Natural444(
-      publicScramble, firstTwoCenters, targetTypeMask,
-      {
-        deadlineTs,
-        timeBudgetMs: cross3BudgetMs,
-        protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
-        onCandidate: async (candidate) => {
-          if (deadlineReached(deadlineTs)) return "444_DEADLINE_REACHED";
-          if (Date.now() >= protectedPoolDeadlineTs) return "444_YAU_PROTECTED_CENTER_BUDGET_EXHAUSTED";
-          protectedCenterAttempts += 1;
-
-          const stateBeforeRemainingCenters = [firstTwoCenters, candidate.solution]
-            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-          const protectedCenterScramble = [internalScramble, translate444MoveConvention(stateBeforeRemainingCenters)]
-            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-          const protectedDeadlineTs = deadlineTs > 0
-            ? Math.min(deadlineTs, protectedPoolDeadlineTs)
-            : protectedPoolDeadlineTs;
-
-          let protectedResult = null;
-          try {
-            const rawProtected = api.solveYauRemainingCenters({
-              scramble: protectedCenterScramble,
-              crossColor,
-              deadlineTs: protectedDeadlineTs,
-            });
-            protectedResult = typeof rawProtected === "string" ? JSON.parse(rawProtected) : rawProtected;
-          } catch (error) {
-            return `PROTECTED_CENTER_CALL:${String(error?.message || error)}`;
-          }
-          protectedCenterSearchMs += Number(protectedResult?.searchMs) || 0;
-          if (
-            protectedResult?.ok !== true ||
-            protectedResult?.verified !== true ||
-            protectedResult?.crossLockedEveryMove !== true ||
-            Number(protectedResult?.protectedCrossPairCount) !== 3
-          ) {
-            return protectedResult?.reason || "PROTECTED_CENTER_SEARCH_FAILED";
-          }
-
-          const candidateRemainingCenters = translate444MoveConvention(protectedResult.solution || "");
-          const verifySetup = [stateBeforeRemainingCenters, candidateRemainingCenters]
-            .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-          const preserved = await edgeModule.solveTargetEdgeTypes444(
-            publicScramble, verifySetup, targetTypeMask,
-            {
-              targetCount: 3, requiredTypeMask: candidate.lockedTypeMask, deadlineTs,
-              maxMacros: 0, enableRescue: false,
-            },
-          );
-          if (!preserved?.ok) {
-            return preserved?.reason || "PROTECTED_CENTER_JS_VERIFY_FAILED";
-          }
-
-          effectiveRemainingCenters = candidateRemainingCenters;
-          naturalCross3Applied = true;
-          remainingCentersRecomputed = true;
-          recomputedCenterPhaseMoveCounts = Array.isArray(protectedResult.phaseMoveCounts)
-            ? [...protectedResult.phaseMoveCounts]
-            : null;
-          remainingCentersCrossLockedEveryMove = true;
-          return true;
-        },
-      },
-    );
-    if (natural?.ok) {
-      cross3 = natural;
-      naturalCross3FallbackReason = null;
-    } else {
-      naturalCross3FallbackReason = natural?.reason || "NATURAL_CROSS3_NOT_FOUND";
-    }
-    protectedCenterAttemptCount = protectedCenterAttempts;
-    cross3CandidateCount = Number(natural?.candidateCount) || 0;
-  }
-
-  if (!cross3?.ok) {
-    return yauFailure444(
-      reduction,
-      "444_YAU_HUMAN_CROSS3_FAILED",
-      naturalCross3FallbackReason || cross3?.reason || cross3?.detail || "HUMAN_CROSS3_REQUIRED",
+  const cross3 = await edgeModule.solveYauCross3Natural444(
+    publicScramble, firstTwoCenters, targetTypeMask,
+    {
       deadlineTs,
-    );
+      timeBudgetMs: resolveYauBudget444(options, "__yauCross3BudgetMs", 2400),
+      protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
+      onCandidate: async (candidate) => {
+        if (deadlineReached(deadlineTs)) return "444_DEADLINE_REACHED";
+        if (deadlineReached(protectedDeadlineTs)) return "444_YAU_PROTECTED_CENTER_BUDGET_EXHAUSTED";
+        startStage("YAU_REMAINING_CENTERS");
+        protectedCenterAttemptCount += 1;
+        const started = Date.now();
+        const stateBeforeCenters = [firstTwoCenters, candidate.solution].filter(Boolean).join(" ");
+        const applyCenterPlan = (plan) => edgeModule.applyYauCenterPlan444(
+          publicScramble, stateBeforeCenters, plan.slice(2), crossColor, candidate.lockedTypeMask,
+        );
+        try {
+          protectedCenters = await applyCenterPlan(centerPlan);
+          if (!protectedCenters && !deadlineReached(protectedDeadlineTs)) {
+            const scramble = [internalScramble, translate444MoveConvention(stateBeforeCenters)].filter(Boolean).join(" ");
+            const replanned = normalizeBoundaryResponse(api.solve({ scramble, crossColor, deadlineTs: protectedDeadlineTs }));
+            const revisedCenterPlan = get444CenterPlan(replanned);
+            if (revisedCenterPlan) protectedCenters = await applyCenterPlan(revisedCenterPlan);
+          }
+          return protectedCenters ? true : "444_YAU_REMAINING_CENTERS_FAILED";
+        } finally {
+          protectedCenterSearchMs += Date.now() - started;
+        }
+      },
+    },
+  );
+  if (!cross3.ok) {
+    const reason = protectedCenterAttemptCount ? "444_YAU_REMAINING_CENTERS_FAILED" : "444_YAU_HUMAN_CROSS3_FAILED";
+    return yauFailure444(reduction, reason, cross3.reason, deadlineTs);
   }
+  const effectiveRemainingCenters = protectedCenters.solution;
 
   const beforeCross4 = [firstTwoCenters, cross3.solution, effectiveRemainingCenters]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
-  let cross4 = await edgeModule.solveYauCross4Natural444(
+  startStage("YAU_CROSS4");
+  const cross4StartedAt = Date.now();
+  const cross4 = await edgeModule.solveYauCross4Natural444(
     publicScramble,
     beforeCross4,
     targetTypeMask,
     {
       requiredTypeMask: cross3.lockedTypeMask,
       deadlineTs,
-      timeBudgetMs: options?.__yauFastFrameProbe === true ? 500 : 1500,
+      timeBudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", 1500),
     },
   );
-  const naturalCross4Applied = cross4?.ok === true;
-  const naturalCross4FallbackReason = naturalCross4Applied
-    ? null
-    : String(cross4?.reason || "444_YAU_HUMAN_CROSS4_NOT_FOUND");
-  if (!cross4?.ok) {
-    cross4 = await edgeModule.solveTargetEdgeTypes444(
-      publicScramble,
-      beforeCross4,
-      targetTypeMask,
-      {
-        targetCount: 4,
-        requiredTypeMask: cross3.lockedTypeMask,
-        alignSolved: true,
-        deadlineTs,
-        maxMacros: 6,
-        enableRescue: options?.__yauFastFrameProbe !== true,
-        projectTargetState: options?.__yauFastFrameProbe === true,
-      },
-    );
-  }
   if (!cross4?.ok) {
     return yauFailure444(reduction, "444_YAU_CROSS4_FAILED", cross4?.reason || cross4?.detail, deadlineTs);
   }
 
-  if (options?.__yauProbeOnly === true) {
-    return {
-      ...reduction,
-      ok: true,
-      status: "yau_probe",
-      reason: null,
-      detail: null,
-      solution: "",
-      moveCount: 0,
-      verified: false,
-      stages: [],
-      meta: {
-        ...reduction.meta,
-        method444: "yau",
-        yauAttempted: true,
-        yauProbePassed: true,
-        yauCross3MoveCount: Number(cross3.moveCount) || 0,
-        yauCross4MoveCount: Number(cross4.moveCount) || 0,
-        yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
-      },
-    };
-  }
-
+  const cross4SearchMs = Date.now() - cross4StartedAt;
   const yauSetupPublic = [beforeCross4, cross4.solution]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
+  startStage("EDGES");
   const remainingEdges = await edgeModule.solveYauLastEight323444(
     publicScramble,
     yauSetupPublic,
@@ -1346,7 +1222,7 @@ async function preferYauReduction444(
   if (!remainingEdges?.ok) {
     const detail = JSON.stringify({
       reason: remainingEdges?.reason || remainingEdges?.detail || null,
-      diagnostics: remainingEdges?.meta || null,
+      diagnostics: remainingEdges?.detail || remainingEdges?.meta || null,
       targetTypeMask,
     });
     return yauFailure444(reduction, "444_YAU_EDGE_PAIRING_FAILED", detail, deadlineTs);
@@ -1398,20 +1274,25 @@ async function preferYauReduction444(
   const setupSegments = [
     makeSetupSegment("yauFirstCenter", "Yau · First Center", firstCenter),
     makeSetupSegment("yauOppositeCenter", "Yau · Opposite Center", oppositeCenter),
-    makeSetupSegment("yauCross3", "Yau · Cross Edges 3/4", cross3.solution, {
-      crossEdgeCount: 3,
+    makeSetupSegment("yauCross3", cross3.completedCrossCount === 4 ? "Yau · Cross Already Solved"
+      : cross3.preparedWorkingGap ? "Yau · Prepare Working Gap" : "Yau · Cross Edges 3/4", cross3.solution, {
+      crossEdgeCount: cross3.completedCrossCount,
+      alreadyPaired: !cross3.solution,
       lockedTypeMask: cross3.lockedTypeMask,
+      humanStepTechniques: cross3.steps.map((step) => step.technique),
       humanStepMoveCounts: Array.isArray(cross3.steps)
         ? cross3.steps.map((step) => Math.max(0, Number(step?.moveCount) || 0))
         : [],
     }),
     makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", effectiveRemainingCenters, {
-      recomputedAfterCross3: remainingCentersRecomputed,
-      crossLockedEveryMove: remainingCentersCrossLockedEveryMove,
+      recomputedAfterCross3: true,
+      crossLockedEveryMove: true,
     }),
     makeSetupSegment("yauCross4", "Yau · Cross Edge 4/4", cross4.solution, {
       crossEdgeCount: 4,
       alignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
+      technique: cross4.technique,
+      alreadyPaired: cross4.technique === "already-paired",
     }),
   ];
   const yauSetupStage = {
@@ -1462,6 +1343,7 @@ async function preferYauReduction444(
       yauAttempted: true,
       yauFallbackReason: null,
       yauCrossTypeMask: targetTypeMask,
+      yauCross3SearchMs: Number(cross3.elapsedMs) || 0,
       yauCross3MoveCount: Number(cross3.moveCount) || 0,
       yauCross3HumanStepCount: Number(cross3.humanStepCount) || 0,
       yauCross3HumanWorkingSlices: Array.isArray(cross3.steps)
@@ -1470,21 +1352,22 @@ async function preferYauReduction444(
       yauCross3SolvedTargetMask: Number(cross3.solvedTargetMask) || 0,
       yauCross3PairedTargetMask: Number(cross3.pairedTargetMask) || 0,
       yauCross3Method: String(cross3.method || "Yau Cross Edges"),
-      yauNaturalCross3Applied: naturalCross3Applied,
-      yauHumanCross3Applied: naturalCross3Applied && cross3.method === "Yau Human Cross 3/4",
-      yauNaturalCross3FallbackReason: naturalCross3FallbackReason,
-      yauRemainingCentersRecomputed: remainingCentersRecomputed,
-      yauRecomputedCenterPhaseMoveCounts: recomputedCenterPhaseMoveCounts,
+      yauNaturalCross3Applied: true,
+      yauHumanCross3Applied: cross3.method === "Yau Human Cross 3/4",
+      yauNaturalCross3FallbackReason: null,
+      yauRemainingCentersRecomputed: true,
+      yauRecomputedCenterPhaseMoveCounts: protectedCenters.phaseMoveCounts,
       yauProtectedCenterSearchMs: protectedCenterSearchMs,
       yauProtectedCenterAttemptCount: protectedCenterAttemptCount,
-      yauCross3CandidateCount: cross3CandidateCount,
-      yauRemainingCentersCrossLockedEveryMove: remainingCentersCrossLockedEveryMove,
+      yauCross3CandidateCount: cross3.candidateCount,
+      yauRemainingCentersCrossLockedEveryMove: true,
       yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
       yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
+      yauCross4SearchMs: cross4SearchMs,
       yauCross4MoveCount: Number(cross4.moveCount) || 0,
       yauCross4Method: String(cross4.method || "Yau Cross Edges"),
-      yauHumanCross4Applied: naturalCross4Applied,
-      yauNaturalCross4FallbackReason: naturalCross4FallbackReason,
+      yauHumanCross4Applied: true,
+      yauNaturalCross4FallbackReason: null,
       yauCross4SearchRescueUsed: cross4.searchRescueUsed === true,
       yauCross4SearchMaxMacros: Number(cross4.searchMaxMacros) || 0,
       yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
@@ -1494,7 +1377,7 @@ async function preferYauReduction444(
       yauEdge323ProtectedBankFallbackReason,
       yauLastEightOnly: remainingEdges.meta?.lastEightOnly === true,
       yauCrossSolvedAtEdgeSegmentBoundaries: remainingEdges.meta?.crossSolvedAtSegmentBoundaries === true,
-      yauPureCenterMoveCount: publicCenterMoves.length,
+      yauPureCenterMoveCount: phaseCounts.reduce((total, count) => total + count, 0),
       yauRemainingCenterMoveCount: splitAlgorithm(effectiveRemainingCenters).length,
       yauEdge323: remainingEdges.meta && typeof remainingEdges.meta === "object"
         ? { ...remainingEdges.meta }
@@ -1815,80 +1698,61 @@ async function solveYauCanonicalFrame444(
     };
   };
 
-  // Solve each frame once. The old probe/full/rescue passes repeated the same
-  // center and cross searches and exhausted most of the deadline before a frame
-  // could finish. Budgets are divided by the frames that remain so an early
-  // failure leaves a fair share for the next orientation.
-  for (let frameIndex = 0; frameIndex < frameSpins.length; frameIndex += 1) {
-    if (deadlineReached(deadlineTs)) break;
-    const spin = frameSpins[frameIndex];
+  const hardDeadline = deadlineTs > 0 ? deadlineTs : Date.now() + 60_000;
+  const frames = frameSpins.flatMap((spin) => {
     const orientation = buildOrientation(spin);
-    if (!orientation) continue;
+    if (!orientation) return [];
     const logicalScramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
-    if (logicalScramble == null) continue;
-    const candidate = { spin, orientation, logicalScramble };
+    return logicalScramble == null ? [] : [{ spin, orientation, logicalScramble }];
+  });
+
+  // Run each orientation once and divide the remaining time across frames.
+  for (const [index, candidate] of frames.entries()) {
+    if (deadlineReached(hardDeadline)) break;
     const started = Date.now();
-    const hardDeadline = Number.isFinite(Number(deadlineTs)) && Number(deadlineTs) > 0
-      ? Number(deadlineTs)
-      : started + 60_000;
-    const remaining = Math.max(0, hardDeadline - started);
-    const framesLeft = Math.max(1, frameSpins.length - frameIndex);
-    const frameBudget = Math.max(8_000, Math.min(20_000, Math.floor(remaining / framesLeft)));
+    const remaining = hardDeadline - started;
+    const framesLeft = frames.length - index;
+    const budget = Math.max(8000, Math.min(20000, Math.floor(remaining / framesLeft)));
     const finalFrame = framesLeft === 1;
-    const logicalResult = await solve444(logicalScramble, onProgress, {
-      ...options,
-      method444: "yau",
-      crossColor: "D",
-      deadlineTs: Math.min(hardDeadline, started + frameBudget),
-      __yauCanonicalFrame: true,
-      __yauProbeOnly: false,
-      __yauFastFrameProbe: false,
-      __skipHumanPresentation: true,
-      __yauCross3BudgetMs: resolveYauBudget444(
-        options,
-        "__yauCross3BudgetMs",
-        finalFrame
-          ? Math.min(10_000, Math.max(6_000, Math.floor(remaining * 0.3)))
-          : Math.min(6_000, Math.max(2_400, Math.floor(frameBudget * 0.3))),
-      ),
-      __yauProtectedCenterBudgetMs: resolveYauBudget444(
-        options,
-        "__yauProtectedCenterBudgetMs",
-        finalFrame
-          ? Math.min(12_000, Math.max(8_000, Math.floor(remaining * 0.35)))
-          : 6_000,
-      ),
-      __yauCross4BudgetMs: resolveYauBudget444(
-        options,
-        "__yauCross4BudgetMs",
-        Math.min(3_000, Math.max(1_500, Math.floor(frameBudget * 0.1))),
-      ),
-      __yauEdgeBudgetMs: resolveYauBudget444(
-        options,
-        "__yauEdgeBudgetMs",
-        finalFrame ? 15_000 : 12_000,
-      ),
+    emitProgress(onProgress, {
+      type: "444_stage_start",
+      eventId: "444",
+      stage: "YAU_FRAME",
+      attempt: attempts.length + 1,
     });
+    const logicalResult = await solve444Frame(candidate.logicalScramble, onProgress, {
+      ...options,
+      __skipHumanPresentation: true,
+      __yauCross3BudgetMs: resolveYauBudget444(options, "__yauCross3BudgetMs", finalFrame
+        ? Math.min(10000, Math.max(6000, Math.floor(remaining * 0.3)))
+        : Math.min(6000, Math.max(2400, Math.floor(budget * 0.3)))),
+      __yauProtectedCenterBudgetMs: resolveYauBudget444(options, "__yauProtectedCenterBudgetMs", finalFrame
+        ? Math.min(12000, Math.max(8000, Math.floor(remaining * 0.35)))
+        : 6000),
+      __yauCross4BudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", Math.min(3000, Math.max(1500, Math.floor(budget * 0.1)))),
+      __yauEdgeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", finalFrame ? 15000 : 12000),
+    }, "D", Math.min(hardDeadline, started + budget), "yau");
     attempts.push({
       phase: "full",
-      spin: spin || "identity",
+      spin: candidate.spin || "identity",
       elapsedMs: Math.max(0, Date.now() - started),
-      ok: logicalResult?.ok === true,
-      reason: logicalResult?.reason || null,
+      ok: logicalResult.ok === true,
+      reason: logicalResult.reason || null,
+      detail: logicalResult.detail || null,
     });
-    if (!logicalResult?.ok) {
+    if (!logicalResult.ok) {
       lastFailure = logicalResult;
       continue;
     }
     const mapped = await mapVerifiedSuccess(logicalResult, candidate);
     if (mapped) return mapped;
-    lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", spin || "identity", {
+    lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", candidate.spin || "identity", {
       method444: "yau",
       crossColor,
     });
   }
 
-  if (deadlineReached(deadlineTs)) {
+  if (deadlineReached(hardDeadline)) {
     return emptyFailure("444_DEADLINE_REACHED", "timeout", lastFailure?.reason || null, {
       method444: "yau",
       crossColor,
@@ -1899,7 +1763,9 @@ async function solveYauCanonicalFrame444(
     });
   }
   return {
-    ...(lastFailure || emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", null)),
+    ...(lastFailure?.reason === "444_DEADLINE_REACHED"
+      ? emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", lastFailure.detail)
+      : lastFailure || emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", null)),
     meta: {
       ...(lastFailure?.meta || {}),
       method444: "yau",
@@ -1921,9 +1787,12 @@ export async function solve444(scramble, onProgress = null, options = {}) {
     ? "yau"
     : "reduction";
   const publicScramble = String(scramble || "").trim();
-  if (method444 === "yau" && options?.__yauCanonicalFrame !== true) {
-    return solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs);
-  }
+  return method444 === "yau"
+    ? solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs)
+    : solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs, method444);
+}
+
+async function solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs, method444) {
   const internalScramble = translate444MoveConvention(publicScramble);
   if (deadlineReached(deadlineTs)) {
     return emptyFailure("444_DEADLINE_REACHED", "timeout", null, { deadlineTs });
@@ -1999,6 +1868,7 @@ export async function solve444(scramble, onProgress = null, options = {}) {
         crossColor,
         deadlineTs,
         options,
+        onProgress,
       )
     : await preferHumanEdgePairing323(
         api,
@@ -2008,8 +1878,6 @@ export async function solve444(scramble, onProgress = null, options = {}) {
         crossColor,
         deadlineTs,
       );
-
-  if (options?.__yauProbeOnly === true) return result;
 
   if (result.meta?.stateValid === true) {
     emitProgress(onProgress, {

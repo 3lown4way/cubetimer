@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20260813-yau-cross3-recovery-1";
+const WORKER_BUILD_TOKEN = "20261125-yau-method-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const STAGE_LABELS = Object.freeze({
@@ -19,6 +19,10 @@ const STAGE_LABELS = Object.freeze({
 const PROGRESS_LABELS = Object.freeze({
   BOUNDARY: "4×4 엔진 준비",
   CENTERS: "센터 해결",
+  YAU_FRAME: "Yau 탐색 방향 선택",
+  YAU_CROSS3: "Yau 크로스 엣지 3개",
+  YAU_REMAINING_CENTERS: "Yau 나머지 센터 4개",
+  YAU_CROSS4: "Yau 마지막 크로스 엣지",
   EDGES: "엣지 페어링",
   PARITY: "패리티 정규화",
   VIRTUAL_333: "가상 3×3 변환",
@@ -28,9 +32,7 @@ const PROGRESS_LABELS = Object.freeze({
 });
 
 function normalizeScramble(text) {
-  const value = String(text || "").replace(/\s+/g, " ").trim();
-  if (!value || value === "로딩 중..." || value === "-") return "";
-  return value;
+  return String(text || "").replace(/\s+/g, " ").trim();
 }
 
 function splitMoves(alg) {
@@ -48,6 +50,16 @@ function reasonLabel(reason) {
   switch (String(reason || "")) {
     case "444_DEADLINE_REACHED":
       return "4×4 해 탐색이 60초 제한을 초과했습니다.";
+    case "444_YAU_ALL_FRAMES_FAILED":
+      return "Yau 탐색이 각 방향에 할당된 시간 안에 완료되지 않았습니다.";
+    case "444_YAU_HUMAN_CROSS3_FAILED":
+      return "Yau 크로스 엣지 3쌍을 맞추지 못했습니다.";
+    case "444_YAU_REMAINING_CENTERS_FAILED":
+      return "Yau 크로스 3쌍을 유지하며 나머지 센터를 맞추지 못했습니다.";
+    case "444_YAU_CROSS4_FAILED":
+      return "Yau 마지막 크로스 엣지를 맞추지 못했습니다.";
+    case "444_YAU_EDGE_PAIRING_FAILED":
+      return "Yau 3-2-3 엣지 페어링 중 해를 찾지 못했습니다.";
     case "444_WASM_UNAVAILABLE":
       return "4×4 WASM 엔진을 불러오지 못했습니다.";
     case "444_TWOPHASE_FAILED":
@@ -100,23 +112,24 @@ function createWorkerClient(forceReload = false) {
   return { worker, api };
 }
 
-function withUiTimeout(promise, timeoutMs, reason) {
+function withUiTimeout(promise, timeoutMs, reason, signal) {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(reason)), timeoutMs);
+    const finish = (callback, value) => {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      callback(value);
+    };
+    const onAbort = () => finish(reject, signal.reason);
+    const timer = window.setTimeout(() => finish(reject, new Error(reason)), timeoutMs);
+    signal.addEventListener("abort", onAbort, { once: true });
     Promise.resolve(promise).then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        window.clearTimeout(timer);
-        reject(error);
-      },
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
     );
   });
 }
 
-function waitForWorkerPing(client) {
+function waitForWorkerPing(client, signal) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (callback, value) => {
@@ -125,16 +138,19 @@ function waitForWorkerPing(client) {
       window.clearTimeout(timer);
       client.worker.removeEventListener("error", onError);
       client.worker.removeEventListener("messageerror", onMessageError);
+      signal.removeEventListener("abort", onAbort);
       callback(value);
     };
     const onError = () => finish(reject, new Error("444_WORKER_BOOT_ERROR"));
     const onMessageError = () => finish(reject, new Error("444_WORKER_MESSAGE_ERROR"));
+    const onAbort = () => finish(reject, signal.reason);
     const timer = window.setTimeout(
       () => finish(reject, new Error("444_WORKER_BOOT_TIMEOUT")),
       WORKER_BOOT_TIMEOUT_MS,
     );
     client.worker.addEventListener("error", onError);
     client.worker.addEventListener("messageerror", onMessageError);
+    signal.addEventListener("abort", onAbort, { once: true });
     Promise.resolve(client.api.ping()).then(
       (value) => finish(resolve, value),
       (error) => finish(reject, error),
@@ -148,6 +164,7 @@ export function installSolver444UiActivation() {
 
   const eventSelect = document.getElementById("eventSelect");
   const scrambleText = document.getElementById("scrambleText");
+  const scramblePreview = document.getElementById("scramblePreview");
   const findSolutionBtn = document.getElementById("findSolutionBtn");
   const solverStatus = document.getElementById("solverStatus");
   const solverSolution = document.getElementById("solverSolution");
@@ -169,6 +186,7 @@ export function installSolver444UiActivation() {
   if (
     !eventSelect ||
     !scrambleText ||
+    !scramblePreview ||
     !findSolutionBtn ||
     !solverStatus ||
     !solverSolution ||
@@ -201,8 +219,7 @@ export function installSolver444UiActivation() {
   const hiddenHostChildren = new Map();
   let worker = null;
   let solverApi = null;
-  let busy = false;
-  let runId = 0;
+  let activeRun = null;
   let solution = "";
   let moves = [];
   let moveIndex = 0;
@@ -218,7 +235,11 @@ export function installSolver444UiActivation() {
   let lastMoveCountText = "";
 
   const is444 = () => eventSelect.value === EVENT_ID;
-  const currentScramble = () => normalizeScramble(scrambleText.textContent);
+  function currentScramble() {
+    if (scramblePreview.getAttribute("event") !== EVENT_ID) return "";
+    const scramble = normalizeScramble(scramblePreview.getAttribute("scramble"));
+    return scramble === normalizeScramble(scrambleText.textContent) ? scramble : "";
+  }
   const ownsPlayback = () => is444() && moves.length > 0 && player !== null;
 
   function setStatus(text) {
@@ -406,9 +427,15 @@ export function installSolver444UiActivation() {
       ? "Yau Setup"
       : STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
     const count = document.createElement("span");
-    const moveCount = Number(stage?.moveCount) || splitMoves(stage?.solution).length;
-    const alreadyPaired = stage?.alreadyPaired === true ? " · 이미 페어링" : "";
-    count.textContent = ` ${moveCount}수${alreadyPaired}${stage?.verified === true ? " · 검증됨" : ""}`;
+    const moveCount = Number.isFinite(stage?.moveCount) ? stage.moveCount : splitMoves(stage?.solution).length;
+    const detail = stage?.alreadyPaired === true
+      ? " · 이미 페어링"
+      : stage?.technique === "align-then-close"
+        ? ` · 역슬라이스로 ${stage.alignedPairs}쌍 결합`
+        : stage?.technique === "pair-park-close"
+          ? ` · 슬라이스 ${stage.pairedOnOpen}쌍 + 복원 ${stage.pairedOnClose}쌍`
+          : "";
+    count.textContent = ` ${moveCount}수${detail}${stage?.verified === true ? " · 검증됨" : ""}`;
     const algorithm = document.createElement("code");
     algorithm.textContent = String(stage?.solution || "").trim() || "0수";
     item.append(title, count, algorithm);
@@ -475,6 +502,9 @@ export function installSolver444UiActivation() {
     const label = stage === "THREE_BY_THREE" && progress?.cfopStageName
       ? `${baseLabel} · ${progress.cfopStageName}`
       : baseLabel;
+    if (stage === "YAU_FRAME" && Number.isInteger(progress?.attempt)) {
+      return `${label} · ${progress.attempt}번째 시도`;
+    }
     if (progress?.type === "444_stage_done") {
       const count = Number(progress?.moveCount);
       return Number.isFinite(count) && count > 0 ? `${label} 완료 · ${count}수` : `${label} 완료`;
@@ -491,20 +521,22 @@ export function installSolver444UiActivation() {
     return `${label} 진행 중...`;
   }
 
-  async function ensureWorker() {
+  async function ensureWorker(signal) {
     if (worker && solverApi) return solverApi;
     let lastError = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const client = createWorkerClient(attempt > 0);
+      worker = client.worker;
       try {
-        const pong = await waitForWorkerPing(client);
+        const pong = await waitForWorkerPing(client, signal);
+        signal.throwIfAborted();
         if (pong?.ok !== true) throw new Error("444_WORKER_BOOT_ERROR");
-        worker = client.worker;
         solverApi = client.api;
         return solverApi;
       } catch (error) {
+        signal.throwIfAborted();
         lastError = error;
-        client.worker.terminate();
+        disposeWorker();
       }
     }
     throw lastError || new Error("444_WORKER_BOOT_ERROR");
@@ -516,11 +548,18 @@ export function installSolver444UiActivation() {
     solverApi = null;
   }
 
+  function cancelActiveSolve() {
+    if (!activeRun) return;
+    activeRun.controller.abort();
+    activeRun = null;
+    disposeWorker();
+  }
+
   async function solveCurrent444(event) {
     if (!is444()) return;
     event?.preventDefault?.();
     event?.stopImmediatePropagation?.();
-    if (busy) return;
+    if (activeRun) return;
 
     const scramble = currentScramble();
     if (!scramble) {
@@ -529,15 +568,15 @@ export function installSolver444UiActivation() {
       return;
     }
 
-    busy = true;
-    const activeRun = ++runId;
+    const run = { scramble, controller: new AbortController() };
+    activeRun = run;
     syncButton();
     resetResultPresentation();
     setStatus("4×4 솔버를 준비하고 있습니다...");
 
     try {
-      const api = await ensureWorker();
-      if (activeRun !== runId || !is444()) return;
+      const api = await ensureWorker(run.controller.signal);
+      if (activeRun !== run || !is444()) return;
       setStatus("4×4 Worker 연결 완료 · 엔진을 초기화하고 있습니다...");
       const deadlineTs = Date.now() + SOLVE_TIMEOUT_MS;
       const result = await withUiTimeout(
@@ -552,21 +591,22 @@ export function installSolver444UiActivation() {
           method444: solver444MethodSelect?.value === "yau" ? "yau" : "reduction",
         },
           proxy((progress) => {
-            if (activeRun !== runId || !is444()) return;
+            if (activeRun !== run || !is444()) return;
             setStatus(progressText(progress));
           }),
         ),
         SOLVE_TIMEOUT_MS + WORKER_CALL_GRACE_MS,
         "444_UI_SOLVE_TIMEOUT",
+        run.controller.signal,
       );
-      if (activeRun !== runId || !is444() || currentScramble() !== scramble) return;
+      if (activeRun !== run || !is444() || currentScramble() !== scramble) return;
       if (result?.ok === true && result?.verified === true && String(result.solution || "").trim()) {
         renderSuccess(result, scramble);
       } else {
         renderFailure(result);
       }
     } catch (error) {
-      if (activeRun === runId && is444()) {
+      if (activeRun === run && is444()) {
         const message = String(error?.message || error || "444_WORKER_FAILED");
         const reason = message === "444_UI_SOLVE_TIMEOUT"
           ? "444_DEADLINE_REACHED"
@@ -574,11 +614,11 @@ export function installSolver444UiActivation() {
             ? message
             : "444_WORKER_FAILED";
         renderFailure({ reason, detail: message });
+        disposeWorker();
       }
-      disposeWorker();
     } finally {
-      if (activeRun === runId) {
-        busy = false;
+      if (activeRun === run) {
+        activeRun = null;
         syncButton();
       }
     }
@@ -613,7 +653,7 @@ export function installSolver444UiActivation() {
 
   function syncButton() {
     if (!is444()) return;
-    const shouldDisable = busy || !currentScramble();
+    const shouldDisable = Boolean(activeRun) || !currentScramble();
     if (findSolutionBtn.disabled !== shouldDisable) findSolutionBtn.disabled = shouldDisable;
   }
 
@@ -631,8 +671,7 @@ export function installSolver444UiActivation() {
     }
 
     if (solver444MethodField) solver444MethodField.hidden = true;
-    runId += 1;
-    busy = false;
+    cancelActiveSolve();
     disposeWorker();
     setThreeByThreeControlsHidden(false);
     if (solveTitle?.textContent === "4×4 해 찾기") solveTitle.textContent = "해 찾기";
@@ -642,9 +681,9 @@ export function installSolver444UiActivation() {
 
   solver444MethodSelect?.addEventListener("change", () => {
     if (!is444()) return;
-    runId += 1;
-    busy = false;
+    cancelActiveSolve();
     resetResultPresentation();
+    setStatus("해를 다시 찾을 수 있습니다.");
     findSolutionBtn.title = solver444MethodSelect.value === "yau"
       ? "검증된 4×4 Yau 해 찾기"
       : "검증된 4×4 Reduction 해 찾기";
@@ -652,9 +691,9 @@ export function installSolver444UiActivation() {
   });
   crossColorSelect?.addEventListener("change", () => {
     if (!is444()) return;
-    runId += 1;
-    busy = false;
+    cancelActiveSolve();
     resetResultPresentation();
+    setStatus("해를 다시 찾을 수 있습니다.");
     syncButton();
   });
   findSolutionBtn.addEventListener("click", solveCurrent444, true);
@@ -699,7 +738,16 @@ export function installSolver444UiActivation() {
     attributes: true,
     attributeFilter: ["disabled"],
   });
-  new MutationObserver(() => queueMicrotask(syncButton)).observe(scrambleText, {
+  new MutationObserver(() => {
+    if (!is444()) return;
+    const scramble = currentScramble();
+    if (activeRun && activeRun.scramble !== scramble) {
+      cancelActiveSolve();
+      setStatus("스크램블이 준비되면 해를 구할 수 있습니다.");
+    }
+    if (player && playerScramble !== scramble) resetResultPresentation();
+    syncButton();
+  }).observe(scrambleText, {
     childList: true,
     characterData: true,
     subtree: true,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { puzzles } from "../vendor/cubing/puzzles/index.js";
 import { solve444 } from "../solver/solver444.js";
+import { solveYauLastEight323444 } from "../solver/edgePairing444.js";
 
 const EDGE_SLOT_PAIRS = [
   [8, 2], [9, 15], [5, 11], [10, 20], [21, 14], [6, 23],
@@ -43,10 +44,12 @@ function crossTypeMask(face) {
   return mask;
 }
 
-function pairedTypeMask(pattern) {
+function pairedTypeMask(pattern, allowedSlots = 0x0fff) {
   const edges = pattern.patternData.EDGES;
   let mask = 0;
-  for (const [a, b] of EDGE_SLOT_PAIRS) {
+  for (let slot = 0; slot < EDGE_SLOT_PAIRS.length; slot += 1) {
+    if (!(allowedSlots & (1 << slot))) continue;
+    const [a, b] = EDGE_SLOT_PAIRS[slot];
     const ta = EDGE_TYPE_BY_WING[Number(edges.pieces[a])];
     const tb = EDGE_TYPE_BY_WING[Number(edges.pieces[b])];
     if (ta !== 255 && ta === tb && Number(edges.orientation[a]) === Number(edges.orientation[b])) {
@@ -141,18 +144,72 @@ function isSolved(pattern) {
   return pattern.experimentalIsSolved({ ignorePuzzleOrientation: false });
 }
 
+const TOP_SLOTS = crossTypeMask("U");
+const MIDDLE_SLOTS = 0x0fff ^ TOP_SLOTS ^ crossTypeMask("D");
+
+function verifyYauPairingSegment(pattern, segment, tokens, targetMask) {
+  const before = pairedTypeMask(pattern);
+  const singleCycle = segment.technique === "align-then-close" || segment.technique === "pair-park-close";
+  const wide = tokens.filter((token) => /^[URFDLB]w/.test(token));
+  let opened = null;
+  let beforeClose = null;
+  if (singleCycle) {
+    assert.equal(wide.length, 2, `${segment.name} must use one slice cycle`);
+    assert.match(wide[0], /^Uw'?$/, "the completed cross stays on D during 3-2-3");
+    assert.equal(wide[1], wide[0].endsWith("'") ? "Uw" : "Uw'");
+    assert.equal(tokens.at(-1), wide[1]);
+  }
+  for (const token of tokens) {
+    if (singleCycle && token === wide[1]) beforeClose = pattern;
+    pattern = pattern.applyMove(token);
+    if (singleCycle && token === wide[0]) opened = pattern;
+    assert.equal(pairedTypeMask(pattern) & targetMask, targetMask, `cross split during ${segment.name} at ${token}`);
+  }
+  const after = pairedTypeMask(pattern);
+  assert.equal(after & before, before, `${segment.name} lost a completed pair at the checkpoint`);
+  assert.equal(segment.pairEnd, bitCount(after));
+  assert.equal(segment.pairedAdded, bitCount(after) - bitCount(before));
+  if (segment.technique === "already-paired") {
+    assert.equal(tokens.length, 0);
+    assert.equal(segment.alreadyPaired, true);
+  } else if (segment.technique === "align-then-close") {
+    assert.equal(tokens[0], wide[0]);
+    const formed = pairedTypeMask(pattern, MIDDLE_SLOTS) & ~pairedTypeMask(beforeClose);
+    assert.ok(bitCount(formed) >= 3, "First 3 must join at least three aligned middle pairs on the inverse slice");
+    assert.equal(segment.alignedPairs, bitCount(formed));
+  } else if (segment.technique === "pair-park-close") {
+    const formed = pairedTypeMask(opened, MIDDLE_SLOTS) & ~before;
+    const parked = pairedTypeMask(beforeClose, TOP_SLOTS) & formed;
+    const restored = after & ~pairedTypeMask(beforeClose) & ~before;
+    assert.ok(parked && restored, "the opened slice must create a pair that is parked while the inverse slice joins another pair");
+    assert.equal(segment.pairedOnOpen, bitCount(parked));
+    assert.equal(segment.pairedOnClose, bitCount(restored));
+  } else {
+    assert.equal(segment.technique, "last-two-edges");
+    assert.equal(segment.name, "3-2-3 · L2E");
+    assert.equal(bitCount(before), 10, "L2E must have exactly two edges left");
+    assert.equal(bitCount(after), 12);
+  }
+  return pattern;
+}
+
 async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) {
-  const result = await solve444(scramble, null, {
+  const startedStages = new Set();
+  const result = await solve444(scramble, (progress) => {
+    if (progress.type === "444_stage_start") startedStages.add(progress.stage);
+  }, {
     deadlineTs: Date.now() + 60_000,
     crossColor,
     method444: "yau",
-    __yauProtectedCenterBudgetMs: 6000,
   });
   assert.equal(result.ok, true, `Yau failed for ${crossColor}: ${result.reason} ${result.detail || ""}`);
   assert.equal(result.verified, true);
   assert.equal(result.meta.method444, "yau");
   assert.equal(result.meta.yauAttempted, true);
   assert.equal(result.meta.yauFallbackReason, null);
+  for (const stage of ["YAU_FRAME", "YAU_CROSS3", "YAU_REMAINING_CENTERS", "YAU_CROSS4", "EDGES"]) {
+    assert.ok(startedStages.has(stage), `missing Yau progress for ${stage}`);
+  }
   if (expectNatural) {
     assert.equal(result.meta.yauNaturalCross3Applied, true, `natural Cross 3/4 was not used for ${crossColor}: ${result.meta.yauNaturalCross3FallbackReason}`);
     assert.equal(result.meta.yauRemainingCentersRecomputed, true);
@@ -196,12 +253,11 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
   const cross3Tokens = String(setup.segments[2].solution || "").trim().split(/\s+/).filter(Boolean);
   const cross3WideTokens = cross3Tokens.filter((token) => /^[URFDLB]w(?:2|')?$/.test(token));
-  assert.ok(cross3WideTokens.length >= 2, "human Yau Cross 3/4 did not use a working slice");
-  assert.equal(
-    cross3WideTokens.length,
-    Number(result.meta.yauCross3HumanStepCount) * 2,
-    "human Yau Cross 3/4 must use one working-slice open/close pair per committed cross edge",
-  );
+  const techniques = setup.segments[2].humanStepTechniques;
+  assert.equal(techniques.length, result.meta.yauCross3HumanStepCount);
+  assert.ok(techniques.every((technique) => technique === "insert-paired" || technique === "slice-then-insert"));
+  const sliceInsertions = techniques.filter((technique) => technique === "slice-then-insert").length;
+  assert.equal(cross3WideTokens.length, sliceInsertions * 2, "each new wing pair uses one restored slice cycle");
   for (let index = 0; index < cross3WideTokens.length; index += 2) {
     const open = cross3WideTokens[index];
     const close = cross3WideTokens[index + 1];
@@ -244,10 +300,8 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   const edge = result.stages[1];
   assert.equal(edge.id, "edges");
   assert.equal(edge.method, "Yau 3-2-3");
-  assert.deepEqual(edge.segments.map((segment) => segment.name), [
-    "3-2-3 · First 3",
-    "3-2-3 · Next 2",
-    "3-2-3 · Last 3",
+  assert.deepEqual(edge.segments.map((segment) => segment.id), [
+    "yau323First3", "yau323Next2", "yau323Last3",
   ]);
   assert.equal(edge.segments.at(-1).pairEnd, 12);
   assert.ok(Number(edge.segments[0].viewpointRotations) >= 1, "Yau 3-2-3 must begin by regripping the completed cross from R to D");
@@ -269,14 +323,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     const segment = edge.segments[segmentIndex];
     const tokens = String(segment.solution || "").trim().split(/\s+/).filter(Boolean);
     const startIndex = segmentIndex === 0 ? first323TurnIndex : 0;
-    for (const token of tokens.slice(startIndex)) {
-      pattern = pattern.applyAlg(token);
-      assert.equal(
-        pairedTypeMask(pattern) & targetMask,
-        targetMask,
-        `Yau cross dedge split during ${segment.name} at ${token}`,
-      );
-    }
+    pattern = verifyYauPairingSegment(pattern, segment, tokens.slice(startIndex), targetMask);
     assert.equal(centerFaceForColor(pattern, crossColor), "D", `${segment.name} must finish with the cross on D`);
     assert.equal(
       pairedCrossTypesAdjacentToCenter(pattern, crossColor) & targetMask,
@@ -299,12 +346,43 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   return result;
 }
 
+// Freeze the cross-down state of the 45-turn failure so this exercises the
+// same Next-2 layout regardless of the frame chosen by the full solver.
+const nextTwoScramble = "B' L D' L F' U2 F2 L2 R B' R2 U2 D R2 U2 L2 D' L2 D' F2 U Lw2 D L2 Fw2 B2 L U Fw2 F2 L' U Fw' R F U' Fw' B Lw U B Lw2 Fw2 B Lw'";
+const nextTwoSetup = "Uw F Lw Fw Uw2 F Uw2 Rw' U2 Rw Rw B Rw' Fw R' Fw' L' F Dw F' D' F Dw' D R2 D2 Uw2 L' D L Uw2 D Uw' F' Uw F D2 B' Uw' B Uw2 B D2 F D' L Uw2 Uw D' L' D L Uw' D2 R' D' R F";
+const nextTwoCross = crossTypeMask("D");
+const nextTwoResult = await solveYauLastEight323444(nextTwoScramble, nextTwoSetup, {
+  crossTypeMask: nextTwoCross,
+  deadlineTs: Date.now() + 7_000,
+});
+assert.equal(nextTwoResult.ok, true, `${nextTwoResult.reason}: ${nextTwoResult.detail}`);
+assert.deepEqual(nextTwoResult.segments.map((segment) => segment.id), [
+  "yau323First3", "yau323Next2", "yau323Last3",
+]);
+let nextTwoPattern = solved.applyAlg(nextTwoScramble).applyAlg(nextTwoSetup);
+const expectedPairedCounts = [7, 9, 12];
+for (const [index, segment] of nextTwoResult.segments.entries()) {
+  nextTwoPattern = verifyYauPairingSegment(
+    nextTwoPattern, segment, segment.solution.split(/\s+/).filter(Boolean), nextTwoCross,
+  );
+  assert.ok(allCentersSolved(nextTwoPattern));
+  assert.equal(solvedTypeMask(nextTwoPattern) & nextTwoCross, nextTwoCross);
+  assert.ok(bitCount(pairedTypeMask(nextTwoPattern)) >= expectedPairedCounts[index]);
+}
+
 await verifyCase("Rw U2 F' Lw D B2", "D", { expectNatural: true });
 await verifyCase("Uw2 Rw F2 Dw' L B' Rw2 U Fw' D2 Lw B2", "F", { expectNatural: true });
-const crossFrameRegression = await verifyCase(
+await verifyCase(
   "Rw U' F R2 F Bw' Fw' Dw Bw Dw Uw R Bw Fw2 B2 Fw2 B Uw2 Lw Bw2 R' Lw R' L Bw U2 Bw U' Fw2 D Bw' Uw'",
   "D",
 );
-assert.ok(Number(crossFrameRegression.meta?.yauFrameAttemptCount) >= 2, "Yau cross regression did not exercise frame selection");
+await verifyCase("R2 D2 B' U2 F B U2 R' D F2 R2 U' L2 U' R2 B2 R2 D B2 L2 Uw2 Rw2 L' Fw2 B' R' B2 R L' Fw2 F U2 R Uw' F2 Uw' D2 Rw2 Fw U Rw' U2 B' L2 Uw2 B2", "U");
+await verifyCase("L D2 L2 D' R F' D F' R2 U F2 B2 U2 L2 F2 U' R2 B2 D F' Uw2 F' Rw2 Uw2 R' Uw2 F Uw2 U2 F' Uw2 F Uw F' L' F2 D Rw2 Fw' Rw' R2 Fw R2 Uw Rw", "L");
 
-console.log("4x4 true Yau R-face Cross 4/4, explicit cross-down 3-2-3 regrip, LL parity, and final verification passed");
+const alreadyPaired = await solve444("U", null, { method444: "yau", crossColor: "D", deadlineTs: Date.now() + 60_000 });
+assert.equal(alreadyPaired.ok, true, `${alreadyPaired.reason}: ${alreadyPaired.detail}`);
+assert.equal(alreadyPaired.stages[0].segments[2].crossEdgeCount, 4);
+assert.ok(alreadyPaired.stages[1].segments.every((segment) => segment.alreadyPaired && segment.moveCount === 0));
+assert.ok(isSolved(solved.applyAlg("U").applyAlg(alreadyPaired.solution)));
+
+console.log("4x4 Yau gap centers, matching-wing slice cycles, L2E, and final verification passed");

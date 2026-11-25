@@ -42,7 +42,7 @@ assert.match(indexSource, /<scramble-display[\s\S]*?id="scramblePreview"[\s\S]*?
 assert.doesNotMatch(indexSource, /scramblePreview3DHost|data-preview-mode=/);
 
 // Only the solver TwistyPlayer becomes puzzle-size aware.
-assert.match(mainSource, /import \{ resolveNxNSolverPuzzle \} from "\.\/solver\/nxnTwistyPreview\.js";/);
+assert.match(mainSource, /import \{ resolveNxNSolverPuzzle \} from "\.\/solver\/nxnTwistyPreview\.js(?:\?v=[^"]+)?";/);
 assert.match(mainSource, /function ensureSolverTwistyPlayer\(puzzleId = resolveNxNSolverPuzzle\(solverPlaybackEventId\)\)/);
 assert.match(mainSource, /puzzle: puzzleId/);
 assert.match(mainSource, /solverTwistyPuzzleId === puzzleId/);
