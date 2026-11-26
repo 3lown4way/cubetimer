@@ -1267,181 +1267,12 @@ export async function solveTargetEdgeTypes444(
   };
 }
 
-function humanYauCrossMacros444(model) {
-  return model.seedActions.filter((entry) => {
-    const tokens = splitAlgorithm(entry.algorithm);
-    const wide = tokens.filter((token) => /^[URFDLB]w(?:2|')?$/.test(token));
-    if (wide.length !== 2) return false;
-    if (!/^[UD]w/.test(wide[0]) || !/^[UD]w/.test(wide[1])) return false;
-    if (wide[0][0] !== wide[1][0]) return false;
-    return invertMoveToken(wide[0]) === wide[1];
-  });
-}
-
-function humanYauCrossCandidateCost444(moves, setupLength, hasPost) {
-  // Human execution score for the three pre-center cross edges.  The previous
-  // weights made one saved HTM worth more than four B turns, which was exactly
-  // why the "human" path still looked solver-ish.  Here one extra setup turn
-  // may beat a B turn, while two or three gratuitous extra moves still lose.
-  let cost = moves.length * 42 + setupLength * 7 + (hasPost ? 5 : 0);
-  for (const move of moves) {
-    const token = String(move || "");
-    const face = token[0];
-    if (face === "B") cost += 68;
-    else if (face === "L") cost += 17;
-    else if (face === "D") cost += 5;
-    if (/^Bw/.test(token)) cost += 28;
-    else if (/^Lw/.test(token)) cost += 9;
-    if (token.endsWith("2")) cost += 2;
-  }
-  return cost;
-}
-
-function crossInsertions444(model) {
-  if (model.crossInsertions) return model.crossInsertions;
-  const posts = ["", ...OUTER_MOVES_444];
-  model.crossInsertions = humanYauCrossMacros444(model).map(({ algorithm, action }) => {
-    const moves = splitAlgorithm(algorithm);
-    return {
-      algorithm,
-      moves,
-      action,
-      workingSlice: moves.find((token) => /^[UD]w/.test(token)),
-      withPosts: posts.map((post) => ({
-        post,
-        action: post ? model.actionFor(`${algorithm} ${post}`) : action,
-      })),
-    };
-  });
-  return model.crossInsertions;
-}
-
-function humanYauCrossCandidates444(initialState, solvedMask, targetMask, model, protectedCenterFaces, deadlineTs) {
-  const macros = crossInsertions444(model);
-  const targetSlots = EDGE_SLOT_PAIRS_444.flatMap((_, slot) =>
-    targetMask & (1 << slot) ? [slot] : []);
-  const remainingMask = targetMask & ~solvedMask;
-  const bestByEdge = new Map();
-  const pairedInsertion = { moves: [], algorithm: "", workingSlice: "" };
-
-  const evaluate = (setupState, setup, macro, action, post, skipMask = 0) => {
-    // Most insertions miss the cross. Check just its wings through the move's
-    // permutation before building a full state or formatting an algorithm.
-    let nextSolvedMask = 0;
-    for (const slot of targetSlots) {
-      const [first, second] = EDGE_SLOT_PAIRS_444[slot];
-      const firstSource = action.edgePermutation[first];
-      const secondSource = action.edgePermutation[second];
-      if (
-        EDGE_TYPE_BY_WING_444[setupState.edgePieces[firstSource]] === slot &&
-        EDGE_TYPE_BY_WING_444[setupState.edgePieces[secondSource]] === slot &&
-        setupState.edgeOrientation[firstSource] === action.edgeOrientationDelta[first] &&
-        setupState.edgeOrientation[secondSource] === action.edgeOrientationDelta[second]
-      ) {
-        nextSolvedMask |= 1 << slot;
-      }
-    }
-    if (!maskContains(nextSolvedMask, solvedMask)) return;
-    const added = nextSolvedMask & remainingMask;
-    if (!added || (added & (added - 1)) || (added & skipMask)) return;
-    const edgeType = 31 - Math.clz32(added);
-    const moves = simplifyOuterSequence([...setup, ...macro.moves, ...(post ? [post] : [])]);
-    const cost = humanYauCrossCandidateCost444(moves, setup.length, Boolean(post));
-    const previous = bestByEdge.get(edgeType);
-    if (previous && previous.cost <= cost) return;
-    const state = applyTokenPathPreservingPairedTypes444(initialState, moves, model, solvedMask);
-    if (!state || !protectedCenterFacesSolved444(state, model, protectedCenterFaces)) return;
-    bestByEdge.set(edgeType, {
-      edgeType,
-      state,
-      moves,
-      solvedMask: nextSolvedMask,
-      macro: macro.algorithm,
-      workingSlice: macro.workingSlice,
-      technique: macro.workingSlice ? "slice-then-insert" : "insert-paired",
-      cost,
-    });
-  };
-
-  let shallowMask = null;
-  for (let index = 0; index < L2E_SETUP_PATHS.length; index += 1) {
-    if ((index & 31) === 0 && deadlineReached(deadlineTs)) break;
-    const setup = L2E_SETUP_PATHS[index];
-    const deep = setup.length === 3;
-    if (deep && shallowMask === null) {
-      shallowMask = 0;
-      for (const edgeType of bestByEdge.keys()) shallowMask |= 1 << edgeType;
-    }
-    if (deep && maskContains(shallowMask, remainingMask)) break;
-    const setupState = applyMovePath(initialState, setup, model);
-    if (setup.length) evaluate(setupState, setup, pairedInsertion, IDENTITY_EDGE_ACTION_444, "");
-    for (const macro of macros) {
-      if (deep) {
-        evaluate(setupState, setup, macro, macro.action, "", shallowMask);
-      } else {
-        for (const { post, action } of macro.withPosts) {
-          evaluate(setupState, setup, macro, action, post);
-        }
-      }
-    }
-  }
-
-  return [...bestByEdge.values()].sort((left, right) =>
-    left.cost - right.cost || left.moves.length - right.moves.length || left.edgeType - right.edgeType);
-}
-
 function crossFaceTurns444(model, face) {
   return ["", face, `${face}2`, `${face}'`].map((turn) => ({ turn, action: model.actionFor(turn) }));
 }
 
 function crossBankAlignment444(state, faceTurns, lockedMask) {
   return faceTurns.find(({ action }) => maskContains(solvedEdgeTypeMask(state, action, lockedMask), lockedMask));
-}
-
-// Turning the cross face moves the empty spoke to the face being worked on.
-// That setup does not affect any of the four side centers in the center plan.
-export async function applyYauCenterPlan444(scramble, setup, centerPlan, crossColor, lockedMask) {
-  const model = await getPlannerModel();
-  const oppositeColor = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" }[crossColor];
-  const endFaces = [crossColor, oppositeColor];
-  const gapTurns = crossFaceTurns444(model, crossColor);
-  let state = compactStateFromPattern(model.solved.applyAlg(scramble).applyAlg(setup));
-  if (!protectedCenterFacesSolved444(state, model, endFaces) || !maskContains(solvedEdgeTypeMask(state), lockedMask)) {
-    return null;
-  }
-  const moves = [];
-  const phaseMoveCounts = [0, 0];
-  for (const phase of centerPlan) {
-    const start = moves.length;
-    for (const turn of phase) {
-      const face = turn[0];
-      // Outer turns on the two solved centers do not change the side centers.
-      if (turn[1] !== "w" && endFaces.includes(face)) continue;
-      const turnAction = model.actionFor(turn);
-      let advanced = false;
-      for (const { turn: gapTurn, action } of gapTurns) {
-        const prepared = gapTurn ? applyCompactAction(state, action) : state;
-        const next = applyCompactAction(prepared, turnAction);
-        if (!protectedCenterFacesSolved444(next, model, endFaces) ||
-            !crossBankAlignment444(next, gapTurns, lockedMask)) continue;
-        if (gapTurn) moves.push(gapTurn);
-        moves.push(turn);
-        state = next;
-        advanced = true;
-        break;
-      }
-      if (!advanced) return null;
-    }
-    phaseMoveCounts.push(moves.length - start);
-  }
-  if (!centersSolved(state, model.solvedCompact.centerPieces)) return null;
-  const alignment = crossBankAlignment444(state, gapTurns, lockedMask);
-  if (!alignment) return null;
-  if (alignment.turn) {
-    moves.push(alignment.turn);
-    phaseMoveCounts[3] += 1;
-  }
-  return { solution: moves.join(" "), phaseMoveCounts };
 }
 
 function wingSignatureForType444(state, edgeType) {
@@ -1479,12 +1310,87 @@ function wingSignaturePairedIn444(signature, slots) {
   return ao === bo && a !== b && slot === EDGE_TYPE_BY_WING_444[b] && Boolean(slots & (1 << slot));
 }
 
+function crossSideFace444(type) {
+  return EDGE_NAMES_333_444[EDGE_SLOT_TO_333_444[type]].replace("D", "");
+}
+
+export function crossSideColors444(mask) {
+  return EDGE_SLOT_PAIRS_444.flatMap((_, type) => mask & (1 << type) ? [crossSideFace444(type)] : []);
+}
+
+function cross3Turns444(model, lockedMask) {
+  const allowed = ["U", "Uw", "2D", "F", "R", "L", "B"]
+    .flatMap((layer) => [layer, `${layer}'`, `${layer}2`]);
+  return allowed.filter((turn) => maskContains(
+    solvedEdgeTypeMask(model.solvedCompact, model.actionFor(turn), lockedMask), lockedMask,
+  )).map((turn) => projectedWingMove444(model, [turn]));
+}
+
+function findCross3Insertion444(state, moves, edgeType, model, deadlineTs) {
+  const goal = wingSignatureForType444(model.solvedCompact, edgeType);
+  const start = wingSignatureForType444(state, edgeType);
+  for (const entry of yauWingSetups444(start, moves, deadlineTs)) {
+    if (entry.signature === goal) return entry.moves;
+  }
+  return null;
+}
+
+export async function solveYauFirstThreeCross444(pattern, deadlineTs) {
+  const model = await getPlannerModel();
+  const crossMask = crossEdgeTypeMask444("D");
+  let current = pattern;
+  let state = compactStateFromPattern(current);
+  if (!protectedCenterFacesSolved444(state, model, ["D", "U"])) {
+    throw new Error("444_YAU_CROSS3_CENTERS_NOT_READY");
+  }
+
+  let lockedMask = solvedEdgeTypeMask(state) & crossMask;
+  const initialMask = lockedMask;
+  const steps = [];
+  if (lockedMask === crossMask && centersSolved(state, model.solvedCompact.centerPieces)) {
+    return { steps, pattern: current, initialMask, lockedMask, crossCount: 4, workingFace: "F" };
+  }
+
+  while (bitCount(lockedMask) < 3) {
+    const allowed = cross3Turns444(model, lockedMask);
+    let best = null;
+    for (let type = 0; type < EDGE_SLOT_PAIRS_444.length; type += 1) {
+      if (!((crossMask & ~lockedMask) & (1 << type))) continue;
+      const turns = findCross3Insertion444(state, allowed, type, model, deadlineTs);
+      if (turns && (!best || turns.length < best.turns.length)) best = { type, turns };
+    }
+    if (!best) throw new Error(deadlineReached(deadlineTs) ? "444_DEADLINE_REACHED" : "444_YAU_CROSS3_NOT_FOUND");
+    for (const turn of best.turns) {
+      current = current.applyMove(turn);
+      state = compactStateFromPattern(current);
+      if (!maskContains(solvedEdgeTypeMask(state), lockedMask) || !protectedCenterFacesSolved444(state, model, ["D", "U"])) {
+        throw new Error("444_YAU_CROSS3_LOCK_FAILED");
+      }
+    }
+    lockedMask |= 1 << best.type;
+    if (!maskContains(solvedEdgeTypeMask(state), lockedMask)) throw new Error("444_YAU_CROSS3_PLACEMENT_FAILED");
+    steps.push({ turns: best.turns, lockedMask, edgeFace: crossSideFace444(best.type) });
+  }
+
+  if (lockedMask === crossMask) lockedMask &= lockedMask - 1;
+  const workingFace = crossSideFace444(31 - Math.clz32(crossMask & ~lockedMask));
+  // If the working spoke also became solved, move just that spoke aside.
+  if (maskContains(solvedEdgeTypeMask(state), crossMask)) {
+    current = current.applyMove(workingFace);
+    if ((solvedEdgeTypeMask(compactStateFromPattern(current)) & crossMask) !== lockedMask) {
+      throw new Error("444_YAU_WORKING_GAP_FAILED");
+    }
+    steps.push({ turns: [workingFace], lockedMask, workingGap: true });
+  }
+  return { steps, pattern: current, initialMask, lockedMask, crossCount: 3, workingFace };
+}
+
 function yauCrossGap444(model, targetType, turns = crossFaceTurns444(model, "D")) {
   const [gapWing] = EDGE_SLOT_PAIRS_444[targetType];
   const offsets = {};
   for (const [offset, { action }] of turns.entries()) {
     const slot = EDGE_TYPE_BY_WING_444[action.edgePermutation.indexOf(gapWing)];
-    const face = EDGE_NAMES_333_444[EDGE_SLOT_TO_333_444[slot]].replace("D", "");
+    const face = crossSideFace444(slot);
     offsets[face] = offset;
   }
   return { targetType, turns, offsets };
@@ -1507,8 +1413,7 @@ function aimYauCrossGap444(moves, gap) {
 
 function planYauLastCrossEdge444(initial, model, sliceFamily, requiredMask, gap, deadlineTs) {
   const targetType = gap.targetType;
-  const targetSlot = EDGE_NAMES_333_444[EDGE_SLOT_TO_333_444[targetType]];
-  const workingFace = targetSlot.replace("D", "");
+  const workingFace = crossSideFace444(targetType);
   const triggers = yauOuterInsertions444(model, requiredMask, gap)
     .map(({ moves }) => projectedWingMove444(model, moves));
   const openers = sliceFamily.openMoves.map((open) => ({
@@ -1602,154 +1507,6 @@ export async function solveYauCross4Natural444(publicScramble, publicSetupSoluti
   };
 }
 
-export async function solveYauCross3Natural444(publicScramble, publicSetupSolution, targetTypeMask, options = {}) {
-  const globalDeadlineTs = Number(options?.deadlineTs) || 0;
-  const budgetMs = Math.max(350, Math.min(12000, Number(options?.timeBudgetMs) || 2400));
-  const startedAt = Date.now();
-  const localDeadlineTs = globalDeadlineTs > 0
-    ? Math.min(globalDeadlineTs, startedAt + budgetMs)
-    : startedAt + budgetMs;
-  const model = await getPlannerModel();
-  let pattern = model.solved;
-  if (publicScramble) pattern = pattern.applyAlg(String(publicScramble));
-  if (publicSetupSolution) pattern = pattern.applyAlg(String(publicSetupSolution));
-  let initialState = compactStateFromPattern(pattern);
-  const targetMask = Number(targetTypeMask) >>> 0;
-  const protectedCenterFaces = Array.isArray(options?.protectedCenterFaces)
-    ? options.protectedCenterFaces
-    : ["D", "U"];
-  if (!protectedCenterFacesSolved444(initialState, model, protectedCenterFaces)) {
-    return { ok: false, reason: "444_YAU_HUMAN_CROSS3_CENTERS_NOT_READY" };
-  }
-  if (!crossInsertions444(model).length) {
-    return { ok: false, reason: "444_YAU_HUMAN_CROSS3_MACRO_BANK_EMPTY" };
-  }
-
-  const preparedMoves = [];
-  const alreadyComplete = maskContains(solvedEdgeTypeMask(initialState), targetMask) &&
-    centersSolved(initialState, model.solvedCompact.centerPieces);
-  if (!alreadyComplete && maskContains(solvedEdgeTypeMask(initialState), targetMask)) {
-    // Lift one intact dedge to make a working gap if the cross is already
-    // complete but the side centers still need work.
-    const lift = protectedCenterFaces.includes("F") ? "R" : "F";
-    preparedMoves.push(lift);
-    initialState = applyCompactAction(initialState, model.actionFor(lift));
-  }
-  const initialSolvedMask = solvedEdgeTypeMask(initialState) & targetMask;
-  const targetCount = alreadyComplete ? 4 : 3;
-
-  // Normal cases still take the cheapest local edge first.  The difference is
-  // that we keep the other edge choices on a tiny DFS stack.  If a locally
-  // cheapest first/second edge makes the next cross edge impossible, we
-  // backtrack to another *edge order* instead of failing the whole Yau solve.
-  // This is at most 4*3*2 leaf orders; it does not widen the underlying move
-  // search or introduce generic reduction macros.
-  const stack = [{
-    state: initialState,
-    solvedMask: initialSolvedMask,
-    moves: preparedMoves,
-    steps: [],
-    candidates: null,
-    nextIndex: 0,
-  }];
-  const onCandidate = typeof options?.onCandidate === "function" ? options.onCandidate : null;
-  let candidateCount = 0;
-  let lastRejection = null;
-  let deepestCount = bitCount(initialSolvedMask);
-  let expandedNodes = 0;
-  let backtrackCount = 0;
-
-  while (stack.length && !deadlineReached(localDeadlineTs)) {
-    const node = stack[stack.length - 1];
-    const solvedCount = bitCount(node.solvedMask);
-    deepestCount = Math.max(deepestCount, solvedCount);
-    if (solvedCount === targetCount) {
-      stack.pop();
-      const solution = node.moves.join(" ");
-      const verifiedState = compactStateFromPattern(solution ? pattern.applyAlg(solution) : pattern);
-      const verifiedSolvedMask = solvedEdgeTypeMask(verifiedState) & targetMask;
-      const verifiedPairedMask = pairedEdgeTypeMask(verifiedState) & targetMask;
-      if (bitCount(verifiedSolvedMask) !== targetCount ||
-          !maskContains(verifiedPairedMask, verifiedSolvedMask) ||
-          !protectedCenterFacesSolved444(verifiedState, model, protectedCenterFaces)) {
-        lastRejection = "444_YAU_HUMAN_CROSS3_VERIFY_FAILED";
-        continue;
-      }
-      const candidate = {
-        ok: true,
-        reason: null,
-        solution,
-        moveCount: node.moves.length,
-        lockedTypeMask: verifiedSolvedMask,
-        pairedTargetMask: verifiedPairedMask,
-        solvedTargetMask: verifiedSolvedMask,
-        humanStepCount: node.steps.length,
-        preparedWorkingGap: preparedMoves.length > 0,
-        completedCrossCount: targetCount,
-        steps: node.steps,
-        searchExpandedNodes: expandedNodes,
-        searchBacktrackCount: backtrackCount,
-        method: "Yau Human Cross 3/4",
-      };
-      candidateCount += 1;
-      // A rejected layout keeps the edge-order search running in this frame.
-      try {
-        const verdict = onCandidate ? await onCandidate(candidate) : true;
-        if (verdict === true) return { ...candidate, elapsedMs: Date.now() - startedAt, candidateCount };
-        lastRejection = typeof verdict === "string" && verdict ? verdict : "444_YAU_HUMAN_CROSS3_CANDIDATE_REJECTED";
-      } catch (error) {
-        lastRejection = String(error?.message || error);
-      }
-      continue;
-    }
-
-    if (node.candidates == null) {
-      node.candidates = humanYauCrossCandidates444(
-        node.state, node.solvedMask, targetMask, model, protectedCenterFaces, localDeadlineTs,
-      );
-      node.nextIndex = 0;
-      expandedNodes += 1;
-    }
-
-    if (node.nextIndex >= node.candidates.length) {
-      stack.pop();
-      if (stack.length) backtrackCount += 1;
-      continue;
-    }
-
-    const candidate = node.candidates[node.nextIndex++];
-    const nextSolvedCount = bitCount(candidate.solvedMask);
-    stack.push({
-      state: candidate.state,
-      solvedMask: candidate.solvedMask,
-      moves: [...node.moves, ...candidate.moves],
-      steps: [...node.steps, {
-        edgeType: candidate.edgeType,
-        workingSlice: candidate.workingSlice,
-        moveCount: candidate.moves.length,
-        solvedCrossCount: nextSolvedCount,
-        macro: candidate.macro,
-        technique: candidate.technique,
-      }],
-      candidates: null,
-      nextIndex: 0,
-    });
-  }
-
-  const timedOut = deadlineReached(localDeadlineTs);
-  return {
-    ok: false,
-    reason: lastRejection || (timedOut ? "444_YAU_HUMAN_CROSS3_TIMEOUT" : "444_YAU_HUMAN_CROSS3_EDGE_ORDER_EXHAUSTED"),
-    searchExhausted: !timedOut,
-    moveCount: 0,
-    solvedCrossCount: deepestCount,
-    elapsedMs: Date.now() - startedAt,
-    expandedNodes,
-    backtrackCount,
-    candidateCount,
-  };
-}
-
 function buildSegment(id, name, moves, pairStart, pairEnd) {
   const simplified = simplifyOuterSequence(moves);
   return {
@@ -1808,10 +1565,11 @@ function yauOuterInsertions444(model, crossMask, gap = null) {
   return model.yauOuterInsertions.get(key);
 }
 
-function searchYauFirstThreeHuman444(initial, model, deadlineTs, pairing) {
+function searchYauAlignedPairs444(initial, model, deadlineTs, pairing, targetCount) {
   const { sliceFamily, crossMask, insertions } = pairing;
   const initialPairs = yauRemainingPairedMask444(initial, crossMask);
-  if (bitCount(initialPairs) >= 3) {
+  const needed = targetCount - bitCount(initialPairs);
+  if (needed <= 0) {
     return [{ state: initial, moves: [], technique: "already-paired" }];
   }
   const alignments = new Map();
@@ -1840,23 +1598,19 @@ function searchYauFirstThreeHuman444(initial, model, deadlineTs, pairing) {
         if (!maskContains(prepared, node.prepared)) continue;
         const moves = [...node.moves, ...insertion.moves];
         const preparedCount = bitCount(prepared);
-        if (preparedCount >= 3) {
+        if (preparedCount >= needed) {
           const closed = applyCompactAction(state, node.closeAction);
-          if (!yauBoundaryOkay444(closed, model, crossMask, 3) ||
-              !maskContains(pairedEdgeTypeMask(closed), initialPairs)) continue;
-          const formedOnClose = prepared & ~pairedEdgeTypeMask(state);
-          if (bitCount(formedOnClose) < 3) continue;
-          const key = compactStateKey(closed);
-          const previous = goals.get(key);
-          if (!previous || moves.length + 1 < previous.moves.length) {
-            goals.set(key, {
-              state: closed,
-              moves: [...moves, node.close],
-              technique: "align-then-close",
-            });
+          const newPairsOnClose = prepared & ~pairedEdgeTypeMask(state) & ~initialPairs;
+          if (bitCount(newPairsOnClose) >= needed && yauBoundaryOkay444(closed, model, crossMask, targetCount) &&
+              maskContains(pairedEdgeTypeMask(closed), initialPairs)) {
+            const key = compactStateKey(closed);
+            const previous = goals.get(key);
+            if (!previous || moves.length + 1 < previous.moves.length) {
+              goals.set(key, { state: closed, moves: [...moves, node.close], technique: "align-then-close" });
+            }
+            if (goals.size >= 16) break;
+            continue;
           }
-          if (goals.size >= 16) break;
-          continue;
         }
         const key = node.close + compactStateKey(state);
         const score = preparedCount * 100 - moves.length;
@@ -1949,7 +1703,12 @@ function* collectYauNextTwoCandidates444(first, model, deadlineTs, pairing) {
     yield { state: first, moves: [], technique: "already-paired" };
     return;
   }
-  yield* searchYauPairingCycles444(first, 5, model, deadlineTs, pairing);
+  let foundCycle = false;
+  for (const cycle of searchYauPairingCycles444(first, 5, model, deadlineTs, pairing)) {
+    foundCycle = true;
+    yield cycle;
+  }
+  if (!foundCycle) yield* searchYauAlignedPairs444(first, model, deadlineTs, pairing, 5);
 }
 
 function finishYauLastThree444(initial, model, deadlineTs, pairing) {
@@ -1960,8 +1719,8 @@ function finishYauLastThree444(initial, model, deadlineTs, pairing) {
     const l2e = findL2E(initial, model, deadlineTs, crossMask, l2eActions, crossMask, gap);
     if (l2e) return { ...l2e, technique: "last-two-edges" };
   }
-  const direct = searchYauPairingCycles444(initial, 8, model, deadlineTs, pairing).next().value;
-  return direct || null;
+  const cycle = searchYauPairingCycles444(initial, 8, model, deadlineTs, pairing).next().value;
+  return cycle || searchYauAlignedPairs444(initial, model, deadlineTs, pairing, 8)[0] || null;
 }
 
 function yauGapL2EActions444(model, gap) {
@@ -2041,8 +1800,8 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
   // FIRST 3: only the completed cross is sacred. Incidental non-cross pairs
   // are not locked; a human Yau solver may let those move while forming the
   // three stored pairs.
-  const first3Candidates = searchYauFirstThreeHuman444(
-    state, model, edgeStageDeadline, pairing,
+  const first3Candidates = searchYauAlignedPairs444(
+    state, model, edgeStageDeadline, pairing, 3,
   ).filter((candidate) => yauBoundaryOkay444(candidate.state, model, crossMask));
   if (!first3Candidates.length) {
     return { ok: false, reason: "444_YAU_LAST8_FIRST3_FAILED", solution: "", segments: [] };
@@ -2127,12 +1886,12 @@ export async function solveYauLastEight323444(publicScramble, publicYauSetup, op
     if (!singleCycle) continue;
     const createdOnClose = after & ~pairedEdgeTypeMask(beforeClose);
     if (segment.technique === "align-then-close") {
-      const aligned = pairedEdgeTypeMaskInSlots(replayState, sliceFamily.middleMask) & createdOnClose;
-      if (moves[0] !== wide[0] || bitCount(aligned) < 3) {
-        return { ok: false, reason: "444_YAU_FIRST3_WINGS_NOT_ALIGNED", detail: segment.name, solution: "", segments: [] };
+      const aligned = pairedEdgeTypeMaskInSlots(replayState, sliceFamily.middleMask) & createdOnClose & ~before;
+      const needed = checkpoints[index] - bitCount(before & ~crossMask);
+      if (moves[0] !== wide[0] || bitCount(aligned) < needed) {
+        return { ok: false, reason: "444_YAU_WINGS_NOT_ALIGNED", detail: segment.name, solution: "", segments: [] };
       }
       segment.alignedPairs = bitCount(aligned);
-      if (segment.alignedPairs > 3) segment.name = `Yau · First ${segment.alignedPairs}`;
     } else {
       const createdOnOpen = pairedEdgeTypeMaskInSlots(opened, sliceFamily.middleMask) & ~before;
       const parked = pairedEdgeTypeMaskInSlots(beforeClose, sliceFamily.lastLayerMask) & createdOnOpen;

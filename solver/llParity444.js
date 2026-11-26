@@ -316,7 +316,8 @@ export async function solveLlDeferred444({
 
   const solved333 = await getDefaultPattern("333");
   const rotation = CROSS_ROTATION_444[crossColor] ?? "";
-  let logical = transformPattern(build333(solved333, raw), solved333, rotation);
+  const reduced = build333(solved333, raw);
+  let logical = transformPattern(reduced, solved333, rotation);
   if (!logical) return { ok: false, reason: "444_LL_FRAME_FAILED" };
 
   const logicalSegments = [];
@@ -459,6 +460,8 @@ export async function solveLlDeferred444({
       .reduce((sum, stage) => sum + stage.moveCount, 0),
     crossRotationAlg: rotation,
     frameMapping,
+    reducedCubie: raw,
+    reducedParity: paritySignature333(reduced),
     ollParityDetected: detectedOllParity,
     pllParityDetected: detectedPllParity,
     llEntryParity,

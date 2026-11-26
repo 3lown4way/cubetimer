@@ -1,7 +1,7 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
 import { TwistyPlayer } from "cubing/twisty";
-import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js?v=20261125-yau-cross-lock-1";
+import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js?v=20261126-yau-stages-1";
 import { experimentalCountMetricMoves } from "cubing/notation";
 import { cube3x3x3 } from "cubing/puzzles";
 import { Alg } from "cubing/alg";
@@ -3988,7 +3988,7 @@ async function ensureSolverWorker() {
     if (window.location?.protocol === "file:") {
       throw new Error("file://에서는 solver worker를 로드할 수 없습니다. 정적 서버로 여세요. 예: python3 -m http.server 5173");
     }
-    const worker = new Worker(new URL("./solver/solverWorker.js?v=20261125-yau-cross-lock-1", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./solver/solverWorker.js?v=20261126-yau-stages-1", import.meta.url), { type: "module" });
     solverWorker = worker;
     const workerInitError = new Promise((_, reject) => {
       const cleanup = () => {

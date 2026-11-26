@@ -87,6 +87,16 @@ function splitAlgorithm(sequence) {
   return String(sequence || "").trim().split(/\s+/).filter(Boolean);
 }
 
+const FACE_TURN_444 = /^(?:(2)([URFDLB])|(3)([URFDLB])w|([URFDLB])(w)?)(2|')?$/;
+
+function remapFaceTurn444(token, mapFace) {
+  const match = FACE_TURN_444.exec(token);
+  if (!match) return null;
+  const [, inner, innerFace, triple, tripleFace, face, wide, suffix] = match;
+  const mapped = mapFace(innerFace || tripleFace || face);
+  return mapped ? `${inner || triple || ""}${mapped}${triple ? "w" : wide || ""}${suffix || ""}` : null;
+}
+
 const CFOP_444_IDENTITY_FACE_MAP = Object.freeze({
   U: "U", R: "R", F: "F", D: "D", L: "L", B: "B",
 });
@@ -247,12 +257,9 @@ function shortestViewRotationPath444(from, to) {
 }
 
 function remapPhysical444MoveForView(token, orientation) {
-  const match = /^([URFDLB])(w)?(2|')?$/.exec(String(token || "").trim());
-  if (!match) return null;
-  const physicalFace = match[1];
-  const logicalFace = VIEW_FACE_ORDER_444.find((face) => orientation.map[face] === physicalFace);
-  if (!logicalFace) return null;
-  return `${logicalFace}${match[2] || ""}${match[3] || ""}`;
+  return remapFaceTurn444(token, (physicalFace) => VIEW_FACE_ORDER_444.find(
+    (face) => orientation.map[face] === physicalFace,
+  ));
 }
 
 function remapPhysical444SequenceForView(sequence, orientation) {
@@ -415,48 +422,6 @@ function buildHumanCenterPresentation444(centerStage, phaseMoveCounts, crossColo
   return humanizeAbsoluteSegments444(segments, [firstCandidates, oppositeCandidates, remainingCandidates]);
 }
 
-function buildHumanYauSetupPresentation444(segments, crossColor) {
-  if (!Array.isArray(segments) || segments.length < 5) return null;
-  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
-  const opposite = OPPOSITE_FACE_444[normalizedCross];
-
-  // Human Yau grip sequence:
-  // 1) build the first center on U,
-  // 2) flip so the first center is D while building its opposite on U,
-  // 3) hold the cross center on the visible R face for Cross 3/4, the last four centers, and Cross 4/4,
-  // 4) only after Cross 4/4, regrip the completed cross to D for 3-2-3.
-  const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-    (entry) => entry.map.U === normalizedCross,
-  );
-  const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-  );
-  const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
-    // Presentation is applied after canonical mapping, so map.R is the visible R face.
-    (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
-  );
-  const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
-    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-  );
-
-  const candidateSets = segments.map((_, index) => {
-    if (index === 0) return firstCenterCandidates;
-    if (index === 1) return oppositeCenterCandidates;
-    return crossRightCandidates;
-  });
-  return humanizeAbsoluteSegments444(segments, candidateSets);
-}
-
-function buildHumanYauEdgePresentation444(segments, crossColor) {
-  if (!Array.isArray(segments) || !segments.length) return null;
-  const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
-  const opposite = OPPOSITE_FACE_444[normalizedCross];
-  const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
-    (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-  );
-  return humanizeAbsoluteSegments444(segments, segments.map(() => crossDownCandidates));
-}
-
 function buildHumanYawPresentation444(segments) {
   if (!Array.isArray(segments) || !segments.length) return null;
   const yawCandidates = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === "U" && entry.map.D === "D");
@@ -488,180 +453,6 @@ async function verifyEquivalent444Presentation(publicScramble, baselineStages, c
     if (JSON.stringify(baseline.patternData) !== JSON.stringify(candidate.patternData)) return false;
   }
   return true;
-}
-
-async function humanizeMappedYauStages444(publicScramble, sourceStages, crossColor) {
-  const baselineStages = structuredClone(Array.isArray(sourceStages) ? sourceStages : []);
-  const stages = structuredClone(baselineStages);
-  const fallback = () => ({
-    stages: baselineStages,
-    humanViewpointApplied: false,
-    viewpointRotationCount: 0,
-    yauHumanGripApplied: false,
-    yauViewpointRotationCount: 0,
-  });
-  try {
-    const centerStage = stages.find((stage) => stage?.id === "centers");
-    const edgeStage = stages.find((stage) => stage?.id === "edges");
-    const cfopStage = stages.find((stage) => stage?.id === "threeByThree");
-    if (!centerStage?.segments?.length || !edgeStage?.segments?.length) return fallback();
-
-    const normalizedCross = /^[URFDLB]$/.test(String(crossColor || "")) ? String(crossColor) : "D";
-    const opposite = OPPOSITE_FACE_444[normalizedCross];
-    const firstCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-      (entry) => entry.map.U === normalizedCross,
-    );
-    const oppositeCenterCandidates = VIEW_ORIENTATIONS_444.filter(
-      (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-    );
-    const crossRightCandidates = VIEW_ORIENTATIONS_444.filter(
-      (entry) => entry.map.R === normalizedCross && entry.map.L === opposite,
-    );
-    const crossDownCandidates = VIEW_ORIENTATIONS_444.filter(
-      (entry) => entry.map.D === normalizedCross && entry.map.U === opposite,
-    );
-    if (!firstCenterCandidates.length || !oppositeCenterCandidates.length ||
-        !crossRightCandidates.length || !crossDownCandidates.length) return fallback();
-
-    // One continuous human grip path for the entire Yau solve:
-    //   first center                         -> cross color U
-    //   opposite center                      -> cross color D
-    //   Cross 3/4 + last centers + Cross 4/4 -> cross color visible R
-    //   enter 3-2-3                          -> regrip the completed cross to D
-    //   complete 3-2-3                       -> keep the SAME cross-down grip
-    //   CFOP                                  -> remain cross-down; yaw changes are allowed
-    // The public/identity frame is restored only after the final CFOP move.
-    // This avoids the old edge-stage reset that visibly moved an F/B/R/L
-    // cross off D between Last 3 and CFOP.
-    const sourceCenterSegments = centerStage.segments;
-    const expandedCenterSegments = [];
-    const expandedCenterParents = [];
-    for (let index = 0; index < sourceCenterSegments.length; index += 1) {
-      const segment = sourceCenterSegments[index];
-      const tokens = splitAlgorithm(segment?.solution);
-      const rawCounts = index === 2 && Array.isArray(segment?.humanStepMoveCounts)
-        ? segment.humanStepMoveCounts.map((value) => Math.max(0, Math.floor(Number(value) || 0)))
-        : [];
-      const canSplit = rawCounts.length > 1 &&
-        rawCounts.every((value) => value > 0) &&
-        rawCounts.reduce((sum, value) => sum + value, 0) === tokens.length;
-      if (!canSplit) {
-        expandedCenterSegments.push(segment);
-        expandedCenterParents.push(index);
-        continue;
-      }
-      let cursor = 0;
-      for (let part = 0; part < rawCounts.length; part += 1) {
-        const count = rawCounts[part];
-        expandedCenterSegments.push({
-          ...segment,
-          id: `${segment.id}HumanStep${part + 1}`,
-          name: `${segment.name} · ${part + 1}/${rawCounts.length}`,
-          solution: tokens.slice(cursor, cursor + count).join(" "),
-        });
-        expandedCenterParents.push(index);
-        cursor += count;
-      }
-    }
-
-    let bestYau = null;
-    for (const rightGrip of crossRightCandidates) {
-      for (const edgeGrip of crossDownCandidates) {
-      const edgeSegments = edgeStage.segments;
-      const cfopSegments = Array.isArray(cfopStage?.segments) ? cfopStage.segments : [];
-      const combined = [...expandedCenterSegments, ...edgeSegments, ...cfopSegments];
-      const candidateSets = [];
-
-      for (let index = 0; index < expandedCenterSegments.length; index += 1) {
-        const parent = expandedCenterParents[index];
-        if (parent === 0) candidateSets.push(firstCenterCandidates);
-        else if (parent === 1) candidateSets.push(oppositeCenterCandidates);
-        else if (parent === 2) candidateSets.push(crossRightCandidates);
-        else candidateSets.push([rightGrip]);
-      }
-      for (let index = 0; index < edgeSegments.length; index += 1) {
-        candidateSets.push([edgeGrip]);
-      }
-      for (let index = 0; index < cfopSegments.length; index += 1) {
-        candidateSets.push(crossDownCandidates);
-      }
-
-      const human = humanizeAbsoluteSegments444(combined, candidateSets);
-      if (!human?.segments?.length || human.segments.length !== combined.length) continue;
-      const tokenCount = human.segments.reduce(
-        (sum, segment) => sum + splitAlgorithm(segment?.solution).length,
-        0,
-      );
-      const ergonomicPenalty = human.segments.reduce((sum, segment) => {
-        for (const token of splitAlgorithm(segment?.solution)) {
-          if (/^[xyz](?:2|')?$/.test(token)) continue;
-          if (/^B/.test(token)) sum += 24;
-          else if (/^L/.test(token)) sum += 7;
-          if (/^Bw/.test(token)) sum += 12;
-          else if (/^Lw/.test(token)) sum += 4;
-        }
-        return sum;
-      }, 0);
-      // Rotations remain expensive, but one extra yaw is allowed to win when
-      // it removes a genuinely ugly block of B/L turns.
-      const score = human.rotationCount * 10000 + ergonomicPenalty * 100 + tokenCount;
-      if (!bestYau || score < bestYau.score) bestYau = { ...human, score };
-      }
-    }
-    if (!bestYau) return fallback();
-
-    const expandedCenterCount = expandedCenterSegments.length;
-    const edgeCount = edgeStage.segments.length;
-    const cfopCount = Array.isArray(cfopStage?.segments) ? cfopStage.segments.length : 0;
-    const edgeStart = expandedCenterCount;
-    const cfopStart = expandedCenterCount + edgeCount;
-
-    const presentedCenterParts = bestYau.segments.slice(0, expandedCenterCount);
-    centerStage.segments = sourceCenterSegments.map((segment, parent) => {
-      const parts = presentedCenterParts.filter((_, index) => expandedCenterParents[index] === parent);
-      if (!parts.length) return segment;
-      return {
-        ...segment,
-        solution: parts.map((part) => part.solution).filter(Boolean).join(" "),
-        viewpointRotations: parts.reduce((sum, part) => sum + (Number(part?.viewpointRotations) || 0), 0),
-      };
-    });
-    edgeStage.segments = bestYau.segments.slice(edgeStart, cfopStart);
-    centerStage.solution = centerStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-    edgeStage.solution = edgeStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-    if (cfopStage && cfopCount) {
-      cfopStage.segments = bestYau.segments.slice(cfopStart, cfopStart + cfopCount);
-      cfopStage.solution = cfopStage.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-    }
-
-    // Grip rotations intentionally cross stage boundaries now. Validate the
-    // whole Yau solve as one exact transformation instead of forcing centers,
-    // edges, and CFOP to each return to the public frame independently.
-    const baselineCombined = baselineStages
-      .map((stage) => String(stage?.solution || "").trim())
-      .filter(Boolean)
-      .join(" ");
-    const candidateCombined = stages
-      .map((stage) => String(stage?.solution || "").trim())
-      .filter(Boolean)
-      .join(" ");
-    const verified = await verifyEquivalent444Presentation(
-      publicScramble,
-      [{ solution: baselineCombined }],
-      [{ solution: candidateCombined }],
-    );
-    if (!verified) return fallback();
-
-    return {
-      stages,
-      humanViewpointApplied: bestYau.rotationCount > 0,
-      viewpointRotationCount: bestYau.rotationCount,
-      yauHumanGripApplied: bestYau.rotationCount > 0,
-      yauViewpointRotationCount: bestYau.rotationCount,
-    };
-  } catch (_) {
-    return fallback();
-  }
 }
 
 function simplifyCfop444OuterMoves(moves) {
@@ -966,7 +757,7 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   const started = Date.now();
   let human;
   try {
-    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20261125-yau-cross-lock-1");
+    const { solveEdgePairing323 } = await import("./edgePairing444.js?v=20261126-yau-stages-1");
     human = await solveEdgePairing323(
       publicScramble,
       translate444MoveConvention(centerStage.solution),
@@ -1071,327 +862,6 @@ async function preferHumanEdgePairing323(api, reduction, publicScramble, interna
   };
 }
 
-function yauFailure444(reduction, reason, detail = null, deadlineTs = 0) {
-  const timedOut = deadlineReached(deadlineTs);
-  return {
-    ...reduction,
-    ok: false,
-    status: timedOut ? "timeout" : "partial",
-    reason: timedOut ? "444_DEADLINE_REACHED" : reason,
-    detail: detail == null ? null : String(detail),
-    solution: "",
-    moveCount: 0,
-    verified: false,
-    stages: [],
-    meta: {
-      ...reduction.meta,
-      method444: "yau",
-      yauAttempted: true,
-      yauFallbackReason: detail || reason,
-    },
-  };
-}
-
-function get444CenterPlan(result) {
-  const stage = result.stages?.find((entry) => entry.id === "centers" && entry.verified === true);
-  const counts = result.meta?.centerPhaseMoveCounts;
-  if (!stage || !Array.isArray(counts) || counts.length !== 4 || !counts.every((count) => Number.isInteger(count) && count >= 0)) return null;
-  const moves = splitAlgorithm(translate444MoveConvention(stage.solution));
-  if (counts.reduce((total, count) => total + count, 0) !== moves.length) return null;
-  let start = 0;
-  return counts.map((count) => {
-    const phase = moves.slice(start, start + count);
-    start += count;
-    return phase;
-  });
-}
-
-async function preferYauReduction444(
-  api,
-  reduction,
-  publicScramble,
-  internalScramble,
-  crossColor,
-  deadlineTs,
-  options,
-  onProgress,
-) {
-  const startStage = (stage) => emitProgress(onProgress, {
-    type: "444_stage_start",
-    eventId: "444",
-    stage,
-  });
-  const centerPlan = get444CenterPlan(reduction);
-  if (!centerPlan) {
-    return yauFailure444(reduction, "444_YAU_CENTER_SOURCE_MISSING", reduction.reason, deadlineTs);
-  }
-  const phaseCounts = centerPlan.map((phase) => phase.length);
-  const firstCenter = centerPlan[0].join(" ");
-  const oppositeCenter = centerPlan[1].join(" ");
-  const firstTwoCenters = [...centerPlan[0], ...centerPlan[1]].join(" ");
-
-  let edgeModule;
-  try {
-    edgeModule = await import("./edgePairing444.js?v=20261125-yau-cross-lock-1");
-  } catch (error) {
-    return yauFailure444(reduction, "444_YAU_EDGE_MODULE_FAILED", error?.message || error, deadlineTs);
-  }
-  const targetTypeMask = edgeModule.crossEdgeTypeMask444(crossColor);
-
-  startStage("YAU_CROSS3");
-  const protectedBudgetMs = Math.max(350, Math.min(12000, resolveYauBudget444(options, "__yauProtectedCenterBudgetMs", 6000)));
-  const protectedDeadlineTs = Math.min(deadlineTs || Infinity, Date.now() + protectedBudgetMs);
-  let protectedCenters = null;
-  let protectedCenterSearchMs = 0;
-  let protectedCenterAttemptCount = 0;
-  const cross3 = await edgeModule.solveYauCross3Natural444(
-    publicScramble, firstTwoCenters, targetTypeMask,
-    {
-      deadlineTs,
-      timeBudgetMs: resolveYauBudget444(options, "__yauCross3BudgetMs", 2400),
-      protectedCenterFaces: [crossColor, OPPOSITE_FACE_444[crossColor]],
-      onCandidate: async (candidate) => {
-        if (deadlineReached(deadlineTs)) return "444_DEADLINE_REACHED";
-        if (deadlineReached(protectedDeadlineTs)) return "444_YAU_PROTECTED_CENTER_BUDGET_EXHAUSTED";
-        startStage("YAU_REMAINING_CENTERS");
-        protectedCenterAttemptCount += 1;
-        const started = Date.now();
-        const stateBeforeCenters = [firstTwoCenters, candidate.solution].filter(Boolean).join(" ");
-        const applyCenterPlan = (plan) => edgeModule.applyYauCenterPlan444(
-          publicScramble, stateBeforeCenters, plan.slice(2), crossColor, candidate.lockedTypeMask,
-        );
-        try {
-          protectedCenters = await applyCenterPlan(centerPlan);
-          if (!protectedCenters && !deadlineReached(protectedDeadlineTs)) {
-            const scramble = [internalScramble, translate444MoveConvention(stateBeforeCenters)].filter(Boolean).join(" ");
-            const replanned = normalizeBoundaryResponse(api.solve({ scramble, crossColor, deadlineTs: protectedDeadlineTs }));
-            const revisedCenterPlan = get444CenterPlan(replanned);
-            if (revisedCenterPlan) protectedCenters = await applyCenterPlan(revisedCenterPlan);
-          }
-          return protectedCenters ? true : "444_YAU_REMAINING_CENTERS_FAILED";
-        } finally {
-          protectedCenterSearchMs += Date.now() - started;
-        }
-      },
-    },
-  );
-  if (!cross3.ok) {
-    const reason = protectedCenterAttemptCount ? "444_YAU_REMAINING_CENTERS_FAILED" : "444_YAU_HUMAN_CROSS3_FAILED";
-    return yauFailure444(reduction, reason, cross3.reason, deadlineTs);
-  }
-  const effectiveRemainingCenters = protectedCenters.solution;
-
-  const beforeCross4 = [firstTwoCenters, cross3.solution, effectiveRemainingCenters]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(" ");
-  startStage("YAU_CROSS4");
-  const cross4StartedAt = Date.now();
-  const cross4 = await edgeModule.solveYauCross4Natural444(
-    publicScramble,
-    beforeCross4,
-    targetTypeMask,
-    {
-      requiredTypeMask: cross3.lockedTypeMask,
-      deadlineTs,
-      timeBudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", 1500),
-    },
-  );
-  if (!cross4?.ok) {
-    return yauFailure444(reduction, "444_YAU_CROSS4_FAILED", cross4?.reason || cross4?.detail, deadlineTs);
-  }
-
-  const cross4SearchMs = Date.now() - cross4StartedAt;
-  const yauSetupPublic = [beforeCross4, cross4.solution]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(" ");
-  // If the cross started complete, reserve one spoke for the working gap.
-  const protectedCrossTypeMask = cross3.completedCrossCount === 3
-    ? cross3.lockedTypeMask
-    : targetTypeMask & (targetTypeMask - 1);
-  startStage("EDGES");
-  const remainingEdges = await edgeModule.solveYauLastEight323444(
-    publicScramble,
-    yauSetupPublic,
-    {
-      deadlineTs,
-      crossTypeMask: targetTypeMask,
-      protectedCrossTypeMask,
-      timeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", 12000),
-    },
-  );
-  const yauEdge323ProtectedCrossBank = true;
-  const yauEdge323ProtectedBankFallbackReason = null;
-
-  if (!remainingEdges?.ok) {
-    const detail = JSON.stringify({
-      reason: remainingEdges?.reason || remainingEdges?.detail || null,
-      diagnostics: remainingEdges?.detail || remainingEdges?.meta || null,
-      targetTypeMask,
-    });
-    return yauFailure444(reduction, "444_YAU_EDGE_PAIRING_FAILED", detail, deadlineTs);
-  }
-
-  const yauRemainingEdgePublic = String(remainingEdges.solution || "").trim();
-
-  const internalYauSetup = translate444MoveConvention(yauSetupPublic);
-  const internalYauEdges = translate444MoveConvention(yauRemainingEdgePublic);
-  const continuationScramble = [internalScramble, internalYauSetup, internalYauEdges]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(" ");
-
-  let continued;
-  try {
-    continued = normalizeBoundaryResponse(api.solve({
-      scramble: continuationScramble,
-      crossColor,
-      deadlineTs,
-    }));
-  } catch (error) {
-    return yauFailure444(reduction, "444_YAU_CONTINUATION_FAILED", error?.message || error, deadlineTs);
-  }
-  const parityStage = Array.isArray(continued.stages)
-    ? continued.stages.find((stage) => stage?.id === "parity" && stage?.verified === true)
-    : null;
-  if (
-    continued.status !== "partial" ||
-    continued.reason !== "444_REDUCTION_INCOMPLETE" ||
-    continued.meta?.virtual333Ready !== true ||
-    !continued.meta?.virtual333 ||
-    !parityStage
-  ) {
-    return yauFailure444(reduction, "444_YAU_CONTINUATION_INVALID", continued.reason, deadlineTs);
-  }
-
-  const makeSetupSegment = (id, name, publicSolution, extra = {}) => {
-    const internalSolution = translate444MoveConvention(publicSolution || "");
-    return {
-      id,
-      name,
-      solution: internalSolution,
-      moveCount: splitAlgorithm(internalSolution).length,
-      verified: true,
-      ...extra,
-    };
-  };
-  const setupSegments = [
-    makeSetupSegment("yauFirstCenter", "Yau · First Center", firstCenter),
-    makeSetupSegment("yauOppositeCenter", "Yau · Opposite Center", oppositeCenter),
-    makeSetupSegment("yauCross3", cross3.completedCrossCount === 4 ? "Yau · Cross Already Solved"
-      : cross3.preparedWorkingGap ? "Yau · Prepare Working Gap" : "Yau · Cross Edges 3/4", cross3.solution, {
-      crossEdgeCount: cross3.completedCrossCount,
-      alreadyPaired: !cross3.solution,
-      lockedTypeMask: cross3.lockedTypeMask,
-      humanStepTechniques: cross3.steps.map((step) => step.technique),
-      humanStepMoveCounts: Array.isArray(cross3.steps)
-        ? cross3.steps.map((step) => Math.max(0, Number(step?.moveCount) || 0))
-        : [],
-    }),
-    makeSetupSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", effectiveRemainingCenters, {
-      recomputedAfterCross3: true,
-      crossLockedEveryMove: true,
-    }),
-    makeSetupSegment("yauCross4", "Yau · Cross Edge 4/4", cross4.solution, {
-      crossEdgeCount: 4,
-      crossLockedEveryMove: true,
-      alignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
-      technique: cross4.technique,
-      alreadyPaired: cross4.technique === "already-paired",
-    }),
-  ];
-  const yauSetupStage = {
-    id: "centers",
-    name: "Yau Setup",
-    solution: internalYauSetup,
-    moveCount: splitAlgorithm(internalYauSetup).length,
-    verified: true,
-    method: "Yau",
-    segments: setupSegments,
-  };
-
-  const internalEdgeSegments = (Array.isArray(remainingEdges.segments) ? remainingEdges.segments : []).map((segment) => ({
-    ...segment,
-    solution: translate444MoveConvention(segment?.solution || ""),
-    verified: true,
-  }));
-  const yauEdgeStage = {
-    id: "edges",
-    name: "Edge Pairing · Yau 3-2-3",
-    solution: internalYauEdges,
-    moveCount: splitAlgorithm(internalYauEdges).length,
-    verified: true,
-    method: "Yau 3-2-3",
-    segments: internalEdgeSegments,
-  };
-
-  return {
-    ...continued,
-    stages: [yauSetupStage, yauEdgeStage, parityStage],
-    meta: {
-      ...continued.meta,
-      parsedMoveCount: reduction.meta?.parsedMoveCount,
-      scrambleValid: reduction.meta?.scrambleValid,
-      stateValid: reduction.meta?.stateValid,
-      solvedState: reduction.meta?.solvedState,
-      centersSolved: true,
-      centerMoveCount: yauSetupStage.moveCount,
-      centerPhaseMoveCounts: [...phaseCounts],
-      centerTableBuildMs: Number(reduction.meta?.centerTableBuildMs) || 0,
-      centerSearchMs: Number(reduction.meta?.centerSearchMs) || 0,
-      edgesPaired: true,
-      edgeMoveCount: yauEdgeStage.moveCount,
-      edgeTableBuildMs: 0,
-      edgeSearchMs: Number(remainingEdges.meta?.diagnostics?.elapsedMs) || 0,
-      edgeMethod: "Yau 3-2-3",
-      method444: "yau",
-      yauAttempted: true,
-      yauFallbackReason: null,
-      yauCrossTypeMask: targetTypeMask,
-      yauCross3SearchMs: Number(cross3.elapsedMs) || 0,
-      yauCross3MoveCount: Number(cross3.moveCount) || 0,
-      yauCross3HumanStepCount: Number(cross3.humanStepCount) || 0,
-      yauCross3HumanWorkingSlices: Array.isArray(cross3.steps)
-        ? cross3.steps.map((step) => String(step?.workingSlice || ""))
-        : [],
-      yauCross3SolvedTargetMask: Number(cross3.solvedTargetMask) || 0,
-      yauCross3PairedTargetMask: Number(cross3.pairedTargetMask) || 0,
-      yauCross3Method: String(cross3.method || "Yau Cross Edges"),
-      yauNaturalCross3Applied: true,
-      yauHumanCross3Applied: cross3.method === "Yau Human Cross 3/4",
-      yauNaturalCross3FallbackReason: null,
-      yauRemainingCentersRecomputed: true,
-      yauRecomputedCenterPhaseMoveCounts: protectedCenters.phaseMoveCounts,
-      yauProtectedCenterSearchMs: protectedCenterSearchMs,
-      yauProtectedCenterAttemptCount: protectedCenterAttemptCount,
-      yauCross3CandidateCount: cross3.candidateCount,
-      yauRemainingCentersCrossLockedEveryMove: true,
-      yauCross3SearchRescueUsed: cross3.searchRescueUsed === true,
-      yauCross3SearchMaxMacros: Number(cross3.searchMaxMacros) || 0,
-      yauCross4SearchMs: cross4SearchMs,
-      yauCross4MoveCount: Number(cross4.moveCount) || 0,
-      yauCross4Method: String(cross4.method || "Yau Cross Edges"),
-      yauHumanCross4Applied: true,
-      yauNaturalCross4FallbackReason: null,
-      yauCross4SearchRescueUsed: cross4.searchRescueUsed === true,
-      yauCross4SearchMaxMacros: Number(cross4.searchMaxMacros) || 0,
-      yauCrossAlignmentMoveCount: Number(cross4.alignmentMoveCount) || 0,
-      yauCrossAlignmentRescueUsed: cross4.alignmentRescueUsed === true,
-      yauCrossRestoreMoveCount: 0,
-      yauEdge323ProtectedCrossBank,
-      yauEdge323ProtectedBankFallbackReason,
-      yauLastEightOnly: remainingEdges.meta?.lastEightOnly === true,
-      yauCrossSolvedAtEdgeSegmentBoundaries: remainingEdges.meta?.crossSolvedAtSegmentBoundaries === true,
-      yauPureCenterMoveCount: phaseCounts.reduce((total, count) => total + count, 0),
-      yauRemainingCenterMoveCount: splitAlgorithm(effectiveRemainingCenters).length,
-      yauEdge323: remainingEdges.meta && typeof remainingEdges.meta === "object"
-        ? { ...remainingEdges.meta }
-        : {},
-    },
-  };
-}
-
 function normalizeBoundaryResponse(raw) {
   let value = raw;
   if (typeof value === "string") {
@@ -1468,11 +938,6 @@ async function loadModuleCandidate(specifier) {
   return {
     solve(request) {
       return mod.solve_444_json(JSON.stringify(request));
-    },
-    solveYauRemainingCenters(request) {
-      return typeof mod.solve_444_yau_remaining_centers_json === "function"
-        ? mod.solve_444_yau_remaining_centers_json(JSON.stringify(request))
-        : null;
     },
     verify(request) {
       return mod.verify_444_solution_json(JSON.stringify(request));
@@ -1562,13 +1027,9 @@ function rotationTokenForFaceMap444(faceMap) {
 function mapLogical444MoveToPhysical(token, orientation) {
   const raw = String(token || "").trim();
   if (!raw) return "";
-  let match = /^([URFDLB])(w)?(2|')?$/.exec(raw);
-  if (match) {
-    const face = orientation.map[match[1]];
-    if (!face) return null;
-    return `${face}${match[2] || ""}${match[3] || ""}`;
-  }
-  match = /^([xyz])(2|')?$/.exec(raw);
+  const turn = remapFaceTurn444(raw, (face) => orientation.map[face]);
+  if (turn) return turn;
+  const match = /^([xyz])(2|')?$/.exec(raw);
   if (match) {
     const logicalRotation = cfop444RotationMap(match[1], cfop444TurnAmount(match[2]));
     if (!logicalRotation) return null;
@@ -1613,6 +1074,10 @@ function mapYauStageToPhysical444(stage, orientation) {
     solution,
     moveCount: countMetric444Moves(solution),
   };
+  for (const field of ["protectedSideColors", "startingSideColors"]) {
+    if (Array.isArray(stage[field])) mapped[field] = stage[field].map((color) => orientation.map[color]);
+  }
+  if (stage.edgeSideColor) mapped.edgeSideColor = orientation.map[stage.edgeSideColor];
   if (Array.isArray(stage?.segments)) {
     mapped.segments = [];
     for (const segment of stage.segments) {
@@ -1624,163 +1089,57 @@ function mapYauStageToPhysical444(stage, orientation) {
   return mapped;
 }
 
-async function solveYauCanonicalFrame444(
-  publicScramble,
-  onProgress,
-  options,
-  crossColor,
-  deadlineTs,
-) {
-  const baseOrientation = yauCanonicalOrientation444(crossColor);
-  if (!baseOrientation) {
-    return emptyFailure("444_YAU_FRAME_INVALID", "error", crossColor, { method444: "yau", crossColor });
+function presentYauStages444(stages, crossColor, downGrip, workingFace) {
+  const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
+  const workColor = downGrip.map[workingFace];
+  const rightGrip = VIEW_ORIENTATIONS_444.find((entry) => entry.map.R === crossColor && entry.map.U === workColor);
+  if (!rightGrip) return null;
+  const [setup, edges, cfop] = stages;
+  const first = setup.segments[0];
+  const upGrips = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === crossColor);
+  const gripCost = (grip) => viewRotationExecutionCost444(shortestViewRotationPath444(identity, grip)) +
+    viewRotationExecutionCost444(shortestViewRotationPath444(grip, downGrip)) +
+    viewMoveExecutionCost444(remapPhysical444SequenceForView(first.solution, grip));
+  const upGrip = upGrips.sort((left, right) => gripCost(left) - gripCost(right))[0];
+
+  let current = identity;
+  let rotationCount = 0;
+  function presentSegment(segment, grip) {
+    if (segment.segments?.length) {
+      const children = segment.segments.map((item) => presentSegment(item, grip));
+      return {
+        ...segment,
+        segments: children,
+        solution: children.map(({ solution }) => solution).filter(Boolean).join(" "),
+        viewpointRotations: children.reduce((count, item) => count + item.viewpointRotations, 0),
+      };
+    }
+    const transition = shortestViewRotationPath444(current, grip);
+    const turns = remapPhysical444SequenceForView(segment.solution, grip);
+    if (!turns) throw new Error(`444_YAU_PRESENTATION_MOVE:${segment.id}`);
+    current = grip;
+    rotationCount += transition.length;
+    return { ...segment, solution: [...transition, ...turns].join(" "), viewpointRotations: transition.length };
   }
-
-  const frameSpins = ["y2", "y'", "", "y"];
-  const attempts = [];
-  let lastFailure = null;
-
-  const buildOrientation = (spin) => {
-    let map = { ...baseOrientation.map };
-    if (spin) {
-      const parsed = rotationTokenAmount444(spin);
-      const rotation = parsed ? cfop444RotationMap(parsed.axis, parsed.amount) : null;
-      if (!rotation) return null;
-      map = cfop444ComposeFaceMaps(baseOrientation.map, rotation);
-    }
-    return { token: baseOrientation.token, map, key: viewMapKey444(map) };
-  };
-
-  const mapVerifiedSuccess = async (logicalResult, candidate) => {
-    const mappedPhysicalSolution = mapLogical444SequenceToPhysical(logicalResult.solution, candidate.orientation);
-    if (mappedPhysicalSolution == null) return null;
-    const physicalStages = [];
-    for (const stage of Array.isArray(logicalResult.stages) ? logicalResult.stages : []) {
-      const mappedStage = mapYauStageToPhysical444(stage, candidate.orientation);
-      if (!mappedStage) return null;
-      physicalStages.push(mappedStage);
-    }
-
-    const presentation = await humanizeMappedYauStages444(publicScramble, physicalStages, crossColor);
-    const presentedStages = presentation.stages;
-    const physicalSolution = presentedStages
-      .map((stage) => String(stage?.solution || "").trim())
-      .filter(Boolean)
-      .join(" ");
-
-    try {
-      const { puzzles } = await import("../vendor/cubing/puzzles/index.js");
-      const kpuzzle = await puzzles["4x4x4"].kpuzzle();
-      let pattern = kpuzzle.defaultPattern();
-      if (publicScramble) pattern = pattern.applyAlg(publicScramble);
-      if (physicalSolution) pattern = pattern.applyAlg(physicalSolution);
-      const solved = typeof pattern.experimentalIsSolved === "function"
-        ? pattern.experimentalIsSolved({ ignorePuzzleOrientation: false })
-        : JSON.stringify(pattern.patternData) === JSON.stringify(kpuzzle.defaultPattern().patternData);
-      if (!solved) return null;
-    } catch (_) {
-      return null;
-    }
-    return {
-      ...logicalResult,
-      solution: physicalSolution,
-      moveCount: countMetric444Moves(physicalSolution),
-      stages: presentedStages,
-      meta: {
-        ...logicalResult.meta,
-        method444: "yau",
-        crossColor,
-        yauCanonicalCrossColor: "D",
-        yauFrameRotation: baseOrientation.token,
-        yauFrameSpin: candidate.spin || "identity",
-        yauFrameAttemptCount: attempts.length,
-        yauFrameAttempts: attempts,
-        humanViewpointApplied: presentation.humanViewpointApplied,
-        viewpointRotationCount: presentation.viewpointRotationCount,
-        yauHumanGripApplied: presentation.yauHumanGripApplied,
-        yauViewpointRotationCount: presentation.yauViewpointRotationCount,
-        fullVerificationSolved: true,
-      },
-    };
-  };
-
-  const hardDeadline = deadlineTs > 0 ? deadlineTs : Date.now() + 60_000;
-  const frames = frameSpins.flatMap((spin) => {
-    const orientation = buildOrientation(spin);
-    if (!orientation) return [];
-    const logicalScramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
-    return logicalScramble == null ? [] : [{ spin, orientation, logicalScramble }];
-  });
-
-  // Run each orientation once and divide the remaining time across frames.
-  for (const [index, candidate] of frames.entries()) {
-    if (deadlineReached(hardDeadline)) break;
-    const started = Date.now();
-    const remaining = hardDeadline - started;
-    const framesLeft = frames.length - index;
-    const budget = Math.max(8000, Math.min(20000, Math.floor(remaining / framesLeft)));
-    const finalFrame = framesLeft === 1;
-    emitProgress(onProgress, {
-      type: "444_stage_start",
-      eventId: "444",
-      stage: "YAU_FRAME",
-      attempt: attempts.length + 1,
-    });
-    const logicalResult = await solve444Frame(candidate.logicalScramble, onProgress, {
-      ...options,
-      __skipHumanPresentation: true,
-      __yauCross3BudgetMs: resolveYauBudget444(options, "__yauCross3BudgetMs", finalFrame
-        ? Math.min(10000, Math.max(6000, Math.floor(remaining * 0.3)))
-        : Math.min(6000, Math.max(2400, Math.floor(budget * 0.3)))),
-      __yauProtectedCenterBudgetMs: resolveYauBudget444(options, "__yauProtectedCenterBudgetMs", finalFrame
-        ? Math.min(12000, Math.max(8000, Math.floor(remaining * 0.35)))
-        : 6000),
-      __yauCross4BudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", Math.min(3000, Math.max(1500, Math.floor(budget * 0.1)))),
-      __yauEdgeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", finalFrame ? 15000 : 12000),
-    }, "D", Math.min(hardDeadline, started + budget), "yau");
-    attempts.push({
-      phase: "full",
-      spin: candidate.spin || "identity",
-      elapsedMs: Math.max(0, Date.now() - started),
-      ok: logicalResult.ok === true,
-      reason: logicalResult.reason || null,
-      detail: logicalResult.detail || null,
-    });
-    if (!logicalResult.ok) {
-      lastFailure = logicalResult;
-      continue;
-    }
-    const mapped = await mapVerifiedSuccess(logicalResult, candidate);
-    if (mapped) return mapped;
-    lastFailure = emptyFailure("444_YAU_FRAME_VERIFICATION_FAILED", "error", candidate.spin || "identity", {
-      method444: "yau",
-      crossColor,
-    });
-  }
-
-  if (deadlineReached(hardDeadline)) {
-    return emptyFailure("444_DEADLINE_REACHED", "timeout", lastFailure?.reason || null, {
-      method444: "yau",
-      crossColor,
-      yauCanonicalCrossColor: "D",
-      yauFrameRotation: baseOrientation.token,
-      yauFrameAttemptCount: attempts.length,
-      yauFrameAttempts: attempts,
-    });
+  const setupSegments = setup.segments.map((item, index) => presentSegment(item, [upGrip, downGrip][index] || rightGrip));
+  const presentedEdges = presentSegment(edges, downGrip);
+  const presentedCfop = presentSegment(cfop, downGrip);
+  const restore = shortestViewRotationPath444(current, identity);
+  if (restore.length) {
+    const last = presentedCfop.segments.at(-1);
+    last.solution = [last.solution, ...restore].filter(Boolean).join(" ");
+    last.viewpointRotations += restore.length;
+    presentedCfop.viewpointRotations += restore.length;
+    presentedCfop.solution = presentedCfop.segments.map(({ solution }) => solution).filter(Boolean).join(" ");
+    rotationCount += restore.length;
   }
   return {
-    ...(lastFailure?.reason === "444_DEADLINE_REACHED"
-      ? emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", lastFailure.detail)
-      : lastFailure || emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", null)),
-    meta: {
-      ...(lastFailure?.meta || {}),
-      method444: "yau",
-      crossColor,
-      yauCanonicalCrossColor: "D",
-      yauFrameRotation: baseOrientation.token,
-      yauFrameAttemptCount: attempts.length,
-      yauFrameAttempts: attempts,
-    },
+    stages: [
+      { ...setup, segments: setupSegments, solution: setupSegments.map(({ solution }) => solution).filter(Boolean).join(" ") },
+      presentedEdges,
+      presentedCfop,
+    ],
+    rotationCount,
   };
 }
 
@@ -1795,10 +1154,10 @@ export async function solve444(scramble, onProgress = null, options = {}) {
   const publicScramble = String(scramble || "").trim();
   return method444 === "yau"
     ? solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs)
-    : solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs, method444);
+    : solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs);
 }
 
-async function solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs, method444) {
+async function solve444Frame(publicScramble, onProgress, options, crossColor, deadlineTs) {
   const internalScramble = translate444MoveConvention(publicScramble);
   if (deadlineReached(deadlineTs)) {
     return emptyFailure("444_DEADLINE_REACHED", "timeout", null, { deadlineTs });
@@ -1865,25 +1224,7 @@ async function solve444Frame(publicScramble, onProgress, options, crossColor, de
     });
   }
 
-  result = method444 === "yau"
-    ? await preferYauReduction444(
-        api,
-        result,
-        publicScramble,
-        internalScramble,
-        crossColor,
-        deadlineTs,
-        options,
-        onProgress,
-      )
-    : await preferHumanEdgePairing323(
-        api,
-        result,
-        publicScramble,
-        internalScramble,
-        crossColor,
-        deadlineTs,
-      );
+  result = await preferHumanEdgePairing323(api, result, publicScramble, internalScramble, crossColor, deadlineTs);
 
   if (result.meta?.stateValid === true) {
     emitProgress(onProgress, {
@@ -1947,278 +1288,262 @@ async function solve444Frame(publicScramble, onProgress, options, crossColor, de
     return result;
   }
 
+  return finish444Cfop({
+    api, publicScramble, onProgress, crossColor, deadlineTs, options,
+    stages: [reductionStageToPublic444(centerStage), reductionStageToPublic444(edgeStage)],
+    meta: result.meta,
+    reductionParityMoveCount: Number(reductionParityStage?.moveCount) || 0,
+  });
+}
+
+function reductionStageToPublic444(stage) {
+  return {
+    ...stage,
+    solution: translate444MoveConvention(stage.solution),
+    segments: stage.segments?.map(reductionStageToPublic444),
+  };
+}
+
+function verifierNotation444(sequence) {
+  const moves = splitAlgorithm(sequence).flatMap((turn) => {
+    const match = FACE_TURN_444.exec(turn);
+    if (!match) return [turn];
+    const [, inner, innerFace, triple, tripleFace, , , suffix = ""] = match;
+    const inverse = suffix === "2" ? "2" : suffix === "'" ? "" : "'";
+    if (inner) return [`${innerFace}w${suffix}`, `${innerFace}${inverse}`];
+    if (triple) {
+      const opposite = OPPOSITE_FACE_444[tripleFace];
+      return [`${tripleFace}w${suffix}`, `${opposite}w${inverse}`, `${opposite}${suffix}`];
+    }
+    return [turn];
+  });
+  return translate444MoveConvention(moves.join(" "));
+}
+
+async function presentReduction444(publicScramble, verifiedStages, meta, crossColor) {
+  const stages = structuredClone(verifiedStages);
+  const [centers, edges, cfop] = stages;
+  const centerView = buildHumanCenterPresentation444(centers, meta?.centerPhaseMoveCounts, crossColor);
+  if (centerView) centers.method = "Cross → Opposite → Remaining 4";
+  const edgeView = edges.segments?.length ? buildHumanYawPresentation444(edges.segments) : null;
+  const cfopView = cfop.segments?.length ? buildHumanCfopPresentation444(cfop.segments, crossColor) : null;
+  let rotations = 0;
+  for (const [stage, view] of [[centers, centerView], [edges, edgeView], [cfop, cfopView]]) {
+    if (!view) continue;
+    stage.segments = view.segments;
+    stage.solution = view.segments.map(({ solution }) => solution).filter(Boolean).join(" ");
+    rotations += view.rotationCount;
+  }
+  return rotations && await verifyEquivalent444Presentation(publicScramble, verifiedStages, stages)
+    ? { stages, rotations } : { stages: verifiedStages, rotations: 0 };
+}
+
+async function finish444Cfop({
+  api, publicScramble, onProgress, crossColor, deadlineTs, options = {}, stages, meta,
+  reductionParityMoveCount = 0,
+}) {
+  const [centers, edges] = stages;
+  const isYau = meta.method444 === "yau";
   emitProgress(onProgress, {
-    type: "444_stage_start",
-    eventId: "444",
-    stage: "THREE_BY_THREE",
-    stageName: "3x3 CFOP · LL parity",
+    type: "444_stage_start", eventId: "444", stage: "THREE_BY_THREE", stageName: "3x3 CFOP · LL parity",
   });
 
   let ll;
   try {
-    const { solveLlDeferred444 } = await import("./llParity444.js");
+    const { solveLlDeferred444 } = await import("./llParity444.js?v=20261126-yau-stages-1");
     ll = await solveLlDeferred444({
       scramble: publicScramble,
-      centerSolution: translate444MoveConvention(centerStage.solution || ""),
-      edgeSolution: translate444MoveConvention(edgeStage.solution || ""),
+      centerSolution: centers.solution,
+      edgeSolution: edges.solution,
       crossColor,
       deadlineTs,
       onProgress(progress) {
         emitProgress(onProgress, {
-          type: "444_stage_update",
-          eventId: "444",
-          stage: "THREE_BY_THREE",
-          phase: "ll",
-          stageName: "3x3 CFOP · LL parity",
-          cfopStageName: String(progress?.stageName || "LL"),
+          type: "444_stage_update", eventId: "444", stage: "THREE_BY_THREE", phase: "ll",
+          stageName: "3x3 CFOP · LL parity", cfopStageName: String(progress?.stageName || "LL"),
         });
       },
     });
   } catch (error) {
     ll = { ok: false, reason: "444_LL_PARITY_BRIDGE_FAILED", detail: String(error?.message || error) };
   }
-
   if (!ll?.ok) {
-    const timedOut = deadlineReached(deadlineTs);
-    emitProgress(onProgress, {
-      type: "444_stage_fail",
-      eventId: "444",
-      stage: "THREE_BY_THREE",
-      reason: ll?.reason || "444_LL_PARITY_FAILED",
-    });
+    const timeout = deadlineReached(deadlineTs);
+    const reason = timeout ? "444_DEADLINE_REACHED" : "444_LL_PARITY_FAILED";
+    emitProgress(onProgress, { type: "444_stage_fail", eventId: "444", stage: "THREE_BY_THREE", reason });
     return {
-      ...result,
-      status: timedOut ? "timeout" : "partial",
-      reason: timedOut ? "444_DEADLINE_REACHED" : "444_LL_PARITY_FAILED",
-      detail: ll?.reason || ll?.detail || null,
-      solution: "",
-      moveCount: 0,
-      verified: false,
-      meta: {
-        ...result.meta,
-        llParityReason: ll?.reason || null,
-        parityHandledAt: "LL",
-      },
+      ...emptyFailure(reason, timeout ? "timeout" : "partial", ll?.detail || ll?.reason, {
+        ...meta, llParityReason: ll?.reason || null, parityHandledAt: "LL",
+      }),
+      stages,
     };
   }
 
-  const publicLlSegments = (Array.isArray(ll.segments) ? ll.segments : []).map((stage, index) => ({
+  const cfopSegments = ll.segments.map((stage, index) => ({
     ...stage,
-    id: stage?.id || `cfop${index + 1}`,
-    name: normalizeCfopStageName(stage?.name),
-    solution: String(stage?.solution || "").trim(),
-    moveCount: splitAlgorithm(stage?.solution).length,
+    id: stage.id || `cfop${index + 1}`,
+    name: normalizeCfopStageName(stage.name),
+    solution: String(stage.solution || "").trim(),
+    moveCount: splitAlgorithm(stage.solution).length,
     verified: true,
   }));
-  const internalLlSegments = publicLlSegments.map((stage) => ({
-    ...stage,
-    solution: translate444MoveConvention(stage.solution),
-  }));
-  const internalThreeByThreeSolution = internalLlSegments
-    .map((stage) => stage.solution)
-    .filter(Boolean)
-    .join(" ");
-  const internalThreeByThreeStage = {
-    id: "threeByThree",
-    name: "3x3 CFOP",
-    solution: internalThreeByThreeSolution,
-    moveCount: splitAlgorithm(internalThreeByThreeSolution).length,
-    verified: false,
-    method: "CFOP · LL Parity",
-    segments: internalLlSegments,
+  const cfopSolution = cfopSegments.map(({ solution }) => solution).filter(Boolean).join(" ");
+  const cfop = {
+    id: "threeByThree", name: "3x3 CFOP", solution: cfopSolution,
+    moveCount: splitAlgorithm(cfopSolution).length, verified: true, method: "CFOP · LL Parity", segments: cfopSegments,
   };
-  const internalCompleteStages = [centerStage, edgeStage, internalThreeByThreeStage];
-  const internalCompleteSolution = internalCompleteStages
-    .map((stage) => String(stage.solution || "").trim())
-    .filter(Boolean)
-    .join(" ");
-
+  const verifiedStages = [...stages, cfop];
+  const plainSolution = verifiedStages.map(({ solution }) => solution).filter(Boolean).join(" ");
   let verification;
   try {
     verification = JSON.parse(String(api.verify({
-      scramble: internalScramble,
-      solution: internalCompleteSolution,
+      scramble: verifierNotation444(publicScramble),
+      solution: verifierNotation444(plainSolution),
     }) || ""));
   } catch (error) {
     verification = { ok: false, solved: false, reason: String(error?.message || error) };
   }
-
   if (verification?.ok !== true || verification?.solved !== true) {
     emitProgress(onProgress, {
-      type: "444_stage_fail",
-      eventId: "444",
-      stage: "VERIFY",
-      reason: verification?.reason || "444_FINAL_VERIFICATION_FAILED",
+      type: "444_stage_fail", eventId: "444", stage: "VERIFY", reason: verification?.reason || "444_FINAL_VERIFICATION_FAILED",
     });
     return {
-      ...result,
-      status: "error",
-      reason: "444_FINAL_VERIFICATION_FAILED",
-      detail: verification?.reason || null,
-      solution: "",
-      moveCount: 0,
-      verified: false,
-      meta: {
-        ...result.meta,
-        cfopMoveCount: Number(ll.cfopMoveCount) || 0,
-        threeByThreeMoveCount: internalThreeByThreeStage.moveCount,
-        parityMoveCount: Number(ll.parityMoveCount) || 0,
-        parityHandledAt: "LL",
-        fullVerificationSolved: false,
-      },
+      ...emptyFailure("444_FINAL_VERIFICATION_FAILED", "error", verification?.reason, {
+        ...meta, parityHandledAt: "LL", fullVerificationSolved: false,
+      }),
+      stages,
     };
   }
 
-  internalThreeByThreeStage.verified = true;
-  const publicStages = internalCompleteStages.map((stage) => ({
-    ...stage,
-    solution: translate444MoveConvention(stage.solution),
-    segments: Array.isArray(stage.segments)
-      ? stage.segments.map((segment) => ({
-          ...segment,
-          solution: translate444MoveConvention(segment.solution),
-        }))
-      : stage.segments,
-  }));
-  try {
-    const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
-    const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
-    if (publicEdgeStage && !String(publicEdgeStage.method || "").includes("3-2-3")) {
-      publicEdgeStage.segments = await buildEdgePairingSegments(
-        publicScramble,
-        publicCenterStage?.solution || "",
-        publicEdgeStage.solution || "",
-      );
-    }
-  } catch (error) {
-    console.warn("[444] edge pairing segmentation failed", error);
-  }
-
-  const rotationlessPublicStages = structuredClone(publicStages);
-  let humanViewpointApplied = false;
+  let publicStages = verifiedStages;
   let viewpointRotationCount = 0;
-  let yauHumanGripApplied = false;
-  let yauViewpointRotationCount = 0;
-  if (options?.__skipHumanPresentation !== true) {
+  if (!isYau) {
     try {
-      const publicCenterStage = publicStages.find((stage) => stage?.id === "centers");
-      const publicEdgeStage = publicStages.find((stage) => stage?.id === "edges");
-      const publicCfopStage = publicStages.find((stage) => stage?.id === "threeByThree");
-
-    const yauSetupHuman = publicCenterStage?.method === "Yau" && publicCenterStage?.segments?.length
-      ? buildHumanYauSetupPresentation444(publicCenterStage.segments, crossColor)
-      : null;
-    if (yauSetupHuman) {
-      publicCenterStage.segments = yauSetupHuman.segments;
-      publicCenterStage.solution = yauSetupHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-      viewpointRotationCount += yauSetupHuman.rotationCount;
-      yauViewpointRotationCount += yauSetupHuman.rotationCount;
-    }
-
-    const centerHuman = publicCenterStage && publicCenterStage.method !== "Yau"
-      ? buildHumanCenterPresentation444(publicCenterStage, result.meta?.centerPhaseMoveCounts, crossColor)
-      : null;
-    if (centerHuman) {
-      publicCenterStage.segments = centerHuman.segments;
-      publicCenterStage.solution = centerHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-      publicCenterStage.method = "Cross → Opposite → Remaining 4";
-      viewpointRotationCount += centerHuman.rotationCount;
-    }
-
-    const isYauEdgeStage = String(publicEdgeStage?.method || "").startsWith("Yau");
-    const edgeHuman = publicEdgeStage?.segments?.length
-      ? isYauEdgeStage
-        ? buildHumanYauEdgePresentation444(publicEdgeStage.segments, crossColor)
-        : buildHumanYawPresentation444(publicEdgeStage.segments)
-      : null;
-    if (edgeHuman) {
-      publicEdgeStage.segments = edgeHuman.segments;
-      publicEdgeStage.solution = edgeHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-      viewpointRotationCount += edgeHuman.rotationCount;
-      if (isYauEdgeStage) yauViewpointRotationCount += edgeHuman.rotationCount;
-    }
-
-    const cfopHuman = publicCfopStage?.segments?.length
-      ? buildHumanCfopPresentation444(publicCfopStage.segments, crossColor)
-      : null;
-    if (cfopHuman) {
-      publicCfopStage.segments = cfopHuman.segments;
-      publicCfopStage.solution = cfopHuman.segments.map((segment) => segment.solution).filter(Boolean).join(" ");
-      viewpointRotationCount += cfopHuman.rotationCount;
-    }
-
-    humanViewpointApplied = viewpointRotationCount > 0
-      && await verifyEquivalent444Presentation(publicScramble, rotationlessPublicStages, publicStages);
-    if (!humanViewpointApplied) {
-      publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
-      viewpointRotationCount = 0;
-      yauViewpointRotationCount = 0;
-    } else if (result.meta?.method444 === "yau" && yauViewpointRotationCount > 0) {
-      yauHumanGripApplied = true;
-    }
+      if (!String(edges.method || "").includes("3-2-3")) {
+        edges.segments = await buildEdgePairingSegments(publicScramble, centers.solution, edges.solution);
+      }
+      if (options?.__skipHumanPresentation !== true) {
+        const presentation = await presentReduction444(publicScramble, verifiedStages, meta, crossColor);
+        publicStages = presentation.stages;
+        viewpointRotationCount = presentation.rotations;
+      }
     } catch (error) {
-      console.warn("[444] human viewpoint presentation failed", error);
-      publicStages.splice(0, publicStages.length, ...rotationlessPublicStages);
-      viewpointRotationCount = 0;
-      yauViewpointRotationCount = 0;
-      humanViewpointApplied = false;
-      yauHumanGripApplied = false;
+      console.warn("[444] reduction presentation failed", error);
     }
   }
+  const solution = publicStages.map((stage) => stage.solution).filter(Boolean).join(" ");
+  const moveCount = countMetric444Moves(solution);
+  emitProgress(onProgress, { type: "444_stage_done", eventId: "444", stage: "THREE_BY_THREE", stageName: "3x3 CFOP", moveCount: cfop.moveCount });
+  if (!isYau) emitProgress(onProgress, { type: "444_stage_done", eventId: "444", stage: "VERIFY", moveCount });
 
-  const completeSolution = publicStages
-    .map((stage) => String(stage.solution || "").trim())
-    .filter(Boolean)
-    .join(" ");
-  const moveCount = countMetric444Moves(completeSolution);
-  emitProgress(onProgress, {
-    type: "444_stage_done",
-    eventId: "444",
-    stage: "THREE_BY_THREE",
-    stageName: "3x3 CFOP",
-    moveCount: internalThreeByThreeStage.moveCount,
-  });
-  emitProgress(onProgress, {
-    type: "444_stage_done",
-    eventId: "444",
-    stage: "VERIFY",
-    stageName: "Final 96-facelet verification",
-    moveCount,
-  });
   return {
-    ok: true,
-    eventId: "444",
-    status: "ok",
-    reason: null,
-    detail: null,
-    solution: completeSolution,
-    moveCount,
-    verified: true,
+    ok: true, eventId: "444", status: "ok", reason: null, detail: null, solution, moveCount, verified: true,
     stages: publicStages,
     source: "WASM_444_COMPLETE",
     meta: {
-      ...result.meta,
+      ...meta,
       apiVersion: api.version(),
       cfopMoveCount: Number(ll.cfopMoveCount) || 0,
-      threeByThreeMoveCount: internalThreeByThreeStage.moveCount,
+      threeByThreeMoveCount: cfop.moveCount,
       parityMoveCount: Number(ll.parityMoveCount) || 0,
-      reductionParityMoveCount: Number(reductionParityStage?.moveCount) || 0,
+      reductionParityMoveCount,
       cfopNodes: Number(ll.nodes) || 0,
-      cfopStageCount: internalLlSegments.filter((stage) => stage?.parity !== true).length,
-      llStageCount: internalLlSegments.length,
+      cfopStageCount: cfopSegments.filter((stage) => stage.parity !== true).length,
+      llStageCount: cfopSegments.length,
       cfopMethod: "CFOP",
       parityHandledAt: "LL",
       ollParityDetected: ll.ollParityDetected === true,
       pllParityDetected: ll.pllParityDetected === true,
-      reductionOllParityDetected: result.meta?.ollParityDetected === true,
-      reductionPllParityDetected: result.meta?.pllParityDetected === true,
+      reductionOllParityDetected: isYau ? ll.reducedParity.oll : meta.ollParityDetected === true,
+      reductionPllParityDetected: isYau ? ll.reducedParity.pll : meta.pllParityDetected === true,
+      ...(isYau ? { virtual333Ready: true, virtual333: ll.reducedCubie, parityNormalized: false } : {}),
       crossColor,
-      method444: result.meta?.method444 === "yau" ? "yau" : method444,
-      humanViewpointApplied,
+      method444: isYau ? "yau" : "reduction",
+      humanViewpointApplied: viewpointRotationCount > 0,
       viewpointRotationCount,
-      yauHumanGripApplied,
-      yauViewpointRotationCount,
       fullVerificationSolved: true,
     },
   };
+}
+
+async function solveYauCanonicalFrame444(publicScramble, onProgress, options, crossColor, deadlineTs) {
+  const hardDeadline = deadlineTs || Date.now() + 60_000;
+  const base = yauCanonicalOrientation444(crossColor);
+  const meta = { method444: "yau", crossColor, yauCanonicalCrossColor: "D", yauFrameRotation: base.token };
+  if (deadlineReached(hardDeadline)) return emptyFailure("444_DEADLINE_REACHED", "timeout", null, meta);
+
+  const frames = ["y2", "y'", "", "y"].flatMap((spin) => {
+    const parsed = rotationTokenAmount444(spin);
+    const map = parsed ? cfop444ComposeFaceMaps(base.map, cfop444RotationMap(parsed.axis, parsed.amount)) : base.map;
+    const orientation = { map, key: viewMapKey444(map) };
+    const scramble = mapPhysical444SequenceToLogical(publicScramble, orientation);
+    return scramble == null ? [] : [{ spin, orientation, scramble }];
+  });
+  if (!frames.length) return emptyFailure("444_INVALID_SCRAMBLE", "invalid", null, meta);
+
+  const progress = (stage, extra = {}) => emitProgress(onProgress, { type: "444_stage_start", eventId: "444", stage, ...extra });
+  progress("BOUNDARY");
+  const api = await ensureSolver444Ready();
+  if (!api) return emptyFailure("444_WASM_UNAVAILABLE", "unavailable", solver444LastFailure?.message, meta);
+
+  let yau;
+  try {
+    yau = await import("./yau444.js?v=20261126-yau-stages-1");
+  } catch (error) {
+    return emptyFailure("444_YAU_MODULE_UNAVAILABLE", "error", error?.message, meta);
+  }
+
+  const attempts = [];
+  let last = emptyFailure("444_YAU_ALL_FRAMES_FAILED", "partial", null, meta);
+  for (const [index, { spin, orientation, scramble }] of frames.entries()) {
+    if (deadlineReached(hardDeadline)) break;
+    const started = Date.now();
+    const remaining = hardDeadline - started;
+    const budget = Math.max(750, Math.min(20000, Math.floor(remaining / (frames.length - index))));
+    const frameDeadline = Math.min(hardDeadline, started + budget);
+    progress("YAU_FRAME", { attempt: index + 1 });
+    try {
+      const reduction = await yau.solveYauPhases444(scramble, {
+        deadlineTs: frameDeadline,
+        edgeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", 12000),
+        cross4BudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", 1500),
+        onStage: progress,
+      });
+      const result = await finish444Cfop({
+        api, publicScramble: scramble, onProgress, crossColor: "D", deadlineTs: frameDeadline,
+        stages: reduction.stages, meta: reduction.meta,
+      });
+      if (!result.ok) {
+        last = result;
+      } else {
+        const mapped = result.stages.map((stage) => mapYauStageToPhysical444(stage, orientation));
+        if (mapped.some((stage) => stage == null)) throw new Error("444_YAU_FRAME_MAPPING_FAILED");
+        const presentation = presentYauStages444(mapped, crossColor, orientation, reduction.workingFace);
+        if (!presentation) throw new Error("444_YAU_FRAME_MAPPING_FAILED");
+        await yau.verifyYauPlayback444(publicScramble, presentation.stages, crossColor);
+        const solution = presentation.stages.map((stage) => stage.solution).filter(Boolean).join(" ");
+        const moveCount = countMetric444Moves(solution);
+        attempts.push({ spin: spin || "identity", elapsedMs: Date.now() - started, ok: true });
+        emitProgress(onProgress, { type: "444_stage_done", eventId: "444", stage: "VERIFY", moveCount });
+        return {
+          ...result, solution, moveCount, stages: presentation.stages,
+          meta: {
+            ...result.meta, ...meta,
+            yauFrameSpin: spin || "identity", yauFrameAttemptCount: attempts.length, yauFrameAttempts: attempts,
+            humanViewpointApplied: true, viewpointRotationCount: presentation.rotationCount,
+            yauHumanGripApplied: true, yauViewpointRotationCount: presentation.rotationCount,
+            yauPlaybackVerified: true,
+          },
+        };
+      }
+    } catch (error) {
+      const detail = String(error?.message || error);
+      const code = detail.split(":", 1)[0];
+      last = emptyFailure(/^444_[A-Z0-9_]+$/.test(code) ? code : "444_YAU_PHASE_FAILED", "partial", detail, meta);
+    }
+    attempts.push({ spin: spin || "identity", elapsedMs: Date.now() - started, ok: false, reason: last.reason, detail: last.detail });
+  }
+  const report = { ...last.meta, ...meta, yauFrameAttemptCount: attempts.length, yauFrameAttempts: attempts };
+  if (deadlineReached(hardDeadline)) return emptyFailure("444_DEADLINE_REACHED", "timeout", last.reason, report);
+  return emptyFailure(last.reason === "444_DEADLINE_REACHED" ? "444_YAU_ALL_FRAMES_FAILED" : last.reason, "partial", last.detail, report);
 }

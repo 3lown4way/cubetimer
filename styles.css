@@ -1580,6 +1580,11 @@ body.theme-dark .timer-display.inspect-danger {
   word-break: break-all;
 }
 
+.solver-stage-list .solver-stage-jump {
+  margin-inline-start: 0.5rem;
+  font-size: 0.78rem;
+}
+
 .solver-stage-list .stage-notes {
   font-size: 0.78rem;
   color: var(--ink-muted, #888);

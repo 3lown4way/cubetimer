@@ -6,6 +6,8 @@ on:
       - "solver444-wasm/**"
       - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/yau444.js"
+      - "solver/yauCenters444.js"
       - "solver/llParity444.js"
       - "solver/cfop3x3.js"
       - "solver/edgePairing444.js"
@@ -32,6 +34,8 @@ on:
       - "solver444-wasm/**"
       - "solver-wasm/**"
       - "solver/solver444.js"
+      - "solver/yau444.js"
+      - "solver/yauCenters444.js"
       - "solver/llParity444.js"
       - "solver/cfop3x3.js"
       - "solver/edgePairing444.js"
@@ -163,4 +167,6 @@ jobs:
       - name: Validate repository diff
         run: git diff --check
 
-# Permanent contracts include human Yau Cross 3/4 edge-at-a-time pairing/insertion; those three cross spokes must stay paired, adjacent to the cross center, and visibly oriented with the cross-color stickers facing that center after every Remaining 4 Centers move; human grip transitions and bounded/retryable Worker bootstrap are also covered.
+# Yau inserts the first three cross pairs one at a time. The replay check holds
+# their slots and sticker orientation through the last centers and last cross,
+# then checks them in the new grip throughout 3-2-3.

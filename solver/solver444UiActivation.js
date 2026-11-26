@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261125-yau-cross-lock-1";
+const WORKER_BUILD_TOKEN = "20261126-yau-stages-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -22,6 +22,8 @@ const PROGRESS_LABELS = Object.freeze({
   BOUNDARY: "4×4 엔진 준비",
   CENTERS: "센터 해결",
   YAU_FRAME: "Yau 탐색 방향 선택",
+  YAU_FIRST_CENTER: "Yau 첫 센터",
+  YAU_OPPOSITE_CENTER: "Yau 반대쪽 센터",
   YAU_CROSS3: "Yau 크로스 엣지 3개",
   YAU_REMAINING_CENTERS: "Yau 나머지 센터 4개",
   YAU_CROSS4: "Yau 마지막 크로스 엣지",
@@ -54,9 +56,10 @@ function reasonLabel(reason) {
       return "4×4 해 탐색이 60초 제한을 초과했습니다.";
     case "444_YAU_ALL_FRAMES_FAILED":
       return "Yau 탐색이 각 방향에 할당된 시간 안에 완료되지 않았습니다.";
-    case "444_YAU_HUMAN_CROSS3_FAILED":
+    case "444_YAU_CROSS3_NOT_FOUND":
       return "Yau 크로스 엣지 3쌍을 맞추지 못했습니다.";
-    case "444_YAU_REMAINING_CENTERS_FAILED":
+    case "444_YAU_CENTER_UNREACHABLE":
+    case "444_YAU_SIDE_CENTERS_VERIFY":
       return "Yau 크로스 3쌍을 유지하며 나머지 센터를 맞추지 못했습니다.";
     case "444_YAU_CROSS4_FAILED":
       return "Yau 마지막 크로스 엣지를 맞추지 못했습니다.";
@@ -68,6 +71,10 @@ function reasonLabel(reason) {
       return "Reduction 이후 3×3 단계의 해를 찾지 못했습니다.";
     case "444_FINAL_VERIFICATION_FAILED":
       return "생성된 수열이 96-facelet 최종 검증을 통과하지 못했습니다.";
+    case "444_YAU_PLAYBACK_INVALID":
+      return "Yau 단계별 재생 상태를 검증하지 못했습니다.";
+    case "444_UI_TIMELINE_INVALID":
+      return "4×4 재생 수순을 불러오지 못했습니다.";
     case "444_WORKER_BOOT_TIMEOUT":
       return "4×4 Worker 준비가 지연되어 새 Worker로 다시 연결하지 못했습니다.";
     case "444_WORKER_BOOT_ERROR":
@@ -224,6 +231,8 @@ export function installSolver444UiActivation() {
   let activeRun = null;
   let solution = "";
   let moves = [];
+  let moveTimes = [];
+  let playbackStages = [];
   let moveIndex = 0;
   let playbackRaf = 0;
   let playbackPlaying = false;
@@ -302,6 +311,7 @@ export function installSolver444UiActivation() {
       controlPanel: "none",
       hintFacelets: "none",
       experimentalSetupAnchor: "start",
+      indexer: "tree",
     });
     player.dataset.solver444Ui = "true";
     player.style.width = "100%";
@@ -316,49 +326,18 @@ export function installSolver444UiActivation() {
     return player;
   }
 
-  function moveDurationTimelineMs(move) {
-    return String(move || "").includes("2") ? 1500 : 1000;
-  }
-
-  function timelineMsForMoveIndex(index) {
-    let total = 0;
-    const end = Math.max(0, Math.min(moves.length, Math.floor(Number(index) || 0)));
-    for (let i = 0; i < end; i += 1) total += moveDurationTimelineMs(moves[i]);
-    return total;
-  }
-
-  function moveIndexForTimelineMs(timestampMs) {
-    const target = Math.max(0, Number(timestampMs) || 0);
-    let total = 0;
-    let index = 0;
-    while (index < moves.length) {
-      total += moveDurationTimelineMs(moves[index]);
-      if (target < total) break;
-      index += 1;
-    }
-    return index;
-  }
-
   function updatePlaybackControlsOnly() {
-    solverStepLabel.textContent = `${moveIndex}/${moves.length} 수`;
+    const current = playbackStages.find(({ end }) => moveIndex <= end);
+    solverStepLabel.textContent = `${moveIndex}/${moves.length} 동작${current ? ` · ${current.name}` : ""}`;
     solverStepResetBtn.disabled = moveIndex === 0;
     solverStepPrevBtn.disabled = moveIndex === 0;
     solverStepNextBtn.disabled = moveIndex >= moves.length;
     solverPlayBtn.disabled = moves.length === 0;
   }
 
-  function loadFullPlaybackTimeline() {
-    if (!player) return;
-    player.experimentalSetupAlg = playerScramble;
-    player.alg = solution;
-    player.tempoScale = PLAYBACK_TEMPO_SCALE;
-  }
-
   function updateFrame() {
     if (!player) return;
-    loadFullPlaybackTimeline();
-    player.timestamp = timelineMsForMoveIndex(moveIndex);
-    player.pause();
+    player.timestamp = moveTimes[moveIndex];
     updatePlaybackControlsOnly();
   }
 
@@ -373,13 +352,12 @@ export function installSolver444UiActivation() {
       stopPlayback();
       return;
     }
-    const timelineMs = playbackStartTimelineMs
-      + Math.max(0, now - playbackStartWallMs) * PLAYBACK_TEMPO_SCALE;
-    const nextIndex = moveIndexForTimelineMs(timelineMs);
-    if (nextIndex !== moveIndex) {
-      moveIndex = nextIndex;
-      updatePlaybackControlsOnly();
-    }
+    const timelineMs = Math.min(moveTimes.at(-1), playbackStartTimelineMs
+      + Math.max(0, now - playbackStartWallMs) * PLAYBACK_TEMPO_SCALE);
+    player.timestamp = timelineMs;
+    const before = moveIndex;
+    while (moveIndex < moves.length && moveTimes[moveIndex + 1] <= timelineMs) moveIndex += 1;
+    if (before !== moveIndex) updatePlaybackControlsOnly();
     if (moveIndex >= moves.length) {
       moveIndex = moves.length;
       updatePlaybackControlsOnly();
@@ -393,21 +371,17 @@ export function installSolver444UiActivation() {
     if (!ownsPlayback()) return;
     if (playbackPlaying) {
       stopPlayback();
-      updatePlaybackControlsOnly();
+      updateFrame();
       return;
     }
     if (moveIndex >= moves.length) moveIndex = 0;
-    loadFullPlaybackTimeline();
-    const startTimeline = timelineMsForMoveIndex(moveIndex);
-    player.timestamp = startTimeline;
-    player.tempoScale = PLAYBACK_TEMPO_SCALE;
-    playbackStartTimelineMs = startTimeline;
+    playbackStartTimelineMs = moveTimes[moveIndex];
+    player.timestamp = playbackStartTimelineMs;
     playbackStartWallMs = performance.now();
     playbackPlaying = true;
     solverPlayBtn.dataset.playing = "true";
     solverPlayBtn.title = "정지";
     updatePlaybackControlsOnly();
-    player.play({ autoSkipToOtherEndIfStartingAtBoundary: false });
     playbackRaf = window.requestAnimationFrame(tickPlayback);
   }
 
@@ -417,12 +391,15 @@ export function installSolver444UiActivation() {
       .forEach((element) => element.remove());
   }
 
-  function renderStageItem(stage, { substage = false } = {}) {
+  function renderStageItem(stage, depth, startIndex) {
+    const end = startIndex + splitMoves(stage?.solution).length;
+    const children = Array.isArray(stage?.segments) ? stage.segments : [];
     const item = document.createElement("li");
     item.dataset.solver444Ui = "true";
-    if (substage) {
+    item.dataset.solver444Stage = String(stage?.id || "");
+    if (depth) {
       item.dataset.solver444Substage = "true";
-      item.style.marginLeft = "1.25rem";
+      item.style.marginLeft = `${depth * 0.85}rem`;
       item.style.borderLeftWidth = "2px";
     }
     const title = document.createElement("strong");
@@ -440,24 +417,33 @@ export function installSolver444UiActivation() {
           : "";
     const crossLock = stage?.crossLockedEveryMove === true ? " · 크로스 3쌍 유지" : "";
     count.textContent = ` ${moveCount}수${detail}${crossLock}${stage?.verified === true ? " · 검증됨" : ""}`;
-    const algorithm = document.createElement("code");
-    algorithm.textContent = String(stage?.solution || "").trim() || "0수";
-    item.append(title, count, algorithm);
+    const jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "ghost sm solver-stage-jump";
+    jump.textContent = "완료 위치 보기";
+    jump.setAttribute("aria-label", `${title.textContent} 완료 위치 보기`);
+    jump.addEventListener("click", () => {
+      stopPlayback();
+      setMoveIndex(end);
+    });
+    item.append(title, count, jump);
+    if (!children.length) {
+      const algorithm = document.createElement("code");
+      algorithm.textContent = String(stage?.solution || "").trim() || "0수";
+      item.appendChild(algorithm);
+      if (end > startIndex) playbackStages.push({ end, name: title.textContent });
+    }
     solverStageList.appendChild(item);
+    let childIndex = startIndex;
+    for (const segment of children) childIndex = renderStageItem(segment, depth + 1, childIndex);
+    return end;
   }
 
   function renderStages(stages) {
     solverStageList.textContent = "";
-    for (const stage of Array.isArray(stages) ? stages : []) {
-      const segments = Array.isArray(stage?.segments) ? stage.segments : [];
-      const summary = segments.length
-        ? { ...stage, solution: `${segments.length}개 세부 단계` }
-        : stage;
-      renderStageItem(summary);
-      for (const segment of segments) {
-        renderStageItem(segment, { substage: true });
-      }
-    }
+    playbackStages = [];
+    let index = 0;
+    for (const stage of Array.isArray(stages) ? stages : []) index = renderStageItem(stage, 0, index);
   }
 
   function resetResultPresentation() {
@@ -465,10 +451,12 @@ export function installSolver444UiActivation() {
     removeOwnedPlayer();
     solution = "";
     moves = [];
+    moveTimes = [];
+    playbackStages = [];
     moveIndex = 0;
     clearOwnedStages();
     solverVisualPanel.hidden = true;
-    solverStepLabel.textContent = "0/0 수";
+    solverStepLabel.textContent = "0/0 동작";
     solverPlayBtn.disabled = true;
     solverCopyBtn.disabled = true;
     solverSolution.textContent = "-";
@@ -477,18 +465,28 @@ export function installSolver444UiActivation() {
     lastMoveCountText = "0 수";
   }
 
-  function renderSuccess(result, scramble) {
-    solution = String(result.solution || "").trim();
-    moves = splitMoves(solution);
+  async function renderSuccess(result, run) {
+    const nextSolution = String(result.solution || "").trim();
+    const nextMoves = splitMoves(nextSolution);
+    const view = ensurePlayer(run.scramble);
+    view.alg = nextSolution;
+    const indexer = await withUiTimeout(
+      view.experimentalModel.indexer.get(), WORKER_CALL_GRACE_MS, "444_UI_TIMELINE_INVALID", run.controller.signal,
+    );
+    if (activeRun !== run || player !== view || !is444() || currentScramble() !== run.scramble) return;
+    if (indexer.numAnimatedLeaves() !== nextMoves.length) throw new Error("444_UI_TIMELINE_INVALID");
+    moveTimes = nextMoves.map((_, index) => indexer.indexToMoveStartTimestamp(index));
+    moveTimes.push(indexer.algDuration());
+    solution = nextSolution;
+    moves = nextMoves;
     moveIndex = 0;
-    const moveCount = Number(result.moveCount) || moves.length;
+    const moveCount = Number.isFinite(result.moveCount) ? result.moveCount : moves.length;
     solverSolution.textContent = solution;
     solverMoveCount.textContent = `${moveCount} 수`;
     lastSolutionText = solution;
     lastMoveCountText = `${moveCount} 수`;
     solverCopyBtn.disabled = false;
     renderStages(result.stages);
-    ensurePlayer(scramble);
     solverVisualPanel.hidden = false;
     updateFrame();
     const methodLabel = METHOD_LABELS[result.meta?.method444] || METHOD_LABELS[selectedMethod()];
@@ -572,7 +570,7 @@ export function installSolver444UiActivation() {
       return;
     }
 
-    const run = { scramble, controller: new AbortController() };
+    const run = { scramble, method: selectedMethod(), controller: new AbortController() };
     activeRun = run;
     syncButton();
     resetResultPresentation();
@@ -589,10 +587,8 @@ export function installSolver444UiActivation() {
             scramble,
             eventId: EVENT_ID,
             deadlineTs,
-            crossColor: /^[URFDLB]$/i.test(String(crossColorSelect?.value || "D"))
-              ? String(crossColorSelect.value).toUpperCase()
-              : "D",
-            method444: selectedMethod(),
+            crossColor: /^[URFDLB]$/i.test(crossColorSelect?.value) ? crossColorSelect.value.toUpperCase() : "D",
+            method444: run.method,
           },
           proxy((progress) => {
             if (activeRun !== run || !is444()) return;
@@ -605,7 +601,11 @@ export function installSolver444UiActivation() {
       );
       if (activeRun !== run || !is444() || currentScramble() !== scramble) return;
       if (result?.ok === true && result?.verified === true && String(result.solution || "").trim()) {
-        renderSuccess(result, scramble);
+        if (run.method === "yau" && result.meta?.yauPlaybackVerified !== true) {
+          renderFailure({ reason: "444_YAU_PLAYBACK_INVALID" });
+          return;
+        }
+        await renderSuccess(result, run);
       } else {
         renderFailure(result);
       }
@@ -614,7 +614,7 @@ export function installSolver444UiActivation() {
         const message = String(error?.message || error || "444_WORKER_FAILED");
         const reason = message === "444_UI_SOLVE_TIMEOUT"
           ? "444_DEADLINE_REACHED"
-          : message.startsWith("444_WORKER_")
+          : message.startsWith("444_WORKER_") || message === "444_UI_TIMELINE_INVALID"
             ? message
             : "444_WORKER_FAILED";
         renderFailure({ reason, detail: message });
@@ -652,6 +652,8 @@ export function installSolver444UiActivation() {
     solverCopyBtn.disabled = true;
     solution = "";
     moves = [];
+    moveTimes = [];
+    playbackStages = [];
     moveIndex = 0;
   }
 
