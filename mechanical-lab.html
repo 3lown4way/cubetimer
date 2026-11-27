@@ -606,7 +606,105 @@ function simulateConstrained(t,{magnet=1,travel=.065,friction=1,requestAngle=40}
  return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,traceT,traceD,traceF,traceCenter,maxDeflection,maxForce,maxCenter,meshEvaluations,contactSamples,projectionQueries,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
 }
 
-function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false}={}){
+
+// M0.9: actual internal/outer triangle surfaces, small compliant piece
+// translations and tilts, bounded swept substep tests. Not exact CCD.
+const M09_LIMIT=.0035, M09_SHIFT=.025, M09_TILT=rad(2.2);
+const m09Zero=()=>[0,0,0,0,0,0];
+function m09Frame(t,active,offsets,flex){return {...m07Frame(t,active,offsets),pieceFlex:flex};}
+function m09Query(t,active,offsets,flex,{forces=false,limit=M09_LIMIT,friction=1,travel=.065}={}){
+ const frame=m09Frame(t,active,offsets,flex),parts=m09Parts(frame),groups=frame.cubies.map((_,id)=>active.reduce((s,a,k)=>s|(a.move.selected(t.frames[a.i][id].p)?1<<k:0),0)),torques=active.map(()=>0),axial=offsets.map(()=>0),loads=offsets.map(m09Zero);
+ const centers=frame.cubies.map(c=>c.colors.filter(x=>x!=="#202124").length===1);
+ const changed=flex.map((f,i)=>offsets[i]>1e-8||f.some(x=>Math.abs(x)>1e-8));
+ const add=(id,p,f)=>{
+  const jac=m07Jacobians(t,active,id,p);for(let k=0;k<active.length;k++)torques[k]+=dot3(jac[k],f);
+  const pivot=frame.cubies[id].p.map(v=>v*.5);
+  if(centers[id])axial[id]+=dot3(norm3(pivot),f);
+  else {const moment=cross3(p.map((x,k)=>x-pivot[k]),f);for(let k=0;k<3;k++){loads[id][k]+=f[k];loads[id][k+3]+=moment[k];}}
+ };
+ let depth=0,hits=0,force=0,shellHits=0,tests=0;
+ const world=p=>p.world??=p.geo.sample.map(v=>cadTransform(p.basis,v).map((x,k)=>x+p.offset[k]));
+ for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
+  const a=parts[i],b=parts[j];if(a.id===b.id||(groups[a.id]===groups[b.id]&&!changed[a.id]&&!changed[b.id])||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
+  for(const [src,dst] of [[a,b],[b,a]])for(const p of world(src)){
+   if(p.some((v,k)=>v<=dst.min[k]+.00015||v>=dst.max[k]-.00015))continue;
+   const local=cadInverse(dst.basis,p.map((x,k)=>x-dst.offset[k]));tests++;
+   if(!m04Inside(local,dst.geo))continue;
+   const d=Math.sqrt(m04Depth2(local,dst.geo));if(d<.0004)continue;
+   depth=Math.max(depth,d);hits++;if(src.name.startsWith("shell:")||dst.name.startsWith("shell:"))shellHits++;
+   if(!forces&&depth>limit)return {depth,hits,shellHits,tests};
+   if(forces){
+    const eps=.0007,grad=[0,1,2].map(k=>{const lo=local.slice(),hi=local.slice();lo[k]-=eps;hi[k]+=eps;return (m04Depth2(hi,dst.geo)-m04Depth2(lo,dst.geo))/(2*eps);});
+    const len=Math.hypot(...grad);if(len<1e-9)continue;
+    const n=cadTransform(dst.basis,grad.map(v=>-v/len)),mag=Math.min(8,2600*.065/Math.max(.015,travel)*d/src.geo.sample.length);
+    const j1=m07Jacobians(t,active,src.id,p),j2=m07Jacobians(t,active,dst.id,p),vel=n.map((_,k)=>active.reduce((v,a,i)=>v+(j1[i][k]-j2[i][k])*a.v,0)),vn=dot3(vel,n),tan=vel.map((v,k)=>v-vn*n[k]),speed=Math.hypot(...tan),drag=Math.min(.24*friction*mag,.12*speed);
+    const f=n.map((v,k)=>v*mag-(speed>1e-8?tan[k]/speed*drag:0));add(src.id,p,f);add(dst.id,p,f.map(v=>-v));force+=mag;
+   }
+  }
+ }
+ return {depth,hits,shellHits,tests,torques,axial,loads,force};
+}
+function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40}={}){
+ if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("MAX는 3×3 외층과 x/y/z 회전만 지원합니다.");
+ const dt=1/120,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0],offsets=t.frames[0].map(()=>0),offsetV=offsets.slice(),traceCenter=[offsets.slice()],flex=offsets.map(m09Zero),vel=offsets.map(m09Zero),traceFlex=[flex.map(f=>f.slice())];
+ let clock=0,next=0,maxDeflection=0,maxForce=0,maxCenter=0,maxShift=0,maxTilt=0,meshEvaluations=0,contactSamples=0,projectionQueries=0,blockedSteps=0,retreatSteps=0,shellSamples=0,sweepTests=0,last=null,stalls=0;
+ const launchAngle=rad(clamp(requestAngle,20,50)),centers=t.frames[0].map(c=>c.colors.filter(x=>x!=="#202124").length===1);
+ const start=()=>{const move=t.moves[next],a={i:next,move,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(move.angle),inertia:move.whole?2.1:1,ts:[clock],angles:[0]};if(active.length)cuts.push({i:next,start:clock,end:clock,limit:launchAngle*180/Math.PI,previous:active[0].move.token,next:move.token});times.push(clock);turns.push(a);active.push(a);next++;stalls=0;};
+ const mix=(a,b,u)=>a.map((x,k)=>x+(b[k]-x)*u),mixF=(a,b,u)=>a.map((x,k)=>mix(x,b[k],u));
+ if(t.moves.length)start();
+ const limitSteps=Math.ceil(Math.max(2,t.moves.length*8)/dt);
+ for(let step=0;active.length&&step<limitSteps;step++){
+  const oldX=active.map(a=>a.x),oldO=offsets.slice(),oldF=flex.map(f=>f.slice()),ids=active.map(a=>a.i).join(",");
+  const needs=active.length===2||offsets.some(x=>x>1e-6)||flex.some(f=>f.some(x=>Math.abs(x)>1e-6));
+  if(!last||last.ids!==ids||step%2===0){
+   const mag=m07Forces(t,active,offsets,travel,magnet,friction,false);
+   const c=needs?m09Query(t,active,offsets,flex,{forces:true,friction,travel}):{torques:active.map(()=>0),axial:offsets.map(()=>0),loads:offsets.map(m09Zero),hits:0,shellHits:0,depth:0,force:0};
+   last={...c,ids,torques:c.torques.map((v,i)=>v+mag.torques[i])};meshEvaluations++;contactSamples+=c.hits;shellSamples+=c.shellHits;
+  }
+  const torques=active.map((a,i)=>{const err=a.goal-a.x,desired=Math.min(2.3,Math.sqrt(28*Math.max(0,err)),24*Math.max(0,err));return clamp(24*(desired-a.v),-35,35)+clamp(last.torques[i],-22,22)-friction*(.65*a.v+.21*Math.tanh(a.v/.045));});
+  const targetO=oldO.map((x,i)=>clamp(x+(offsetV[i]+(last.axial[i]-m08Restore(x,travel)-9*offsetV[i])/.10*dt)*dt,0,travel));
+  const targetF=oldF.map((f,i)=>{if(centers[i])return m09Zero();const out=f.map((x,k)=>x+(vel[i][k]+(last.loads[i][k]-(k<3?130:75)*x-(k<3?7:3)*vel[i][k])/(k<3?.22:.08)*dt)*dt);for(const [start,end,lim] of [[0,3,M09_SHIFT],[3,6,M09_TILT]]){const l=Math.hypot(...out.slice(start,end));if(l>lim)for(let k=start;k<end;k++)out[k]*=lim/l;}return out;});
+  const targetX=active.map((a,i)=>clamp(a.x+clamp(a.v+torques[i]/a.inertia*dt,-1.1,2.7)*dt,0,a.goal));
+  const test=(x,o,f)=>{for(let k=0;k<active.length;k++)active[k].x=x[k];projectionQueries++;return m09Query(t,active,o,f).depth;};
+  const sweep=(x,o,f)=>{let d=0;for(const u of [.5,1]){sweepTests++;d=Math.max(d,test(mix(oldX,x,u),mix(oldO,o,u),mixF(oldF,f,u)));if(d>M09_LIMIT)break;}return d;};
+  let x=targetX,o=targetO,f=targetF,depth=0;
+  // Isolated ordinary turns have been geometry-checked separately. Check
+  // the full assembly during all simultaneous motion and residual flex.
+  if(needs){
+   depth=sweep(x,o,f);
+   if(depth>M09_LIMIT){
+    blockedSteps++;let best=null;
+    const candidate=(x,o,f)=>{const d=sweep(x,o,f);if(d<=M09_LIMIT){best={x,o,f,d};return true;}return false;};
+    if(active.length===2){
+     const first=[targetX[0],oldX[1]],back=[targetX[0],Math.max(0,oldX[1]-.018)];
+     candidate(first,targetO,targetF)||candidate(first,oldO,oldF)||candidate(back,oldO,oldF)||candidate([oldX[0],Math.max(0,oldX[1]-.018)],oldO,oldF);
+    }
+    if(!best)candidate(oldX,targetO,targetF)||candidate(oldX,oldO,oldF);
+    if(!best)throw Error("MAX 이전 자세 구속 실패");
+    let lo=0,hi=1,base=best;
+    for(let j=0;j<4;j++){const u=(lo+hi)/2,cx=mix(base.x,targetX,u),co=mix(base.o,targetO,u),cf=mixF(base.f,targetF,u);if(candidate(cx,co,cf))lo=u;else hi=u;}
+    ({x,o,f,d:depth}=best);
+   }
+   if(active.length===2){if(x[0]-oldX[0]<1e-6&&active[0].goal-oldX[0]>.001)stalls++;else stalls=0;
+    if(stalls>3&&oldX[1]>0){const back=[oldX[0],Math.max(0,oldX[1]-.022)],d=sweep(back,oldO,oldF);if(d<=M09_LIMIT){x=back;o=oldO;f=oldF;depth=d;}}
+    if(x[1]<oldX[1]-1e-8)retreatSteps++;
+   }
+  }
+  for(let i=0;i<offsets.length;i++){offsets[i]=o[i];offsetV[i]=(o[i]-oldO[i])/dt;flex[i]=f[i].slice();vel[i]=f[i].map((v,k)=>(v-oldF[i][k])/dt);maxCenter=Math.max(maxCenter,o[i]);maxShift=Math.max(maxShift,Math.hypot(...f[i].slice(0,3)));maxTilt=Math.max(maxTilt,Math.hypot(...f[i].slice(3,6)));}
+  clock+=dt;for(let k=0;k<active.length;k++){const a=active[k];a.x=x[k];a.v=(x[k]-oldX[k])/dt;a.ts.push(clock);a.angles.push(Math.sign(a.move.angle)*a.x);}
+  maxDeflection=Math.max(maxDeflection,depth);maxForce=Math.max(maxForce,last.force);traceT.push(clock);traceD.push(depth);traceF.push(last.force);traceCenter.push(offsets.slice());traceFlex.push(flex.map(f=>f.slice()));
+  const a=active[0];if(a.goal-a.x<1e-8){a.x=a.goal;a.angles[a.angles.length-1]=a.move.angle;a.v=0;a.end=clock;const cut=cuts.find(c=>c.i===a.i+1);if(cut)cut.end=clock;active.shift();stalls=0;}
+  if(next<t.moves.length){if(!active.length)start();else if(active.length===1){const a=active[0],b=t.moves[next];if(a.i===next-1&&cutLimit(a.move,b,3,true)>0&&a.goal-a.x<=launchAngle&&a.v>0)start();}}
+ }
+ if(active.length||next!==t.moves.length)throw Error("MAX 회전 정렬 수렴 실패: "+active.map(a=>a.move.token+":"+a.x.toFixed(3)).join(","));
+ // At the final logical alignment the small elastic offsets relax to zero.
+ const o0=offsets.slice(),f0=flex.map(f=>f.slice());if(o0.some(x=>x>1e-6)||f0.some(f=>f.some(x=>Math.abs(x)>1e-6))){for(let j=1;j<=24;j++){const a=1-smooth(j/24);clock+=dt;traceT.push(clock);traceD.push(0);traceF.push(0);traceCenter.push(o0.map(x=>x*a));traceFlex.push(f0.map(f=>f.map(x=>x*a)));}}
+ traceCenter[traceCenter.length-1]=offsets.map(()=>0);traceFlex[traceFlex.length-1]=offsets.map(m09Zero);times.push(clock);
+ return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,maxMode:true,traceT,traceD,traceF,traceCenter,traceFlex,maxDeflection,maxForce,maxCenter,maxShift,maxTilt,meshEvaluations,contactSamples,shellSamples,projectionQueries,sweepTests,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
+}
+
+function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false,maxMode=false}={}){
+  if(liveContact&&constrained&&maxMode)return simulateMax(t,{magnet,travel,friction,requestAngle});
   if(liveContact&&constrained)return simulateConstrained(t,{magnet,travel,friction,requestAngle});
   if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
   const dt=1/480,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0];
@@ -1897,7 +1995,7 @@ function ganShellPatch(mask){
 
 function m09Housing(){
  const out=[];
- for(const [axis,side] of FACES){const basis=[unit((axis+1)%3,1),unit((axis+2)%3,side),unit(axis,side)];for(let i=0;i<faceMesh.length;i+=6)out.push(...cadTransform(basis,Array.from(faceMesh.slice(i,i+3))).map(x=>x*.84*.91),...cadTransform(basis,Array.from(faceMesh.slice(i+3,i+6))));}
+ for(const [axis,side] of FACES){const basis=[unit((axis+1)%3,1),unit((axis+2)%3,side),unit(axis,side)];for(let i=0;i<faceMesh.length;i+=6)out.push(...cadTransform(basis,Array.from(faceMesh.slice(i,i+3))).map(x=>x*.45),...cadTransform(basis,Array.from(faceMesh.slice(i+3,i+6))));}
  return new Float32Array(out);
 }
 function m09FlexTransform(c,flex){
