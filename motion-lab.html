@@ -8,7 +8,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 11</h1>
+<h1>Cube motion lab · 20</h1>
 <p>기본 재생은 코너커팅·자동 정렬·연속 체인·능동적 탐색이 적용된 스피드큐브입니다. 기존 순차 회전은 비교 옵션에서만 표시합니다.</p>
 <div class="controls"><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
@@ -19,14 +19,14 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
 <label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="2.5"><output id="speedVal">2.5 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="contact" selected>접촉·정렬 v1.1 (기본)</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="handoff" selected>레이어 연결 v2.0 (기본)</option><option value="contact">이전 v1.1</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
 <div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="yellow orange" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
 <div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><p id="contactStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v1.1은 라운드 조각 외피의 접촉을 근사하여 작은 위치 보정을 적용하고, 다음 회전이 시작되면 이전 층의 정렬을 보조합니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v2.0은 두 레이어의 회전량을 직접 분배하여 연결하고, 탐색 자세를 읽기 쉬운 각도로 제한합니다. 내부 코어는 시각 모델이며 4×4까지 접촉 근사를 적용합니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -280,7 +280,54 @@ function buildBaseFlowTrack(timeline,profile="fluid",allowDouble=false){
   // No repeated overshoot on intermediate moves; settle at the end only.
   return {turns,cuts,total:timeline.total};
 }
+// Direct angular handoff. Both layers share a distance parameter. The
+// next layer takes over angular travel gradually, without a per-move bounce.
+function handoffIntegral(u){
+  u=clamp(u,0,1);const r=.16,v=.5/(1-r);
+  if(u<r)return v*u*u/(2*r);
+  if(u<=1-r)return v*(u-r/2);
+  const d=1-u;
+  return .5-d+v*d*d/(2*r);
+}
+// Integral of a monotonic rate increasing from 0 to 1, with symmetry.
+function handoffNext(u){
+  u=clamp(u,0,1);const r=.16;
+  if(u<r)return .5*u*u/(2*r);
+  if(u<=1-r)return .5*(u-r/2);
+  const d=1-u;
+  return .5-d+.5*d*d/(2*r);
+}
+function buildHandoffBase(timeline){
+  const {moves,times,n}=timeline,arc=[0];
+  for(const m of moves)arc.push(arc.at(-1)+Math.abs(m.angle)*180/Math.PI);
+  const angleAt=t=>lookup(times,arc,t),timeAt=s=>lookup(arc,times,s);
+  const turns=moves.map((move,i)=>({i,move,start:times[i],end:times[i+1],handoff:true,arcStart:arc[i],arcEnd:arc[i+1],angleAt}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],old=cutLimit(a.move,b.move,n,true);
+    if(!old)continue;
+    const wide=a.move.width>1||b.move.width>1;
+    const limit=wide?(n<=4?8:5):(n<=3?20:n===4?12:8);
+    const mid=arc[i],start=timeAt(mid-limit),end=timeAt(mid+limit);
+    a.end=end;b.start=start;a.outCut={mid,limit};b.inCut={mid,limit};
+    cuts.push({i,start,end,limit,previous:a.move.token,next:b.move.token});
+  }
+  return {turns,cuts,total:timeline.total};
+}
 function flowAngle(turn,t){
+  if(turn.handoff){
+    const s=turn.angleAt(t),length=turn.arcEnd-turn.arcStart;
+    let x=clamp(s-turn.arcStart,0,length);
+    if(turn.inCut&&s<turn.inCut.mid+turn.inCut.limit){
+      const {mid,limit}=turn.inCut,u=clamp((s-mid+limit)/(2*limit),0,1);
+      x=2*limit*handoffNext(u);
+    }
+    if(turn.outCut&&s>turn.outCut.mid-turn.outCut.limit){
+      const {mid,limit}=turn.outCut,u=clamp((s-mid+limit)/(2*limit),0,1);
+      x=length-limit+2*limit*(u-handoffNext(u));
+    }
+    return Math.sign(turn.move.angle)*rad(clamp(x,0,length));
+  }
   const u=(t-turn.start)/(turn.end-turn.start);
   let progress=turn.fluid?fluidProgress(u,turn.a,turn.d):turnFlowProgress(u,turn.over);
   if(turn.capture){const c=turn.capture,v=clamp((t-c.start)/(c.end-c.start),0,1);progress+=(1-progress)*c.gain*smooth(v);}
@@ -301,9 +348,9 @@ function lookup(xs,ys,x){
   const d=xs[hi]-xs[lo];
   return d>1e-12?ys[lo]+(ys[hi]-ys[lo])*(x-xs[lo])/d:ys[hi];
 }
-function buildFlowTrack(timeline,profile="contact"){
-  const track=buildBaseFlowTrack(timeline,profile==="legacy"?"legacy":"fluid",["natural","contact"].includes(profile));
-  if(!["chain","natural","contact"].includes(profile)||!track.turns.length)return track;
+function buildFlowTrack(timeline,profile="handoff"){
+  const track=profile==="handoff"?buildHandoffBase(timeline):buildBaseFlowTrack(timeline,profile==="legacy"?"legacy":"fluid",["natural","contact"].includes(profile));
+  if(!["chain","natural","contact","handoff"].includes(profile)||!track.turns.length)return track;
   if(profile==="contact")for(const c of track.cuts){const a=track.turns[c.i-1];a.capture={start:c.start,end:c.end,gain:timeline.n<=3?.38:timeline.n===4?.27:.20};}
   const {turns,cuts}=track,{times}=timeline;
   const joins=new Set(cuts.map(c=>c.i));
@@ -346,13 +393,13 @@ function chainRun(track,t){
 }
 function chainClock(track,t){
   const r=chainRun(track,t);
-  if(!r||r.first===r.last||t<=r.start||t>=r.end)return t;
+  if(!r||(r.first===r.last&&track.profile!=="handoff")||t<=r.start||t>=r.end)return t;
   const x=(t-r.start)/r.span;
   return lookup(r.arc,r.ts,r.total*chainProgress(x,r.ramp));
 }
 function chainDisplayTime(track,t){
   const r=chainRun(track,t);
-  if(!r||r.first===r.last||t<=r.start||t>=r.end)return t;
+  if(!r||(r.first===r.last&&track.profile!=="handoff")||t<=r.start||t>=r.end)return t;
   const fraction=lookup(r.ts,r.arc,t)/r.total;
   let lo=0,hi=1;
   for(let i=0;i<32;i++){const m=(lo+hi)/2;if(chainProgress(m,r.ramp)<fraction)lo=m;else hi=m;}
@@ -472,7 +519,7 @@ function frameAt(timeline,t){
 // choose a pose: only geometry, move cues and already observed sticker colors.
 // Piece/sticker identity tracking is idealized and memory has a finite lifetime.
 const SEARCH_COLORS={white:"#f7f7f7",yellow:"#f4d331",green:"#24aa57",blue:"#2463cf",red:"#cf302e",orange:"#f58b27"};
-const SEARCH_VIEW=qpose([25,-34,0]);
+const SEARCH_VIEW=qpose([33,-34,0]);
 const VISIBILITY=.18;
 const MEMORY_MOVES=12;
 const searchAngles=[
@@ -668,7 +715,10 @@ function planContinuousSearch(timeline,{target=["white","green"],kind="edge",che
         let best=null;
         const evaluate=p=>{
           const q=qpose(p),angle=angularDistance(pose,q);
-          if(angle>42||angularDistance(HOME_Q,q)>42)return;
+          if(angle>30||angularDistance(HOME_Q,q)>30)return;
+          // Preserve a readable three-quarter view. If the requested hidden
+          // sticker needs a larger turn, do not invent a tiny fake inspection.
+          if(qrotate(view,qrotate(q,[0,1,0]))[2]<.28)return;
           const {gain,count}=extraGain(cubies,move,pose,q,view,candidates,baseline);
           const score=gain-.036*angle-.35;
           if(gain>0&&score>0&&(!best||score>best.score+1e-8))best={p,q,angle,gain,count,score};
@@ -709,7 +759,7 @@ const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
 let tl,plan,timing,flowTrack,continuous=true,time=0,playing=false,last=0,raf=0;
 let fps=0,fpsStart=0,fpsFrames=0,lastStatus=-Infinity;
 const canvasSizes=new Map();
-let yaw=-34,pitch=25,goalYaw=yaw,goalPitch=pitch;
+let yaw=-34,pitch=33,goalYaw=yaw,goalPitch=pitch;
 let pointer=null,lastX=0,lastY=0;
 function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
 function tick(now){
@@ -776,6 +826,9 @@ function plasticFace(h=.484,r=.087){
   return new Float32Array(out);
 }
 const faceMesh=plasticFace();
+// A small dark rounded inner core makes exposed turning gaps less hollow.
+function coreGeometry(){const out=[];const p=(a,b)=>{const v=[Math.sin(a)*Math.cos(b),Math.cos(a),Math.sin(a)*Math.sin(b)];return [...v,...v];};for(let i=0;i<12;i++)for(let j=0;j<24;j++){let a=i*Math.PI/12,b=j*Math.PI/12,c=(i+1)*Math.PI/12,d=(j+1)*Math.PI/12;out.push(...p(a,b),...p(c,b),...p(c,d),...p(a,b),...p(c,d),...p(a,d));}return new Float32Array(out);}
+const coreMesh=coreGeometry();
 const VS="#version 300 es\n"+
 "layout(location=0) in vec3 vert;layout(location=1) in vec3 normal;layout(location=2) in vec3 pos;layout(location=3) in vec3 bx;layout(location=4) in vec3 by;layout(location=5) in vec3 bz;layout(location=6) in vec3 rgb;uniform mat3 view;uniform vec2 lens;uniform float distance;out vec3 N;out vec3 C;out vec3 P;void main(){mat3 basis=mat3(bx,by,bz);vec3 p=view*(pos+basis*vert);N=view*basis*normal;C=rgb;P=p-vec3(0.,0.,distance);float d=-P.z;float near=.1;float far=100.;gl_Position=vec4(P.x*lens.x,P.y*lens.y,((far+near)/(far-near))*d-2.*far*near/(far-near),d);}";
 const FS="#version 300 es\nprecision highp float;\n"+
@@ -800,9 +853,9 @@ function createGPU(canvas){
     for(let i=2;i<=6;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,60,(i-2)*12);gl.vertexAttribDivisor(i,1);}
     gl.bindVertexArray(null);return {vao,ib,count:vertices.length/6};
   }
-  const face=mesh(faceMesh);
+  const face=mesh(faceMesh),core=mesh(coreMesh);
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
-  return {gl,program,face,view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
+  return {gl,program,face,core,view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
 }
 function cubeInstances(frame){
   const surfaces=[];
@@ -822,7 +875,7 @@ function drawGPU(canvas,frame,pose){
   let gpu=gpuViews.get(canvas);
   if(gpu===undefined){gpu=createGPU(canvas);gpuViews.set(canvas,gpu);}
   if(!gpu)return false;
-  const {gl,program,face}=gpu;
+  const {gl,program,face,core}=gpu;
   if(gl.isContextLost())return true;
   const box=canvasSizes.get(canvas)||canvas.getBoundingClientRect(),dpr=Math.min(1.5,devicePixelRatio||1,640/Math.max(1,box.width,box.height));
   const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
@@ -833,6 +886,8 @@ function drawGPU(canvas,frame,pose){
   const f=1/Math.tan(rad(23)/2);
   gl.uniformMatrix3fv(gpu.view,false,new Float32Array(basis));gl.uniform2f(gpu.lens,f*h/w,f);gl.uniform1f(gpu.distance,tl.n*4.65);
   const data=cubeInstances(frame);
+  const r=Math.max(.30,tl.n/2-.62),coreData=new Float32Array([0,0,0,r,0,0,0,r,0,0,0,r,.20,.21,.22]);
+  gl.bindVertexArray(core.vao);gl.bindBuffer(gl.ARRAY_BUFFER,core.ib);gl.bufferData(gl.ARRAY_BUFFER,coreData,gl.DYNAMIC_DRAW);gl.drawArraysInstanced(gl.TRIANGLES,0,core.count,1);
   gl.bindVertexArray(face.vao);gl.bindBuffer(gl.ARRAY_BUFFER,face.ib);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
   gl.drawArraysInstanced(gl.TRIANGLES,0,face.count,data.length/15);
   gl.bindVertexArray(null);return true;
@@ -851,7 +906,7 @@ function render(now=Infinity){
   const motionTime=flowOn?chainClock(flowTrack,time):time;
   const {pose,event}=sampled(motionTime,strength);
   const rawFrame=flowOn?flowFrameAt(tl,flowTrack,motionTime):frame;
-  const modernFrame=flowOn&&flowTrack.profile==="contact"?contactCompliance(tl,rawFrame):rawFrame;
+  const modernFrame=flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
   const gpuA=$("compareView").checked?draw(canvases[0],frame,HOME_Q):true,gpuB=draw(canvases[1],modernFrame,pose);
   if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
   lastStatus=Number.isFinite(now)?now:-Infinity;
@@ -910,7 +965,7 @@ $("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").v
 function pairDemo(n,alg){
   $("compareView").checked=true;syncComparison();
   $("size").value=String(n);$("kind").value="edge";$("target").value="white green";$("checks").value="";$("setup").value="";$("alg").value=alg;
-  $("mode").value="continuous";$("flow").checked=true;$("profile").value="contact";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("mode").value="continuous";$("flow").checked=true;$("profile").value="handoff";$("strength").value="0";$("strengthVal").textContent="0.00×";
   $("speed").value="1";$("speedVal").textContent="1 TPS";load();
   const c=flowTrack.cuts[0];if(c){time=chainDisplayTime(flowTrack,(c.start+c.end)/2);render();}
 }
@@ -921,7 +976,7 @@ $("cutDemo").onclick=()=>{
   $("compareView").checked=true;syncComparison();
   $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
   $("setup").value="";$("alg").value="R U R' U' R U R' U'";$("mode").value="continuous";
-  $("flow").checked=true;$("profile").value="contact";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("flow").checked=true;$("profile").value="handoff";$("strength").value="0";$("strengthVal").textContent="0.00×";
   $("speed").value="4";$("speedVal").textContent="4 TPS";load();
 };
 $("jumpCut").onclick=()=>{
@@ -940,7 +995,7 @@ $("jumpInspection").onclick=()=>{
   const start=starts[i],end=timing.stepTimes[plan.events[i].i+1];
   time=continuous&&$("flow").checked?chainDisplayTime(flowTrack,start+(end-start)*.8):start+(end-start)*.8;render();
 };
-$("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
+$("resetView").onclick=()=>{goalYaw=-34;goalPitch=33;schedule()};
 document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
 for(const c of canvases){
   c.addEventListener("pointerdown",e=>{if(pointer!==null||e.button!==0)return;pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;c.setPointerCapture(pointer)});
@@ -951,5 +1006,5 @@ const sizeObserver=new ResizeObserver(entries=>{for(const e of entries||[])canva
 for(const c of canvases)sizeObserver.observe(c);
 document.addEventListener("visibilitychange",()=>{last=performance.now();fpsStart=0;fpsFrames=0;});
 // Initialize the normal playback explicitly, even if the browser restores form values.
-$("mode").value="continuous";$("flow").checked=true;$("profile").value="contact";$("compareView").checked=false;syncComparison();load();
+$("mode").value="continuous";$("flow").checked=true;$("profile").value="handoff";$("compareView").checked=false;syncComparison();load();
 </script></body></html>
