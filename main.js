@@ -1,6 +1,7 @@
 import "scramble-display";
 import { randomScrambleForEvent } from "cubing/scramble";
 import { TwistyPlayer } from "cubing/twisty";
+import { attachSmoothCubeCamera, detachSmoothCubeCamera } from "./solver/smoothCubeCamera.js";
 import { resolveNxNSolverPuzzle } from "./solver/nxnTwistyPreview.js?v=20261127-yau-working-turns-1";
 import { experimentalCountMetricMoves } from "cubing/notation";
 import { cube3x3x3 } from "cubing/puzzles";
@@ -1473,7 +1474,10 @@ function stopSolverPlayback() {
 function ensureSolverTwistyPlayer(puzzleId = resolveNxNSolverPuzzle(solverPlaybackEventId)) {
   if (!puzzleId || !solverTwistyHost) return null;
   if (solverTwistyPlayer && solverTwistyPuzzleId === puzzleId) return solverTwistyPlayer;
-  if (solverTwistyPlayer) solverTwistyPlayer.pause();
+  if (solverTwistyPlayer) {
+    detachSmoothCubeCamera(solverTwistyPlayer);
+    solverTwistyPlayer.pause();
+  }
   solverTwistyPlayer = null;
   solverTwistyPuzzleId = "";
   solverTwistyHost.textContent = "";
@@ -1488,6 +1492,7 @@ function ensureSolverTwistyPlayer(puzzleId = resolveNxNSolverPuzzle(solverPlayba
   solverTwistyPuzzleId = puzzleId;
   solverTwistyPlayer.tempoScale = 0.75;
   solverTwistyHost.appendChild(solverTwistyPlayer);
+  attachSmoothCubeCamera(solverTwistyPlayer);
   return solverTwistyPlayer;
 }
 
