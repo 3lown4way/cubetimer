@@ -1319,19 +1319,33 @@ export function crossSideColors444(mask) {
 }
 
 function cross3Turns444(model, lockedMask, backFace) {
-  const allowed = ["U", "Uw", "2D", "F", "R", "L", "B"]
+  const outerAndWide = ["U", "Uw", "F", "R", "L", "B"]
     .filter((layer) => layer !== backFace)
-    .flatMap((layer) => [layer, `${layer}'`, `${layer}2`]);
-  return allowed.filter((turn) => maskContains(
-    solvedEdgeTypeMask(model.solvedCompact, model.actionFor(turn), lockedMask), lockedMask,
-  )).map((turn) => projectedWingMove444(model, [turn]));
+    .flatMap((layer) => [layer, `${layer}'`, `${layer}2`].map((turn) => [turn]));
+  const moves = [...outerAndWide, ["Dw", "D'"], ["Dw'", "D"], ["Dw2", "D2"]];
+  return moves.filter((turns) => maskContains(
+    solvedEdgeTypeMask(model.solvedCompact, model.actionFor(turns.join(" ")), lockedMask), lockedMask,
+  )).map((turns) => ({ ...projectedWingMove444(model, turns), cost: turns.length === 1 ? 2 : 5 }));
 }
 
 function findCross3Insertion444(state, moves, edgeType, model, deadlineTs) {
   const goal = wingSignatureForType444(model.solvedCompact, edgeType);
   const start = wingSignatureForType444(state, edgeType);
-  for (const entry of yauWingSetups444(start, moves, deadlineTs)) {
-    if (entry.signature === goal) return entry.moves;
+  const buckets = [[{ signature: start, turns: [] }]];
+  const costs = new Map([[start, 0]]);
+  for (let cost = 0; cost < buckets.length; cost += 1) {
+    if (deadlineReached(deadlineTs)) return null;
+    for (const entry of buckets[cost] ?? []) {
+      if (cost !== costs.get(entry.signature)) continue;
+      if (entry.signature === goal) return { turns: entry.turns, cost };
+      for (const move of moves) {
+        const signature = move.apply(entry.signature);
+        const nextCost = cost + move.cost;
+        if (nextCost >= (costs.get(signature) ?? Infinity)) continue;
+        costs.set(signature, nextCost);
+        (buckets[nextCost] ??= []).push({ signature, turns: [...entry.turns, ...move.moves] });
+      }
+    }
   }
   return null;
 }
@@ -1341,19 +1355,20 @@ function planYauCross3(pattern, initial, model, initialMask, targetMask, backFac
   let state = initial;
   let lockedMask = initialMask;
   const steps = [];
+  const faceTurns = crossFaceTurns444(model, "D");
   while (bitCount(lockedMask) < 3) {
     const allowed = cross3Turns444(model, lockedMask, backFace);
     let best = null;
     for (let type = 0; type < EDGE_SLOT_PAIRS_444.length; type += 1) {
       if (!((targetMask & ~lockedMask) & (1 << type))) continue;
-      const turns = findCross3Insertion444(state, allowed, type, model, deadlineTs);
-      if (turns && (!best || turns.length < best.turns.length)) best = { type, turns };
+      const insertion = findCross3Insertion444(state, allowed, type, model, deadlineTs);
+      if (insertion && (!best || insertion.cost < best.cost)) best = { type, ...insertion };
     }
     if (!best) return null;
     for (const turn of best.turns) {
       current = current.applyMove(turn);
       state = compactStateFromPattern(current);
-      if (!maskContains(solvedEdgeTypeMask(state), lockedMask) || !protectedCenterFacesSolved444(state, model, ["D", "U"])) {
+      if (!crossBankAlignment444(state, faceTurns, lockedMask) || !protectedCenterFacesSolved444(state, model, ["D", "U"])) {
         throw new Error("444_YAU_CROSS3_LOCK_FAILED");
       }
     }
@@ -1545,6 +1560,37 @@ function buildSegment(id, name, moves, pairStart, pairEnd) {
   };
 }
 
+// D adjustments commute with U/Uw. Drop redundant turns of the cross face
+// between working triggers while preserving the order of the pairing slice.
+export function simplifyYauCrossTurns444(moves) {
+  const result = [];
+  let run = [];
+
+  function flush() {
+    const lastAdjustment = run.findLastIndex((turn) => /^D(?:2|')?$/.test(turn));
+    let amount = 0;
+    for (const turn of run) {
+      if (turn[0] !== "D" || turn[1] === "w") continue;
+      amount = (amount + (turn.endsWith("2") ? 2 : turn.endsWith("'") ? 3 : 1)) % 4;
+    }
+    for (const [index, turn] of run.entries()) {
+      if (turn[0] !== "D" || turn[1] === "w") result.push(turn);
+      else if (index === lastAdjustment && amount) result.push(`D${["", "", "2", "'"][amount]}`);
+    }
+    run = [];
+  }
+
+  for (const move of moves) {
+    if (/^[UD]w?(?:2|')?$/.test(move)) run.push(move);
+    else {
+      flush();
+      result.push(move);
+    }
+  }
+  flush();
+  return simplifyOuterSequence(result);
+}
+
 function yauRemainingPairedMask444(state, crossMask) {
   return pairedEdgeTypeMask(state) & (0x0fff ^ crossMask);
 }
@@ -1579,12 +1625,13 @@ function yauOuterInsertions444(model, crossMask, gap = null) {
       const tokens = splitAlgorithm(original);
       const moves = gap ? aimYauCrossGap444(tokens, gap) : tokens;
       const algorithm = moves.join(" ");
-      return { algorithm, moves, action: model.actionFor(algorithm), auf: original.startsWith("U") };
+      const cost = moves.reduce((sum, move) => sum + (move[0] === "D" ? 2 : 1), 0);
+      return { algorithm, moves, cost, action: model.actionFor(algorithm), auf: original.startsWith("U") };
     }).filter(({ action }) => {
       const state = applyCompactAction(model.solvedCompact, action);
       return maskContains(solvedEdgeTypeMask(state), crossMask) &&
         centersSolved(state, model.solvedCompact.centerPieces);
-    });
+    }).sort((a, b) => a.cost - b.cost);
     model.yauOuterInsertions.set(key, insertions);
   }
   return model.yauOuterInsertions.get(key);
@@ -1606,7 +1653,7 @@ function searchYauAlignedPairs444(initial, model, deadlineTs, pairing, targetCou
     const state = applyCompactAction(initial, model.actionFor(open));
     if (!maskContains(solvedEdgeTypeMask(state), crossMask)) continue;
     const prepared = pairedEdgeTypeMaskInSlots(state, sliceFamily.middleMask, closeAction);
-    frontier.push({ state, moves: [open], close, closeAction, prepared, auf: false, score: 0 });
+    frontier.push({ state, moves: [open], close, closeAction, prepared, auf: false, cost: 1, score: 0 });
   }
 
   // While the E slice is open, an edge is prepared when the *inverse slice*
@@ -1622,6 +1669,7 @@ function searchYauAlignedPairs444(initial, model, deadlineTs, pairing, targetCou
         const prepared = pairedEdgeTypeMaskInSlots(state, sliceFamily.middleMask, node.closeAction);
         if (!maskContains(prepared, node.prepared)) continue;
         const moves = [...node.moves, ...insertion.moves];
+        const cost = node.cost + insertion.cost;
         const preparedCount = bitCount(prepared);
         if (preparedCount >= needed) {
           const closed = applyCompactAction(state, node.closeAction);
@@ -1630,25 +1678,25 @@ function searchYauAlignedPairs444(initial, model, deadlineTs, pairing, targetCou
               maskContains(pairedEdgeTypeMask(closed), initialPairs)) {
             const key = compactStateKey(closed);
             const previous = goals.get(key);
-            if (!previous || moves.length + 1 < previous.moves.length) {
-              goals.set(key, { state: closed, moves: [...moves, node.close], technique: "align-then-close" });
+            if (!previous || cost < previous.cost) {
+              goals.set(key, { state: closed, moves: [...moves, node.close], cost, technique: "align-then-close" });
             }
             if (goals.size >= 16) break;
             continue;
           }
         }
         const key = node.close + compactStateKey(state);
-        const score = preparedCount * 100 - moves.length;
+        const score = preparedCount * 100 - cost;
         if (score <= (alignments.get(key) ?? -Infinity)) continue;
         alignments.set(key, score);
-        next.set(key, { ...node, state, moves, prepared, auf: insertion.auf, score });
+        next.set(key, { ...node, state, moves, prepared, auf: insertion.auf, cost, score });
       }
       if (goals.size >= 16) break;
     }
     if (goals.size >= 8 || deadlineReached(deadlineTs)) break;
     frontier = [...next.values()].sort((left, right) => right.score - left.score).slice(0, 300);
   }
-  return [...goals.values()].sort((a, b) => a.moves.length - b.moves.length).slice(0, 12);
+  return [...goals.values()].sort((a, b) => a.cost - b.cost).slice(0, 12);
 }
 
 function* yauOuterSetups444(initial, insertions) {

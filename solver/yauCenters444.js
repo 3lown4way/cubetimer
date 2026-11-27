@@ -5,6 +5,7 @@ const FACES = ["U", "R", "F", "D", "L", "B"];
 const SIDES = ["F", "L", "B", "R"];
 const SUFFIXES = ["", "'", "2"];
 const MASK_BASE = 2 ** 24;
+const GAP_BASE = MASK_BASE ** 2;
 // In the front-center grip, canonical D faces the player and canonical F
 // is on top. Use the front face to align a bar and the wide turns to join it.
 const FIRST_CENTER_LAYERS = ["D", "F", "Fw", "R", "Rw", "L", "Lw"];
@@ -73,28 +74,33 @@ function centerMask(model, pattern, colors) {
   ), 0);
 }
 
-// Reverse shortest-path search over just the participating center colors.
-// A table records the move back toward its goal. It never evaluates wings or
-// other phases, and a table is built only when its own phase needs it.
-function getPolicy(model, id, goalA, goalB, createActions, deadlineTs, timing) {
+function centerState(maskA, maskB = 0, gap = 0) {
+  return maskA + maskB * MASK_BASE + gap * GAP_BASE;
+}
+
+// Reverse shortest paths on center colors and, for the last four centers,
+// the position of the one cross slot that can be used for side turns.
+function getPolicy(model, id, goals, createActionSets, deadlineTs, timing) {
   checkDeadline(deadlineTs);
   if (model.policies.has(id)) return model.policies.get(id);
   const started = Date.now();
-  const actions = createActions();
-  const goal = goalA + goalB * MASK_BASE;
-  const policy = new Map([[goal, null]]);
-  const buckets = [[goal]];
+  const actionSets = createActionSets();
+  const policy = new Map(goals.map((goal) => [goal, null]));
+  const buckets = [[...goals]];
   let visited = 0;
   for (let cost = 0; cost < buckets.length; cost += 1) {
-    for (const current of buckets[cost] || []) {
+    for (const current of buckets[cost] ?? []) {
       if ((visited++ & 255) === 0) checkDeadline(deadlineTs);
-      if (current !== goal && policy.get(current).cost !== cost) continue;
+      const entry = policy.get(current);
+      if (entry && entry.cost !== cost) continue;
       const a = current % MASK_BASE;
-      const b = Math.floor(current / MASK_BASE);
-      for (const { destinations, undo, cost: turnCost = 1 } of actions) {
-        const next = moveMask(a, destinations) + moveMask(b, destinations) * MASK_BASE;
+      const b = Math.floor(current / MASK_BASE) % MASK_BASE;
+      const gap = Math.floor(current / GAP_BASE);
+      for (const { destinations, undo, cost: turnCost, gapShift = 0 } of actionSets[gap]) {
+        const next = centerState(moveMask(a, destinations), moveMask(b, destinations), (gap + gapShift) % 4);
         const nextCost = cost + turnCost;
-        if (next === goal || (policy.get(next)?.cost ?? Infinity) <= nextCost) continue;
+        const previous = policy.get(next);
+        if (previous === null || (previous?.cost ?? Infinity) <= nextCost) continue;
         policy.set(next, { toward: current, undo, cost: nextCost });
         (buckets[nextCost] ??= []).push(next);
       }
@@ -106,19 +112,18 @@ function getPolicy(model, id, goalA, goalB, createActions, deadlineTs, timing) {
   return policy;
 }
 
-function centerPath(model, id, startA, goalA, startB, goalB, actions, deadlineTs, timing) {
-  let current = startA + startB * MASK_BASE;
-  const goal = goalA + goalB * MASK_BASE;
-  if (current === goal) return [];
-  const policy = getPolicy(model, id, goalA, goalB, actions, deadlineTs, timing);
-  const output = [];
-  while (current !== goal) {
+function centerPath(model, id, start, goals, actions, deadlineTs, timing) {
+  if (goals.includes(start)) return { turns: [], gap: Math.floor(start / GAP_BASE) };
+  const policy = getPolicy(model, id, goals, actions, deadlineTs, timing);
+  let current = start;
+  const turns = [];
+  while (true) {
     const step = policy.get(current);
+    if (step === null) return { turns, gap: Math.floor(current / GAP_BASE) };
     if (!step) throw new Error(`444_YAU_CENTER_UNREACHABLE:${id}`);
-    output.push(...step.undo);
+    turns.push(...step.undo);
     current = step.toward;
   }
-  return output;
 }
 
 function turnsForLayers(layers) {
@@ -157,14 +162,14 @@ export async function solveYauFirstCenters444(pattern, deadlineTs, onStage) {
   checkDeadline(deadlineTs);
 
   onStage("YAU_FIRST_CENTER");
-  const first = centerPath(model, "first", centerMask(model, pattern, "D"), goals.D, 0, 0,
-    () => turnsForLayers(FIRST_CENTER_LAYERS).map((move) => centerAction(model, [move])), deadlineTs, timing);
+  const { turns: first } = centerPath(model, "first", centerMask(model, pattern, "D"), [goals.D],
+    () => [turnsForLayers(FIRST_CENTER_LAYERS).map((move) => centerAction(model, [move]))], deadlineTs, timing);
   const afterFirst = pattern.applyAlg(moveSequence(first));
   if (centerMask(model, afterFirst, "D") !== goals.D) throw new Error("444_YAU_FIRST_CENTER_VERIFY");
 
   onStage("YAU_OPPOSITE_CENTER");
-  const opposite = centerPath(model, "opposite", centerMask(model, afterFirst, "U"), goals.U, 0, 0,
-    () => oppositeCenterActions(model), deadlineTs, timing);
+  const { turns: opposite } = centerPath(model, "opposite", centerMask(model, afterFirst, "U"), [goals.U],
+    () => [oppositeCenterActions(model)], deadlineTs, timing);
   const afterOpposite = afterFirst.applyAlg(moveSequence(opposite));
   if (centerMask(model, afterOpposite, "D") !== goals.D || centerMask(model, afterOpposite, "U") !== goals.U) {
     throw new Error("444_YAU_OPPOSITE_CENTER_VERIFY");
@@ -172,34 +177,18 @@ export async function solveYauFirstCenters444(pattern, deadlineTs, onStage) {
   return { first, opposite, pattern: afterOpposite, ...timing, elapsedMs: Date.now() - started };
 }
 
-function sideCenterActions(model) {
-  return [...SIDES, "Uw", "2D"].flatMap((layer) => (
-    SUFFIXES.map((suffix) => model.action([`${layer}${suffix}`]))
-  ));
-}
-
-function threeWideTurn(offset) {
-  return ["", "3Uw", "3Uw2", "3Uw'"][(offset + 4) % 4];
-}
-
-function centerTurnsAtWorkingFace(turns, workingFace) {
-  const result = [];
-  let offset = 0;
-  const gap = SIDES.indexOf(workingFace);
-  for (const turn of turns) {
-    const side = SIDES.indexOf(turn[0]);
-    if (side < 0) {
-      // These inner layers commute with the top-three-layer adjustment.
-      result.push(turn);
-      continue;
-    }
-    const required = (gap - side + 4) % 4;
-    if (required !== offset) result.push(threeWideTurn(required - offset));
-    result.push(`${workingFace}${turn.slice(1)}`);
-    offset = required;
-  }
-  if (offset) result.push(threeWideTurn(-offset));
-  return result;
+function sideCenterActionSets(model, preserveMask = 0) {
+  const common = turnsForLayers(["Uw", "Dw", "D"]).map((move) => {
+    const amount = move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
+    return { ...model.action([move]), cost: move[0] === "D" && move[1] !== "w" ? 4 : 3,
+      gapShift: move[0] === "D" ? 4 - amount : 0 };
+  });
+  const preservesGroup = ({ destinations }) => !preserveMask || moveMask(preserveMask, destinations) === preserveMask;
+  const shifts = common.filter(preservesGroup);
+  return SIDES.map((face) => [
+    ...shifts,
+    ...turnsForLayers([face]).map((move) => ({ ...model.action([move]), cost: 2 })),
+  ]);
 }
 
 export async function solveYauSideCenters444(pattern, workingFace, deadlineTs) {
@@ -207,23 +196,26 @@ export async function solveYauSideCenters444(pattern, workingFace, deadlineTs) {
   const timing = { tableBuildMs: 0 };
   const started = Date.now();
   const { goals } = model;
+  const initialGap = SIDES.indexOf(workingFace);
   const oppositeSides = goals.F | goals.B;
-  const groups = centerPath(model, "side-groups", centerMask(model, pattern, "FB"), oppositeSides, 0, 0,
-    () => sideCenterActions(model), deadlineTs, timing);
-  const groupTurns = centerTurnsAtWorkingFace(groups, workingFace);
-  const grouped = pattern.applyAlg(moveSequence(groupTurns));
-  const colors = centerPath(model, "side-colors", centerMask(model, grouped, "F"), goals.F,
-    centerMask(model, grouped, "R"), goals.R, () => sideCenterActions(model).filter(
-      ({ destinations }) => moveMask(oppositeSides, destinations) === oppositeSides,
-    ), deadlineTs, timing);
-  const colorTurns = centerTurnsAtWorkingFace(colors, workingFace);
-  const solved = grouped.applyAlg(moveSequence(colorTurns));
+  // The cross can stay at the angle where the first group is finished. Only
+  // the final center checkpoint needs it back in its original alignment.
+  const groupGoals = SIDES.map((_, gap) => centerState(oppositeSides, 0, gap));
+  const group = centerPath(model, "side-groups", centerState(centerMask(model, pattern, "FB"), 0, initialGap),
+    groupGoals, () => sideCenterActionSets(model), deadlineTs, timing);
+  const grouped = pattern.applyAlg(moveSequence(group.turns));
+
+  const colorStart = centerState(centerMask(model, grouped, "F"), centerMask(model, grouped, "R"), group.gap);
+  const colorGoal = centerState(goals.F, goals.R, initialGap);
+  const colors = centerPath(model, `side-colors:${workingFace}`, colorStart, [colorGoal],
+    () => sideCenterActionSets(model, oppositeSides), deadlineTs, timing);
+  const solved = grouped.applyAlg(moveSequence(colors.turns));
   if (!FACES.every((face) => centerMask(model, solved, face) === goals[face])) {
     throw new Error("444_YAU_SIDE_CENTERS_VERIFY");
   }
   return {
-    turns: [...groupTurns, ...colorTurns],
-    phaseMoveCounts: [groupTurns.length, colorTurns.length],
+    turns: [...group.turns, ...colors.turns],
+    phaseMoveCounts: [group.turns.length, colors.turns.length],
     pattern: solved,
     ...timing,
     elapsedMs: Date.now() - started,

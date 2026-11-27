@@ -92,7 +92,7 @@ function getWasmSolverModule() {
 
 function getSolver444Module() {
   if (!solver444ModulePromise) {
-    solver444ModulePromise = import("./solver444.js?v=20261127-yau-front-center-1");
+    solver444ModulePromise = import("./solver444.js?v=20261127-yau-working-turns-1");
   }
   return solver444ModulePromise;
 }

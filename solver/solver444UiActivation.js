@@ -4,9 +4,10 @@ import { TwistyPlayer } from "cubing/twisty";
 const EVENT_ID = "444";
 const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
+const YAU_MOVE = /^(?:[URFDLB]w?|[xyz])(?:2|')?$/;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261127-yau-front-center-1";
+const WORKER_BUILD_TOKEN = "20261127-yau-working-turns-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -629,7 +630,8 @@ export function installSolver444UiActivation() {
       );
       if (activeRun !== run || !is444() || currentScramble() !== scramble) return;
       if (result?.ok === true && result?.verified === true && String(result.solution || "").trim()) {
-        if (run.method === "yau" && result.meta?.yauPlaybackVerified !== true) {
+        if (run.method === "yau" && (result.meta?.yauPlaybackVerified !== true ||
+            !splitMoves(result.solution).every((move) => YAU_MOVE.test(move)))) {
           renderFailure({ reason: "444_YAU_PLAYBACK_INVALID" });
           return;
         }

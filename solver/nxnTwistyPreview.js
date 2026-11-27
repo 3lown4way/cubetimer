@@ -22,7 +22,7 @@ export function isNxNSolverPreviewEvent(eventId) {
 }
 
 function loadSolver444UiActivation() {
-  void import("./solver444UiActivation.js?v=20261127-yau-front-center-1")
+  void import("./solver444UiActivation.js?v=20261127-yau-working-turns-1")
     .then(({ installSolver444UiActivation }) => installSolver444UiActivation())
     .catch((error) => {
       console.warn("[444 UI] activation failed", error);

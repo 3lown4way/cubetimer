@@ -1,16 +1,18 @@
 import { puzzles } from "../vendor/cubing/puzzles/index.js";
-import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261127-yau-front-center-1";
+import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261127-yau-working-turns-1";
 import {
   crossEdgeTypeMask444,
   crossSideColors444,
+  simplifyYauCrossTurns444,
   solveYauCross4Natural444,
   solveYauFirstThreeCross444,
   solveYauLastEight323444,
-} from "./edgePairing444.js?v=20261127-yau-natural-centers-1";
+} from "./edgePairing444.js?v=20261127-yau-working-turns-1";
 
-const SIDE_CYCLE = ["F", "L", "B", "R"];
+const CROSS_SIDE_ORDER = { L: ["U", "F", "D", "B"], D: ["F", "L", "B", "R"] };
 const OPPOSITE = { U: "D", R: "L", F: "B", D: "U", L: "R", B: "F" };
 const ROTATION = /^[xyz](?:2|')?$/;
+const YAU_MOVE = /^(?:[URFDLB]w?|[xyz])(?:2|')?$/;
 
 function split(sequence) {
   return String(sequence || "").trim().split(/\s+/).filter(Boolean);
@@ -24,94 +26,11 @@ function phaseGroup(id, name, method, segments) {
   return phaseSegment(id, name, segments.flatMap((segment) => split(segment.solution)), { method, segments });
 }
 
-// Keep the solved bottom-layer slots stationary. A D turn followed by a
-// whole y is a three-layer U turn. Carry that orientation through the
-// following side moves instead of actually turning the protected layer.
-function stationaryCrossTurns(solution) {
-  let offset = 0;
-  const turns = [];
-  for (const turn of split(solution)) {
-    if (turn[0] === "D") {
-      const wide = turn[1] === "w";
-      const suffix = turn.slice(wide ? 2 : 1);
-      offset = (offset + moveAmount(turn)) % 4;
-      turns.push(`${wide ? "Uw" : "3Uw"}${suffix}`);
-    } else {
-      const face = SIDE_CYCLE.indexOf(turn[0]);
-      turns.push(face < 0 ? turn : `${SIDE_CYCLE[(face + offset) % 4]}${turn.slice(1)}`);
-    }
-  }
-  if (offset !== 0) throw new Error("444_YAU_CROSS_FRAME_MISMATCH");
-  return turns;
-}
-
-// On the upper three layers, Uw and 2D act on disjoint slices. A 3Uw
-// is Uw plus the lower inner slice in the opposite direction to 2D.
-function shortenYauLayerRuns(turns, mergeUpperSlices = true) {
-  const shorter = [];
-  let upper = 0;
-  let inner = 0;
-  const suffix = ["", "", "2", "'"];
-  function flush() {
-    if (upper && upper === inner) shorter.push(`3Uw${suffix[upper]}`);
-    else {
-      if (upper) shorter.push(`Uw${suffix[upper]}`);
-      if (inner) shorter.push(`2D${suffix[4 - inner]}`);
-    }
-    upper = inner = 0;
-  }
-  for (const turn of turns) {
-    const match = mergeUpperSlices && /^(3Uw|Uw|2D)(2|')?$/.exec(turn);
-    if (match) {
-      const [, layer] = match;
-      const amount = moveAmount(turn);
-      if (layer !== "2D") upper = (upper + amount) % 4;
-      if (layer !== "Uw") inner = (inner + (layer === "2D" ? 4 - amount : amount)) % 4;
-      continue;
-    }
-    flush();
-    const base = turn.replace(/(?:2|')$/, "");
-    const previous = shorter.at(-1);
-    if (!previous || previous.replace(/(?:2|')$/, "") !== base) shorter.push(turn);
-    else {
-      const amount = (moveAmount(turn) + moveAmount(shorter.pop())) % 4;
-      if (amount) shorter.push(`${base}${suffix[amount]}`);
-    }
-  }
-  flush();
-  return shorter;
-}
-
-function moveAmount(turn) {
-  return turn.endsWith("2") ? 2 : turn.endsWith("'") ? 3 : 1;
-}
-
-function streamlinePairingTurns(turns) {
-  const result = [];
-  let run = [];
-  // A working-slot adjustment can cancel across an upper turn without
-  // changing the open/restore slice moves that make the pairing visible.
-  function flush() {
-    const netAdjustment = run.reduce((total, turn) => total + (turn.startsWith("3Uw") ? moveAmount(turn) : 0), 0);
-    result.push(...(netAdjustment % 4 === 0 ? run.filter((turn) => !turn.startsWith("3Uw")) : run));
-    run = [];
-  }
-  for (const turn of turns) {
-    if (/^(3Uw|Uw|U)(2|')?$/.test(turn)) run.push(turn);
-    else {
-      flush();
-      result.push(turn);
-    }
-  }
-  flush();
-  return result;
-}
-
 export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cross4BudgetMs, onStage, scoreCross3 }) {
   const puzzle = await puzzles["4x4x4"].kpuzzle();
   const initial = puzzle.defaultPattern().applyAlg(scramble);
   const centers = await solveYauFirstCenters444(initial, deadlineTs, onStage);
-  const oppositeTurns = shortenYauLayerRuns(centers.opposite, false);
+  const oppositeTurns = simplifyYauCrossTurns444(centers.opposite);
   onStage("YAU_CROSS3");
   const cross3Started = Date.now();
   const cross = await solveYauFirstThreeCross444(centers.pattern, deadlineTs, scoreCross3);
@@ -120,13 +39,13 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
   onStage("YAU_REMAINING_CENTERS");
   const sides = await solveYauSideCenters444(cross.pattern, cross.workingFace, deadlineTs);
   const [groupLength] = sides.phaseMoveCounts;
-  const groupedTurns = shortenYauLayerRuns(sides.turns.slice(0, groupLength));
-  const colorTurns = shortenYauLayerRuns(sides.turns.slice(groupLength));
+  const groupedTurns = simplifyYauCrossTurns444(sides.turns.slice(0, groupLength));
+  const colorTurns = simplifyYauCrossTurns444(sides.turns.slice(groupLength));
   const sideTurns = [...groupedTurns, ...colorTurns];
   const crossSteps = cross.steps.map((step, index) => phaseSegment(
     `yauCross3_${index + 1}`,
     step.workingGap ? "Yau · Open Working Slot" : `Yau · Cross Edge ${crossSideColors444(step.lockedMask).length}/3`,
-    step.turns,
+    simplifyYauCrossTurns444(step.turns),
     { protectedSideColors: crossSideColors444(step.lockedMask), edgeSideColor: step.edgeFace },
   ));
   const protectedMask = cross.crossCount === 3 ? cross.lockedMask : cross.lockedMask & (cross.lockedMask - 1);
@@ -142,7 +61,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
     timeBudgetMs: cross4BudgetMs,
   });
   if (!cross4.ok) throw new Error(`444_YAU_CROSS4_FAILED:${cross4.reason || ""}`);
-  const cross4Turns = shortenYauLayerRuns(stationaryCrossTurns(cross4.solution));
+  const cross4Turns = simplifyYauCrossTurns444(split(cross4.solution));
 
   onStage("EDGES");
   const edges = await solveYauLastEight323444(scramble, [beforeCross4, ...cross4Turns].join(" "), {
@@ -173,13 +92,12 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
     }),
   ]);
   const edgeStage = phaseGroup("edges", "Edge Pairing · Yau 3-2-3", "Yau 3-2-3", edges.segments.map((segment) => {
-    const turns = streamlinePairingTurns(stationaryCrossTurns(segment.solution));
+    const turns = simplifyYauCrossTurns444(split(segment.solution));
     return { ...segment, solution: turns.join(" "), moveCount: turns.length };
   }));
   const centerPhaseMoveCounts = [centers.first.length, oppositeTurns.length, groupedTurns.length, colorTurns.length];
   return {
     stages: [setupStage, edgeStage],
-    workingFace: cross.workingFace,
     meta: {
       method444: "yau",
       scrambleValid: true,
@@ -281,7 +199,8 @@ function crossSnapshot(pattern, crossColor, geometry) {
 }
 
 // Audit the actual displayed algorithm using the renderer's sticker geometry.
-// Each protected spoke stays in the same slot between whole-cube regrips.
+// A turn of the cross face or a regrip may move the whole cross together.
+// The protected pairs must stay attached in the same order on every move.
 export async function verifyYauPlayback444(scramble, stages, crossColor) {
   playbackGeometryPromise ??= buildPlaybackGeometry().catch((error) => {
     playbackGeometryPromise = null;
@@ -296,33 +215,34 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
     if (!test) throw new Error(`444_YAU_PLAYBACK_INVALID:${stage}`);
   };
   function verifyStageSequence(stage) {
+    require(split(stage.solution).every((turn) => YAU_MOVE.test(turn)), stage.id);
     if (!stage.segments?.length) return;
     require(stage.segments.map(({ solution }) => solution).filter(Boolean).join(" ") === stage.solution, stage.id);
     for (const child of stage.segments) verifyStageSequence(child);
   }
   for (const stage of stages) verifyStageSequence(stage);
 
-  function playLocked(segment, face, colors, { leadingGrip = false, rotateLeftAxis = false, edgeStage = false } = {}) {
+  function playLocked(segment, face, colors, leadingGrip = false) {
     const turns = split(segment.solution);
     let start = 0;
     if (leadingGrip) {
       while (start < turns.length && ROTATION.test(turns[start])) pattern = pattern.applyMove(turns[start++]);
     }
+    const positions = CROSS_SIDE_ORDER[face];
+    const rotationAxis = face === "L" ? "x" : "y";
     let before = snapshot();
     require(before.crossFace === face && colors.every((color) => before.spokes.has(color)), segment.id);
     for (const turn of turns.slice(start)) {
-      if (rotateLeftAxis && /^x(?:2|')?$/.test(turn)) {
-        pattern = pattern.applyMove(turn);
-        before = snapshot();
-        require(before.crossFace === face && colors.every((color) => before.spokes.has(color)), segment.id);
-        continue;
-      }
-      require(!ROTATION.test(turn) && (!edgeStage || !/^\d*B/.test(turn)), `${segment.id}:${turn}`);
+      const canTurnCross = turn[0] === face || turn[0] === rotationAxis;
+      require(turn[0] !== "B" && (!ROTATION.test(turn) || canTurnCross), `${segment.id}:${turn}`);
       pattern = pattern.applyMove(turn);
       const after = snapshot();
-      require(after.crossFace === face && colors.every((color) => (
-        after.spokes.get(color) === before.spokes.get(color)
-      )), `${segment.id}:${turn}`);
+      const shifts = colors.map((color) => (
+        (positions.indexOf(after.spokes.get(color)) - positions.indexOf(before.spokes.get(color)) + 4) % 4
+      ));
+      require(after.crossFace === face && colors.every((color) => after.spokes.has(color)) &&
+        shifts.every((shift) => shift === (canTurnCross ? shifts[0] : 0)), `${segment.id}:${turn}`);
+      before = after;
     }
   }
 
@@ -347,22 +267,19 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   const steps = cross3.segments.length ? cross3.segments : [cross3];
   let held = cross3.startingSideColors;
   for (const [index, step] of steps.entries()) {
-    playLocked(step, "L", held, { leadingGrip: index === 0, rotateLeftAxis: true, edgeStage: true });
+    playLocked(step, "L", held, index === 0);
     const state = snapshot();
     require(step.protectedSideColors.every((color) => state.spokes.has(color)), step.id);
     held = step.protectedSideColors;
   }
-  const placed = snapshot();
-  require(placed.spokes.size === cross3.crossEdgeCount && (
-    cross3.crossEdgeCount === 4 || ![...placed.spokes.values()].includes("U")
-  ), cross3.id);
+  require(snapshot().spokes.size === cross3.crossEdgeCount, cross3.id);
   playLocked(sides, "L", cross3.protectedSideColors);
   require(snapshot().centerColors.size === 6, sides.id);
-  playLocked(cross4, "L", cross3.protectedSideColors, { edgeStage: true });
-  completeCross("L", cross4.id);
+  playLocked(cross4, "D", cross3.protectedSideColors, true);
+  completeCross("D", cross4.id);
 
-  for (const [index, segment] of edges.segments.entries()) {
-    playLocked(segment, "D", cross3.protectedSideColors, { leadingGrip: index === 0, edgeStage: true });
+  for (const segment of edges.segments) {
+    playLocked(segment, "D", cross3.protectedSideColors);
     completeCross("D", segment.id);
   }
   const cross = cfop.segments.find(({ name }) => name === "Cross");

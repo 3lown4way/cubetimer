@@ -16,7 +16,7 @@ assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
 assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
 assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
 assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
-assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-front-center-1/);
+assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-working-turns-1/);
 console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");
 
 const elements = new Map();
@@ -151,17 +151,25 @@ await outdated;
 assert.equal(players.length, 0, "an old worker result without checkpoint verification must stay hidden");
 assert.match(element("solverStatus").textContent, /재생 상태/);
 
+const incompatible = clickSolve();
+await new Promise((resolve) => setImmediate(resolve));
+workers[2].finishSolve({ ok: true, verified: true, solution: "R 3Uw2 2L", meta: { method444: "yau", yauPlaybackVerified: true } });
+await incompatible;
+assert.equal(players.length, 0, "old Yau layer notation must stay out of playback and copy");
+assert.equal(element("solverCopyBtn").disabled, true);
+assert.match(element("solverStatus").textContent, /재생 상태/);
+
 const accepted = clickSolve();
 await new Promise((resolve) => setImmediate(resolve));
-const solution = "x 2D x' U 3Uw2 F'";
+const solution = "x Lw x' U Uw2 F'";
 workers[2].finishSolve({
   ok: true, verified: true, solution, moveCount: 4,
   meta: { method444: "yau", yauPlaybackVerified: true },
   stages: [{ id: "centers", method: "Yau", solution, segments: [
-    { id: "yauCross3", name: "Cross 3/4", solution: "x 2D x' U", segments: [
-      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x 2D x' U", viewpointRotations: 2 },
+    { id: "yauCross3", name: "Cross 3/4", solution: "x Lw x' U", segments: [
+      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x Lw x' U", viewpointRotations: 2 },
     ] },
-    { id: "yauRemainingCenters", name: "Remaining 4 Centers", solution: "3Uw2 F'" },
+    { id: "yauRemainingCenters", name: "Remaining 4 Centers", solution: "Uw2 F'" },
   ] }],
 });
 await accepted;
@@ -180,13 +188,13 @@ const displayed = cross.children.flatMap((item) => {
   }
   return item.tagName === "code" ? [item.textContent] : [];
 });
-assert.deepEqual(displayed, ["x", "2D", "x'", "U"], "grip changes must be identified in execution order");
+assert.deepEqual(displayed, ["x", "Lw", "x'", "U"], "grip changes must be identified in execution order");
 cross.children.find((item) => item.type === "button").listeners.get("click")();
 assert.equal(player.timestamp, 4000, "the checkpoint must include the interleaved regrip");
 assert.match(element("solverStepLabel").textContent, /^4\/6 동작 · Cross Edge 3\/3$/);
 const event = { preventDefault() {}, stopImmediatePropagation() {} };
 element("solverStepNextBtn").listeners.get("click")(event);
-assert.equal(player.timestamp, 5500, "3Uw2 must advance by one half turn");
+assert.equal(player.timestamp, 5500, "Uw2 must advance by one half turn");
 element("solverStepPrevBtn").listeners.get("click")(event);
 assert.equal(player.timestamp, 4000, "seeking backward must use the same renderer timestamp");
 console.log("4x4 verified Yau checkpoint buttons use the renderer's move boundaries");
