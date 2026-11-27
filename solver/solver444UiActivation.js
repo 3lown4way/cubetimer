@@ -1,5 +1,6 @@
 import { proxy, wrap } from "comlink";
 import { TwistyPlayer } from "cubing/twisty";
+import { attachSmoothCubeCamera, detachSmoothCubeCamera } from "./smoothCubeCamera.js";
 
 const EVENT_ID = "444";
 const PUZZLE_ID = "4x4x4";
@@ -282,6 +283,7 @@ export function installSolver444UiActivation() {
   function removeOwnedPlayer() {
     stopPlayback();
     if (player) {
+      detachSmoothCubeCamera(player);
       player.pause?.();
       player.remove();
     }
@@ -325,6 +327,7 @@ export function installSolver444UiActivation() {
     playerScramble = scramble;
     hideExistingPlayers();
     solverTwistyHost.appendChild(player);
+    attachSmoothCubeCamera(player);
     return player;
   }
 
