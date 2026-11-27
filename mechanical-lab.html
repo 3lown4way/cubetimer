@@ -681,6 +681,45 @@ function m09Magnetic(t,active,offsets,flex,strength){
  return {torques};
 }
 
+
+// Finite axial two-pole approximation of a magnetized cylinder.
+// Pole strength q = Br*A/mu0. Forces in N, energies in J, torques in N*m.
+// Actual dimensions match the displayed magnets; Br is an assumed grade.
+const M10_MAG={length:.0185,mu0:4*Math.PI*1e-7,Br:1.25,thickness:.037,sideRadius:.073,coreRadius:.088};
+function m10Magnetic(t,active,offsets,flex,strength,br=M10_MAG.Br){
+ const torques=active.map(()=>0);let energy=0,pairs=0,absForce=0;
+ if(!strength||active.some(a=>a.move.whole))return {torques,energy,pairs,absForce};
+ const frame=m09Frame(t,active,offsets,flex),corner=[],edge=[],core=[],inner=[],L=M10_MAG.length,mu=M10_MAG.mu0;
+ const magnet=(id,p,n,radius)=>{
+  // Center of each pole is the actual cylinder end face. Softening
+  // approximates finite pole-face extent, not a fitted detent-angle curve.
+  const q=br*Math.PI*(radius*L)**2/mu,half=M10_MAG.thickness*.5;
+  return {id,q,radius,poles:[{p:p.map((v,k)=>v+n[k]*half),q},{p:p.map((v,k)=>v-n[k]*half),q:-q}]};
+ };
+ for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1]){const n=norm3([x,y,z]);core.push(magnet(-1,n.map(v=>v*.3935),n,M10_MAG.coreRadius));}
+ for(let id=0;id<frame.cubies.length;id++){
+  const c=frame.cubies[id],p=c.p.map(v=>v*.5),z=norm3(p),outer=[0,1,2].map(k=>c.colors[2*k]!=="#202124"?1:c.colors[2*k+1]!=="#202124"?-1:0),count=outer.filter(Boolean).length,tr=m09FlexTransform(c,flex[id]);
+  if(count===3)inner.push(magnet(id,tr.point(z.map(v=>v*.6115)),tr.rot(z),M10_MAG.coreRadius));
+  if(count!==2&&count!==3)continue;
+  const dirs=count===3?outer.flatMap((s,k)=>s?[c.b[k].map(v=>-s*v)]:[]):[c.b[outer.indexOf(0)],c.b[outer.indexOf(0)].map(v=>-v)];
+  for(const n of dirs)(count===3?corner:edge).push(magnet(id,tr.point(p.map((v,k)=>v+n[k]*.4385-z[k]*.19)),tr.rot(n.map(v=>v*(count===3?1:-1))),M10_MAG.sideRadius));
+ }
+ const groups=frame.cubies.map((_,id)=>active.reduce((s,a,k)=>s|(a.move.selected(t.frames[a.i][id].p)?1<<k:0),0));
+ const add=(id,p,f)=>{if(id<0||!groups[id])return;const jac=m07Jacobians(t,active,id,p);for(let k=0;k<active.length;k++)torques[k]+=L*dot3(jac[k],f);};
+ function pair(a,b){
+  if((a.id<0?0:groups[a.id])===(b.id<0?0:groups[b.id])&&a.id!==b.id)return;
+  const soft=(a.radius+b.radius)*.28;
+  for(const A of a.poles)for(const B of b.poles){
+   const d=B.p.map((v,k)=>v-A.p[k]),r2=dot3(d,d)+soft*soft,r=Math.sqrt(r2),K=1e-7*A.q*B.q*strength;
+   const f=d.map(v=>K*v/(L*L*r2*r));energy+=K/(L*r);
+   add(a.id,A.p,f.map(v=>-v));add(b.id,B.p,f);absForce+=Math.hypot(...f);pairs++;
+  }
+ }
+ for(const a of core)for(const b of inner)pair(a,b);
+ for(const a of corner)for(const b of edge)pair(a,b);
+ return {torques,energy,pairs,absForce};
+}
+
 function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress=null}={}){
  if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("MAX는 3×3 외층과 x/y/z 회전만 지원합니다.");
  const dt=1/120,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0],offsets=t.frames[0].map(()=>0),offsetV=offsets.slice(),traceCenter=[offsets.slice()],flex=offsets.map(m09Zero),vel=offsets.map(m09Zero),traceFlex=[flex.map(f=>f.slice())];
