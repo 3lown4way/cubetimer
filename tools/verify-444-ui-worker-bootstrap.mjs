@@ -16,7 +16,7 @@ assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
 assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
 assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
 assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
-assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-centers-1/);
+assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-no-back-1/);
 console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");
 
 const elements = new Map();
@@ -153,13 +153,13 @@ assert.match(element("solverStatus").textContent, /재생 상태/);
 
 const accepted = clickSolve();
 await new Promise((resolve) => setImmediate(resolve));
-const solution = "x 2D 3Uw2 F'";
+const solution = "x 2D x' U 3Uw2 F'";
 workers[2].finishSolve({
-  ok: true, verified: true, solution, moveCount: 3,
+  ok: true, verified: true, solution, moveCount: 4,
   meta: { method444: "yau", yauPlaybackVerified: true },
   stages: [{ id: "centers", method: "Yau", solution, segments: [
-    { id: "yauCross3", name: "Cross 3/4", solution: "x 2D", segments: [
-      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x 2D", viewpointRotations: 1 },
+    { id: "yauCross3", name: "Cross 3/4", solution: "x 2D x' U", segments: [
+      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x 2D x' U", viewpointRotations: 2 },
     ] },
     { id: "yauRemainingCenters", name: "Remaining 4 Centers", solution: "3Uw2 F'" },
   ] }],
@@ -173,16 +173,20 @@ assert.equal(player.experimentalSetupAlg, "U2 Fw Rw");
 assert.equal(player.alg, solution);
 const cross = element("solverStageList").children.find((item) => item.dataset.solver444Stage === "yauCross3_1");
 assert.ok(cross, "individual cross insertions must be displayed and seekable");
-const grip = cross.children.find((item) => item.className === "stage-notes");
-assert.equal(grip.textContent, "큐브 방향 전환 · ");
-assert.equal(grip.children[0].textContent, "x");
-assert.equal(cross.children.find((item) => item.tagName === "code").textContent, "2D");
+const displayed = cross.children.flatMap((item) => {
+  if (item.className === "stage-notes") {
+    assert.equal(item.textContent, "큐브 방향 전환 · ");
+    return [item.children[0].textContent];
+  }
+  return item.tagName === "code" ? [item.textContent] : [];
+});
+assert.deepEqual(displayed, ["x", "2D", "x'", "U"], "grip changes must be identified in execution order");
 cross.children.find((item) => item.type === "button").listeners.get("click")();
-assert.equal(player.timestamp, 2000, "2D is a single turn even though its notation starts with 2");
-assert.match(element("solverStepLabel").textContent, /^2\/4 동작 · Cross Edge 3\/3$/);
+assert.equal(player.timestamp, 4000, "the checkpoint must include the interleaved regrip");
+assert.match(element("solverStepLabel").textContent, /^4\/6 동작 · Cross Edge 3\/3$/);
 const event = { preventDefault() {}, stopImmediatePropagation() {} };
 element("solverStepNextBtn").listeners.get("click")(event);
-assert.equal(player.timestamp, 3500, "3Uw2 must advance by one half turn");
+assert.equal(player.timestamp, 5500, "3Uw2 must advance by one half turn");
 element("solverStepPrevBtn").listeners.get("click")(event);
-assert.equal(player.timestamp, 2000, "seeking backward must use the same renderer timestamp");
+assert.equal(player.timestamp, 4000, "seeking backward must use the same renderer timestamp");
 console.log("4x4 verified Yau checkpoint buttons use the renderer's move boundaries");

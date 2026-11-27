@@ -280,8 +280,7 @@ function crossSnapshot(pattern, crossColor, geometry) {
 }
 
 // Audit the actual displayed algorithm using the renderer's sticker geometry.
-// A complete three-spoke cross stays in the same slots until the whole-cube
-// regrip at the start of edge pairing, then stays in its new slots.
+// Each protected spoke stays in the same slot between whole-cube regrips.
 export async function verifyYauPlayback444(scramble, stages, crossColor) {
   playbackGeometryPromise ??= buildPlaybackGeometry().catch((error) => {
     playbackGeometryPromise = null;
@@ -302,16 +301,22 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   }
   for (const stage of stages) verifyStageSequence(stage);
 
-  function playLocked(segment, face, colors, allowGrip = false) {
+  function playLocked(segment, face, colors, { leadingGrip = false, rotateLeftAxis = false, edgeStage = false } = {}) {
     const turns = split(segment.solution);
     let start = 0;
-    if (allowGrip) {
+    if (leadingGrip) {
       while (start < turns.length && ROTATION.test(turns[start])) pattern = pattern.applyMove(turns[start++]);
     }
-    const before = snapshot();
+    let before = snapshot();
     require(before.crossFace === face && colors.every((color) => before.spokes.has(color)), segment.id);
     for (const turn of turns.slice(start)) {
-      require(!ROTATION.test(turn), segment.id);
+      if (rotateLeftAxis && /^x(?:2|')?$/.test(turn)) {
+        pattern = pattern.applyMove(turn);
+        before = snapshot();
+        require(before.crossFace === face && colors.every((color) => before.spokes.has(color)), segment.id);
+        continue;
+      }
+      require(!ROTATION.test(turn) && (!edgeStage || !/^\d*B/.test(turn)), `${segment.id}:${turn}`);
       pattern = pattern.applyMove(turn);
       const after = snapshot();
       require(after.crossFace === face && colors.every((color) => (
@@ -336,7 +341,7 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   const steps = cross3.segments.length ? cross3.segments : [cross3];
   let held = cross3.startingSideColors;
   for (const [index, step] of steps.entries()) {
-    playLocked(step, "L", held, index === 0);
+    playLocked(step, "L", held, { leadingGrip: index === 0, rotateLeftAxis: true, edgeStage: true });
     const state = snapshot();
     require(step.protectedSideColors.every((color) => state.spokes.has(color)), step.id);
     held = step.protectedSideColors;
@@ -347,11 +352,11 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   ), cross3.id);
   playLocked(sides, "L", cross3.protectedSideColors);
   require(snapshot().centerColors.size === 6, sides.id);
-  playLocked(cross4, "L", cross3.protectedSideColors);
+  playLocked(cross4, "L", cross3.protectedSideColors, { edgeStage: true });
   completeCross("L", cross4.id);
 
   for (const [index, segment] of edges.segments.entries()) {
-    playLocked(segment, "D", cross3.protectedSideColors, index === 0);
+    playLocked(segment, "D", cross3.protectedSideColors, { leadingGrip: index === 0, edgeStage: true });
     completeCross("D", segment.id);
   }
   const cross = cfop.segments.find(({ name }) => name === "Cross");

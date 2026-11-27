@@ -302,11 +302,19 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
     if (index === 0) {
       while (/^[xyz](?:2|')?$/.test(turns[0] || "")) pattern = pattern.applyMove(turns.shift());
     }
-    const anchored = new Map([...orientedCrossSlots(pattern, crossColor)].filter(([type]) => held & (1 << type)));
+    const protectedSlots = () => new Map([...orientedCrossSlots(pattern, crossColor)].filter(([type]) => held & (1 << type)));
+    let anchored = protectedSlots();
     assert.equal(anchored.size, bitCount(held));
     for (const turn of turns) {
+      assert.doesNotMatch(turn, /^\d*B/, "Cross 3/4 must avoid back turns");
       pattern = pattern.applyMove(turn);
-      assertSameCrossSlots(pattern, crossColor, anchored, `cross insertion ${turn}`);
+      if (/^x(?:2|')?$/.test(turn)) {
+        anchored = protectedSlots();
+        assert.equal(anchored.size, bitCount(held), "cross pairs must stay attached through a grip change");
+      } else {
+        assert.doesNotMatch(turn, /^[xyz]/, "Cross 3/4 regrips must keep the cross at L");
+        assertSameCrossSlots(pattern, crossColor, anchored, `cross insertion ${turn}`);
+      }
       assert.equal(centerFaceForColor(pattern, crossColor), "L");
       assert.equal(centerFaceForColor(pattern, OPPOSITE[crossColor]), "R");
     }
@@ -349,6 +357,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(setup.segments[4].crossLockedEveryMove, true);
   const cross4Tokens = String(setup.segments[4].solution || "").trim().split(/\s+/).filter(Boolean);
   for (const token of cross4Tokens) {
+    assert.doesNotMatch(token, /^\d*B/, "Cross 4/4 must avoid back turns");
     pattern = pattern.applyAlg(token);
     assertSameCrossSlots(pattern, crossColor, crossSlots, `last cross ${token}`);
     assert.equal(

@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261127-yau-centers-1";
+const WORKER_BUILD_TOKEN = "20261127-yau-no-back-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -392,6 +392,34 @@ export function installSolver444UiActivation() {
       .forEach((element) => element.remove());
   }
 
+  function appendStageMoves(item, moves, hasViewpointRotations) {
+    const isRotation = (move) => hasViewpointRotations && /^[xyz](?:2|')?$/.test(move);
+    let hasLayerMoves = false;
+    for (let start = 0; start < moves.length;) {
+      const rotation = isRotation(moves[start]);
+      let end = start + 1;
+      while (end < moves.length && isRotation(moves[end]) === rotation) end += 1;
+      const algorithm = document.createElement("code");
+      algorithm.textContent = joinMoves(moves.slice(start, end));
+      if (rotation) {
+        const grip = document.createElement("div");
+        grip.className = "stage-notes";
+        grip.textContent = "큐브 방향 전환 · ";
+        grip.appendChild(algorithm);
+        item.appendChild(grip);
+      } else {
+        item.appendChild(algorithm);
+        hasLayerMoves = true;
+      }
+      start = end;
+    }
+    if (!hasLayerMoves) {
+      const zero = document.createElement("code");
+      zero.textContent = "0수";
+      item.appendChild(zero);
+    }
+  }
+
   function renderStageItem(stage, depth, startIndex) {
     const stageMoves = splitMoves(stage?.solution);
     const end = startIndex + stageMoves.length;
@@ -430,19 +458,7 @@ export function installSolver444UiActivation() {
     });
     item.append(title, count, jump);
     if (!children.length) {
-      const rotationCount = stage?.viewpointRotations || 0;
-      if (rotationCount) {
-        const grip = document.createElement("div");
-        grip.className = "stage-notes";
-        const rotation = document.createElement("code");
-        grip.textContent = "큐브 방향 전환 · ";
-        rotation.textContent = joinMoves(stageMoves.slice(0, rotationCount));
-        grip.appendChild(rotation);
-        item.appendChild(grip);
-      }
-      const algorithm = document.createElement("code");
-      algorithm.textContent = joinMoves(stageMoves.slice(rotationCount)) || "0수";
-      item.appendChild(algorithm);
+      appendStageMoves(item, stageMoves, Boolean(stage?.viewpointRotations));
       if (end > startIndex) playbackStages.push({ end, name: title.textContent });
     }
     solverStageList.appendChild(item);

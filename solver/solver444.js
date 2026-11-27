@@ -1089,6 +1089,53 @@ function mapYauStageToPhysical444(stage, orientation) {
   return mapped;
 }
 
+// Work around the left face so a regrip keeps every completed pair attached
+// to its center. Compare all four grips per turn to minimize regrips across
+// insertions and return to the top working slot for the remaining centers.
+function planYauCross3View444(segments, from, finish) {
+  const grips = VIEW_ORIENTATIONS_444.filter(({ map }) => map.L === finish.map.L);
+  const turns = segments.flatMap((segment, index) => splitAlgorithm(segment.solution)
+    .map((turn) => ({ turn, index })));
+  const rotationCost = (rotation) => 5 * rotation.length + 0.3 * viewRotationExecutionCost444(rotation);
+  let paths = [{ grip: from, cost: 0, steps: [] }];
+  for (const { turn, index } of turns) {
+    const next = [];
+    for (const grip of grips) {
+      const move = remapPhysical444MoveForView(turn, grip);
+      if (!move || /^\d*B/.test(move)) continue;
+      let best;
+      for (const path of paths) {
+        const rotation = shortestViewRotationPath444(path.grip, grip);
+        const cost = path.cost + rotationCost(rotation) + viewMoveExecutionCost444([move]);
+        if (!best || cost < best.cost) {
+          best = { grip, cost, steps: [...path.steps, { index, rotation, move }] };
+        }
+      }
+      if (best) next.push(best);
+    }
+    paths = next;
+  }
+
+  let best;
+  for (const path of paths) {
+    const rotation = shortestViewRotationPath444(path.grip, finish);
+    const cost = path.cost + rotationCost(rotation);
+    if (!best || cost < best.cost) best = { ...path, cost, rotation };
+  }
+  if (!best) throw new Error("444_YAU_CROSS3_VIEW_NOT_FOUND");
+
+  const presented = segments.map((segment) => ({ ...segment, solution: "", viewpointRotations: 0 }));
+  for (const { index, rotation, move } of best.steps) {
+    const segment = presented[index];
+    segment.solution = [segment.solution, ...rotation, move].filter(Boolean).join(" ");
+    segment.viewpointRotations += rotation.length;
+  }
+  const last = presented.at(-1);
+  last.solution = [last.solution, ...best.rotation].filter(Boolean).join(" ");
+  last.viewpointRotations += best.rotation.length;
+  return presented;
+}
+
 function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
   const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
   const workColor = canonicalGrip.map[workingFace];
@@ -1136,7 +1183,19 @@ function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
     rotationCount += transition.length;
     return { ...segment, solution: [...transition, ...turns].join(" "), viewpointRotations: transition.length };
   }
-  const setupSegments = setup.segments.map((item, index) => presentSegment(item, [firstPair.up, firstPair.down][index] || leftGrip));
+  const [cross3, sides, cross4] = setup.segments.slice(2);
+  const setupSegments = [presentSegment(first, firstPair.up), presentSegment(opposite, firstPair.down)];
+  const crossSteps = planYauCross3View444(cross3.segments.length ? cross3.segments : [cross3], current, leftGrip);
+  const crossRotations = crossSteps.reduce((count, step) => count + step.viewpointRotations, 0);
+  setupSegments.push({
+    ...cross3,
+    solution: crossSteps.map(({ solution }) => solution).filter(Boolean).join(" "),
+    segments: cross3.segments.length ? crossSteps : [],
+    viewpointRotations: crossRotations,
+  });
+  current = leftGrip;
+  rotationCount += crossRotations;
+  setupSegments.push(presentSegment(sides, leftGrip), presentSegment(cross4, leftGrip));
   const presentedEdges = presentSegment(edges, edgeGrip);
   const presentedCfop = presentSegment(cfop, cfopGrip, true);
   return {
@@ -1494,7 +1553,7 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
 
   let yau;
   try {
-    yau = await import("./yau444.js?v=20261127-yau-centers-1");
+    yau = await import("./yau444.js?v=20261127-yau-no-back-1");
   } catch (error) {
     return emptyFailure("444_YAU_MODULE_UNAVAILABLE", "error", error?.message, meta);
   }
