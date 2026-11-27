@@ -9,14 +9,14 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M0.4 Mesh dynamics</h1>
+<h1>Cube mechanical lab · M0.5 Sculpted shell</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
 <div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><button id="mechanicalApply">물리 설정 적용</button></div>
-<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 신형은 내부 메시의 표본 침투 에너지 표를 회전 토크에 반영합니다. 개별 조각의 완전한 강체 충돌, 마찰 접촉 및 실제 물성 보정은 미구현입니다.</small>
+<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><div class="controls"><label>외피 <select id="shellStyle"><option value="sculpted" selected>신형 곡면 일체형 외피</option><option value="old">이전 v2.7 컬러 캡</option></select></label><label><input type="checkbox" id="shellCompare"> 같은 자세에서 외피 비교</label></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 신형은 내부 메시의 표본 침투 에너지 표를 회전 토크에 반영합니다. 개별 조각의 완전한 강체 충돌, 마찰 접촉 및 실제 물성 보정은 미구현입니다.</small>
 <div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
-<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>스티커리스 스피드큐브 · 코너커팅 기본 적용</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>M0.5 신형 곡면 외피 · 메시 접촉 모델</figcaption></figure>
 </div>
 <div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
 <div class="controls">
@@ -1648,6 +1648,53 @@ function m04PairFrame(first="R",next="U",residual=15,advance=8){
  return {cubies,active};
 }
 
+
+// A sculpted outer shell patch. Exposed neighbouring faces share an exact
+// rounded-box boundary; only inward corners are cut back to clear turns.
+// Width and fillet differ at exposed and inter-piece sides. This is an
+// original visual shell design, not a measured commercial CAD.
+const sculptedCache=new Map();
+function sculptedPatch(mask){
+ if(sculptedCache.has(mask))return sculptedCache.get(mask);
+ const ext=(axis,sign)=>!!(mask&(axis===0?(sign>0?1:2):(sign>0?4:8)));
+ const half=(axis,sign)=>ext(axis,sign)?.495:.478;
+ const fillet=(axis,sign)=>ext(axis,sign)?.112:.046;
+ const outline=(s,t)=>{
+   const sx=s<0?-1:1,sy=t<0?-1:1,hx=half(0,sx),hy=half(1,sy);
+   let x=s*hx,y=t*hy;
+   // Preserve the common edge of adjacent coloured panels. Deep relief
+   // only at corners between distinct cubies.
+   if(!ext(0,sx)&&!ext(1,sy)){
+     const r=mask===0?.205:.165,dx=Math.max(0,Math.abs(x)-hx+r),dy=Math.max(0,Math.abs(y)-hy+r),l=Math.hypot(dx,dy);
+     if(l>r){x=sx*(hx-r+dx*r/l);y=sy*(hy-r+dy*r/l);}
+   }
+   return [x,y];
+ };
+ function vertex(s,t){
+   const [x,y]=outline(s,t),p=[x,y,.495],hs=[half(0,x<0?-1:1),half(1,y<0?-1:1),.495],rs=[fillet(0,x<0?-1:1),fillet(1,y<0?-1:1),.112];
+   const b=p.map((v,k)=>clamp(v,-hs[k]+rs[k],hs[k]-rs[k])),d=p.map((v,k)=>(v-b[k])/rs[k]),len=Math.hypot(...d)||1,n0=d.map((v,k)=>v/(len*rs[k])),nl=Math.hypot(...n0)||1;
+   return [...b.map((v,k)=>v+rs[k]*d[k]/len),...n0.map(v=>v/nl)];
+ }
+ const coords=[-1,-.97,-.92,-.85,-.76,-.65,-.48,-.25,0,.25,.48,.65,.76,.85,.92,.97,1],out=[];
+ const tri=(a,b,c)=>{const ab=b.slice(0,3).map((v,k)=>v-a[k]),ac=c.slice(0,3).map((v,k)=>v-a[k]);if(Math.hypot(...cross3(ab,ac))>1e-9)out.push(...a,...b,...c);};
+ for(let i=0;i<coords.length-1;i++)for(let j=0;j<coords.length-1;j++){
+   const a=vertex(coords[i],coords[j]),b=vertex(coords[i+1],coords[j]),c=vertex(coords[i+1],coords[j+1]),d=vertex(coords[i],coords[j+1]);tri(a,b,c);tri(a,c,d);
+ }
+ // Side skirts extend only between separate cubies. On the exposed outer
+ // ridges two coloured surfaces meet, instead of stacked flat tiles.
+ for(const axis of [0,1])for(const side of [-1,1]){
+   if(ext(axis,side))continue;
+   const point=t=>axis===0?vertex(side,t):vertex(t,side);
+   for(let i=0;i<coords.length-1;i++){
+     const a=point(coords[i]),b=point(coords[i+1]);
+     const n=norm3(axis===0?[side,0,-.10]:[0,side,-.10]);
+     const top=v=>[...v.slice(0,3),...n],bottom=v=>[v[0]*.91,v[1]*.91,.24,...n];
+     tri(top(a),top(b),bottom(b));tri(top(a),bottom(b),bottom(a));
+   }
+ }
+ const mesh=new Float32Array(out);sculptedCache.set(mask,mesh);return mesh;
+}
+
 function drawGPU(canvas,frame,pose){
   let gpu=gpuViews.get(canvas);
   if(gpu===undefined){gpu=createGPU(canvas);gpuViews.set(canvas,gpu);}
@@ -1670,9 +1717,21 @@ function drawGPU(canvas,frame,pose){
     if(single)gl.uniform1f(gpu.distance,6.8);
     if(!single){const r=M03.core;drawInstances(core,new Float32Array([0,0,0,r,0,0,0,r,0,0,0,r,...m03Plastic]));}
     for(const [name,instances] of Object.entries(assembly.parts)){const key="m03:"+name;if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(magneticMeshes[name]));drawInstances(gpu.capMeshes.get(key),instances);}
-    if(mode==="full"||mode==="exploded"||mode==="cutaway"){
-      const data=modernInstances(assembly.frame,tl.n);drawInstances(face,data.body);
-      for(const {mask,data:instances} of data.caps){const key=tl.n+":"+mask;if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(mouldedCap(mask,tl.n)));drawInstances(gpu.capMeshes.get(key),instances);}
+    if(mode==="full"||mode==="exploded"||mode==="cutaway"||single){
+      const data=modernInstances(assembly.frame,tl.n),oldShell=$("shellCompare").checked?canvas===canvases[0]:$("shellStyle").value==="old";
+      if(!oldShell){
+        // Recessed body: keep neutral plastic away from exposed shell gaps.
+        for(let i=0;i<data.body.length;i+=15){
+          for(let k=3;k<12;k++)data.body[i+k]*=.91;
+          data.body[i+12]=.37;data.body[i+13]=.39;data.body[i+14]=.37;
+        }
+      }
+      drawInstances(face,data.body);
+      for(const {mask,data:instances} of data.caps){
+        const key=(oldShell?"legacy:":"sculpted:")+tl.n+":"+mask;
+        if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(oldShell?mouldedCap(mask,tl.n):sculptedPatch(mask)));
+        drawInstances(gpu.capMeshes.get(key),instances);
+      }
     }
     gl.bindVertexArray(null);return true;
   }
@@ -1708,7 +1767,7 @@ function render(now=Infinity){
   const renderPose=mul(pose,reaction);
   const rawFrame=flowOn?flowFrameAt(tl,flowTrack,motionTime):frame;
   const modernFrame=flowOn&&flowTrack.profile==="mechanical"?{...rawFrame,mechanicalDeflection:lookup(flowTrack.traceT,flowTrack.traceD,motionTime)}:flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
-  const gpuA=$("compareView").checked?draw(canvases[0],frame,HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
+  const gpuA=$("compareView").checked?draw(canvases[0],$("shellCompare").checked?modernFrame:frame,$("shellCompare").checked?renderPose:HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
   if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
   lastStatus=Number.isFinite(now)?now:-Infinity;
   $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
@@ -1763,9 +1822,11 @@ $("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*t
 $("flow").onchange=()=>render();
 $("wrist").onchange=()=>render();
 $("cubeModel").onchange=()=>render();
-$("cadMode").onchange=()=>{if($("cadMode").value!=="magnetic"&&["feet","cornerPart","edgePart","centerPart"].includes($("assembly").value))$("assembly").value="full";$("cadCollision").textContent="";load();};
+ $("cadMode").onchange=()=>{if($("cadMode").value!=="magnetic"&&$("shellCompare").checked){$("shellCompare").checked=false;$("compareView").checked=false;syncComparison();}if($("cadMode").value!=="magnetic"&&["feet","cornerPart","edgePart","centerPart"].includes($("assembly").value))$("assembly").value="full";$("cadCollision").textContent="";load();};
 $("cadFile").onchange=async()=>{try{const f=$("cadFile").files[0];if(!f)return;if(f.size>5000000)throw Error("파일이 너무 큽니다");await loadCAD(JSON.parse(await f.text()));$("cadMode").value="cad";render();}catch(e){$("cadStatus").textContent="CAD 가져오기 실패: "+e.message;}};
 $("cadProbe").onclick=()=>{if($("cadMode").value==="magnetic"){playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time),p=m04Probe(f),base=m04Probe({cubies:solved(3)});$("cadCollision").textContent=`내부 메시 간섭: ${p.piecePairs} 조각 쌍 / ${p.hits} 표본점 · 최대 침투 ${(p.maxDepth*18.5).toFixed(2)} mm · 정렬 기준 ${base.piecePairs}쌍 / ${base.hits}점`;$("meshContactResult").textContent=Object.entries(p.byType).map(([k,v])=>k+": "+v).join("\n")||"검출 없음";return;}if($("cadMode").value!=="cad"){$("cadCollision").textContent="신형 또는 구형 CAD를 선택하세요.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
+$("shellStyle").onchange=()=>render();
+$("shellCompare").onchange=()=>{$("cadMode").value="magnetic";$("compareView").checked=$("shellCompare").checked;syncComparison();document.querySelectorAll(".compare figcaption").forEach((el,i)=>el.textContent=$("shellCompare").checked?(i?"M0.5 곡면 외피":"v2.7 기존 외피"):(i?"신형 자석식 큐브":"기호 회전만 · 기준"));render();};
 $("assembly").onchange=()=>render();$("explode").oninput=()=>render();
 for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
 $("mechanicalApply").onclick=load;
@@ -1861,6 +1922,6 @@ const sizeObserver=new ResizeObserver(entries=>{for(const e of entries||[])canva
 for(const c of canvases)sizeObserver.observe(c);
 document.addEventListener("visibilitychange",()=>{last=performance.now();fpsStart=0;fpsFrames=0;});
 // Initialize the normal playback explicitly, even if the browser restores form values.
-$("mode").value="continuous";$("flow").checked=true;$("profile").value="mechanical";$("wrist").checked=false;$("lookAhead").checked=false;$("strength").value="0";$("cubeModel").value="modern";$("cadMode").value="magnetic";$("compareView").checked=false;syncComparison();load();
+$("mode").value="continuous";$("flow").checked=true;$("profile").value="mechanical";$("wrist").checked=false;$("lookAhead").checked=false;$("strength").value="0";$("cubeModel").value="modern";$("cadMode").value="magnetic";$("shellStyle").value="sculpted";$("shellCompare").checked=false;$("compareView").checked=false;syncComparison();load();
 fetch("./cad/deckard/meshes.json").then(r=>{if(!r.ok)throw Error("아직 CAD 자동 빌드 미완료");return r.json()}).then(loadCAD).catch(e=>{$("cadStatus").textContent="CAD 자동 로딩 미완료 · JSON 파일을 직접 불러올 수 있습니다. ("+e.message+")";});
 </script></body></html>
