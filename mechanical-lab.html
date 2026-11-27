@@ -9,11 +9,11 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M0.3 Magnetic</h1>
+<h1>Cube mechanical lab · M0.4 Contact</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
 <div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><button id="mechanicalApply">물리 설정 적용</button></div>
-<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 회전에는 축약 관성/토크·자석·접촉 모델을 사용하며, 메시의 실제 충돌 해석은 아직 하지 않습니다.</small>
+<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 회전에는 축약 관성/토크·자석·접촉 모델을 사용하며, 메시의 실제 충돌 해석은 아직 하지 않습니다.</small>
 <div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
 <figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>스티커리스 스피드큐브 · 코너커팅 기본 적용</figcaption></figure>
@@ -1511,6 +1511,95 @@ function magneticAssembly(frame,mode="full",explode=0){
  return {parts:Object.fromEntries(Object.entries(parts).map(([k,v])=>[k,new Float32Array(v)])),frame:{...frame,cubies:caps}};
 }
 
+
+// Mesh-space internal interference diagnostics. Surface samples are actual
+// mesh vertices, tested against the closed triangular solid of another piece.
+// Not a complete triangle-triangle collision solver. Measurements use the
+// same part transforms as the renderer; intentional overlaps within one
+// molded assembly are excluded.
+const m04Names=["cornerFoot","edgeFoot","cornerStem","edgeStem","centerWing","centerHub"];
+const m04Cache=new Map();
+function m04Geometry(name){
+ if(m04Cache.has(name))return m04Cache.get(name);
+ const m=magneticMeshes[name],tri=[],vertices=new Map();
+ for(let i=0;i<m.length;i+=18){
+  const a=Array.from(m.slice(i,i+3)),b=Array.from(m.slice(i+6,i+9)),c=Array.from(m.slice(i+12,i+15));
+  const e=b.map((x,k)=>x-a[k]),g=c.map((x,k)=>x-a[k]);
+  const min=a.map((x,k)=>Math.min(x,b[k],c[k])),max=a.map((x,k)=>Math.max(x,b[k],c[k]));
+  tri.push({a,e,g,min,max,mid:min.map((x,k)=>(x+max[k])*.5)});
+  for(const v of [a,b,c])vertices.set(v.map(x=>x.toFixed(5)).join(","),v);
+ }
+ function tree(ts){
+  const min=[0,1,2].map(k=>Math.min(...ts.map(t=>t.min[k]))),max=[0,1,2].map(k=>Math.max(...ts.map(t=>t.max[k])));
+  if(ts.length<=12)return {min,max,ts};
+  const spans=max.map((x,k)=>x-min[k]),axis=spans.indexOf(Math.max(...spans)),sorted=ts.slice().sort((a,b)=>a.mid[axis]-b.mid[axis]),half=sorted.length>>1;
+  return {min,max,children:[tree(sorted.slice(0,half)),tree(sorted.slice(half))]};
+ }
+ const root=tree(tri),vs=[...vertices.values()];
+ // Deterministic evenly distributed sampling of mesh vertex order.
+ const count=Math.min(72,vs.length),sample=Array.from({length:count},(_,i)=>vs[Math.floor(i*vs.length/count)]);
+ const result={root,sample,vertexCount:vs.length,triCount:tri.length};
+ m04Cache.set(name,result);return result;
+}
+const m04Ray=[1,.371,.127];
+function m04RayBox(p,node){
+ let lo=0,hi=Infinity;
+ for(let k=0;k<3;k++){lo=Math.max(lo,(node.min[k]-p[k])/m04Ray[k]);hi=Math.min(hi,(node.max[k]-p[k])/m04Ray[k]);if(lo>hi)return false;}
+ return hi>=0;
+}
+function m04Inside(p,geo){
+ if(p.some((x,k)=>x<=geo.root.min[k]+.0002||x>=geo.root.max[k]-.0002))return false;
+ const hits=[],stack=[geo.root];
+ while(stack.length){
+  const n=stack.pop();if(!m04RayBox(p,n))continue;
+  if(n.children){stack.push(...n.children);continue;}
+  for(const {a,e,g} of n.ts){
+    const h=cross3(m04Ray,g),det=dot3(e,h);if(Math.abs(det)<1e-10)continue;
+    const s=p.map((x,k)=>x-a[k]),u=dot3(s,h)/det;if(u<0||u>1)continue;
+    const q=cross3(s,e),v=dot3(m04Ray,q)/det;if(v<0||u+v>1)continue;
+    const t=dot3(g,q)/det;if(Math.abs(t)<.0005)return false;if(t>0)hits.push(t);
+  }
+ }
+ hits.sort((a,b)=>a-b);return hits.filter((v,i)=>!i||v-hits[i-1]>.00001).length%2===1;
+}
+function m04Parts(frame){
+ const arr=[];
+ for(let id=0;id<frame.cubies.length;id++){
+  const c=frame.cubies[id],moving=frame.move?.selected(c.p),turn=v=>moving?rotate(v,frame.move.axis,frame.angle):v;
+  const p=turn(c.p.map(x=>x*.5)),b=c.b.map(turn),outer=[0,1,2].map(a=>c.colors[2*a]!=="#202124"?1:c.colors[2*a+1]!=="#202124"?-1:0),count=outer.filter(Boolean).length;
+  const axes=outer.flatMap((s,k)=>s?[b[k].map(x=>x*s)]:[]),z=norm3(p),missing=outer.findIndex(v=>v===0);
+  const basis=radialBasis(z,count===2?b[missing]:axes[0]);
+  const contact=frame.active?.length===2&&frame.active.some(a=>Math.sign(z[a.move.axis])===a.move.side&&Math.abs(z[a.move.axis])>.55);
+  const give=contact?Math.min(.09,frame.mechanicalDeflection||0)*.5:0,offset=z.map(v=>v*give);
+  const names=count===1?["centerWing","centerHub"]:count===2?["edgeFoot","edgeStem"]:["cornerFoot","cornerStem"];
+  for(const name of names){
+    const geo=m04Geometry(name),corners=[];
+    for(const x of [geo.root.min[0],geo.root.max[0]])for(const y of [geo.root.min[1],geo.root.max[1]])for(const z of [geo.root.min[2],geo.root.max[2]])corners.push(cadTransform(basis,[x,y,z]).map((v,k)=>v+offset[k]));
+    const min=[0,1,2].map(k=>Math.min(...corners.map(v=>v[k]))),max=[0,1,2].map(k=>Math.max(...corners.map(v=>v[k])));
+    arr.push({id,name,geo,basis,offset,min,max});
+  }
+ }
+ return arr;
+}
+function m04Probe(frame){
+ const parts=m04Parts(frame),pairs=[],byType={},piecePairs=new Set();let hits=0,tests=0;
+ for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
+  const a=parts[i],b=parts[j];if(a.id===b.id||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
+  let count=0;
+  for(const [src,dst] of [[a,b],[b,a]])for(const sample of src.geo.sample){
+   const p=cadTransform(src.basis,sample).map((x,k)=>x+src.offset[k]-dst.offset[k]),local=cadInverse(dst.basis,p);
+   tests++;if(m04Inside(local,dst.geo))count++;
+  }
+  if(count){const key=[a.name,b.name].sort().join(" ↔ ");byType[key]=(byType[key]||0)+count;hits+=count;piecePairs.add([a.id,b.id].sort((x,y)=>x-y).join(":"));pairs.push({a:a.id,b:b.id,type:key,count});}
+ }
+ return {partPairs:pairs.length,piecePairs:piecePairs.size,hits,tests,byType,pairs};
+}
+function m04PairFrame(first="R",next="U",residual=15,advance=8){
+ const t=buildTimeline(3,"",first+" "+next),a=t.moves[0],b=t.moves[1],active=[{i:0,move:a,angle:a.angle-Math.sign(a.angle)*rad(residual)},{i:1,move:b,angle:Math.sign(b.angle)*rad(advance)}];
+ const cubies=t.frames[0].map((c,id)=>{let p=c.p,bs=c.b;for(const turn of active){if(!turn.move.selected(t.frames[turn.i][id].p))continue;const fn=v=>rotate(v,turn.move.axis,turn.angle);p=fn(p);bs=bs.map(fn);}return {...c,p,b:bs};});
+ return {cubies,active};
+}
+
 function drawGPU(canvas,frame,pose){
   let gpu=gpuViews.get(canvas);
   if(gpu===undefined){gpu=createGPU(canvas);gpuViews.set(canvas,gpu);}
@@ -1628,10 +1717,11 @@ $("wrist").onchange=()=>render();
 $("cubeModel").onchange=()=>render();
 $("cadMode").onchange=()=>{if($("cadMode").value!=="magnetic"&&["feet","cornerPart","edgePart","centerPart"].includes($("assembly").value))$("assembly").value="full";$("cadCollision").textContent="";render();};
 $("cadFile").onchange=async()=>{try{const f=$("cadFile").files[0];if(!f)return;if(f.size>5000000)throw Error("파일이 너무 큽니다");await loadCAD(JSON.parse(await f.text()));$("cadMode").value="cad";render();}catch(e){$("cadStatus").textContent="CAD 가져오기 실패: "+e.message;}};
-$("cadProbe").onclick=()=>{if($("cadMode").value!=="cad"){$("cadCollision").textContent="간섭 검사는 현재 구형 CAD 메시 전용입니다. 신형 메시의 충돌 솔버는 아직 미연결입니다.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
+$("cadProbe").onclick=()=>{if($("cadMode").value==="magnetic"){playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time),p=m04Probe(f),base=m04Probe({cubies:solved(3)});$("cadCollision").textContent=`내부 메시 간섭: ${p.piecePairs} 조각 쌍 / ${p.hits} 표본점 · 정렬 기준 ${base.piecePairs}쌍 / ${base.hits}점`;$("meshContactResult").textContent=Object.entries(p.byType).map(([k,v])=>k+": "+v).join("\n")||"검출 없음";return;}if($("cadMode").value!=="cad"){$("cadCollision").textContent="신형 또는 구형 CAD를 선택하세요.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
 $("assembly").onchange=()=>render();$("explode").oninput=()=>render();
 for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
 $("mechanicalApply").onclick=load;
+$("contactSweep").onclick=()=>{playing=false;syncButton();const rows=[[0,0],[0,15],[5,5],[10,10],[15,15],[25,15],[30,25]].map(([a,b])=>{const p=m04Probe(m04PairFrame("R","U",a,b));return `${String(a).padStart(2)}° / ${String(b).padStart(2)}° · ${p.piecePairs}쌍 · ${p.hits}점`;});$("meshContactResult").textContent="R 남은 각도 / U 진행 각도 · 내부 조각 쌍 · 내부 표본점\n"+rows.join("\n")+"\n표본검사이며 정확한 침투 깊이·충돌력은 아닙니다.";};
 $("lookAhead").onchange=load;
 $("profile").onchange=load;
 function syncComparison(){
