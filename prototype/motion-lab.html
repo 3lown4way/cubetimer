@@ -8,11 +8,11 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 02</h1>
-<p>동일한 회전 상태, 서로 다른 자세 트랙. 큐브 외형과 배경은 비교의 변수가 아닙니다.</p>
+<h1>Cube motion lab · 03</h1>
+<p>동일한 큐브 상태와 재생 시간에서, 필요한 정보를 확인하기 위해 큐브 자체를 움직이는 행동을 비교합니다.</p>
 <div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>고정 자세</figcaption></figure>
-<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>자동 그립 자세</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>시각 탐색 자세</figcaption></figure>
 </div>
 <div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
 <div class="controls">
@@ -22,23 +22,23 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
-<label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2"></textarea>
-<label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' R' F R F' y R U R' U' D R D'</textarea>
-<div class="controls"><button id="load">적용</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
-<div id="message" role="status"></div>
-<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. R/U 플릭 중에는 그립 유지, Regrip은 다음 동작 전에 준비, x/y/z는 다축 자세 보정. 자세 값은 초기 휴리스틱이며 모션 캡처 데이터가 아닙니다.</small>
+<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 4수 간격" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
+<label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
+<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
+<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. 실제 목표는 사용자가 지정하며 다음 세 수에 관여하는 조각을 후보로 삼습니다. 현재 관찰 가능한 스티커와 7수 기억을 이용하는 초기 모델입니다. 확인 시점, 가시성, 각도 및 소요 시간은 휴리스틱입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
-import {rad,clamp,rotate,qpose,qrotate,buildTimeline,buildPoseTrack,frameAt,poseAt} from "./motion-engine.js";
+import {rad,clamp,rotate,qpose,qrotate,buildTimeline,planVisualSearch,inspectionTimeline,inspectionFrameAt} from "./motion-engine.js";
 const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
 const axes=[[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]];
 const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
-let tl,track,time=0,playing=false,last=0,raf=0;
+let tl,plan,timing,time=0,playing=false,last=0,raf=0;
 let yaw=-34,pitch=25,goalYaw=yaw,goalPitch=pitch;
 let pointer=null,lastX=0,lastY=0;
 function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
 function tick(now){
   raf=0;const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;
-  if(playing){time=Math.min(tl.total,time+dt*Number($("speed").value));if(time>=tl.total){playing=false;syncButton()}}
+  if(playing){time=Math.min(timing.total,time+dt*Number($("speed").value));if(time>=timing.total){playing=false;syncButton()}}
   const f=1-Math.exp(-dt/0.045);
   yaw+=(goalYaw-yaw)*f;pitch+=(goalPitch-pitch)*f;
   render();
@@ -73,26 +73,36 @@ function draw(canvas,frame,pose){
 }
 function render(){
   if(!tl)return;
-  const frame=frameAt(tl,time), pose=poseAt(track,time,Number($("strength").value));
+  const {frame,pose,event}=inspectionFrameAt(tl,timing,time,Number($("strength").value));
   draw(canvases[0],frame,[1,0,0,0]);draw(canvases[1],frame,pose);
-  $("seek").value=tl.total?time/tl.total:0;
+  $("seek").value=timing.total?time/timing.total:0;
+  $("inspectionStatus").textContent=event?"확인 중 · "+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 후보 시점";
   $("pos").textContent=frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
 }
 function syncButton(){$("play").textContent=playing?"Ⅱ 일시정지":"▶ 재생"}
 function load(){
   try{
     const t=buildTimeline(Number($("size").value),$("setup").value,$("alg").value);
-    tl=t;track=buildPoseTrack(t);time=0;playing=false;syncButton();$("message").textContent="";render();
+    const kind=$("kind").value,target=$("target").value.trim().toLowerCase().split(/\s+/);
+    const raw=$("checks").value.trim();
+    const checkpoints=raw?raw.split(",").map(v=>Number(v.trim())):null;
+    if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
+    const p=planVisualSearch(t,{kind,target,checkpoints});
+    tl=t;plan=p;timing=inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
+    $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")).join("\n");render();
   }catch(e){$("message").textContent=e.message}
 }
-$("play").onclick=()=>{if(!tl?.total)return;if(time>=tl.total)time=0;playing=!playing;syncButton();schedule()};
+$("play").onclick=()=>{if(!timing?.total)return;if(time>=timing.total)time=0;playing=!playing;syncButton();schedule()};
 $("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
-$("prev").onclick=()=>{playing=false;syncButton();const f=frameAt(tl,time);time=tl.times[Math.max(0,f.i-(Math.abs(time-tl.times[f.i])<1e-6?1:0))];render()};
-$("next").onclick=()=>{playing=false;syncButton();time=tl.times[Math.min(tl.moves.length,frameAt(tl,time).i+1)];render()};
-$("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*tl.total;render()};
+$("prev").onclick=()=>{playing=false;syncButton();const f=inspectionFrameAt(tl,timing,time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
+$("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,inspectionFrameAt(tl,timing,time).frame.i+1)];render()};
+$("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
 $("strength").oninput=()=>{$("strengthVal").textContent=Number($("strength").value).toFixed(2)+"×";render()};
 $("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+" TPS"};
 $("load").onclick=load;$("size").onchange=load;
+$("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";load()};
+function sample(setup){$("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
+$("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");
 $("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
 document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
 for(const c of canvases){
