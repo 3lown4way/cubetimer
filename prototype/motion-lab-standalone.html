@@ -8,7 +8,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 03</h1>
+<h1>Cube motion lab · 04</h1>
 <p>동일한 큐브 상태와 재생 시간에서, 필요한 정보를 확인하기 위해 큐브 자체를 움직이는 행동을 비교합니다.</p>
 <div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>고정 자세</figcaption></figure>
@@ -19,14 +19,14 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
 <label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="4"><output id="speedVal">4 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.4)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
-<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 4수 간격" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
+<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="yellow orange" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
-<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. 실제 목표는 사용자가 지정하며 다음 세 수에 관여하는 조각을 후보로 삼습니다. 현재 관찰 가능한 스티커와 7수 기억을 이용하는 초기 모델입니다. 확인 시점, 가시성, 각도 및 소요 시간은 휴리스틱입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지합니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -330,10 +330,124 @@ function inspectionFrameAt(timeline,schedule,time,strength=1){
     pose:[1,0,0,0],event:null};
 }
 
+// v0.4: inspection during a real layer turn. The old pause-based planner
+// remains available as a baseline. All time values are nominal turn units.
+const HOME_Q=[1,0,0,0];
+const angularDistance=(a,b)=>2*Math.acos(clamp(Math.abs(a.reduce((v,x,i)=>v+x*b[i],0)),0,1))*180/Math.PI;
+const transitionAt=(from,to,u)=>slerp(from,to,smooth(clamp(u/.72,0,1)));
+function movingVisibility(c,j,move,u,pose,view){
+  const [axis,side]=FACES[j];
+  let n=c.b[axis].map(v=>v*side);
+  if(move.selected(c.p))n=rotate(n,move.axis,move.angle*smooth(u));
+  return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
+}
+const sampleProgress=[0,.25,.5,.72,.86,1];
+function observedSlots(cubies,move,from,to,view){
+  const slots=new Set();
+  for(const u of sampleProgress){
+    const q=transitionAt(from,to,u);
+    for(let id=0;id<cubies.length;id++){
+      const c=cubies[id];
+      for(let j=0;j<6;j++)if(movingVisibility(c,j,move,u,q,view))slots.add(id*6+j);
+    }
+  }
+  return slots;
+}
+function observeMoving(cubies,slots,memory,i,n){
+  for(const key of slots){
+    const id=Math.floor(key/6),j=key%6,c=cubies[id];
+    if(isOuterSticker(c,j,n)&&c.colors[j]!=="#202124")memory.set(key,{color:c.colors[j],i});
+  }
+}
+function continuousCandidates(timeline,i,memory,colors,kind){
+  const {frames,moves,n}=timeline,cubies=frames[i],candidates=[];
+  for(let id=0;id<cubies.length;id++){
+    const c=cubies[id],stickers=[0,1,2,3,4,5].filter(j=>isOuterSticker(c,j,n));
+    if(stickers.length!==(kind==="center"?1:2))continue;
+    let relevant=false;
+    for(let k=i;k<Math.min(i+3,moves.length);k++){
+      if(!moves[k].whole&&moves[k].selected(frames[k][id].p)){relevant=true;break;}
+    }
+    if(!relevant)continue;
+    const known=stickers.map(j=>memoryColor(memory,id,j,i)).filter(Boolean);
+    if(known.some(color=>!colors.includes(color)))continue;
+    if(known.length===stickers.length&&colors.every(color=>known.includes(color)))return {candidates:[],knownTarget:true};
+    const unknown=stickers.filter(j=>!memoryColor(memory,id,j,i));
+    if(unknown.length)candidates.push({id,unknown,weight:known.length?2:0.65});
+  }
+  return {candidates,knownTarget:false};
+}
+// Gain from a candidate pose in addition to what the layer itself reveals.
+// Search candidate geometry only; hidden sticker colors are never consulted.
+function extraGain(cubies,move,from,to,view,candidates,baseline){
+  let gain=0,count=0;
+  for(const c of candidates)for(const j of c.unknown){
+    if(baseline.has(c.id*6+j))continue;
+    if(sampleProgress.some(u=>movingVisibility(cubies[c.id],j,move,u,transitionAt(from,to,u),view))){
+      gain+=c.weight;count++;
+    }
+  }
+  return {gain,count};
+}
+function planContinuousSearch(timeline,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW}={}){
+  if(kind!=="edge"&&kind!=="center")throw Error("Unknown search target type");
+  const colors=target.map(c=>SEARCH_COLORS[c]);
+  if(colors.length!==(kind==="center"?1:2)||colors.some(c=>!c)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const memory=new Map(),events=[],decisions=[],segments=[],checks=checkpoints===null?null:new Set(checkpoints);
+  let pose=HOME_Q,lastSearch=-Infinity;
+  for(let i=0;i<timeline.moves.length;i++){
+    const cubies=timeline.frames[i],move=timeline.moves[i];
+    observe(cubies,pose,memory,i,view);
+    // Stay at the acquired pose for one more turn; return only when no
+    // immediate information-seeking move is needed. No per-turn bounce.
+    let to=i-lastSearch<=1?pose:HOME_Q,event=null;
+    const baseline=observedSlots(cubies,move,pose,to,view);
+    if((checks?checks.has(i):i-lastSearch>=2)&&!move.whole){
+      const {candidates,knownTarget}=continuousCandidates(timeline,i,memory,colors,kind);
+      if(knownTarget||!candidates.length)decisions.push({i,reason:knownTarget?"target already identified":"no eligible uncertain piece"});
+      else{
+        let best=null;
+        const evaluate=p=>{
+          const q=qpose(p),angle=angularDistance(pose,q);
+          if(angle>75||angularDistance(HOME_Q,q)>75)return;
+          const {gain,count}=extraGain(cubies,move,pose,q,view,candidates,baseline);
+          const score=gain-.026*angle-.35;
+          if(gain>0&&score>0&&(!best||score>best.score+1e-8))best={p,q,angle,gain,count,score};
+        };
+        for(const p of searchAngles)evaluate(p);
+        // Refine around the best coarse direction, including non-grid angles.
+        if(best)for(const delta of [10,4,1]){
+          const center=best.p.slice();
+          for(const x of [-delta,0,delta])for(const y of [-delta,0,delta])if(x||y)evaluate([center[0]+x,center[1]+y,0]);
+        }
+        if(best){
+          to=best.q;lastSearch=i;
+          event={i,p:best.p,angle:best.angle,gain:best.gain,observed:best.count,overlap:true};
+          events.push(event);decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain});
+        }else decisions.push({i,reason:"no useful low-cost view"});
+      }
+    }
+    const slots=observedSlots(cubies,move,pose,to,view);
+    observeMoving(cubies,slots,memory,i,timeline.n);
+    segments.push({start:timeline.times[i],end:timeline.times[i+1],i,from:pose,to,event});
+    pose=to;
+  }
+  return {events,decisions,segments,stepTimes:timeline.times,total:timeline.total,endPose:pose};
+}
+function continuousSearchFrameAt(timeline,plan,time,strength=1){
+  const t=clamp(time,0,plan.total),frame=frameAt(timeline,t);
+  const seg=plan.segments[frame.i];
+  const pose=seg?transitionAt(seg.from,seg.to,(t-seg.start)/(seg.end-seg.start)):plan.endPose;
+  // Strength is a display-only comparison adjustment; perception always
+  // uses the nominal planned pose.
+  const q=strength<=1?slerp(HOME_Q,pose,clamp(strength,0,1)):slerp(HOME_Q,pose,strength);
+  return {frame,pose:q,event:seg?.event||null};
+}
+
 const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
 const axes=[[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]];
 const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
-let tl,plan,timing,time=0,playing=false,last=0,raf=0;
+let tl,plan,timing,continuous=true,time=0,playing=false,last=0,raf=0;
 let yaw=-34,pitch=25,goalYaw=yaw,goalPitch=pitch;
 let pointer=null,lastX=0,lastY=0;
 function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
@@ -372,12 +486,13 @@ function draw(canvas,frame,pose){
   const drawPoly=(pts,color)=>{ctx.beginPath();pts.forEach((p,i)=>{const x=w/2+p[0]*size,y=h/2-p[1]*size;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fillStyle=color;ctx.fill()};
   for(const p of polys){drawPoly(p.pts,"#18191b");if(p.col!=="#202124"){drawPoly(p.sticker,p.col);ctx.globalAlpha=1-p.light;drawPoly(p.sticker,"#000");ctx.globalAlpha=1}}
 }
+function sampled(t,strength=1){return continuous?continuousSearchFrameAt(tl,timing,t,strength):inspectionFrameAt(tl,timing,t,strength)}
 function render(){
   if(!tl)return;
-  const {frame,pose,event}=inspectionFrameAt(tl,timing,time,Number($("strength").value));
+  const {frame,pose,event}=sampled(time,Number($("strength").value));
   draw(canvases[0],frame,[1,0,0,0]);draw(canvases[1],frame,pose);
   $("seek").value=timing.total?time/timing.total:0;
-  $("inspectionStatus").textContent=event?"확인 중 · "+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 후보 시점";
+  $("inspectionStatus").textContent=event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
   $("pos").textContent=frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
 }
 function syncButton(){$("play").textContent=playing?"Ⅱ 일시정지":"▶ 재생"}
@@ -388,22 +503,23 @@ function load(){
     const raw=$("checks").value.trim();
     const checkpoints=raw?raw.split(",").map(v=>Number(v.trim())):null;
     if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
-    const p=planVisualSearch(t,{kind,target,checkpoints});
-    tl=t;plan=p;timing=inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
+    const nextContinuous=$("mode").value==="continuous";
+    const p=nextContinuous?planContinuousSearch(t,{kind,target,checkpoints}):planVisualSearch(t,{kind,target,checkpoints});
+    continuous=nextContinuous;tl=t;plan=p;timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
     $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")).join("\n");render();
   }catch(e){$("message").textContent=e.message}
 }
 $("play").onclick=()=>{if(!timing?.total)return;if(time>=timing.total)time=0;playing=!playing;syncButton();schedule()};
 $("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
-$("prev").onclick=()=>{playing=false;syncButton();const f=inspectionFrameAt(tl,timing,time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
-$("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,inspectionFrameAt(tl,timing,time).frame.i+1)];render()};
+$("prev").onclick=()=>{playing=false;syncButton();const f=sampled(time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
+$("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,sampled(time).frame.i+1)];render()};
 $("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
 $("strength").oninput=()=>{$("strengthVal").textContent=Number($("strength").value).toFixed(2)+"×";render()};
 $("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+" TPS"};
-$("load").onclick=load;$("size").onchange=load;
+$("load").onclick=load;$("size").onchange=load;$("mode").onchange=load;
 $("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";load()};
-function sample(setup){$("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
-$("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");
+function sample(setup,target="yellow orange"){$("size").value="3";$("kind").value="edge";$("target").value=target;$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
+$("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
 $("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
 document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
 for(const c of canvases){
