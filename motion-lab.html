@@ -8,25 +8,25 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 26</h1>
+<h1>Cube motion lab · 27</h1>
 <p>기본 재생은 코너커팅·자동 정렬·연속 체인·능동적 탐색이 적용된 스피드큐브입니다. 기존 순차 회전은 비교 옵션에서만 표시합니다.</p>
 <div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
-<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>스피드큐브 · 코너커팅 기본 적용</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>스티커리스 스피드큐브 · 코너커팅 기본 적용</figcaption></figure>
 </div>
 <div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
 <div class="controls">
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
 <label>속도 <input id="speed" type="range" min="1" max="20" step=".25" value="6"><output id="speedVal">6 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="rhythm" selected>동작별 리듬 v2.3 (기본)</option><option value="flick">이전 빠른 정렬 v2.1</option><option value="handoff">이전 v2.0</option><option value="contact">이전 v1.1</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><label><input id="wrist" type="checkbox" checked> 미세 손목 반작용</label><label><input id="lookAhead" type="checkbox" checked> 자연 노출 예측</label><button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="rhythm" selected>동작별 리듬 v2.3 (기본)</option><option value="flick">이전 빠른 정렬 v2.1</option><option value="handoff">이전 v2.0</option><option value="contact">이전 v1.1</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><label><input id="wrist" type="checkbox" checked> 미세 손목 반작용</label><label><input id="lookAhead" type="checkbox" checked> 자연 노출 예측</label><label>큐브 외형 <select id="cubeModel"><option value="modern" selected>신형 스피드큐브</option><option value="classic">이전 외형</option></select></label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button id="f2lDemo">F2L 삽입 예시</button><button id="pllDemo">PLL T-perm</button><button id="wideDemo">4×4 Wide 연결</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
 <div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15" autocomplete="off"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label><input id="referenceTiming" type="checkbox"> 영상 기반 회전 간격 (3×3 Sexy move 6회 전용)</label><label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
 <div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="taskStatus"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><p id="contactStatus"></p><p id="referenceStatus"></p><p id="rhythmStatus"></p><p id="wristStatus"></p><details><summary>동작별 타이밍</summary><pre id="rhythmDetails" style="white-space:pre-wrap"></pre></details><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v2.6은 사용자 지정 목표 조각을 기준으로 전체 큐브의 후보를 검사합니다. 추가 확인이 필요한 경우 실제 레이어 회전과 동시에 면을 드러내고 여러 수에 걸쳐 원래 자세로 복귀합니다. 기본 예제의 목표는 흰색·초록색 엣지입니다. 적용 시 카메라 방향을 기준으로 판단하며, 면 방향에 따른 근사로 실제 가림 및 시선 추적은 아닙니다. 기존 회전 타이밍과 손목 반작용은 유지합니다. 잔상은 적용하지 않습니다. 실물 영상 기반 24수 예제는 반작용을 끈 기존 상태로 유지합니다. F2L·PLL·Wide 프로필은 추정 모델이며 별도 실측은 하지 않았습니다. 영상은 저장소에 포함하지 않습니다. 프레임별 접촉 보정은 기본 프로필에서 제외했으며 v2.0에서 비교할 수 있습니다. 내부 코어는 시각 모델입니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며, 바뀐 시점을 탐색 계획에 반영하려면 적용 버튼을 누르세요.</small>
+<small>실험판: v2.7 WebGL2 신형 외형 — 센터·엣지·코너의 서로 다른 성형 캡, 비대칭 라운딩, 움푹 들어간 내부 지지체와 밝은 코어, 색상 및 표면 하이라이트. 특정 상용 제품의 정확한 CAD 복제는 아닙니다. 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v2.6은 사용자 지정 목표 조각을 기준으로 전체 큐브의 후보를 검사합니다. 추가 확인이 필요한 경우 실제 레이어 회전과 동시에 면을 드러내고 여러 수에 걸쳐 원래 자세로 복귀합니다. 기본 예제의 목표는 흰색·초록색 엣지입니다. 적용 시 카메라 방향을 기준으로 판단하며, 면 방향에 따른 근사로 실제 가림 및 시선 추적은 아닙니다. 기존 회전 타이밍과 손목 반작용은 유지합니다. 잔상은 적용하지 않습니다. 실물 영상 기반 24수 예제는 반작용을 끈 기존 상태로 유지합니다. F2L·PLL·Wide 프로필은 추정 모델이며 별도 실측은 하지 않았습니다. 영상은 저장소에 포함하지 않습니다. 프레임별 접촉 보정은 기본 프로필에서 제외했으며 v2.0에서 비교할 수 있습니다. 내부 코어는 시각 모델입니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며, 바뀐 시점을 탐색 계획에 반영하려면 적용 버튼을 누르세요.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -1055,13 +1055,86 @@ function plasticFace(h=.484,r=.087){
   return new Float32Array(out);
 }
 const faceMesh=plasticFace();
+
+// Moulded colour caps: the radius of each corner depends on whether
+// the adjacent sides are exposed exterior faces. On a 3x3 this gives
+// circular-ish centres, inner-rounded edges and square outer corners.
+// Larger puzzles use smaller radii so the face grid stays readable.
+const modernPalette=new Map([
+  ["#cf302e","#ed3037"],["#f58b27","#ff821b"],["#f7f7f7","#fcfcf7"],
+  ["#f4d331","#f5eb25"],["#24aa57","#22d056"],["#2463cf","#2467dd"]
+].map(([k,v])=>[k,hexRGB(v)]));
+const chassisRGB=hexRGB("#d6d7cc"),coreRGB=hexRGB("#c4c6bd");
+const capMeshCache=new Map();
+function capRadii(mask,n){
+  const size=n===2?0:n===3?1:n===4?.58:.42;
+  return [[1,1],[-1,1],[-1,-1],[1,-1]].map(([x,y])=>{
+    const count=Number(!!(mask&(x>0?1:2)))+Number(!!(mask&(y>0?4:8)));
+    if(count===2)return .035;
+    if(count===1)return .044+.030*size;
+    return .065+(mask===0?.180:.135)*size;
+  });
+}
+function mouldedCap(mask,n){
+  const key=n+":"+mask;if(capMeshCache.has(key))return capMeshCache.get(key);
+  const radii=capRadii(mask,n),out=[],directions=[[1,1],[-1,1],[-1,-1],[1,-1]];
+  const rings=[
+    {half:.465,z:.495,shrink:.018,side:0,up:1},
+    {half:.481,z:.489,shrink:.004,side:.48,up:.88},
+    {half:.489,z:.473,shrink:0,side:.92,up:.39},
+    {half:.489,z:.445,shrink:0,side:1,up:0},
+    {half:.456,z:.320,shrink:.020,side:.97,up:-.26},
+    {half:.385,z:.200,shrink:.040,side:.86,up:-.51}
+  ];
+  const points=rings.map(r=>directions.flatMap(([sx,sy],k)=>{
+    const radius=Math.max(.014,radii[k]-r.shrink),a0=k*Math.PI/2;
+    return Array.from({length:7},(_,j)=>{
+      const a=a0+j*Math.PI/12,nx=Math.cos(a),ny=Math.sin(a);
+      const l=Math.hypot(r.side,r.up);
+      return [sx*(r.half-radius)+nx*radius,sy*(r.half-radius)+ny*radius,r.z,nx*r.side/l,ny*r.side/l,r.up/l];
+    });
+  }));
+  const count=points[0].length,center=[0,0,.495,0,0,1];
+  for(let i=0;i<count;i++)out.push(...center,...points[0][i],...points[0][(i+1)%count]);
+  for(let j=0;j<points.length-1;j++)for(let i=0;i<count;i++){
+    const k=(i+1)%count,a=points[j][i],b=points[j][k],c=points[j+1][k],d=points[j+1][i];
+    out.push(...a,...b,...c,...a,...c,...d);
+  }
+  const back=points.at(-1).map(p=>[p[0],p[1],p[2],0,0,-1]),bc=[0,0,.200,0,0,-1];
+  for(let i=0;i<count;i++)out.push(...bc,...back[(i+1)%count],...back[i]);
+  const mesh=new Float32Array(out);capMeshCache.set(key,mesh);return mesh;
+}
+function modernInstances(frame,n){
+  const caps=new Map(),body=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p),turn=v=>turning?rotate(v,frame.move.axis,frame.angle):v;
+    const p=turn(c.p.map(x=>x*.5)),b=c.b.map(turn);
+    const colored=(axis,side)=>c.colors[axis*2+(side<0?1:0)]!=="#202124";
+    // Neutral, recessed chassis, rather than an entire grey cube. Offset
+    // towards the uncoloured sides to mimic the inward piece structure.
+    const inward=[0,1,2].map(a=>colored(a,1)?-.056:colored(a,-1)?.056:0);
+    const base=p.map((x,k)=>x+inward.reduce((s,v,i)=>s+v*b[i][k],0));
+    for(let j=0;j<6;j++){
+      const [axis,side]=axes[j],u=b[(axis+1)%3],v=b[(axis+2)%3].map(x=>x*side),normal=b[axis].map(x=>x*side);
+      const small=x=>x.map(v=>v*.84);
+      body.push(...base,...small(u),...small(v),...small(normal),...chassisRGB);
+      if(!colored(axis,side))continue;
+      const a=(axis+1)%3,d=(axis+2)%3;
+      const mask=(colored(a,1)?1:0)|(colored(a,-1)?2:0)|(colored(d,side)?4:0)|(colored(d,-side)?8:0);
+      if(!caps.has(mask))caps.set(mask,[]);
+      caps.get(mask).push(...p,...u,...v,...normal,...modernPalette.get(c.colors[j]));
+    }
+  }
+  return {body:new Float32Array(body),caps:[...caps].map(([mask,data])=>({mask,data:new Float32Array(data)}))};
+}
+
 // A small dark rounded inner core makes exposed turning gaps less hollow.
 function coreGeometry(){const out=[];const p=(a,b)=>{const v=[Math.sin(a)*Math.cos(b),Math.cos(a),Math.sin(a)*Math.sin(b)];return [...v,...v];};for(let i=0;i<12;i++)for(let j=0;j<24;j++){let a=i*Math.PI/12,b=j*Math.PI/12,c=(i+1)*Math.PI/12,d=(j+1)*Math.PI/12;out.push(...p(a,b),...p(c,b),...p(c,d),...p(a,b),...p(c,d),...p(a,d));}return new Float32Array(out);}
 const coreMesh=coreGeometry();
 const VS="#version 300 es\n"+
 "layout(location=0) in vec3 vert;layout(location=1) in vec3 normal;layout(location=2) in vec3 pos;layout(location=3) in vec3 bx;layout(location=4) in vec3 by;layout(location=5) in vec3 bz;layout(location=6) in vec3 rgb;uniform mat3 view;uniform vec2 lens;uniform float distance;out vec3 N;out vec3 C;out vec3 P;void main(){mat3 basis=mat3(bx,by,bz);vec3 p=view*(pos+basis*vert);N=view*basis*normal;C=rgb;P=p-vec3(0.,0.,distance);float d=-P.z;float near=.1;float far=100.;gl_Position=vec4(P.x*lens.x,P.y*lens.y,((far+near)/(far-near))*d-2.*far*near/(far-near),d);}";
 const FS="#version 300 es\nprecision highp float;\n"+
-"in vec3 N;in vec3 C;in vec3 P;out vec4 color;void main(){vec3 n=normalize(N);float key=max(0.,dot(n,normalize(vec3(-.55,.85,1.4))));float fill=max(0.,dot(n,normalize(vec3(.8,-.3,.8))));vec3 eye=normalize(-P);vec3 halfv=normalize(eye+normalize(vec3(-.55,.85,1.4)));float spec=pow(max(0.,dot(n,halfv)),24.)*.09;vec3 c=C*(.79+.18*key+.055*fill)+vec3(spec);color=vec4(clamp(c,0.,1.),1.);}";
+"in vec3 N;in vec3 C;in vec3 P;out vec4 color;void main(){vec3 n=normalize(N);float key=max(0.,dot(n,normalize(vec3(-.55,.85,1.4))));float fill=max(0.,dot(n,normalize(vec3(.8,-.3,.8))));vec3 eye=normalize(-P);vec3 halfv=normalize(eye+normalize(vec3(-.55,.85,1.4)));float spec=pow(max(0.,dot(n,halfv)),45.)*.14;float broad=pow(max(0.,dot(n,halfv)),9.)*.035;vec3 c=C*(.72+.25*key+.075*fill)+vec3(spec+broad);color=vec4(clamp(c,0.,1.),1.);}";
 function compile(gl,kind,source){
   const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||"Shader compile failed");
@@ -1084,7 +1157,7 @@ function createGPU(canvas){
   }
   const face=mesh(faceMesh),core=mesh(coreMesh);
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
-  return {gl,program,face,core,view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
+  return {gl,program,face,core,mesh,capMeshes:new Map(),view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
 }
 function cubeInstances(frame){
   const surfaces=[];
@@ -1114,11 +1187,19 @@ function drawGPU(canvas,frame,pose){
   const q=qpose([pitch,yaw,0]),basis=[0,1,2].flatMap(i=>qrotate(q,qrotate(pose,unit(i,1))));
   const f=1/Math.tan(rad(23)/2);
   gl.uniformMatrix3fv(gpu.view,false,new Float32Array(basis));gl.uniform2f(gpu.lens,f*h/w,f);gl.uniform1f(gpu.distance,tl.n*4.65);
-  const data=cubeInstances(frame);
-  const r=Math.max(.30,tl.n/2-.62),coreData=new Float32Array([0,0,0,r,0,0,0,r,0,0,0,r,.20,.21,.22]);
-  gl.bindVertexArray(core.vao);gl.bindBuffer(gl.ARRAY_BUFFER,core.ib);gl.bufferData(gl.ARRAY_BUFFER,coreData,gl.DYNAMIC_DRAW);gl.drawArraysInstanced(gl.TRIANGLES,0,core.count,1);
-  gl.bindVertexArray(face.vao);gl.bindBuffer(gl.ARRAY_BUFFER,face.ib);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
-  gl.drawArraysInstanced(gl.TRIANGLES,0,face.count,data.length/15);
+  const modern=$("cubeModel").value!=="classic";
+  const drawInstances=(mesh,data)=>{if(!data.length)return;gl.bindVertexArray(mesh.vao);gl.bindBuffer(gl.ARRAY_BUFFER,mesh.ib);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);gl.drawArraysInstanced(gl.TRIANGLES,0,mesh.count,data.length/15);};
+  const r=Math.max(.27,tl.n/2-(modern?.76:.62)),color=modern?coreRGB:[.20,.21,.22];
+  drawInstances(core,new Float32Array([0,0,0,r,0,0,0,r,0,0,0,r,...color]));
+  if(modern){
+    const data=modernInstances(frame,tl.n);
+    drawInstances(face,data.body);
+    for(const {mask,data:instances} of data.caps){
+      const key=tl.n+":"+mask;
+      if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(mouldedCap(mask,tl.n)));
+      drawInstances(gpu.capMeshes.get(key),instances);
+    }
+  }else drawInstances(face,cubeInstances(frame));
   gl.bindVertexArray(null);return true;
 }
 function draw(canvas,frame,pose){
@@ -1158,7 +1239,7 @@ function render(now=Infinity){
   $("chainStatus").textContent=flowOn&&["flick","rhythm"].includes(flowTrack.profile)?"빠른 정렬 · 중첩 "+flowTrack.cuts.length+"구간":run?"연속 체인: "+(run.first+1)+"–"+(run.last+1)+"수 · "+(run.last-run.first+1)+"수 연결":"개별 회전 타임라인";
   const angles=active.map(a=>a.move.token+" "+(Math.abs(a.angle)*180/Math.PI).toFixed(1)+"°").join(" / ");
   $("cutStatus").textContent=flowOn?(active.length>1?"코너커팅 중 · "+angles:"자동 정렬 · "+(angles||"정렬 완료"))+" · 중첩 구간 "+flowTrack.cuts.length+"개": "코너커팅 꺼짐";
-  $("rendererStatus").textContent=gpuA&&gpuB?"WebGL2 · Stickerless speedcube":"WebGL2 미지원 · Canvas 대체 렌더링";
+  $("rendererStatus").textContent=gpuA&&gpuB?($("cubeModel").value==="classic"?"WebGL2 · 기존 외형":"WebGL2 · 신형 성형 캡 / 조각별 윤곽"):"WebGL2 미지원 · Canvas 대체 렌더링 (신형 외형 미적용)";
   $("poseDiff").textContent=($("compareView").checked?"두 큐브의 자세 차이: ":"능동적 탐색 자세: ")+angularDistance(HOME_Q,pose).toFixed(1)+"° · 탐색 "+plan.events.length+"회";
   $("seek").value=timing.total?time/timing.total:0;
   $("inspectionStatus").textContent=event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
@@ -1189,6 +1270,7 @@ $("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min
 $("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
 $("flow").onchange=()=>render();
 $("wrist").onchange=()=>render();
+$("cubeModel").onchange=()=>render();
 $("lookAhead").onchange=load;
 $("profile").onchange=load;
 function syncComparison(){
@@ -1280,5 +1362,5 @@ const sizeObserver=new ResizeObserver(entries=>{for(const e of entries||[])canva
 for(const c of canvases)sizeObserver.observe(c);
 document.addEventListener("visibilitychange",()=>{last=performance.now();fpsStart=0;fpsFrames=0;});
 // Initialize the normal playback explicitly, even if the browser restores form values.
-$("mode").value="continuous";$("flow").checked=true;$("profile").value="rhythm";$("wrist").checked=true;$("compareView").checked=false;syncComparison();load();
+$("mode").value="continuous";$("flow").checked=true;$("profile").value="rhythm";$("wrist").checked=true;$("cubeModel").value="modern";$("compareView").checked=false;syncComparison();load();
 </script></body></html>
