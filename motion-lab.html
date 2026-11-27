@@ -8,25 +8,25 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 04</h1>
-<p>동일한 큐브 상태와 재생 시간에서, 필요한 정보를 확인하기 위해 큐브 자체를 움직이는 행동을 비교합니다.</p>
+<h1>Cube motion lab · 05</h1>
+<p>실제 3D 조각으로 렌더링합니다. 왼쪽은 회전 기호만, 오른쪽은 같은 회전과 함께 큐브 자체를 움직여 정보를 확인합니다.</p>
 <div class="compare">
-<figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>고정 자세</figcaption></figure>
-<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>시각 탐색 자세</figcaption></figure>
+<figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>능동적 탐색 · 신규</figcaption></figure>
 </div>
 <div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
 <div class="controls">
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
-<label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="4"><output id="speedVal">4 TPS</output></label>
+<label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="2.5"><output id="speedVal">2.5 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.4)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.5)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
 <div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="yellow orange" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
-<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
-<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지합니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="rendererStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
+<small>실험판: WebGL2 기반의 독립 3D 렌더러 (깊이 버퍼, 둥근 조각, 원근 카메라, 조명). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -334,14 +334,15 @@ function inspectionFrameAt(timeline,schedule,time,strength=1){
 // remains available as a baseline. All time values are nominal turn units.
 const HOME_Q=[1,0,0,0];
 const angularDistance=(a,b)=>2*Math.acos(clamp(Math.abs(a.reduce((v,x,i)=>v+x*b[i],0)),0,1))*180/Math.PI;
-const transitionAt=(from,to,u)=>slerp(from,to,smooth(clamp(u/.72,0,1)));
+const easePose=u=>{u=clamp(u,0,1);return u*u*u*(10+u*(-15+6*u));};
+const transitionAt=(from,to,u)=>slerp(from,to,easePose(u));
 function movingVisibility(c,j,move,u,pose,view){
   const [axis,side]=FACES[j];
   let n=c.b[axis].map(v=>v*side);
   if(move.selected(c.p))n=rotate(n,move.axis,move.angle*smooth(u));
   return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
 }
-const sampleProgress=[0,.25,.5,.72,.86,1];
+const sampleProgress=[0,.2,.4,.6,.8,1];
 function observedSlots(cubies,move,from,to,view){
   const slots=new Set();
   for(const u of sampleProgress){
@@ -400,7 +401,7 @@ function planContinuousSearch(timeline,{target=["white","green"],kind="edge",che
     observe(cubies,pose,memory,i,view);
     // Stay at the acquired pose for one more turn; return only when no
     // immediate information-seeking move is needed. No per-turn bounce.
-    let to=i-lastSearch<=1?pose:HOME_Q,event=null;
+    let to=i-lastSearch<=1?pose:angularDistance(pose,HOME_Q)<2?HOME_Q:slerp(pose,HOME_Q,.55),event=null;
     const baseline=observedSlots(cubies,move,pose,to,view);
     if((checks?checks.has(i):i-lastSearch>=2)&&!move.whole){
       const {candidates,knownTarget}=continuousCandidates(timeline,i,memory,colors,kind);
@@ -411,7 +412,7 @@ function planContinuousSearch(timeline,{target=["white","green"],kind="edge",che
           const q=qpose(p),angle=angularDistance(pose,q);
           if(angle>75||angularDistance(HOME_Q,q)>75)return;
           const {gain,count}=extraGain(cubies,move,pose,q,view,candidates,baseline);
-          const score=gain-.026*angle-.35;
+          const score=gain-.023*angle-.35;
           if(gain>0&&score>0&&(!best||score>best.score+1e-8))best={p,q,angle,gain,count,score};
         };
         for(const p of searchAngles)evaluate(p);
@@ -459,7 +460,7 @@ function tick(now){
   render();
   if(playing||Math.abs(yaw-goalYaw)+Math.abs(pitch-goalPitch)>.02)raf=requestAnimationFrame(tick);
 }
-function draw(canvas,frame,pose){
+function drawFallback(canvas,frame,pose){
   const box=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);
   const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
   if(!w||!h)return;
@@ -486,11 +487,116 @@ function draw(canvas,frame,pose){
   const drawPoly=(pts,color)=>{ctx.beginPath();pts.forEach((p,i)=>{const x=w/2+p[0]*size,y=h/2-p[1]*size;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fillStyle=color;ctx.fill()};
   for(const p of polys){drawPoly(p.pts,"#18191b");if(p.col!=="#202124"){drawPoly(p.sticker,p.col);ctx.globalAlpha=1-p.light;drawPoly(p.sticker,"#000");ctx.globalAlpha=1}}
 }
+
+const gpuViews=new Map();
+const bodyColor=[.037,.040,.045];
+const hexRGB=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
+const rgbCache=new Map(FACES.map(f=>[f[2],hexRGB(f[2])]));
+// An actual rounded box: six tessellated surface patches, projected onto
+// the Minkowski sum of a smaller cube and a sphere. Normals are analytic.
+function roundedBody(h=.476,r=.064){
+  const inner=h-r, g=[-h,-h+r*.30,-h+r*.65,-inner,0,inner,h-r*.65,h-r*.30,h];
+  const out=[];
+  const vertex=(axis,side,u,v)=>{
+    const raw=[0,0,0];raw[axis]=side*h;raw[(axis+1)%3]=u;raw[(axis+2)%3]=v;
+    const base=raw.map(x=>clamp(x,-inner,inner)),d=raw.map((x,i)=>x-base[i]),len=Math.hypot(...d);
+    const normal=d.map(x=>x/len);
+    return [...base.map((x,i)=>x+r*normal[i]),...normal];
+  };
+  for(let axis=0;axis<3;axis++)for(const side of [-1,1]){
+    for(let i=0;i<g.length-1;i++)for(let j=0;j<g.length-1;j++){
+      const a=vertex(axis,side,g[i],g[j]),b=vertex(axis,side,g[i+1],g[j]),c=vertex(axis,side,g[i+1],g[j+1]),d=vertex(axis,side,g[i],g[j+1]);
+      out.push(...a,...b,...c,...a,...c,...d);
+    }
+  }
+  return new Float32Array(out);
+}
+function roundedSticker(h=.426,r=.061){
+  const out=[],p=[];
+  for(let k=0;k<4;k++){
+    const cx=(k===0||k===3?1:-1)*(h-r),cy=(k<2?1:-1)*(h-r);
+    for(let i=0;i<=6;i++){const a=k*Math.PI/2+i*Math.PI/12;p.push([cx+r*Math.cos(a),cy+r*Math.sin(a),0,0,0,1]);}
+  }
+  for(let i=0;i<p.length;i++)out.push(0,0,0,0,0,1,...p[i],...p[(i+1)%p.length]);
+  return new Float32Array(out);
+}
+const bodyMesh=roundedBody(),stickerMesh=roundedSticker();
+const VS="#version 300 es\n"+
+"layout(location=0) in vec3 vert;layout(location=1) in vec3 normal;layout(location=2) in vec3 pos;layout(location=3) in vec3 bx;layout(location=4) in vec3 by;layout(location=5) in vec3 bz;layout(location=6) in vec3 rgb;uniform mat3 view;uniform vec2 lens;uniform float distance;out vec3 N;out vec3 C;out vec3 P;void main(){mat3 basis=mat3(bx,by,bz);vec3 p=view*(pos+basis*vert);N=view*basis*normal;C=rgb;P=p-vec3(0.,0.,distance);float d=-P.z;float near=.1;float far=100.;gl_Position=vec4(P.x*lens.x,P.y*lens.y,((far+near)/(far-near))*d-2.*far*near/(far-near),d);}";
+const FS="#version 300 es\nprecision highp float;\n"+
+"in vec3 N;in vec3 C;in vec3 P;out vec4 color;void main(){vec3 n=normalize(N);float key=max(0.,dot(n,normalize(vec3(-.55,.85,1.4))));float fill=max(0.,dot(n,normalize(vec3(.8,-.3,.8))));vec3 eye=normalize(-P);vec3 halfv=normalize(eye+normalize(vec3(-.55,.85,1.4)));float spec=pow(max(0.,dot(n,halfv)),40.)*.055;vec3 c=C*(.72+.23*key+.09*fill)+vec3(spec);color=vec4(clamp(c,0.,1.),1.);}";
+function compile(gl,kind,source){
+  const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||"Shader compile failed");
+  return s;
+}
+function createGPU(canvas){
+  const gl=canvas.getContext("webgl2",{alpha:true,antialias:true,premultipliedAlpha:false,depth:true});
+  if(!gl)return null;
+  const program=gl.createProgram(),vs=compile(gl,gl.VERTEX_SHADER,VS),fs=compile(gl,gl.FRAGMENT_SHADER,FS);
+  gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program)||"Shader link failed");
+  gl.deleteShader(vs);gl.deleteShader(fs);
+  function mesh(vertices){
+    const vao=gl.createVertexArray(),vb=gl.createBuffer(),ib=gl.createBuffer();
+    gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+    for(let i=0;i<2;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,24,i*12);}
+    gl.bindBuffer(gl.ARRAY_BUFFER,ib);
+    for(let i=2;i<=6;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,60,(i-2)*12);gl.vertexAttribDivisor(i,1);}
+    gl.bindVertexArray(null);return {vao,ib,count:vertices.length/6};
+  }
+  const body=mesh(bodyMesh),sticker=mesh(stickerMesh);
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
+  return {gl,program,body,sticker,view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
+}
+function cubeInstances(frame){
+  const bodies=[],stickers=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p);
+    const turn=v=>turning?rotate(v,frame.move.axis,frame.angle):v;
+    const p=turn(c.p.map(x=>x*.5)),b=c.b.map(turn);
+    bodies.push(...p,...b[0],...b[1],...b[2],...bodyColor);
+    for(let j=0;j<6;j++){
+      const color=rgbCache.get(c.colors[j]);if(!color)continue;
+      const [axis,side]=axes[j],n=b[axis].map(x=>x*side),u=b[(axis+1)%3],v=b[(axis+2)%3].map(x=>x*side);
+      stickers.push(...p.map((x,i)=>x+n[i]*.479),...u,...v,...n,...color);
+    }
+  }
+  return {bodies:new Float32Array(bodies),stickers:new Float32Array(stickers)};
+}
+function drawGPU(canvas,frame,pose){
+  let gpu=gpuViews.get(canvas);
+  if(gpu===undefined){gpu=createGPU(canvas);gpuViews.set(canvas,gpu);}
+  if(!gpu)return false;
+  const {gl,program,body,sticker}=gpu;
+  if(gl.isContextLost())return true;
+  const box=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);
+  const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
+  if(!w||!h)return true;
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+  gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
+  const q=qpose([pitch,yaw,0]),basis=[0,1,2].flatMap(i=>qrotate(q,qrotate(pose,unit(i,1))));
+  const f=1/Math.tan(rad(29)/2);
+  gl.uniformMatrix3fv(gpu.view,false,new Float32Array(basis));gl.uniform2f(gpu.lens,f*h/w,f);gl.uniform1f(gpu.distance,tl.n*3.55);
+  const instances=cubeInstances(frame);
+  for(const [mesh,data] of [[body,instances.bodies],[sticker,instances.stickers]]){
+    gl.bindVertexArray(mesh.vao);gl.bindBuffer(gl.ARRAY_BUFFER,mesh.ib);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+    gl.drawArraysInstanced(gl.TRIANGLES,0,mesh.count,data.length/15);
+  }
+  gl.bindVertexArray(null);return true;
+}
+function draw(canvas,frame,pose){
+  if(drawGPU(canvas,frame,pose))return true;
+  drawFallback(canvas,frame,pose);return false;
+}
+
 function sampled(t,strength=1){return continuous?continuousSearchFrameAt(tl,timing,t,strength):inspectionFrameAt(tl,timing,t,strength)}
 function render(){
   if(!tl)return;
   const {frame,pose,event}=sampled(time,Number($("strength").value));
-  draw(canvases[0],frame,[1,0,0,0]);draw(canvases[1],frame,pose);
+  const gpuA=draw(canvases[0],frame,HOME_Q),gpuB=draw(canvases[1],frame,pose);
+  $("rendererStatus").textContent=gpuA&&gpuB?"WebGL2 · 실제 입체 렌더링":"WebGL2 미지원 · Canvas 대체 렌더링";
+  $("poseDiff").textContent="두 큐브의 실제 자세 차이: "+angularDistance(HOME_Q,pose).toFixed(1)+"° · 탐색 "+plan.events.length+"회";
   $("seek").value=timing.total?time/timing.total:0;
   $("inspectionStatus").textContent=event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
   $("pos").textContent=frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
@@ -520,6 +626,16 @@ $("load").onclick=load;$("size").onchange=load;$("mode").onchange=load;
 $("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";load()};
 function sample(setup,target="yellow orange"){$("size").value="3";$("kind").value="edge";$("target").value=target;$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
 $("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
+$("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").value="yellow orange";$("checks").value="";$("setup").value="Rw U2 Fw D Lw B";$("alg").value="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'";load()};
+$("jumpInspection").onclick=()=>{
+  if(!plan?.events.length){$("message").textContent="현재 조건에서는 추가 탐색이 필요하지 않습니다.";return;}
+  playing=false;syncButton();
+  const starts=plan.events.map(e=>timing.stepTimes[e.i]);
+  const next=starts.findIndex(t=>t>time+.03);
+  const i=next<0?0:next;
+  const start=starts[i],end=timing.stepTimes[plan.events[i].i+1];
+  time=start+(end-start)*.8;render();
+};
 $("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
 document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
 for(const c of canvases){
