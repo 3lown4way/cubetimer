@@ -5,8 +5,10 @@ const FACES = ["U", "R", "F", "D", "L", "B"];
 const SIDES = ["F", "L", "B", "R"];
 const SUFFIXES = ["", "'", "2"];
 const MASK_BASE = 2 ** 24;
-const FIRST_CENTER_VIEW = { U: "D", D: "U", R: "R", L: "L", F: "B", B: "F" };
-const CENTER_TURN_COST = { U: 8, R: 8, F: 10, L: 12, D: 17, B: 22 };
+// Use the top and side layers in the player's grip. The first center is
+// solved on canonical D and shown on top before the cube is flipped.
+const FIRST_CENTER_LAYERS = ["D", "Dw", "R", "Rw", "L", "Lw"];
+const OPPOSITE_CENTER_LAYERS = ["U", "Uw", "R", "Rw", "L", "Lw"];
 
 let modelPromise;
 
@@ -54,9 +56,7 @@ async function buildModel() {
     return { destinations, undo: moves.slice().reverse().map(inverseTurn) };
   }
 
-  const outer = FACES.flatMap((face) => SUFFIXES.map((suffix) => `${face}${suffix}`));
-  const wide = FACES.flatMap((face) => SUFFIXES.map((suffix) => `${face}w${suffix}`));
-  return { goals, colorByPiece, action, outer, wide, policies: new Map() };
+  return { goals, colorByPiece, action, policies: new Map() };
 }
 
 async function getModel() {
@@ -121,24 +121,27 @@ function centerPath(model, id, startA, goalA, startB, goalB, actions, deadlineTs
   return output;
 }
 
-function firstCenterAction(model, moves, view = null) {
+function turnsForLayers(layers) {
+  return layers.flatMap((layer) => SUFFIXES.map((suffix) => `${layer}${suffix}`));
+}
+
+function centerAction(model, moves) {
   const action = model.action(moves);
-  const cost = action.undo.reduce((sum, turn) => {
-    const face = view ? view[turn[0]] : turn[0];
-    const wideCost = turn[1] === "w" ? (face === "B" || face === "D" ? 5 : 2) : 0;
-    return sum + CENTER_TURN_COST[face] + wideCost;
-  }, 0);
+  const cost = moves.reduce((sum, turn) => sum + (turn[1] === "w" ? 11 : 8), 0);
   return { ...action, cost };
 }
 
 function oppositeCenterActions(model) {
+  const turns = turnsForLayers(OPPOSITE_CENTER_LAYERS);
+  const setups = turnsForLayers(["Rw", "Lw"]);
+  const topTurns = turnsForLayers(["U", "Uw"]);
   const candidates = [
-    ...[...model.outer, ...model.wide].map((move) => [move]),
-    ...model.wide.flatMap((open) => model.outer.map((turn) => [open, turn, inverseTurn(open)])),
+    ...turns.map((move) => [move]),
+    ...setups.flatMap((open) => topTurns.map((turn) => [open, turn, inverseTurn(open)])),
   ];
   const actions = new Map();
   for (const moves of candidates) {
-    const action = firstCenterAction(model, moves);
+    const action = centerAction(model, moves);
     if (moveMask(model.goals.D, action.destinations) !== model.goals.D) continue;
     const key = action.destinations.join(",");
     if ((actions.get(key)?.cost ?? Infinity) > action.cost) actions.set(key, action);
@@ -155,7 +158,7 @@ export async function solveYauFirstCenters444(pattern, deadlineTs, onStage) {
 
   onStage("YAU_FIRST_CENTER");
   const first = centerPath(model, "first", centerMask(model, pattern, "D"), goals.D, 0, 0,
-    () => [...model.wide, ...model.outer].map((move) => firstCenterAction(model, [move], FIRST_CENTER_VIEW)), deadlineTs, timing);
+    () => turnsForLayers(FIRST_CENTER_LAYERS).map((move) => centerAction(model, [move])), deadlineTs, timing);
   const afterFirst = pattern.applyAlg(moveSequence(first));
   if (centerMask(model, afterFirst, "D") !== goals.D) throw new Error("444_YAU_FIRST_CENTER_VERIFY");
 

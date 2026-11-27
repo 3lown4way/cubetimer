@@ -1,12 +1,12 @@
 import { puzzles } from "../vendor/cubing/puzzles/index.js";
-import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261127-yau-centers-1";
+import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261127-yau-natural-centers-1";
 import {
   crossEdgeTypeMask444,
   crossSideColors444,
   solveYauCross4Natural444,
   solveYauFirstThreeCross444,
   solveYauLastEight323444,
-} from "./edgePairing444.js?v=20261126-yau-stages-1";
+} from "./edgePairing444.js?v=20261127-yau-natural-centers-1";
 
 const SIDE_CYCLE = ["F", "L", "B", "R"];
 const OPPOSITE = { U: "D", R: "L", F: "B", D: "U", L: "R", B: "F" };
@@ -107,13 +107,15 @@ function streamlinePairingTurns(turns) {
   return result;
 }
 
-export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cross4BudgetMs, onStage }) {
+export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cross4BudgetMs, onStage, scoreCross3Plans }) {
   const puzzle = await puzzles["4x4x4"].kpuzzle();
   const initial = puzzle.defaultPattern().applyAlg(scramble);
   const centers = await solveYauFirstCenters444(initial, deadlineTs, onStage);
+  const oppositeTurns = shortenYauLayerRuns(centers.opposite, false);
   onStage("YAU_CROSS3");
   const cross3Started = Date.now();
-  const cross = await solveYauFirstThreeCross444(centers.pattern, deadlineTs);
+  const scoreCross3 = scoreCross3Plans?.(centers.first, oppositeTurns);
+  const cross = await solveYauFirstThreeCross444(centers.pattern, deadlineTs, scoreCross3);
   const cross3Ms = Date.now() - cross3Started;
 
   onStage("YAU_REMAINING_CENTERS");
@@ -131,7 +133,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
   const protectedMask = cross.crossCount === 3 ? cross.lockedMask : cross.lockedMask & (cross.lockedMask - 1);
   const protectedSideColors = crossSideColors444(protectedMask);
   const cross3Turns = crossSteps.flatMap(({ solution }) => split(solution));
-  const beforeCross4 = [...centers.first, ...centers.opposite, ...cross3Turns, ...sideTurns].join(" ");
+  const beforeCross4 = [...centers.first, ...oppositeTurns, ...cross3Turns, ...sideTurns].join(" ");
   const targetMask = crossEdgeTypeMask444("D");
 
   onStage("YAU_CROSS4");
@@ -154,7 +156,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
 
   const setupStage = phaseGroup("centers", "Yau Setup", "Yau", [
     phaseSegment("yauFirstCenter", "Yau · First Center", centers.first),
-    phaseSegment("yauOppositeCenter", "Yau · Opposite Center", shortenYauLayerRuns(centers.opposite, false)),
+    phaseSegment("yauOppositeCenter", "Yau · Opposite Center", oppositeTurns),
     phaseSegment("yauCross3", cross.crossCount === 4 ? "Yau · Cross Already Solved" : "Yau · Cross Edges 3/4", cross3Turns, {
       crossEdgeCount: cross.crossCount,
       startingSideColors: crossSideColors444(cross.initialMask & cross.lockedMask),
@@ -175,7 +177,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
     const turns = streamlinePairingTurns(stationaryCrossTurns(segment.solution));
     return { ...segment, solution: turns.join(" "), moveCount: turns.length };
   }));
-  const centerPhaseMoveCounts = [centers.first.length, centers.opposite.length, groupedTurns.length, colorTurns.length];
+  const centerPhaseMoveCounts = [centers.first.length, oppositeTurns.length, groupedTurns.length, colorTurns.length];
   return {
     stages: [setupStage, edgeStage],
     workingFace: cross.workingFace,
@@ -332,6 +334,10 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
     ), stage);
   }
 
+  for (const stage of [first, opposite]) {
+    const turns = split(stage.solution).slice(stage.viewpointRotations);
+    require(turns.every((turn) => /^[URL]w?(?:2|')?$/.test(turn)), stage.id);
+  }
   pattern = pattern.applyAlg(first.solution);
   require(snapshot().crossFace === "U", first.id);
   pattern = pattern.applyAlg(opposite.solution);

@@ -1318,8 +1318,9 @@ export function crossSideColors444(mask) {
   return EDGE_SLOT_PAIRS_444.flatMap((_, type) => mask & (1 << type) ? [crossSideFace444(type)] : []);
 }
 
-function cross3Turns444(model, lockedMask) {
+function cross3Turns444(model, lockedMask, backFace) {
   const allowed = ["U", "Uw", "2D", "F", "R", "L", "B"]
+    .filter((layer) => layer !== backFace)
     .flatMap((layer) => [layer, `${layer}'`, `${layer}2`]);
   return allowed.filter((turn) => maskContains(
     solvedEdgeTypeMask(model.solvedCompact, model.actionFor(turn), lockedMask), lockedMask,
@@ -1335,31 +1336,20 @@ function findCross3Insertion444(state, moves, edgeType, model, deadlineTs) {
   return null;
 }
 
-export async function solveYauFirstThreeCross444(pattern, deadlineTs) {
-  const model = await getPlannerModel();
-  const crossMask = crossEdgeTypeMask444("D");
+function planYauCross3(pattern, initial, model, initialMask, targetMask, backFace, deadlineTs) {
   let current = pattern;
-  let state = compactStateFromPattern(current);
-  if (!protectedCenterFacesSolved444(state, model, ["D", "U"])) {
-    throw new Error("444_YAU_CROSS3_CENTERS_NOT_READY");
-  }
-
-  let lockedMask = solvedEdgeTypeMask(state) & crossMask;
-  const initialMask = lockedMask;
+  let state = initial;
+  let lockedMask = initialMask;
   const steps = [];
-  if (lockedMask === crossMask && centersSolved(state, model.solvedCompact.centerPieces)) {
-    return { steps, pattern: current, initialMask, lockedMask, crossCount: 4, workingFace: "F" };
-  }
-
   while (bitCount(lockedMask) < 3) {
-    const allowed = cross3Turns444(model, lockedMask);
+    const allowed = cross3Turns444(model, lockedMask, backFace);
     let best = null;
     for (let type = 0; type < EDGE_SLOT_PAIRS_444.length; type += 1) {
-      if (!((crossMask & ~lockedMask) & (1 << type))) continue;
+      if (!((targetMask & ~lockedMask) & (1 << type))) continue;
       const turns = findCross3Insertion444(state, allowed, type, model, deadlineTs);
       if (turns && (!best || turns.length < best.turns.length)) best = { type, turns };
     }
-    if (!best) throw new Error(deadlineReached(deadlineTs) ? "444_DEADLINE_REACHED" : "444_YAU_CROSS3_NOT_FOUND");
+    if (!best) return null;
     for (const turn of best.turns) {
       current = current.applyMove(turn);
       state = compactStateFromPattern(current);
@@ -1372,6 +1362,7 @@ export async function solveYauFirstThreeCross444(pattern, deadlineTs) {
     steps.push({ turns: best.turns, lockedMask, edgeFace: crossSideFace444(best.type) });
   }
 
+  const crossMask = crossEdgeTypeMask444("D");
   if (lockedMask === crossMask) lockedMask &= lockedMask - 1;
   const workingFace = crossSideFace444(31 - Math.clz32(crossMask & ~lockedMask));
   // If the working spoke also became solved, move just that spoke aside.
@@ -1383,6 +1374,40 @@ export async function solveYauFirstThreeCross444(pattern, deadlineTs) {
     steps.push({ turns: [workingFace], lockedMask, workingGap: true });
   }
   return { steps, pattern: current, initialMask, lockedMask, crossCount: 3, workingFace };
+}
+
+export async function solveYauFirstThreeCross444(pattern, deadlineTs, scorePlan) {
+  const model = await getPlannerModel();
+  const crossMask = crossEdgeTypeMask444("D");
+  const initial = compactStateFromPattern(pattern);
+  if (!protectedCenterFacesSolved444(initial, model, ["D", "U"])) {
+    throw new Error("444_YAU_CROSS3_CENTERS_NOT_READY");
+  }
+
+  const initialMask = solvedEdgeTypeMask(initial) & crossMask;
+  if (initialMask === crossMask && centersSolved(initial, model.solvedCompact.centerPieces)) {
+    return { steps: [], pattern, initialMask, lockedMask: initialMask, crossCount: 4, workingFace: "F" };
+  }
+
+  let best = planYauCross3(pattern, initial, model, initialMask, crossMask, null, deadlineTs);
+  if (!best) throw new Error(deadlineReached(deadlineTs) ? "444_DEADLINE_REACHED" : "444_YAU_CROSS3_NOT_FOUND");
+  if (!scorePlan) return best;
+  let bestScore = scorePlan(best);
+  // Try leaving the rear slot empty while building the other three. That
+  // can keep all three insertions in one grip before turning the gap up.
+  for (const [type] of EDGE_SLOT_PAIRS_444.entries()) {
+    const gap = 1 << type;
+    if (!((crossMask & ~initialMask) & gap) || deadlineReached(deadlineTs)) continue;
+    const backFace = crossSideFace444(type);
+    const candidate = planYauCross3(pattern, initial, model, initialMask, crossMask & ~gap, backFace, deadlineTs);
+    if (!candidate) continue;
+    const score = scorePlan(candidate);
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function yauCrossGap444(model, targetType, turns = crossFaceTurns444(model, "D")) {

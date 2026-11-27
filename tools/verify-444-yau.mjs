@@ -272,7 +272,9 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   assert.equal(setup.segments[1].viewpointRotations, 1, "Yau must flip once before the opposite center");
   assert.match(setup.segments[1].solution.split(" ")[0], /^[xz]2$/);
   for (const center of setup.segments.slice(0, 2)) {
-    const layers = center.solution.split(" ").slice(center.viewpointRotations).map((move) => move.replace(/[2']$/, ""));
+    const moves = center.solution.split(/\s+/).filter(Boolean).slice(center.viewpointRotations);
+    assert.ok(moves.every((move) => /^[URL]w?(?:2|')?$/.test(move)), "first two centers should use only top and side layers");
+    const layers = moves.map((move) => move.replace(/[2']$/, ""));
     assert.equal(layers.some((layer, index) => layer === layers[index - 1]), false,
       "center turns on the same layer should be combined");
   }
@@ -422,6 +424,7 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   const cfop = result.stages[2];
   assert.doesNotMatch(result.solution.trim().split(/\s+/).at(-1), /^[xyz](?:2|')?$/, "the solve should stop when the final layer is solved");
   assert.equal(cfop.id, "threeByThree");
+  assert.doesNotMatch(cfop.solution, /(?:^|\s)[xyz](?:2|')?(?=\s|$)/, "CFOP should keep the cross-down pairing grip");
   const crossStage = cfop.segments.find((segment) => segment.name === "Cross");
   assert.ok(crossStage, "Yau CFOP did not expose the Cross checkpoint");
   assert.equal(crossStage.moveCount, 0, "a true Yau reduction should enter F2L with the cross already solved");
