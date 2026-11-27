@@ -9,7 +9,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M1.2 Stable contact</h1>
+<h1>Cube mechanical lab · M1.3 Predictive handoff</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
 <div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label><input id="hardContact" type="checkbox" checked> 침투 제한 및 비선형 MagLev (M0.8)</label><label><input id="maxPhysics" type="checkbox" checked> MAX · 외피/내부/조각 유격/자기력</label><label><input id="magneticCapture" type="checkbox" checked> M1.1 자석 자율 정렬</label><label>자석 잔류자속밀도 Br (T, 가정) <input id="br" type="range" min=".6" max="1.5" step=".05" value="1.25"><output id="brVal">1.25 T</output></label><label>M1.0 다음 입력 지연 (모델 시간) <input id="requestDelay" type="range" min=".25" max=".85" step=".01" value=".48"><output id="requestDelayVal">480 ms</output></label><label>이전 엔진 입력 시점 (잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
@@ -754,13 +754,31 @@ function m10Release(angle=80,initialVelocity=0,strength=1,br=1.25,friction=1){
  return {ts,angles,velocities,energies,torques,final:x*180/Math.PI,peakTorque:Math.max(...torques.map(Math.abs)),maxAngle:Math.max(...angles)*180/Math.PI};
 }
 
+
+// Predict the next finger stroke against the current full mesh geometry.
+// Require a sustained clear path before applying the following torque.
+// This prevents a later layer from blocking the earlier one repeatedly.
+function m13CanStart(t,a,next,offsets,flex,friction){
+ const b={i:next,move:t.moves[next],x:0,v:0,goal:Math.abs(t.moves[next].angle),inertia:1},p={...a},dt=1/120;
+ for(let k=1;k<=36;k++){
+  for(const q of [p,b]){
+   const err=q.goal-q.x,desired=Math.min(2.3,Math.sqrt(28*Math.max(0,err)),24*Math.max(0,err));
+   q.v=clamp(q.v+(clamp(24*(desired-q.v),-35,35)-friction*(2.05*q.v+.075*Math.tanh(q.v/.02)))*dt,0,2.7);
+   q.x=Math.min(q.goal,q.x+q.v*dt*(q===p?.90:1.04));
+  }
+  if(p.x>=p.goal-1e-5)return true;
+  if(k%3===0&&m09Query(t,[p,b],offsets,flex,{limit:.0012}).depth>.0012)return false;
+ }
+ return true;
+}
 function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress=null,magneticCapture=false,requestDelay=.48,br=1.25}={}){
  if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("MAX는 3×3 외층과 x/y/z 회전만 지원합니다.");
  const dt=1/120,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0],offsets=t.frames[0].map(()=>0),offsetV=offsets.slice(),traceCenter=[offsets.slice()],flex=offsets.map(m09Zero),vel=offsets.map(m09Zero),traceFlex=[flex.map(f=>f.slice())];
+ let launchChecks=0,launchWait=0,clearStreak=0;
  let clock=0,next=0,maxDeflection=0,maxForce=0,maxCenter=0,maxShift=0,maxTilt=0,meshEvaluations=0,contactSamples=0,projectionQueries=0,blockedSteps=0,retreatSteps=0,shellSamples=0,sweepTests=0,last=null,stalls=0,releaseCount=0,assistCount=0,peakMagnetic=0,traceMagnetic=[0],peakBodyLoad=0;
  const magneticRest=new Map();
  const launchAngle=rad(clamp(requestAngle,20,50)),centers=t.frames[0].map(c=>c.colors.filter(x=>x!=="#202124").length===1);
- const start=()=>{const move=t.moves[next],a={i:next,move,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(move.angle),inertia:move.whole?2.1:1,ts:[clock],angles:[0]};if(active.length)cuts.push({i:next,start:clock,end:clock,limit:launchAngle*180/Math.PI,requestRemaining:(active[0].goal-active[0].x)*180/Math.PI,previous:active[0].move.token,next:move.token});times.push(clock);turns.push(a);active.push(a);next++;stalls=0;};
+ const start=()=>{const move=t.moves[next],a={i:next,move,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(move.angle),inertia:move.whole?2.1:1,ts:[clock],angles:[0]};if(active.length)cuts.push({i:next,start:clock,end:clock,limit:launchAngle*180/Math.PI,requestRemaining:(active[0].goal-active[0].x)*180/Math.PI,previous:active[0].move.token,next:move.token});times.push(clock);turns.push(a);active.push(a);next++;stalls=0;clearStreak=0;};
  const mix=(a,b,u)=>a.map((x,k)=>x+(b[k]-x)*u),mixF=(a,b,u)=>a.map((x,k)=>mix(x,b[k],u));
  if(t.moves.length)start();
  const limitSteps=Math.ceil(Math.max(2,t.moves.length*8)/dt);
@@ -810,14 +828,14 @@ function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress
   clock+=dt;for(let k=0;k<active.length;k++){const a=active[k];a.x=x[k];a.v=(x[k]-oldX[k])/dt;a.ts.push(clock);a.angles.push(Math.sign(a.move.angle)*a.x);}
   maxDeflection=Math.max(maxDeflection,depth);maxForce=Math.max(maxForce,last.force);traceT.push(clock);traceD.push(depth);traceF.push(last.force);traceCenter.push(offsets.slice());traceFlex.push(flex.map(f=>f.slice()));traceMagnetic.push(Math.max(0,...last.rawMagnetic.map(Math.abs)));
   const a=active[0],passive=a.released&&!a.assisted;if(passive?Math.abs(a.goal-a.x)<.0015&&Math.abs(a.v)<.06:Math.abs(a.goal-a.x)<1e-8){a.captureResidual=Math.abs(a.goal-a.x)*180/Math.PI;a.x=a.goal;a.angles[a.angles.length-1]=a.move.angle;a.v=0;a.end=clock;const cut=cuts.find(c=>c.i===a.i+1);if(cut)cut.end=clock;active.shift();stalls=0;progress?.(a.i+1,t.moves.length);}
-  if(next<t.moves.length){if(!active.length)start();else if(active.length===1){const a=active[0],b=t.moves[next];const strokeScale=(a.move.amount===2?1.45:1)*(a.move.axis===1?.86:a.move.axis===2?1.12:1);const requested=magneticCapture?clock-a.start>=requestDelay*strokeScale:a.goal-a.x<=launchAngle&&a.v>0;if(a.i===next-1&&cutLimit(a.move,b,3,true)>0&&requested)start();}}
+  if(next<t.moves.length){if(!active.length)start();else if(active.length===1){const a=active[0],b=t.moves[next];const strokeScale=(a.move.amount===2?1.45:1)*(a.move.axis===1?.86:a.move.axis===2?1.12:1);const requested=magneticCapture?clock-a.start>=requestDelay*strokeScale:a.goal-a.x<=launchAngle&&a.v>0;if(a.i===next-1&&cutLimit(a.move,b,3,true)>0&&requested){if(!magneticCapture)start();else if(step%3===0){launchChecks++;if(m13CanStart(t,a,next,offsets,flex,friction))clearStreak++;else clearStreak=0;if(clearStreak>=3)start();else launchWait++;}}}}
  }
  if(active.length||next!==t.moves.length)throw Error("MAX 회전 정렬 수렴 실패: "+active.map(a=>a.move.token+":"+a.x.toFixed(3)).join(","));
  // At the final logical alignment the small elastic offsets relax to zero.
  const o0=offsets.slice(),f0=flex.map(f=>f.slice());if(o0.some(x=>x>1e-6)||f0.some(f=>f.some(x=>Math.abs(x)>1e-6))){for(let j=1;j<=24;j++){const a=1-smooth(j/24);clock+=dt;traceT.push(clock);traceD.push(0);traceF.push(0);traceCenter.push(o0.map(x=>x*a));traceFlex.push(f0.map(f=>f.map(x=>x*a)));}}
  traceCenter[traceCenter.length-1]=offsets.map(()=>0);traceFlex[traceFlex.length-1]=offsets.map(m09Zero);times.push(clock);
  for(const c of cuts){const a=turns[c.i-1],b=turns[c.i],i=b.angles.findIndex(v=>Math.abs(v)>=rad(1));c.actualResidual=i>=0&&b.ts[i]<a.end?(a.goal-Math.abs(flowAngle(a,b.ts[i])))*180/Math.PI:null;c.advanceAtAlignment=Math.abs(flowAngle(b,a.end))*180/Math.PI;}
- return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,maxMode:true,traceT,traceD,traceF,traceCenter,traceFlex,magneticCapture,releaseCount,assistCount,peakMagnetic,peakBodyLoad,traceMagnetic,maxDeflection,maxForce,maxCenter,maxShift,maxTilt,meshEvaluations,contactSamples,shellSamples,projectionQueries,sweepTests,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
+ return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,launchChecks,launchWait,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,maxMode:true,traceT,traceD,traceF,traceCenter,traceFlex,magneticCapture,releaseCount,assistCount,peakMagnetic,peakBodyLoad,traceMagnetic,maxDeflection,maxForce,maxCenter,maxShift,maxTilt,meshEvaluations,contactSamples,shellSamples,projectionQueries,sweepTests,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
 }
 
 function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false,maxMode=false,progress=null,magneticCapture=false,requestDelay=.48,br=1.25}={}){
