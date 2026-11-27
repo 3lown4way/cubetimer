@@ -1581,19 +1581,45 @@ function m04Parts(frame){
  }
  return arr;
 }
-function m04Probe(frame){
- const parts=m04Parts(frame),pairs=[],byType={},piecePairs=new Set();let hits=0,tests=0;
+
+// Distance from an internal sample to the nearest triangle surface, using
+// the same mesh BVH. Units: one cubie width; no fitted cam geometry.
+function m04TriangleDistance2(p,t){
+ const a=t.a,b=a.map((v,k)=>v+t.e[k]),c=a.map((v,k)=>v+t.g[k]),ab=t.e,ac=t.g;
+ const sub=(x,y)=>x.map((v,k)=>v-y[k]),d2=(x,y)=>dot3(sub(x,y),sub(x,y));
+ const ap=sub(p,a),d1=dot3(ab,ap),d2a=dot3(ac,ap);if(d1<=0&&d2a<=0)return d2(p,a);
+ const bp=sub(p,b),d3=dot3(ab,bp),d4=dot3(ac,bp);if(d3>=0&&d4<=d3)return d2(p,b);
+ const vc=d1*d4-d3*d2a;if(vc<=0&&d1>=0&&d3<=0){const v=d1/(d1-d3);return d2(p,a.map((x,k)=>x+v*ab[k]));}
+ const cp=sub(p,c),d5=dot3(ab,cp),d6=dot3(ac,cp);if(d6>=0&&d5<=d6)return d2(p,c);
+ const vb=d5*d2a-d1*d6;if(vb<=0&&d2a>=0&&d6<=0){const w=d2a/(d2a-d6);return d2(p,a.map((x,k)=>x+w*ac[k]));}
+ const va=d3*d6-d5*d4;if(va<=0&&d4-d3>=0&&d5-d6>=0){const w=(d4-d3)/((d4-d3)+(d5-d6));return d2(p,b.map((x,k)=>x+w*(c[k]-x)));}
+ const n=cross3(ab,ac),nn=dot3(n,n);return nn>1e-18?dot3(ap,n)**2/nn:Math.min(d2(p,a),d2(p,b),d2(p,c));
+}
+function m04BoxDistance2(p,n){return p.reduce((s,x,k)=>s+Math.max(n.min[k]-x,x-n.max[k],0)**2,0);}
+function m04Depth2(p,geo){
+ let best=Infinity,stack=[geo.root];
+ while(stack.length){
+  const n=stack.pop();if(m04BoxDistance2(p,n)>=best)continue;
+  if(n.children){const [a,b]=n.children;if(m04BoxDistance2(p,a)<m04BoxDistance2(p,b))stack.push(b,a);else stack.push(a,b);}
+  else for(const t of n.ts)best=Math.min(best,m04TriangleDistance2(p,t));
+ }
+ return best;
+}
+
+function m04Probe(frame,depths=false){
+ const parts=m04Parts(frame),pairs=[],byType={},piecePairs=new Set();let hits=0,tests=0,depthEnergy=0,maxDepth=0;
  for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
   const a=parts[i],b=parts[j];if(a.id===b.id||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
   let count=0;
   for(const [src,dst] of [[a,b],[b,a]])for(const sample of src.geo.sample){
    const p=cadTransform(src.basis,sample).map((x,k)=>x+src.offset[k]-dst.offset[k]),local=cadInverse(dst.basis,p);
-   tests++;if(m04Inside(local,dst.geo))count++;
+   tests++;if(m04Inside(local,dst.geo)){count++;if(depths){const d=m04Depth2(local,dst.geo);depthEnergy+=d;maxDepth=Math.max(maxDepth,Math.sqrt(d));}}
   }
   if(count){const key=[a.name,b.name].sort().join(" ↔ ");byType[key]=(byType[key]||0)+count;hits+=count;piecePairs.add([a.id,b.id].sort((x,y)=>x-y).join(":"));pairs.push({a:a.id,b:b.id,type:key,count});}
  }
- return {partPairs:pairs.length,piecePairs:piecePairs.size,hits,tests,byType,pairs};
+ return {partPairs:pairs.length,piecePairs:piecePairs.size,hits,tests,byType,pairs,depthEnergy,maxDepth};
 }
+const M04_CONTACT_TABLE={"residuals":[0,5,10,15,20,25,30,35],"advances":[0,5,10,15,20,25,30,35,45,60,75,90],"tables":{"R U":[[0,0,0,0,0,0,0.0049895,0.010559,0.0127939,0.0010335,0,0],[0,0,0,0,0,0.0013019,0.0123239,0.0209427,0.0261264,0.0033326,0,0.0003489],[0,0,0,0,0.0027004,0.0041211,0.0149182,0.02205,0.0368407,0.0025749,0,0.0086202],[0,0,0,0.00198,0.0113837,0.022614,0.0397498,0.0362108,0.0381431,0.0102369,0.0206247,0.0342001],[0,0,0.0019432,0.012691,0.036397,0.0535407,0.0559879,0.0847676,0.0753157,0.0142789,0.1106758,0.1967807],[0,0.002431,0.0156402,0.0337254,0.0832053,0.0880774,0.0959886,0.1251582,0.1359191,0.0342008,0.228753,0.44051],[0.0029576,0.0128839,0.0329593,0.0756744,0.1110273,0.1648658,0.2296983,0.2735515,0.235692,0.0633897,0.3749794,0.5566693],[0.0136543,0.0416845,0.0592726,0.1059698,0.1588801,0.2461158,0.3091972,0.3853494,0.3150395,0.1260012,0.4448706,0.6454252]],"R U'":[[0,0,0,0,0,0,0.0010335,0.0064208,0.0127939,0.0049895,0,0],[0,0,0,0,0,0,0.0033326,0.0089711,0.0261264,0.012324,0,0.0056418],[0,0,0,0,0,0,0.0025748,0.0158274,0.0368407,0.014918,0.0024052,0.128083],[0,0,0,0,0,0.0003426,0.0102365,0.0198942,0.038142,0.0397508,0.0357805,0.506139],[0,0,0,0,0,0.0019779,0.0142771,0.0460259,0.07537,0.0578992,0.0809364,0.3522835],[0,0,0.0000049,0,0.0003689,0.008712,0.0322908,0.0781134,0.1367209,0.1435166,0.1228991,0.3046015],[0.0029576,0.0011465,0.0012121,0.0010735,0.0059414,0.0220826,0.0567923,0.0966309,0.2348745,0.3493525,0.2295552,0.405819],[0.0136543,0.0067439,0.0075455,0.0073076,0.0177483,0.0395977,0.0791247,0.122989,0.3008858,0.5158249,0.2855295,0.3031667]],"R' U":[[0,0,0,0,0,0,0.0049895,0.010559,0.0127939,0.0010335,0,0],[0,0,0,0,0,0,0.0049872,0.0138852,0.0275535,0.0075248,0.0000077,0],[0,0,0,0,0,0.0000973,0.0045981,0.0123893,0.0249973,0.0194625,0.0065669,0.102882],[0,0,0,0,0,0.0001335,0.0095664,0.0215416,0.0293268,0.0422867,0.0364556,0.4460123],[0,0,0,0,0,0.0018777,0.019055,0.0445581,0.0695904,0.0755778,0.0794293,0.3397501],[0,0,0,0,0.0004837,0.0085605,0.0317771,0.0795538,0.1063313,0.171844,0.1328041,0.3003919],[0.0036759,0.0022494,0.0015129,0.0015129,0.0056426,0.0218602,0.0605507,0.0929292,0.2002762,0.3669998,0.2178947,0.3908643],[0.0138421,0.0083559,0.0083997,0.0073099,0.0194138,0.0449491,0.0936415,0.1221466,0.3293892,0.4821767,0.2815921,0.3081247]],"R' U'":[[0,0,0,0,0,0,0.0010335,0.0064208,0.0127939,0.0049895,0,0],[0,0,0,0,0,0.0020914,0.0075248,0.0157005,0.0275535,0.0049872,0,0.0001681],[0,0,0,0,0.0022719,0.0063121,0.0194623,0.0282772,0.0249974,0.0045981,0.000768,0.0030809],[0,0,0,0.0018186,0.013603,0.0205474,0.0422754,0.0401303,0.029326,0.0095675,0.0305944,0.0227614],[0,0,0.0026872,0.0117376,0.0365348,0.0736018,0.0740146,0.0661464,0.0695583,0.0190566,0.1230312,0.1748905],[0,0.0038509,0.0117801,0.0355836,0.0948934,0.1044563,0.1291985,0.1515198,0.1063001,0.032957,0.235022,0.4337306],[0.0036759,0.0172296,0.0283112,0.0808123,0.1219952,0.1581548,0.2550642,0.3190309,0.2022401,0.0677587,0.3538392,0.5544429],[0.0138421,0.028121,0.0522342,0.0829381,0.144235,0.2636246,0.2832505,0.35933,0.3440738,0.1354816,0.4464657,0.6458984]]}};
 function m04PairFrame(first="R",next="U",residual=15,advance=8){
  const t=buildTimeline(3,"",first+" "+next),a=t.moves[0],b=t.moves[1],active=[{i:0,move:a,angle:a.angle-Math.sign(a.angle)*rad(residual)},{i:1,move:b,angle:Math.sign(b.angle)*rad(advance)}];
  const cubies=t.frames[0].map((c,id)=>{let p=c.p,bs=c.b;for(const turn of active){if(!turn.move.selected(t.frames[turn.i][id].p))continue;const fn=v=>rotate(v,turn.move.axis,turn.angle);p=fn(p);bs=bs.map(fn);}return {...c,p,b:bs};});
@@ -1717,11 +1743,11 @@ $("wrist").onchange=()=>render();
 $("cubeModel").onchange=()=>render();
 $("cadMode").onchange=()=>{if($("cadMode").value!=="magnetic"&&["feet","cornerPart","edgePart","centerPart"].includes($("assembly").value))$("assembly").value="full";$("cadCollision").textContent="";render();};
 $("cadFile").onchange=async()=>{try{const f=$("cadFile").files[0];if(!f)return;if(f.size>5000000)throw Error("파일이 너무 큽니다");await loadCAD(JSON.parse(await f.text()));$("cadMode").value="cad";render();}catch(e){$("cadStatus").textContent="CAD 가져오기 실패: "+e.message;}};
-$("cadProbe").onclick=()=>{if($("cadMode").value==="magnetic"){playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time),p=m04Probe(f),base=m04Probe({cubies:solved(3)});$("cadCollision").textContent=`내부 메시 간섭: ${p.piecePairs} 조각 쌍 / ${p.hits} 표본점 · 정렬 기준 ${base.piecePairs}쌍 / ${base.hits}점`;$("meshContactResult").textContent=Object.entries(p.byType).map(([k,v])=>k+": "+v).join("\n")||"검출 없음";return;}if($("cadMode").value!=="cad"){$("cadCollision").textContent="신형 또는 구형 CAD를 선택하세요.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
+$("cadProbe").onclick=()=>{if($("cadMode").value==="magnetic"){playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time),p=m04Probe(f),base=m04Probe({cubies:solved(3)});$("cadCollision").textContent=`내부 메시 간섭: ${p.piecePairs} 조각 쌍 / ${p.hits} 표본점 · 최대 침투 ${(p.maxDepth*18.5).toFixed(2)} mm · 정렬 기준 ${base.piecePairs}쌍 / ${base.hits}점`;$("meshContactResult").textContent=Object.entries(p.byType).map(([k,v])=>k+": "+v).join("\n")||"검출 없음";return;}if($("cadMode").value!=="cad"){$("cadCollision").textContent="신형 또는 구형 CAD를 선택하세요.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
 $("assembly").onchange=()=>render();$("explode").oninput=()=>render();
 for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
 $("mechanicalApply").onclick=load;
-$("contactSweep").onclick=()=>{playing=false;syncButton();const rows=[[0,0],[0,15],[5,5],[10,10],[15,15],[25,15],[30,25]].map(([a,b])=>{const p=m04Probe(m04PairFrame("R","U",a,b));return `${String(a).padStart(2)}° / ${String(b).padStart(2)}° · ${p.piecePairs}쌍 · ${p.hits}점`;});$("meshContactResult").textContent="R 남은 각도 / U 진행 각도 · 내부 조각 쌍 · 내부 표본점\n"+rows.join("\n")+"\n표본검사이며 정확한 침투 깊이·충돌력은 아닙니다.";};
+$("contactSweep").onclick=()=>{playing=false;syncButton();const rows=[[0,0],[0,15],[5,5],[10,10],[15,15],[25,15],[30,25]].map(([a,b])=>{const p=m04Probe(m04PairFrame("R","U",a,b),true);return `${String(a).padStart(2)}° / ${String(b).padStart(2)}° · ${p.piecePairs}쌍 · ${p.hits}점 · 최대 ${(p.maxDepth*18.5).toFixed(2)} mm`;});$("meshContactResult").textContent="R 남은 각도 / U 진행 각도 · 내부 조각 쌍 · 내부 표본점\n"+rows.join("\n")+"\n표본점에서 가장 가까운 메시 표면까지의 거리이며 전체 최대 침투량을 보장하지 않습니다.";};
 $("lookAhead").onchange=load;
 $("profile").onchange=load;
 function syncComparison(){
