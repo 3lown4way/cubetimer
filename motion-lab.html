@@ -8,7 +8,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 08</h1>
+<h1>Cube motion lab · 09</h1>
 <p>현대적인 스티커리스 스피드큐브 모델입니다. 왼쪽은 기존 순차 회전, 오른쪽은 레이어 중첩·자동 정렬·능동적 탐색을 적용합니다.</p>
 <div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
@@ -19,14 +19,14 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
 <label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="2.5"><output id="speedVal">2.5 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.8)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked> 코너커팅 / 자동 정렬</label><label>회전 프로필 <select id="profile"><option value="fluid">연속 흐름 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="singleView" type="checkbox"> 신규 큐브만 보기</label><button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.9)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked> 코너커팅 / 자동 정렬</label><label>회전 프로필 <select id="profile"><option value="chain">연속 체인 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="singleView" type="checkbox"> 신규 큐브만 보기</label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
 <div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="yellow orange" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
 <div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
-<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. 코너커팅은 연속 속도 곡선과 회전 중첩을 표현하는 시각 근사이며 실제 충돌/탄성 시뮬레이션은 아닙니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
+<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v0.9는 연결 가능한 여러 회전을 하나의 연속 회전량 시계로 재생합니다. 코너커팅은 시각 근사이며 실제 충돌/탄성 시뮬레이션은 아닙니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -259,7 +259,7 @@ function fluidProgress(u,a=.14,d=.26){
   const x=1-u;
   return 1-v*.5*(x-d/Math.PI*Math.sin(Math.PI*x/d));
 }
-function buildFlowTrack(timeline,profile="fluid"){
+function buildBaseFlowTrack(timeline,profile="fluid"){
   if(profile==="legacy")return buildLegacyFlowTrack(timeline);
   const {moves,times,n}=timeline;
   const turns=moves.map((move,i)=>({i,move,start:times[i],end:times[i+1],fluid:true,a:.14,d:.26,over:0}));
@@ -284,6 +284,78 @@ function flowAngle(turn,t){
   const u=(t-turn.start)/(turn.end-turn.start);
   return turn.move.angle*(turn.fluid?fluidProgress(u,turn.a,turn.d):turnFlowProgress(u,turn.over));
 }
+
+// Shared chain clock. Reparameterize the complete angular travel of a
+// compatible run, rather than selecting a new easing curve for every move.
+// This preserves the exact existing layer path and cut limits.
+function chainProgress(u,ramp){
+  return fluidProgress(u,ramp,ramp);
+}
+function lookup(xs,ys,x){
+  if(x<=xs[0])return ys[0];
+  if(x>=xs.at(-1))return ys.at(-1);
+  let lo=0,hi=xs.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1;if(xs[m]<x)lo=m;else hi=m;}
+  const d=xs[hi]-xs[lo];
+  return d>1e-12?ys[lo]+(ys[hi]-ys[lo])*(x-xs[lo])/d:ys[hi];
+}
+function buildFlowTrack(timeline,profile="chain"){
+  const track=buildBaseFlowTrack(timeline,profile==="legacy"?"legacy":"fluid");
+  if(profile!=="chain"||!track.turns.length)return track;
+  const {turns,cuts}=track,{times}=timeline;
+  const joins=new Set(cuts.map(c=>c.i));
+  // Consecutive same-layer turns in the same direction may carry momentum
+  // through the boundary without requiring a perpendicular cut.
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1].move,b=turns[i].move;
+    if(a.axis===b.axis&&a.side===b.side&&a.width===b.width&&a.whole===b.whole&&a.slice===b.slice&&
+       Math.sign(a.angle)===Math.sign(b.angle)&&
+       timeline.frames[i].every(c=>a.selected(c.p)===b.selected(c.p)))joins.add(i);
+  }
+  const runs=[];
+  for(let first=0;first<turns.length;){
+    let last=first;
+    while(last+1<turns.length&&joins.has(last+1))last++;
+    const start=times[first],end=times[last+1],span=end-start;
+    // Use each turn's exact path to integrate accumulated angular travel.
+    const count=Math.max(128,Math.ceil(span*192)),ts=[],arc=[];
+    let done=0,k=first;
+    for(let j=0;j<=count;j++){
+      const t=start+span*j/count;
+      while(k<=last&&turns[k].end<=t){done+=Math.abs(turns[k].move.angle);k++;}
+      let s=done;
+      for(let p=k;p<=last&&turns[p].start<t;p++)s+=Math.abs(flowAngle(turns[p],t));
+      ts.push(t);arc.push(s);
+    }
+    const total=arc.at(-1);
+    // Single turns retain their ordinary feel. Multi-turn runs have a
+    // single start/end speed ramp, not one ramp per notation token.
+    runs.push({first,last,start,end,span,ts,arc,total,ramp:Math.min(.2,.16/span)});
+    first=last+1;
+  }
+  return {...track,runs,profile:"chain"};
+}
+function chainRun(track,t){
+  if(!track.runs)return null;
+  let lo=0,hi=track.runs.length-1;
+  while(lo<hi){const m=(lo+hi)>>1;if(t>=track.runs[m].end)lo=m+1;else hi=m;}
+  return track.runs[lo];
+}
+function chainClock(track,t){
+  const r=chainRun(track,t);
+  if(!r||r.first===r.last||t<=r.start||t>=r.end)return t;
+  const x=(t-r.start)/r.span;
+  return lookup(r.arc,r.ts,r.total*chainProgress(x,r.ramp));
+}
+function chainDisplayTime(track,t){
+  const r=chainRun(track,t);
+  if(!r||r.first===r.last||t<=r.start||t>=r.end)return t;
+  const fraction=lookup(r.ts,r.arc,t)/r.total;
+  let lo=0,hi=1;
+  for(let i=0;i<32;i++){const m=(lo+hi)/2;if(chainProgress(m,r.ramp)<fraction)lo=m;else hi=m;}
+  return r.start+(lo+hi)*.5*r.span;
+}
+
 function flowFrameAt(timeline,track,t){
   t=clamp(t,0,timeline.total);
   const logical=frameAt(timeline,t);
@@ -696,14 +768,19 @@ function draw(canvas,frame,pose){
 function sampled(t,strength=1){return continuous?continuousSearchFrameAt(tl,timing,t,strength):inspectionFrameAt(tl,timing,t,strength)}
 function render(now=Infinity){
   if(!tl)return;
-  const {frame,pose,event}=sampled(time,Number($("strength").value));
+  const strength=Number($("strength").value);
+  const {frame}=sampled(time,strength);
   const flowOn=continuous&&$("flow").checked;
-  const modernFrame=flowOn?flowFrameAt(tl,flowTrack,time):frame;
+  const motionTime=flowOn?chainClock(flowTrack,time):time;
+  const {pose,event}=sampled(motionTime,strength);
+  const modernFrame=flowOn?flowFrameAt(tl,flowTrack,motionTime):frame;
   const gpuA=$("singleView").checked?true:draw(canvases[0],frame,HOME_Q),gpuB=draw(canvases[1],modernFrame,pose);
   if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
   lastStatus=Number.isFinite(now)?now:-Infinity;
   $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
   const active=modernFrame.active||[];
+  const run=flowOn?chainRun(flowTrack,time):null;
+  $("chainStatus").textContent=run?"연속 체인: "+(run.first+1)+"–"+(run.last+1)+"수 · "+(run.last-run.first+1)+"수 연결":"개별 회전 타임라인";
   const angles=active.map(a=>a.move.token+" "+(Math.abs(a.angle)*180/Math.PI).toFixed(1)+"°").join(" / ");
   $("cutStatus").textContent=flowOn?(active.length>1?"코너커팅 중 · "+angles:"자동 정렬 · "+(angles||"정렬 완료"))+" · 중첩 구간 "+flowTrack.cuts.length+"개": "코너커팅 꺼짐";
   $("rendererStatus").textContent=gpuA&&gpuB?"WebGL2 · Stickerless speedcube":"WebGL2 미지원 · Canvas 대체 렌더링";
@@ -744,7 +821,7 @@ $("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").v
 $("cutDemo").onclick=()=>{
   $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
   $("setup").value="";$("alg").value="R U R' U' R U R' U'";$("mode").value="continuous";
-  $("flow").checked=true;$("profile").value="fluid";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("flow").checked=true;$("profile").value="chain";$("strength").value="0";$("strengthVal").textContent="0.00×";
   $("speed").value="4";$("speedVal").textContent="4 TPS";load();
 };
 $("jumpCut").onclick=()=>{
@@ -752,7 +829,7 @@ $("jumpCut").onclick=()=>{
   $("flow").checked=true;playing=false;syncButton();
   const cuts=flowTrack.cuts;
   const c=cuts.find(x=>x.start>time+.001)||cuts[0];
-  time=c.start+(c.end-c.start)*.52;render();
+  time=chainDisplayTime(flowTrack,c.start+(c.end-c.start)*.52);render();
 };
 $("jumpInspection").onclick=()=>{
   if(!plan?.events.length){$("message").textContent="현재 조건에서는 추가 탐색이 필요하지 않습니다.";return;}
@@ -761,7 +838,7 @@ $("jumpInspection").onclick=()=>{
   const next=starts.findIndex(t=>t>time+.03);
   const i=next<0?0:next;
   const start=starts[i],end=timing.stepTimes[plan.events[i].i+1];
-  time=start+(end-start)*.8;render();
+  time=continuous&&$("flow").checked?chainDisplayTime(flowTrack,start+(end-start)*.8):start+(end-start)*.8;render();
 };
 $("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
 document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
