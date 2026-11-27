@@ -179,3 +179,123 @@ export function frameAt(timeline,t){
   const f=move?clamp((t-times[i])/(times[i+1]-times[i]),0,1):0;
   return {i,cubies:frames[i],move,angle:move?move.angle*smooth(f):0};
 }
+
+// Visual-search experiment. The solver's full sticker state is never used to
+// choose a pose: only geometry, move cues and already observed sticker colors.
+// Piece/sticker identity tracking is idealized and memory has a finite lifetime.
+const SEARCH_COLORS={white:"#f7f7f7",yellow:"#f4d331",green:"#24aa57",blue:"#2463cf",red:"#cf302e",orange:"#f58b27"};
+const SEARCH_VIEW=qpose([25,-34,0]);
+const VISIBILITY=.28;
+const MEMORY_MOVES=7;
+const searchAngles=[
+  [-22,0,0],[22,0,0],[0,-22,0],[0,22,0],
+  [-40,0,0],[40,0,0],[0,-40,0],[0,40,0],
+  [-32,-32,0],[-32,32,0],[32,-32,0],[32,32,0],
+  [-60,0,0],[60,0,0],[0,-65,0],[0,65,0],
+  [-48,-48,0],[-48,48,0],[48,-48,0],[48,48,0]
+];
+function stickerVisible(c,j,pose,view=SEARCH_VIEW){
+  const [axis,side]=FACES[j];
+  const n=c.b[axis].map(v=>v*side);
+  return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
+}
+function memoryColor(memory,id,j,i){
+  const seen=memory.get(id*6+j);
+  return seen&&i-seen.i<=MEMORY_MOVES?seen.color:null;
+}
+function observe(cubies,pose,memory,i,view){
+  for(let id=0;id<cubies.length;id++){
+    const c=cubies[id];
+    // Color is read only after the geometry passes the visibility test.
+    for(let j=0;j<6;j++)if(stickerVisible(c,j,pose,view)&&c.colors[j]!=="#202124"){
+      memory.set(id*6+j,{color:c.colors[j],i});
+    }
+  }
+}
+function isOuterSticker(c,j,n){
+  const [a,s]=FACES[j],normal=c.b[a].map(v=>v*s);
+  return normal.some((v,k)=>v!==0&&c.p[k]*v===n-1);
+}
+function searchCandidates(timeline,i,memory,colors,kind){
+  const c=timeline.frames[i],n=timeline.n,moves=timeline.moves.slice(i,i+3);
+  const candidates=[];
+  for(let id=0;id<c.length;id++){
+    const piece=c[id];
+    const stickers=[0,1,2,3,4,5].filter(j=>isOuterSticker(piece,j,n));
+    if(stickers.length!==(kind==="center"?1:2))continue;
+    // Future move participation is a rough proxy for solver target metadata.
+    // No inference about the actual solver's goal is claimed here.
+    if(!moves.some(m=>!m.whole&&m.selected(piece.p)))continue;
+    const known=stickers.map(j=>memoryColor(memory,id,j,i)).filter(Boolean);
+    if(known.some(color=>!colors.includes(color)))continue;
+    if(known.length===stickers.length&&colors.every(color=>known.includes(color))){
+      return {candidates:[],knownTarget:true};
+    }
+    const unknown=stickers.filter(j=>!memoryColor(memory,id,j,i));
+    if(unknown.length)candidates.push({id,unknown,weight:known.length?2:0.65});
+  }
+  return {candidates,knownTarget:false};
+}
+export function planVisualSearch(timeline,{target=["white","green"],kind="edge",checkpoints=null,interval=4,view=SEARCH_VIEW}={}){
+  if(kind!=="edge"&&kind!=="center")throw Error("Unknown search target type");
+  const colors=target.map(c=>SEARCH_COLORS[c]);
+  if(colors.length!==(kind==="center"?1:2)||colors.some(c=>!c)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const memory=new Map(),events=[],decisions=[];
+  const checks=checkpoints===null?null:new Set(checkpoints);
+  const home=[1,0,0,0];
+  for(let i=0;i<timeline.moves.length;i++){
+    const cubies=timeline.frames[i];
+    observe(cubies,home,memory,i,view);
+    if(!(checks?checks.has(i):i%Math.max(1,interval)===0))continue;
+    const {candidates,knownTarget}=searchCandidates(timeline,i,memory,colors,kind);
+    if(knownTarget||!candidates.length){
+      decisions.push({i,reason:knownTarget?"target already identified":"no eligible uncertain piece"});continue;
+    }
+    let best=null;
+    for(const p of searchAngles){
+      const q=qpose(p);
+      // Gain is computed on unknown slots, never on their hidden colors.
+      const newlyVisible=candidates.flatMap(c=>c.unknown.filter(j=>stickerVisible(cubies[c.id],j,q,view)).map(j=>({id:c.id,j,weight:c.weight})));
+      const gain=newlyVisible.reduce((s,v)=>s+v.weight,0);
+      const angle=2*Math.acos(clamp(Math.abs(q[0]),0,1))*180/Math.PI;
+      const score=gain-.023*angle-.45;
+      if(gain>0&&score>0&&(!best||score>best.score))best={p,angle,gain,score,newlyVisible};
+    }
+    if(!best){decisions.push({i,reason:"no useful low-cost view"});continue;}
+    // Observe only what was exposed by the selected physical pose.
+    observe(cubies,qpose(best.p),memory,i,view);
+    const duration=.48+best.angle/95; // units of nominal quarter-turn duration
+    events.push({i,p:best.p,duration,angle:best.angle,gain:best.gain,observed:best.newlyVisible.length});
+    decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain});
+  }
+  return {events,decisions};
+}
+// Extra search time is explicit and does not change the puzzle or add a move.
+// Both comparison views use the same schedule, allowing a fair pose comparison.
+export function inspectionTimeline(timeline,plan){
+  const segments=[],stepTimes=[],byIndex=new Map(plan.events.map(e=>[e.i,e]));
+  let t=0;
+  for(let i=0;i<timeline.moves.length;i++){
+    stepTimes.push(t);
+    const event=byIndex.get(i);
+    if(event){segments.push({start:t,end:t+event.duration,i,event});t+=event.duration;}
+    const dt=timeline.times[i+1]-timeline.times[i];
+    segments.push({start:t,end:t+dt,i,move:true});t+=dt;
+  }
+  stepTimes.push(t);
+  return {segments,stepTimes,total:t};
+}
+export function inspectionFrameAt(timeline,schedule,time,strength=1){
+  const t=clamp(time,0,schedule.total);
+  const seg=schedule.segments.find(s=>t<s.end);
+  if(!seg)return {frame:frameAt(timeline,timeline.total),pose:[1,0,0,0],event:null};
+  const u=clamp((t-seg.start)/(seg.end-seg.start),0,1);
+  if(seg.event){
+    // Fast tilt, brief observation, smooth return. No logical cube rotation.
+    const f=u<.4?smooth(u/.4):u<.6?1:smooth((1-u)/.4);
+    return {frame:{i:seg.i,cubies:timeline.frames[seg.i],move:null,angle:0},
+      pose:qpose(seg.event.p.map(v=>v*f*strength)),event:seg.event};
+  }
+  return {frame:frameAt(timeline,timeline.times[seg.i]+u*(timeline.times[seg.i+1]-timeline.times[seg.i])),
+    pose:[1,0,0,0],event:null};
+}
