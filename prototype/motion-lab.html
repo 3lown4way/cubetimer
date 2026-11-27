@@ -8,7 +8,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 01</h1>
+<h1>Cube motion lab · 02</h1>
 <p>동일한 회전 상태, 서로 다른 자세 트랙. 큐브 외형과 배경은 비교의 변수가 아닙니다.</p>
 <div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>고정 자세</figcaption></figure>
@@ -26,7 +26,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' R' F R F' y R U R' U' D R D'</textarea>
 <div class="controls"><button id="load">적용</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div>
-<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. 자세 값은 초기 휴리스틱이며 모션 캡처 데이터가 아닙니다.</small>
+<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. R/U 플릭 중에는 그립 유지, Regrip은 다음 동작 전에 준비, x/y/z는 다축 자세 보정. 자세 값은 초기 휴리스틱이며 모션 캡처 데이터가 아닙니다.</small>
 <script type="module">
 import {rad,clamp,rotate,qpose,qrotate,buildTimeline,buildPoseTrack,frameAt,poseAt} from "./motion-engine.js";
 const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
