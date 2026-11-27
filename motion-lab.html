@@ -8,25 +8,25 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 06</h1>
-<p>현대적인 스티커리스 스피드큐브 모델입니다. 왼쪽은 회전 기호만, 오른쪽은 같은 회전과 함께 큐브 자체를 움직여 정보를 확인합니다.</p>
+<h1>Cube motion lab · 07</h1>
+<p>현대적인 스티커리스 스피드큐브 모델입니다. 왼쪽은 기존 순차 회전, 오른쪽은 레이어 중첩·자동 정렬·능동적 탐색을 적용합니다.</p>
 <div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
-<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>능동적 탐색 · 신규</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>신규 · 코너커팅 / 탐색</figcaption></figure>
 </div>
 <div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
 <div class="controls">
 <label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
 <label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="2.5"><output id="speedVal">2.5 TPS</output></label>
 <label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
-<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.6)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><button id="resetView">시점 초기화</button>
+<label>탐색 방식 <select id="mode"><option value="continuous">회전 중 탐색 (v0.7)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked> 코너커팅 / 자동 정렬</label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
 <div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="yellow orange" size="15"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2">R U F2 L D B R2</textarea>
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
-<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
-<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="rendererStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
+<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. 코너커팅은 회전 중첩과 작은 오버슈트를 표현하는 시각 근사이며 실제 충돌/탄성 시뮬레이션은 아닙니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -201,6 +201,82 @@ function poseAnglesAt(track,t){
 function poseAt(track,t,strength=1){
   return qpose(poseAnglesAt(track,t).map(v=>v*strength));
 }
+
+// Render-only flow track: exact cubie states are never modified.
+// Selection for each turn comes from its discrete input state; visual
+// transforms compose in notation order, even when their time windows overlap.
+function cutLimit(a,b,n){
+  if(!a||!b||a.whole||b.whole||a.slice||b.slice||a.axis===b.axis||a.amount!==1||b.amount!==1)return 0;
+  // A numbered inner layer (2R) is not an outer or wide move.
+  const inner=m=>m.width>1&&!/w|^[rludfb]/.test(m.token);
+  if(inner(a)||inner(b))return 0;
+  const wide=a.width>1||b.width>1;
+  return wide?(n<=4?5:3):(n<=3?10:n===4?7:5);
+}
+function overshootDegrees(m,n){
+  if(m.whole||m.slice||m.amount!==1)return 0;
+  if(m.width>1&&!/w|^[rludfb]/.test(m.token))return 0;
+  return m.width>1?0.65:n<=3?2.2:n===4?1.3:.8;
+}
+function hermite01(a,b,ma,mb,u,h){
+  const u2=u*u,u3=u2*u;
+  return (2*u3-3*u2+1)*a+(u3-2*u2+u)*h*ma+(-2*u3+3*u2)*b+(u3-u2)*h*mb;
+}
+function turnFlowProgress(u,overshoot){
+  u=clamp(u,0,1);
+  // Fast finger-flick, gentle capture, small elastic-looking return.
+  if(u<=.66)return hermite01(0,.83,0,1.05,u/.66,.66);
+  if(u<=.86)return hermite01(.83,1+overshoot,1.05,0,(u-.66)/.20,.20);
+  return hermite01(1+overshoot,1,0,0,(u-.86)/.14,.14);
+}
+function buildFlowTrack(timeline){
+  const {moves,times,n}=timeline;
+  const turns=moves.map((m,i)=>({i,move:m,start:times[i],end:times[i+1],over:overshootDegrees(m,n)/90}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],limit=cutLimit(a.move,b.move,n);
+    if(!limit)continue;
+    const boundary=times[i],span=Math.min(times[i]-times[i-1],times[i+1]-times[i]);
+    // Allow the previous layer to settle a little after the logical boundary.
+    a.end=boundary+span*.055;
+    const threshold=1-limit/90;
+    let lo=0,hi=.86;
+    for(let j=0;j<30;j++){const mid=(lo+hi)/2;if(turnFlowProgress(mid,a.over)<threshold)lo=mid;else hi=mid;}
+    b.start=Math.max(boundary-span*.22,a.start+hi*(a.end-a.start));
+    if(b.start>=boundary){a.end=boundary;b.start=boundary;continue;}
+    cuts.push({i,start:b.start,end:a.end,limit,previous:a.move.token,next:b.move.token});
+  }
+  return {turns,cuts,total:timeline.total};
+}
+function flowAngle(turn,t){
+  return turn.move.angle*turnFlowProgress((t-turn.start)/(turn.end-turn.start),turn.over);
+}
+function flowFrameAt(timeline,track,t){
+  t=clamp(t,0,timeline.total);
+  const logical=frameAt(timeline,t);
+  // At most two active turns; their selected piece IDs are stable across
+  // all snapshots. Begin from the exact frame preceding the earliest turn.
+  let i=logical.i;
+  if(i>0&&track.turns[i-1].end>t)i--;
+  const active=[];
+  for(let k=i;k<track.turns.length&&track.turns[k].start<=t;k++){
+    const turn=track.turns[k];
+    if(t<turn.end)active.push({i:k,move:turn.move,angle:flowAngle(turn,t)});
+  }
+  if(!active.length)return {...logical,move:null,angle:0,flow:true,active:[]};
+  const base=timeline.frames[active[0].i];
+  const cubies=base.map((c,id)=>{
+    let p=c.p,b=c.b;
+    for(const a of active){
+      if(!a.move.selected(timeline.frames[a.i][id].p))continue;
+      const r=v=>rotate(v,a.move.axis,a.angle);
+      p=r(p);b=b.map(r);
+    }
+    return {...c,p,b};
+  });
+  return {...logical,cubies,move:null,angle:0,flow:true,active};
+}
+
 function frameAt(timeline,t){
   const {times,frames,moves,total}=timeline;t=clamp(t,0,total);
   let lo=0,hi=times.length-1;
@@ -448,7 +524,7 @@ function continuousSearchFrameAt(timeline,plan,time,strength=1){
 const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
 const axes=[[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]];
 const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
-let tl,plan,timing,continuous=true,time=0,playing=false,last=0,raf=0;
+let tl,plan,timing,flowTrack,continuous=true,time=0,playing=false,last=0,raf=0;
 let yaw=-34,pitch=25,goalYaw=yaw,goalPitch=pitch;
 let pointer=null,lastX=0,lastY=0;
 function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
@@ -585,7 +661,12 @@ function sampled(t,strength=1){return continuous?continuousSearchFrameAt(tl,timi
 function render(){
   if(!tl)return;
   const {frame,pose,event}=sampled(time,Number($("strength").value));
-  const gpuA=draw(canvases[0],frame,HOME_Q),gpuB=draw(canvases[1],frame,pose);
+  const flowOn=continuous&&$("flow").checked;
+  const modernFrame=flowOn?flowFrameAt(tl,flowTrack,time):frame;
+  const gpuA=draw(canvases[0],frame,HOME_Q),gpuB=draw(canvases[1],modernFrame,pose);
+  const active=modernFrame.active||[];
+  const angles=active.map(a=>a.move.token+" "+(Math.abs(a.angle)*180/Math.PI).toFixed(1)+"°").join(" / ");
+  $("cutStatus").textContent=flowOn?(active.length>1?"코너커팅 중 · "+angles:"자동 정렬 · "+(angles||"정렬 완료"))+" · 중첩 구간 "+flowTrack.cuts.length+"개": "코너커팅 꺼짐";
   $("rendererStatus").textContent=gpuA&&gpuB?"WebGL2 · Stickerless speedcube":"WebGL2 미지원 · Canvas 대체 렌더링";
   $("poseDiff").textContent="두 큐브의 실제 자세 차이: "+angularDistance(HOME_Q,pose).toFixed(1)+"° · 탐색 "+plan.events.length+"회";
   $("seek").value=timing.total?time/timing.total:0;
@@ -602,7 +683,7 @@ function load(){
     if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
     const nextContinuous=$("mode").value==="continuous";
     const p=nextContinuous?planContinuousSearch(t,{kind,target,checkpoints}):planVisualSearch(t,{kind,target,checkpoints});
-    continuous=nextContinuous;tl=t;plan=p;timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
+    continuous=nextContinuous;tl=t;plan=p;flowTrack=buildFlowTrack(t);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
     $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")).join("\n");render();
   }catch(e){$("message").textContent=e.message}
 }
@@ -611,6 +692,7 @@ $("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
 $("prev").onclick=()=>{playing=false;syncButton();const f=sampled(time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
 $("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,sampled(time).frame.i+1)];render()};
 $("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
+$("flow").onchange=render;
 $("strength").oninput=()=>{$("strengthVal").textContent=Number($("strength").value).toFixed(2)+"×";render()};
 $("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+" TPS"};
 $("load").onclick=load;$("size").onchange=load;$("mode").onchange=load;
@@ -618,6 +700,19 @@ $("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"wh
 function sample(setup,target="yellow orange"){$("size").value="3";$("kind").value="edge";$("target").value=target;$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
 $("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
 $("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").value="yellow orange";$("checks").value="";$("setup").value="Rw U2 Fw D Lw B";$("alg").value="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'";load()};
+$("cutDemo").onclick=()=>{
+  $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
+  $("setup").value="";$("alg").value="R U R' U' R U R' U'";$("mode").value="continuous";
+  $("flow").checked=true;$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("speed").value="2.5";$("speedVal").textContent="2.5 TPS";load();
+};
+$("jumpCut").onclick=()=>{
+  if(!continuous||!flowTrack?.cuts.length){$("message").textContent="현재 알고리즘에는 허용된 코너커팅 구간이 없습니다.";return;}
+  $("flow").checked=true;playing=false;syncButton();
+  const cuts=flowTrack.cuts;
+  const c=cuts.find(x=>x.start>time+.001)||cuts[0];
+  time=c.start+(c.end-c.start)*.52;render();
+};
 $("jumpInspection").onclick=()=>{
   if(!plan?.events.length){$("message").textContent="현재 조건에서는 추가 탐색이 필요하지 않습니다.";return;}
   playing=false;syncButton();
