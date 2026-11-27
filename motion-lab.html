@@ -8,9 +8,9 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 </style></head><body>
-<h1>Cube motion lab · 09</h1>
+<h1>Cube motion lab · 09.1</h1>
 <p>현대적인 스티커리스 스피드큐브 모델입니다. 왼쪽은 기존 순차 회전, 오른쪽은 레이어 중첩·자동 정렬·능동적 탐색을 적용합니다.</p>
-<div class="compare">
+<div class="controls"><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare">
 <figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
 <figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>신규 · 연속 회전 / 탐색</figcaption></figure>
 </div>
@@ -779,6 +779,9 @@ function render(now=Infinity){
   lastStatus=Number.isFinite(now)?now:-Infinity;
   $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
   const active=modernFrame.active||[];
+  const cut=flowOn?flowTrack.cuts.find(c=>motionTime>=c.start-1e-8&&motionTime<=c.end+1e-8):null;
+  if(flowTrack.cuts.length===1&&flowOn){const c=flowTrack.cuts[0];$("cutSeek").value=100*clamp((motionTime-c.start)/(c.end-c.start),0,1);const a=flowTrack.turns[c.i-1],b=flowTrack.turns[c.i];$("cutPair").textContent=a.move.token+" "+(Math.abs(flowAngle(a,motionTime))*180/Math.PI).toFixed(2)+"° / "+b.move.token+" "+(Math.abs(flowAngle(b,motionTime))*180/Math.PI).toFixed(2)+"°";}else{$("cutPair").textContent="";}
+  $("cutSeek").disabled=!(flowOn&&flowTrack.cuts.length===1);
   const run=flowOn?chainRun(flowTrack,time):null;
   $("chainStatus").textContent=run?"연속 체인: "+(run.first+1)+"–"+(run.last+1)+"수 · "+(run.last-run.first+1)+"수 연결":"개별 회전 타임라인";
   const angles=active.map(a=>a.move.token+" "+(Math.abs(a.angle)*180/Math.PI).toFixed(1)+"°").join(" / ");
@@ -818,6 +821,15 @@ $("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"wh
 function sample(setup,target="yellow orange"){$("size").value="3";$("kind").value="edge";$("target").value=target;$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
 $("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
 $("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").value="yellow orange";$("checks").value="";$("setup").value="Rw U2 Fw D Lw B";$("alg").value="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'";load()};
+function pairDemo(n,alg){
+  $("size").value=String(n);$("kind").value="edge";$("target").value="white green";$("checks").value="";$("setup").value="";$("alg").value=alg;
+  $("mode").value="continuous";$("flow").checked=true;$("profile").value="chain";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("speed").value="1";$("speedVal").textContent="1 TPS";load();
+  const c=flowTrack.cuts[0];if(c){time=chainDisplayTime(flowTrack,(c.start+c.end)/2);render();}
+}
+$("pair3").onclick=()=>pairDemo(3,"R U");
+$("pair4").onclick=()=>pairDemo(4,"Rw U");
+$("cutSeek").oninput=()=>{if(!continuous||!$("flow").checked||flowTrack.cuts.length!==1)return;playing=false;syncButton();const c=flowTrack.cuts[0];time=chainDisplayTime(flowTrack,c.start+(c.end-c.start)*Number($("cutSeek").value)/100);render();};
 $("cutDemo").onclick=()=>{
   $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
   $("setup").value="";$("alg").value="R U R' U' R U R' U'";$("mode").value="continuous";
