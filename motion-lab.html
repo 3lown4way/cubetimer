@@ -26,7 +26,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' F R U R' U' F' R U2 R'</textarea>
 <div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><p id="contactStatus"></p><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
-<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v1.1은 조각 내부 박스의 접촉을 근사하여 작은 위치 보정을 적용하고, 다음 회전이 시작되면 이전 층의 정렬을 보조합니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
+<small>실험판: WebGL2 기반 스티커리스 렌더러 (컬러 플라스틱 외피, 좁은 조각 간격, 라운딩, 새틴 표면). 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v1.1은 라운드 조각 외피의 접촉을 근사하여 작은 위치 보정을 적용하고, 다음 회전이 시작되면 이전 층의 정렬을 보조합니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며 탐색 계획의 기준 시점은 고정입니다.</small>
 <script type="module">
 // Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
 const rad = d => d*Math.PI/180;
@@ -386,12 +386,12 @@ function flowFrameAt(timeline,track,t){
 }
 
 
-// Approximate contact between the rigid inner boxes of adjacent cubies.
-// Separating-axis test (15 axes). Rounded edges, friction and the internal
-// locking mechanism are not represented. Only render positions are corrected.
+// Approximate rounded-box contact using support distances on 15 SAT axes.
+// This is a conservative proxy, not exact rounded-surface collision detection.
+// Friction and internal locking are not represented; render positions only.
 const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-function contactDepth(a,b,half=.438){
+function contactDepth(a,b,half=.484,radius=.087){
   const d=b.p.map((x,i)=>(x-a.p[i])*.5);
   if(dot3(d,d)>12*half*half)return null;
   const axes=[...a.b,...b.b];
@@ -400,8 +400,8 @@ function contactDepth(a,b,half=.438){
   for(const v of axes){
     const l=Math.hypot(...v);if(l<1e-7)continue;
     const u=v.map(x=>x/l),signed=dot3(d,u);
-    const ra=half*a.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0);
-    const rb=half*b.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0);
+    const ra=(half-radius)*a.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0)+radius;
+    const rb=(half-radius)*b.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0)+radius;
     const overlap=ra+rb-Math.abs(signed);
     if(overlap<=0)return null;
     if(overlap<depth){depth=overlap;normal=u.map(x=>x*(signed<0?-1:1));}
