@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {solved,parseAlg,apply,buildTimeline,buildPoseTrack,poseAt,poseAnglesAt,frameAt,planGrip,planVisualSearch,inspectionTimeline,inspectionFrameAt} from "./motion-engine.js";
+import {solved,parseAlg,apply,buildTimeline,buildPoseTrack,poseAt,poseAnglesAt,frameAt,planGrip,planVisualSearch,inspectionTimeline,inspectionFrameAt,planContinuousSearch,continuousSearchFrameAt} from "./motion-engine.js";
 const sig=c=>JSON.stringify(c.map(x=>[x.p,x.b,x.colors]));
 for(const n of [2,3,4,5,6,7]){
   const tokens=["R","L","U","D","F","B","x","y","z",...(n>=3?["Rw","2R","Uw"]:[]),...(n>=4?["3Rw"]:[]),...(n%2?["M","E","S"]:[])];
@@ -66,3 +66,33 @@ for(const opts of [{target:["white","green"]},{target:["white"],kind:"center"}])
  assert.equal(inspectionFrameAt(wing,s,s.total).frame.cubies,wing.frames.at(-1));
 }
 console.log("Visual search state, schedule and NxN checks passed.");
+
+const ca=planContinuousSearch(aligned,{target:["yellow","orange"]});
+const cb=planContinuousSearch(scrambled,{target:["yellow","orange"]});
+assert.equal(ca.events.length,0);
+assert.equal(cb.events.length,2);
+assert.equal(cb.total,scrambled.total);
+assert.equal(planContinuousSearch(scrambled).events.length,0); // natural reveal
+for(const ev of cb.events){
+  const seg=cb.segments[ev.i],mid=continuousSearchFrameAt(scrambled,cb,(seg.start+seg.end)/2);
+  assert.equal(mid.frame.cubies,scrambled.frames[ev.i]);
+  assert.equal(mid.frame.move,scrambled.moves[ev.i]);
+  assert.ok(Math.abs(mid.frame.angle)>0);
+  assert.ok(Math.abs(mid.pose[0])<.999);
+  assert.ok(Math.abs(Math.hypot(...mid.pose)-1)<1e-9);
+  const next=cb.segments[ev.i+1];
+  if(next)assert.equal(next.from,seg.to);
+}
+for(let i=1;i<cb.segments.length;i++){
+ const t=cb.segments[i].start;
+ const a=continuousSearchFrameAt(scrambled,cb,t-1e-7).pose,b=continuousSearchFrameAt(scrambled,cb,t).pose;
+ assert.ok(Math.abs(a.reduce((v,x,j)=>v+x*b[j],0))>1-1e-9);
+}
+assert.equal(continuousSearchFrameAt(scrambled,cb,cb.total).frame.cubies,scrambled.frames.at(-1));
+assert.equal(planContinuousSearch(scrambled,{checkpoints:[]}).events.length,0);
+for(const opts of [{target:["white","green"]},{target:["white"],kind:"center"}]){
+ const p=planContinuousSearch(wing,opts);
+ assert.equal(p.total,wing.total);
+ assert.equal(continuousSearchFrameAt(wing,p,p.total).frame.cubies,wing.frames.at(-1));
+}
+console.log("Continuous inspection, state and pose-boundary checks passed.");
