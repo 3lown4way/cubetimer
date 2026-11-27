@@ -1089,24 +1089,36 @@ function mapYauStageToPhysical444(stage, orientation) {
   return mapped;
 }
 
-function presentYauStages444(stages, crossColor, downGrip, workingFace) {
+function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
   const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
-  const workColor = downGrip.map[workingFace];
-  const rightGrip = VIEW_ORIENTATIONS_444.find((entry) => entry.map.R === crossColor && entry.map.U === workColor);
-  if (!rightGrip) return null;
+  const workColor = canonicalGrip.map[workingFace];
+  const leftGrip = VIEW_ORIENTATIONS_444.find((entry) => entry.map.L === crossColor && entry.map.U === workColor);
+  const downGrips = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.D === crossColor);
+  // The fourth cross edge is the working slot in 3-2-3. Place it at DR so
+  // the side turns all use the right hand while the other three stay fixed.
+  const edgeGrip = downGrips.find((entry) => entry.map.R === workColor);
+  if (!leftGrip || !edgeGrip) return null;
   const [setup, edges, cfop] = stages;
-  const first = setup.segments[0];
+  const [first, opposite] = setup.segments;
   const upGrips = VIEW_ORIENTATIONS_444.filter((entry) => entry.map.U === crossColor);
-  const gripCost = (grip) => viewRotationExecutionCost444(shortestViewRotationPath444(identity, grip)) +
-    viewRotationExecutionCost444(shortestViewRotationPath444(grip, downGrip)) +
-    viewMoveExecutionCost444(remapPhysical444SequenceForView(first.solution, grip));
-  const upGrip = upGrips.sort((left, right) => gripCost(left) - gripCost(right))[0];
+  const turnsCost = (segment, grip) => viewMoveExecutionCost444(remapPhysical444SequenceForView(segment.solution, grip));
+  const regripCost = (from, to) => 2 * viewRotationExecutionCost444(shortestViewRotationPath444(from, to));
+  let firstPair;
+  for (const up of upGrips) {
+    for (const down of downGrips) {
+      const cost = turnsCost(first, up) + turnsCost(opposite, down) +
+        regripCost(identity, up) + regripCost(up, down) + regripCost(down, leftGrip);
+      if (!firstPair || cost < firstPair.cost) firstPair = { up, down, cost };
+    }
+  }
+  const cfopCost = (grip) => turnsCost(cfop, grip) + regripCost(edgeGrip, grip);
+  const cfopGrip = downGrips.reduce((best, grip) => cfopCost(grip) < cfopCost(best) ? grip : best, edgeGrip);
 
   let current = identity;
   let rotationCount = 0;
-  function presentSegment(segment, grip) {
+  function presentSegment(segment, grip, keepCrossGrip = false) {
     if (segment.segments?.length) {
-      const children = segment.segments.map((item) => presentSegment(item, grip));
+      const children = segment.segments.map((item) => presentSegment(item, keepCrossGrip && item.name === "Cross" ? current : grip));
       return {
         ...segment,
         segments: children,
@@ -1121,18 +1133,9 @@ function presentYauStages444(stages, crossColor, downGrip, workingFace) {
     rotationCount += transition.length;
     return { ...segment, solution: [...transition, ...turns].join(" "), viewpointRotations: transition.length };
   }
-  const setupSegments = setup.segments.map((item, index) => presentSegment(item, [upGrip, downGrip][index] || rightGrip));
-  const presentedEdges = presentSegment(edges, downGrip);
-  const presentedCfop = presentSegment(cfop, downGrip);
-  const restore = shortestViewRotationPath444(current, identity);
-  if (restore.length) {
-    const last = presentedCfop.segments.at(-1);
-    last.solution = [last.solution, ...restore].filter(Boolean).join(" ");
-    last.viewpointRotations += restore.length;
-    presentedCfop.viewpointRotations += restore.length;
-    presentedCfop.solution = presentedCfop.segments.map(({ solution }) => solution).filter(Boolean).join(" ");
-    rotationCount += restore.length;
-  }
+  const setupSegments = setup.segments.map((item, index) => presentSegment(item, [firstPair.up, firstPair.down][index] || leftGrip));
+  const presentedEdges = presentSegment(edges, edgeGrip);
+  const presentedCfop = presentSegment(cfop, cfopGrip, true);
   return {
     stages: [
       { ...setup, segments: setupSegments, solution: setupSegments.map(({ solution }) => solution).filter(Boolean).join(" ") },
@@ -1488,7 +1491,7 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
 
   let yau;
   try {
-    yau = await import("./yau444.js?v=20261126-yau-stages-1");
+    yau = await import("./yau444.js?v=20261127-yau-grip-1");
   } catch (error) {
     return emptyFailure("444_YAU_MODULE_UNAVAILABLE", "error", error?.message, meta);
   }

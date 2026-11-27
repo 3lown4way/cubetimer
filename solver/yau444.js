@@ -34,8 +34,7 @@ function stationaryCrossTurns(solution) {
     if (turn[0] === "D") {
       const wide = turn[1] === "w";
       const suffix = turn.slice(wide ? 2 : 1);
-      const amount = suffix === "'" ? 3 : suffix === "2" ? 2 : 1;
-      offset = (offset + amount) % 4;
+      offset = (offset + moveAmount(turn)) % 4;
       turns.push(`${wide ? "Uw" : "3Uw"}${suffix}`);
     } else {
       const face = SIDE_CYCLE.indexOf(turn[0]);
@@ -44,6 +43,68 @@ function stationaryCrossTurns(solution) {
   }
   if (offset !== 0) throw new Error("444_YAU_CROSS_FRAME_MISMATCH");
   return turns;
+}
+
+// On the upper three layers, Uw and 2D act on disjoint slices. A 3Uw
+// is Uw plus the lower inner slice in the opposite direction to 2D.
+function shortenYauLayerRuns(turns) {
+  const shorter = [];
+  let upper = 0;
+  let inner = 0;
+  const suffix = ["", "", "2", "'"];
+  function flush() {
+    if (upper && upper === inner) shorter.push(`3Uw${suffix[upper]}`);
+    else {
+      if (upper) shorter.push(`Uw${suffix[upper]}`);
+      if (inner) shorter.push(`2D${suffix[4 - inner]}`);
+    }
+    upper = inner = 0;
+  }
+  for (const turn of turns) {
+    const match = /^(3Uw|Uw|2D)(2|')?$/.exec(turn);
+    if (match) {
+      const [, layer] = match;
+      const amount = moveAmount(turn);
+      if (layer !== "2D") upper = (upper + amount) % 4;
+      if (layer !== "Uw") inner = (inner + (layer === "2D" ? 4 - amount : amount)) % 4;
+      continue;
+    }
+    flush();
+    const base = turn.replace(/(?:2|')$/, "");
+    const previous = shorter.at(-1);
+    if (!previous || previous.replace(/(?:2|')$/, "") !== base) shorter.push(turn);
+    else {
+      const amount = (moveAmount(turn) + moveAmount(shorter.pop())) % 4;
+      if (amount) shorter.push(`${base}${suffix[amount]}`);
+    }
+  }
+  flush();
+  return shorter;
+}
+
+function moveAmount(turn) {
+  return turn.endsWith("2") ? 2 : turn.endsWith("'") ? 3 : 1;
+}
+
+function streamlinePairingTurns(turns) {
+  const result = [];
+  let run = [];
+  // A working-slot adjustment can cancel across an upper turn without
+  // changing the open/restore slice moves that make the pairing visible.
+  function flush() {
+    const netAdjustment = run.reduce((total, turn) => total + (turn.startsWith("3Uw") ? moveAmount(turn) : 0), 0);
+    result.push(...(netAdjustment % 4 === 0 ? run.filter((turn) => !turn.startsWith("3Uw")) : run));
+    run = [];
+  }
+  for (const turn of turns) {
+    if (/^(3Uw|Uw|U)(2|')?$/.test(turn)) run.push(turn);
+    else {
+      flush();
+      result.push(turn);
+    }
+  }
+  flush();
+  return result;
 }
 
 export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cross4BudgetMs, onStage }) {
@@ -57,6 +118,10 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
 
   onStage("YAU_REMAINING_CENTERS");
   const sides = await solveYauSideCenters444(cross.pattern, cross.workingFace, deadlineTs);
+  const [groupLength] = sides.phaseMoveCounts;
+  const groupedTurns = shortenYauLayerRuns(sides.turns.slice(0, groupLength));
+  const colorTurns = shortenYauLayerRuns(sides.turns.slice(groupLength));
+  const sideTurns = [...groupedTurns, ...colorTurns];
   const crossSteps = cross.steps.map((step, index) => phaseSegment(
     `yauCross3_${index + 1}`,
     step.workingGap ? "Yau · Open Working Slot" : `Yau · Cross Edge ${crossSideColors444(step.lockedMask).length}/3`,
@@ -66,7 +131,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
   const protectedMask = cross.crossCount === 3 ? cross.lockedMask : cross.lockedMask & (cross.lockedMask - 1);
   const protectedSideColors = crossSideColors444(protectedMask);
   const cross3Turns = crossSteps.flatMap(({ solution }) => split(solution));
-  const beforeCross4 = [...centers.first, ...centers.opposite, ...cross3Turns, ...sides.turns].join(" ");
+  const beforeCross4 = [...centers.first, ...centers.opposite, ...cross3Turns, ...sideTurns].join(" ");
   const targetMask = crossEdgeTypeMask444("D");
 
   onStage("YAU_CROSS4");
@@ -76,7 +141,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
     timeBudgetMs: cross4BudgetMs,
   });
   if (!cross4.ok) throw new Error(`444_YAU_CROSS4_FAILED:${cross4.reason || ""}`);
-  const cross4Turns = stationaryCrossTurns(cross4.solution);
+  const cross4Turns = shortenYauLayerRuns(stationaryCrossTurns(cross4.solution));
 
   onStage("EDGES");
   const edges = await solveYauLastEight323444(scramble, [beforeCross4, ...cross4Turns].join(" "), {
@@ -97,7 +162,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
       alreadyPaired: cross3Turns.length === 0,
       segments: crossSteps,
     }),
-    phaseSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", sides.turns, { crossLockedEveryMove: true }),
+    phaseSegment("yauRemainingCenters", "Yau · Remaining 4 Centers", sideTurns, { crossLockedEveryMove: true }),
     phaseSegment("yauCross4", "Yau · Cross Edge 4/4", cross4Turns, {
       crossEdgeCount: 4,
       crossLockedEveryMove: true,
@@ -106,11 +171,11 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
       alreadyPaired: cross4.moveCount === 0,
     }),
   ]);
-  const edgeStage = phaseGroup("edges", "Edge Pairing · Yau 3-2-3", "Yau 3-2-3", edges.segments.map((segment) => ({
-    ...segment,
-    solution: stationaryCrossTurns(segment.solution).join(" "),
-  })));
-  const centerPhaseMoveCounts = [centers.first.length, centers.opposite.length, ...sides.phaseMoveCounts];
+  const edgeStage = phaseGroup("edges", "Edge Pairing · Yau 3-2-3", "Yau 3-2-3", edges.segments.map((segment) => {
+    const turns = streamlinePairingTurns(stationaryCrossTurns(segment.solution));
+    return { ...segment, solution: turns.join(" "), moveCount: turns.length };
+  }));
+  const centerPhaseMoveCounts = [centers.first.length, centers.opposite.length, groupedTurns.length, colorTurns.length];
   return {
     stages: [setupStage, edgeStage],
     workingFace: cross.workingFace,
@@ -144,7 +209,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
       yauHumanCross3Applied: true,
       yauNaturalCross3FallbackReason: null,
       yauRemainingCentersRecomputed: true,
-      yauRecomputedCenterPhaseMoveCounts: [0, 0, ...sides.phaseMoveCounts],
+      yauRecomputedCenterPhaseMoveCounts: [0, 0, groupedTurns.length, colorTurns.length],
       yauProtectedCenterSearchMs: sides.elapsedMs,
       yauRemainingCentersCrossLockedEveryMove: true,
       yauCross4SearchMs: cross4.elapsedMs,
@@ -157,7 +222,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
       yauLastEightOnly: edges.meta.lastEightOnly,
       yauCrossSolvedAtEdgeSegmentBoundaries: edges.meta.crossSolvedAtSegmentBoundaries,
       yauPureCenterMoveCount: centerPhaseMoveCounts.reduce((total, count) => total + count, 0),
-      yauRemainingCenterMoveCount: sides.turns.length,
+      yauRemainingCenterMoveCount: sideTurns.length,
       yauEdge323: edges.meta,
     },
   };
@@ -271,7 +336,7 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   const steps = cross3.segments.length ? cross3.segments : [cross3];
   let held = cross3.startingSideColors;
   for (const [index, step] of steps.entries()) {
-    playLocked(step, "R", held, index === 0);
+    playLocked(step, "L", held, index === 0);
     const state = snapshot();
     require(step.protectedSideColors.every((color) => state.spokes.has(color)), step.id);
     held = step.protectedSideColors;
@@ -280,10 +345,10 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   require(placed.spokes.size === cross3.crossEdgeCount && (
     cross3.crossEdgeCount === 4 || ![...placed.spokes.values()].includes("U")
   ), cross3.id);
-  playLocked(sides, "R", cross3.protectedSideColors);
+  playLocked(sides, "L", cross3.protectedSideColors);
   require(snapshot().centerColors.size === 6, sides.id);
-  playLocked(cross4, "R", cross3.protectedSideColors);
-  completeCross("R", cross4.id);
+  playLocked(cross4, "L", cross3.protectedSideColors);
+  completeCross("L", cross4.id);
 
   for (const [index, segment] of edges.segments.entries()) {
     playLocked(segment, "D", cross3.protectedSideColors, index === 0);
@@ -292,5 +357,5 @@ export async function verifyYauPlayback444(scramble, stages, crossColor) {
   const cross = cfop.segments.find(({ name }) => name === "Cross");
   require(cross?.moveCount === 0, "F2L entry");
   pattern = pattern.applyAlg(cfop.solution);
-  require(pattern.experimentalIsSolved({ ignorePuzzleOrientation: false }), "solved state");
+  require(pattern.experimentalIsSolved({ ignorePuzzleOrientation: true }), "solved state");
 }

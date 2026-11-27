@@ -16,7 +16,7 @@ assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
 assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
 assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
 assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
-assert.match(preview, /solver444UiActivation\.js\?v=20261126-yau-stages-1/);
+assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-grip-1/);
 console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");
 
 const elements = new Map();
@@ -168,6 +168,7 @@ await accepted;
 assert.equal(players.length, 1);
 const [player] = players;
 assert.equal(player.config.indexer, "tree");
+assert.equal(player.config.cameraLongitude, -30, "Yau playback must show the held left face");
 assert.equal(player.experimentalSetupAlg, "U2 Fw Rw");
 assert.equal(player.alg, solution);
 const cross = element("solverStageList").children.find((item) => item.dataset.solver444Stage === "yauCross3_1");

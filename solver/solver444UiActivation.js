@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261126-yau-stages-1";
+const WORKER_BUILD_TOKEN = "20261127-yau-grip-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -301,7 +301,7 @@ export function installSolver444UiActivation() {
     }
   }
 
-  function ensurePlayer(scramble) {
+  function ensurePlayer(scramble, method) {
     if (player && playerScramble === scramble) return player;
     removeOwnedPlayer();
     player = new TwistyPlayer({
@@ -312,6 +312,7 @@ export function installSolver444UiActivation() {
       hintFacelets: "none",
       experimentalSetupAnchor: "start",
       indexer: "tree",
+      ...(method === "yau" ? { cameraLongitude: -30 } : {}),
     });
     player.dataset.solver444Ui = "true";
     player.style.width = "100%";
@@ -468,7 +469,7 @@ export function installSolver444UiActivation() {
   async function renderSuccess(result, run) {
     const nextSolution = String(result.solution || "").trim();
     const nextMoves = splitMoves(nextSolution);
-    const view = ensurePlayer(run.scramble);
+    const view = ensurePlayer(run.scramble, run.method);
     view.alg = nextSolution;
     const indexer = await withUiTimeout(
       view.experimentalModel.indexer.get(), WORKER_CALL_GRACE_MS, "444_UI_TIMELINE_INVALID", run.controller.signal,
