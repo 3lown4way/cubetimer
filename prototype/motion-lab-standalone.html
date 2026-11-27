@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CubeTimer — motion lab</title>
+<style>
+:root{color-scheme:light dark;font:15px system-ui,sans-serif}
+body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 0 8px}p{line-height:1.5;opacity:.8}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0;min-width:0}figcaption{text-align:center;font-weight:600;padding:8px}canvas{display:block;width:100%;aspect-ratio:1;touch-action:none;cursor:grab}
+.controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
+@media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
+</style></head><body>
+<h1>Cube motion lab · 02</h1>
+<p>동일한 회전 상태, 서로 다른 자세 트랙. 큐브 외형과 배경은 비교의 변수가 아닙니다.</p>
+<div class="compare">
+<figure><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>고정 자세</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>자동 그립 자세</figcaption></figure>
+</div>
+<div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
+<div class="controls">
+<label>크기 <select id="size"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
+<label>속도 <input id="speed" type="range" min="1" max="10" step=".5" value="4"><output id="speedVal">4 TPS</output></label>
+<label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
+<button id="resetView">시점 초기화</button>
+</div>
+<div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
+<label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2"></textarea>
+<label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' R' F R F' y R U R' U' D R D'</textarea>
+<div class="controls"><button id="load">적용</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div id="message" role="status"></div>
+<small>실험판: Canvas 2D 기반의 독립 3D 투영 렌더러. R/U 플릭 중에는 그립 유지, Regrip은 다음 동작 전에 준비, x/y/z는 다축 자세 보정. 자세 값은 초기 휴리스틱이며 모션 캡처 데이터가 아닙니다.</small>
+<script type="module">
+// Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
+const rad = d => d*Math.PI/180;
+const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
+const smooth = t => t*t*(3-2*t);
+const rotate = (v,a,t) => {
+  const [x,y,z]=v,c=Math.cos(t),s=Math.sin(t);
+  return a===0?[x,c*y-s*z,s*y+c*z]:a===1?[c*x+s*z,y,c*z-s*x]:[c*x-s*y,s*x+c*y,z];
+};
+const FACES=[[0,1,"#cf302e"],[0,-1,"#f58b27"],[1,1,"#f7f7f7"],[1,-1,"#f4d331"],[2,1,"#24aa57"],[2,-1,"#2463cf"]];
+const unit=(a,s)=>[0,1,2].map(i=>i===a?s:0);
+function solved(n) {
+  const c=[],edge=n-1;
+  for(let x=-edge;x<=edge;x+=2)for(let y=-edge;y<=edge;y+=2)for(let z=-edge;z<=edge;z+=2){
+    const p=[x,y,z];
+    if(!p.some(v=>Math.abs(v)===edge))continue;
+    c.push({p,b:[unit(0,1),unit(1,1),unit(2,1)],
+      colors:FACES.map(([a,s,color])=>p[a]===s*edge?color:"#202124")});
+  }
+  return c;
+}
+function parseAlg(text,n){
+  return text.trim().split(/\s+/).filter(Boolean).map(token=>{
+    const m=token.match(/^(\d+)?([RLUDFBrludfbxyzMES])(w)?(2'?|')?$/);
+    if(!m)throw Error("Unsupported move: "+token);
+    const [,prefix,letter,w,suffix]=m, f=letter.toUpperCase();
+    const whole="xyz".includes(letter), slice="MES".includes(letter);
+    const lower="rludfb".includes(letter);
+    if((whole||slice)&&(prefix||w))throw Error("Invalid move: "+token);
+    const axis=({R:0,L:0,U:1,D:1,F:2,B:2,X:0,Y:1,Z:2,M:0,E:1,S:2})[f];
+    const side="LDBME".includes(f)?-1:1;
+    const width=prefix?Number(prefix):w||lower?2:1;
+    if(!whole&&!slice&&(width<1||width>n))throw Error("Invalid layer: "+token);
+    if(slice&&n%2===0)throw Error("Use explicit inner-layer notation on even cubes: "+token);
+    const selected=p=>whole|| (slice?p[axis]===0:(w||lower)?side*p[axis]>=n-1-2*(width-1):side*p[axis]===n-1-2*(width-1));
+    const amount=suffix?.startsWith("2")?2:1;
+    return {token,axis,side,whole,slice,width,amount,face:f,selected,
+      angle:-side*amount*Math.PI/2*(suffix?.endsWith("'")?-1:1)};
+  });
+}
+function apply(cubies,move){
+  const r=v=>rotate(v,move.axis,move.angle).map(Math.round);
+  return cubies.map(c=>move.selected(c.p)?{...c,p:r(c.p),b:c.b.map(r)}:c);
+}
+function buildTimeline(n,setup,alg){
+  let c=solved(n);
+  for(const m of parseAlg(setup,n))c=apply(c,m);
+  const moves=parseAlg(alg,n), frames=[c], times=[0];
+  for(const m of moves){
+    c=apply(c,m);frames.push(c);
+    times.push(times.at(-1)+(m.whole?1.25:m.amount===2?1.48:1));
+  }
+  return {n,moves,frames,times,total:times.at(-1)};
+}
+// Hypothesized ergonomic grip states, not measured motion capture.
+// Angles are pitch/yaw/roll relative to the user's camera.
+const GRIPS=[
+  {name:"home",pose:[0,0,0]},
+  {name:"right access",pose:[-3,-12,-6]},
+  {name:"left access",pose:[-3,12,6]},
+  {name:"front access",pose:[-13,0,0]},
+  {name:"lower access",pose:[15,0,0]},
+  {name:"back access",pose:[-7,27,5]}
+];
+function cost(m,g){
+  if(m.whole)return g===0?0:0.3;
+  const face=m.face;
+  if(face==="R"||face==="L"||face==="U")return g===0?0:g===1&&face==="R"||g===2&&face==="L"?0.08:0.7;
+  if(face==="F"||face==="S")return g===3?0:g===0?1.05:1.2;
+  if(face==="D"||face==="E")return g===4?0:g===0?1.25:1.3;
+  if(face==="B")return g===5?0:g===0?1.9:1.7;
+  return g===0?0:0.6;
+}
+function planGrip(moves){
+  let scores=GRIPS.map((_,i)=>i===0?0:1.35), back=[];
+  for(const m of moves){
+    const prev=scores, row=[];
+    scores=GRIPS.map((_,j)=>{
+      let best=Infinity,idx=0;
+      prev.forEach((v,i)=>{
+        const z=v+(i===j?0:1.25)+cost(m,j);
+        if(z<best){best=z;idx=i;}
+      });row[j]=idx;return best;
+    });back.push(row);
+  }
+  let best=scores.map((v,i)=>v+(i===0?0:0.4)), k=best.indexOf(Math.min(...best)), out=[];
+  for(let i=moves.length-1;i>=0;i--){out.unshift(k);k=back[i][k];}
+  return out;
+}
+// Unit quaternion [w,x,y,z]. Interpolate visual pose only.
+const mul=(a,b)=>[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+const qaxis=(a,t)=>[Math.cos(t/2),...unit(a,Math.sin(t/2))];
+const qpose=([x,y,z])=>mul(qaxis(2,rad(z)),mul(qaxis(1,rad(y)),qaxis(0,rad(x))));
+function qrotate(q,v){return mul(mul(q,[0,...v]),[q[0],-q[1],-q[2],-q[3]]).slice(1);}
+function slerp(a,b,t){
+  let dot=a.reduce((s,v,i)=>s+v*b[i],0);
+  if(dot<0){b=b.map(v=>-v);dot=-dot;}
+  if(dot>0.9995){const q=a.map((v,i)=>v+(b[i]-v)*t),l=Math.hypot(...q);return q.map(v=>v/l);}
+  const theta=Math.acos(clamp(dot,-1,1)),s=Math.sin(theta);
+  return a.map((v,i)=>(v*Math.sin((1-t)*theta)+b[i]*Math.sin(t*theta))/s);
+}
+// A grip change spans a short window around the move boundary.
+// Keep a stable grip through ordinary finger flicks; only explicit whole
+// rotations receive an extra small multi-axis wrist arc.
+// Timing and angles are hypotheses, not motion-capture measurements.
+function buildPoseTrack(timeline){
+  const {moves,times,total}=timeline,grip=planGrip(moves);
+  const keys=[{t:0,p:[0,0,0]}], accents=[];
+  const push=(t,p)=>{
+    t=clamp(t,0,total);
+    const last=keys.at(-1);
+    if(t<=last.t+1e-8)return;
+    keys.push({t,p:p.slice()});
+  };
+  let current=0;
+  for(let i=0;i<moves.length;i++){
+    const m=moves[i],start=times[i],end=times[i+1],span=end-start;
+    const next=grip[i];
+    if(next!==current){
+      // Anticipate a change during the tail of the previous move.
+      const lead=i?Math.min(.42,(times[i]-times[i-1])*.32):0;
+      push(start-lead,GRIPS[current].pose);
+      push(start+span*.28,GRIPS[next].pose);
+      current=next;
+    }
+    if(m.whole){
+      const sign=Math.sign(m.angle);
+      // Orthogonal wrist tilt, not an extra logical x/y/z turn.
+      const p=m.axis===0?[0,sign*5,-sign*4]:
+        m.axis===1?[sign*6,0,sign*3]:[sign*4,-sign*5,0];
+      accents.push({start:Math.max(0,start-.16),end:Math.min(total,end+.18),p});
+    }
+  }
+  // Preserve the ending grip; don't spring back to home after every sequence.
+  push(total,GRIPS[current].pose);
+  return {keys,grip,accents};
+}
+// Component-wise monotone cubic Hermite on small local pose offsets.
+// This yields continuous velocity at keyframes without overshooting a
+// chosen grip. Convert to a unit quaternion for rendering. Full x/y/z
+// rotations remain on the separate logical rotation timeline.
+function tangent(keys,i,axis){
+  if(i===0||i===keys.length-1)return 0;
+  const a=keys[i-1],b=keys[i],c=keys[i+1];
+  const h0=b.t-a.t,h1=c.t-b.t;
+  const d0=(b.p[axis]-a.p[axis])/h0,d1=(c.p[axis]-b.p[axis])/h1;
+  if(d0*d1<=0)return 0;
+  const w0=2*h1+h0,w1=h1+2*h0;
+  return (w0+w1)/(w0/d0+w1/d1);
+}
+function poseAnglesAt(track,t){
+  const keys=track.keys;
+  let j=1;while(j<keys.length&&keys[j].t<t)j++;
+  let p;
+  if(j>=keys.length)p=keys.at(-1).p.slice();
+  else{
+    const a=keys[j-1],b=keys[j],h=b.t-a.t,u=clamp((t-a.t)/h,0,1);
+    const u2=u*u,u3=u2*u;
+    p=a.p.map((v,k)=>(2*u3-3*u2+1)*v+(u3-2*u2+u)*h*tangent(keys,j-1,k)+(-2*u3+3*u2)*b.p[k]+(u3-u2)*h*tangent(keys,j,k));
+  }
+  for(const a of track.accents||[]){
+    if(t<=a.start||t>=a.end)continue;
+    const u=(t-a.start)/(a.end-a.start);
+    const envelope=Math.sin(Math.PI*u)**2; // zero velocity at entry/exit
+    p=p.map((v,k)=>v+a.p[k]*envelope);
+  }
+  return p;
+}
+function poseAt(track,t,strength=1){
+  return qpose(poseAnglesAt(track,t).map(v=>v*strength));
+}
+function frameAt(timeline,t){
+  const {times,frames,moves,total}=timeline;t=clamp(t,0,total);
+  let lo=0,hi=times.length-1;
+  while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(times[mid]<=t)lo=mid;else hi=mid-1;}
+  const i=lo,move=moves[i];
+  const f=move?clamp((t-times[i])/(times[i+1]-times[i]),0,1):0;
+  return {i,cubies:frames[i],move,angle:move?move.angle*smooth(f):0};
+}
+
+const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
+const axes=[[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]];
+const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
+let tl,track,time=0,playing=false,last=0,raf=0;
+let yaw=-34,pitch=25,goalYaw=yaw,goalPitch=pitch;
+let pointer=null,lastX=0,lastY=0;
+function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
+function tick(now){
+  raf=0;const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;
+  if(playing){time=Math.min(tl.total,time+dt*Number($("speed").value));if(time>=tl.total){playing=false;syncButton()}}
+  const f=1-Math.exp(-dt/0.045);
+  yaw+=(goalYaw-yaw)*f;pitch+=(goalPitch-pitch)*f;
+  render();
+  if(playing||Math.abs(yaw-goalYaw)+Math.abs(pitch-goalPitch)>.02)raf=requestAnimationFrame(tick);
+}
+function draw(canvas,frame,pose){
+  const box=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);
+  const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
+  if(!w||!h)return;
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+  const ctx=canvas.getContext("2d");ctx.clearRect(0,0,w,h);
+  const view=qpose([pitch,yaw,0]), project=v=>qrotate(view,qrotate(pose,v));
+  const size=Math.min(w,h)*.48/tl.n, half=.475;
+  const polys=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p), transform=v=>project(turning?rotate(v,frame.move.axis,frame.angle):v);
+    const p=scale(c.p,.5);
+    for(let i=0;i<6;i++){
+      const [axis,side]=axes[i],n=scale(c.b[axis],side);
+      const u=c.b[(axis+1)%3],v=c.b[(axis+2)%3];
+      const normal=transform(n);if(normal[2]<.015)continue;
+      const center=add(p,scale(n,half)),corner=(a,b,r)=>transform(add(center,add(scale(u,a*r),scale(v,b*r))));
+      const pts=[corner(-1,-1,half),corner(1,-1,half),corner(1,1,half),corner(-1,1,half)];
+      const col=c.colors[i], inner=half*.91;
+      const sticker=[corner(-1,-1,inner),corner(1,-1,inner),corner(1,1,inner),corner(-1,1,inner)];
+      polys.push({pts,sticker,col,depth:pts.reduce((a,b)=>a+b[2],0)/4,light:.88+.12*normal[2]});
+    }
+  }
+  polys.sort((a,b)=>a.depth-b.depth);
+  const drawPoly=(pts,color)=>{ctx.beginPath();pts.forEach((p,i)=>{const x=w/2+p[0]*size,y=h/2-p[1]*size;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fillStyle=color;ctx.fill()};
+  for(const p of polys){drawPoly(p.pts,"#18191b");if(p.col!=="#202124"){drawPoly(p.sticker,p.col);ctx.globalAlpha=1-p.light;drawPoly(p.sticker,"#000");ctx.globalAlpha=1}}
+}
+function render(){
+  if(!tl)return;
+  const frame=frameAt(tl,time), pose=poseAt(track,time,Number($("strength").value));
+  draw(canvases[0],frame,[1,0,0,0]);draw(canvases[1],frame,pose);
+  $("seek").value=tl.total?time/tl.total:0;
+  $("pos").textContent=frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
+}
+function syncButton(){$("play").textContent=playing?"Ⅱ 일시정지":"▶ 재생"}
+function load(){
+  try{
+    const t=buildTimeline(Number($("size").value),$("setup").value,$("alg").value);
+    tl=t;track=buildPoseTrack(t);time=0;playing=false;syncButton();$("message").textContent="";render();
+  }catch(e){$("message").textContent=e.message}
+}
+$("play").onclick=()=>{if(!tl?.total)return;if(time>=tl.total)time=0;playing=!playing;syncButton();schedule()};
+$("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
+$("prev").onclick=()=>{playing=false;syncButton();const f=frameAt(tl,time);time=tl.times[Math.max(0,f.i-(Math.abs(time-tl.times[f.i])<1e-6?1:0))];render()};
+$("next").onclick=()=>{playing=false;syncButton();time=tl.times[Math.min(tl.moves.length,frameAt(tl,time).i+1)];render()};
+$("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*tl.total;render()};
+$("strength").oninput=()=>{$("strengthVal").textContent=Number($("strength").value).toFixed(2)+"×";render()};
+$("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+" TPS"};
+$("load").onclick=load;$("size").onchange=load;
+$("resetView").onclick=()=>{goalYaw=-34;goalPitch=25;schedule()};
+document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
+for(const c of canvases){
+  c.addEventListener("pointerdown",e=>{if(pointer!==null||e.button!==0)return;pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;c.setPointerCapture(pointer)});
+  c.addEventListener("pointermove",e=>{if(e.pointerId!==pointer)return;goalYaw+=(e.clientX-lastX)*.4;goalPitch=clamp(goalPitch+(e.clientY-lastY)*.4,-80,80);lastX=e.clientX;lastY=e.clientY;schedule()});
+  for(const event of ["pointerup","pointercancel","lostpointercapture"])c.addEventListener(event,e=>{if(e.pointerId===pointer)pointer=null});
+}
+new ResizeObserver(render).observe(canvases[0]);new ResizeObserver(render).observe(canvases[1]);load();
+</script></body></html>
