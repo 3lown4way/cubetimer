@@ -1,0 +1,31 @@
+name: Build public cube CAD meshes
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cad/deckard/pieces/**'
+      - 'cad/deckard/settings/**'
+      - 'cad/deckard/utils/**'
+      - 'cad/deckard/build.py'
+      - '.github/workflows/build-public-cube-cad.yml'
+permissions:
+  contents: write
+concurrency:
+  group: public-cube-cad
+  cancel-in-progress: true
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y openscad
+      - run: python3 cad/deckard/build.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cad/deckard/meshes.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Build public OpenSCAD cube meshes"
+            git push origin HEAD:main
+          fi
