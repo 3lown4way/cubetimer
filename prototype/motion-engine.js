@@ -101,29 +101,75 @@ export function slerp(a,b,t){
   const theta=Math.acos(clamp(dot,-1,1)),s=Math.sin(theta);
   return a.map((v,i)=>(v*Math.sin((1-t)*theta)+b[i]*Math.sin(t*theta))/s);
 }
+// A grip change spans a short window around the move boundary.
+// Keep a stable grip through ordinary finger flicks; only explicit whole
+// rotations receive an extra small multi-axis wrist arc.
+// Timing and angles are hypotheses, not motion-capture measurements.
 export function buildPoseTrack(timeline){
-  const {moves,times,total}=timeline, grip=planGrip(moves);
-  const keys=[{t:0,p:[0,0,0]}];
-  // Sustain each grip across consecutive turns; begin transitions in advance.
+  const {moves,times,total}=timeline,grip=planGrip(moves);
+  const keys=[{t:0,p:[0,0,0]}], accents=[];
+  const push=(t,p)=>{
+    t=clamp(t,0,total);
+    const last=keys.at(-1);
+    if(t<=last.t+1e-8)return;
+    keys.push({t,p:p.slice()});
+  };
+  let current=0;
   for(let i=0;i<moves.length;i++){
-    const m=moves[i],p=GRIPS[grip[i]].pose.slice();
-    // Small, sign-dependent wrist bias only on wrist/whole-cube turns.
-    const sign=Math.sign(m.angle);
-    if(m.face==="R"||m.face==="L"){p[2]+=sign*2.5;p[0]+=sign*1.5;}
-    if(m.whole){p[2]+=sign*5;p[0]+=sign*3;}
-    if(m.width>1&&!m.whole)p[0]+=sign*3;
-    const t=times[i]+0.38*(times[i+1]-times[i]);
-    keys.push({t,p});
+    const m=moves[i],start=times[i],end=times[i+1],span=end-start;
+    const next=grip[i];
+    if(next!==current){
+      // Anticipate a change during the tail of the previous move.
+      const lead=i?Math.min(.42,(times[i]-times[i-1])*.32):0;
+      push(start-lead,GRIPS[current].pose);
+      push(start+span*.28,GRIPS[next].pose);
+      current=next;
+    }
+    if(m.whole){
+      const sign=Math.sign(m.angle);
+      // Orthogonal wrist tilt, not an extra logical x/y/z turn.
+      const p=m.axis===0?[0,sign*5,-sign*4]:
+        m.axis===1?[sign*6,0,sign*3]:[sign*4,-sign*5,0];
+      accents.push({start:Math.max(0,start-.16),end:Math.min(total,end+.18),p});
+    }
   }
-  if(total>0)keys.push({t:total,p:[0,0,0]});
-  return {keys,grip};
+  // Preserve the ending grip; don't spring back to home after every sequence.
+  push(total,GRIPS[current].pose);
+  return {keys,grip,accents};
 }
-export function poseAt(track,t,strength=1){
+// Component-wise monotone cubic Hermite on small local pose offsets.
+// This yields continuous velocity at keyframes without overshooting a
+// chosen grip. Convert to a unit quaternion for rendering. Full x/y/z
+// rotations remain on the separate logical rotation timeline.
+function tangent(keys,i,axis){
+  if(i===0||i===keys.length-1)return 0;
+  const a=keys[i-1],b=keys[i],c=keys[i+1];
+  const h0=b.t-a.t,h1=c.t-b.t;
+  const d0=(b.p[axis]-a.p[axis])/h0,d1=(c.p[axis]-b.p[axis])/h1;
+  if(d0*d1<=0)return 0;
+  const w0=2*h1+h0,w1=h1+2*h0;
+  return (w0+w1)/(w0/d0+w1/d1);
+}
+export function poseAnglesAt(track,t){
   const keys=track.keys;
   let j=1;while(j<keys.length&&keys[j].t<t)j++;
-  if(j>=keys.length)return qpose(keys.at(-1).p.map(v=>v*strength));
-  const a=keys[j-1],b=keys[j],f=smooth(clamp((t-a.t)/(b.t-a.t),0,1));
-  return slerp(qpose(a.p.map(v=>v*strength)),qpose(b.p.map(v=>v*strength)),f);
+  let p;
+  if(j>=keys.length)p=keys.at(-1).p.slice();
+  else{
+    const a=keys[j-1],b=keys[j],h=b.t-a.t,u=clamp((t-a.t)/h,0,1);
+    const u2=u*u,u3=u2*u;
+    p=a.p.map((v,k)=>(2*u3-3*u2+1)*v+(u3-2*u2+u)*h*tangent(keys,j-1,k)+(-2*u3+3*u2)*b.p[k]+(u3-u2)*h*tangent(keys,j,k));
+  }
+  for(const a of track.accents||[]){
+    if(t<=a.start||t>=a.end)continue;
+    const u=(t-a.start)/(a.end-a.start);
+    const envelope=Math.sin(Math.PI*u)**2; // zero velocity at entry/exit
+    p=p.map((v,k)=>v+a.p[k]*envelope);
+  }
+  return p;
+}
+export function poseAt(track,t,strength=1){
+  return qpose(poseAnglesAt(track,t).map(v=>v*strength));
 }
 export function frameAt(timeline,t){
   const {times,frames,moves,total}=timeline;t=clamp(t,0,total);
