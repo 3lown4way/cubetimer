@@ -83,6 +83,7 @@ globalThis.Worker = class {
 
 const uiUrl = new URL("../solver/solver444UiActivation.js", import.meta.url);
 const stubbedUi = ui
+  .replace('"./smoothCubeCamera.js"', JSON.stringify(new URL("../solver/smoothCubeCamera.js", import.meta.url).href))
   .replace('import { proxy, wrap } from "comlink";', 'const proxy = (fn) => fn; const wrap = (worker) => worker.api;')
   .replace('import { TwistyPlayer } from "cubing/twisty";', "const TwistyPlayer = globalThis.PlaybackTestPlayer;")
   .replaceAll("import.meta.url", JSON.stringify(uiUrl.href));
