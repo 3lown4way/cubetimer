@@ -16,7 +16,7 @@ assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
 assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
 assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
 assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
-assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-natural-centers-1/);
+assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-front-center-1/);
 console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");
 
 const elements = new Map();

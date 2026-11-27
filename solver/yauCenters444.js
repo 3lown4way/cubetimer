@@ -5,9 +5,9 @@ const FACES = ["U", "R", "F", "D", "L", "B"];
 const SIDES = ["F", "L", "B", "R"];
 const SUFFIXES = ["", "'", "2"];
 const MASK_BASE = 2 ** 24;
-// Use the top and side layers in the player's grip. The first center is
-// solved on canonical D and shown on top before the cube is flipped.
-const FIRST_CENTER_LAYERS = ["D", "Dw", "R", "Rw", "L", "Lw"];
+// In the front-center grip, canonical D faces the player and canonical F
+// is on top. Use the front face to align a bar and the wide turns to join it.
+const FIRST_CENTER_LAYERS = ["D", "F", "Fw", "R", "Rw", "L", "Lw"];
 const OPPOSITE_CENTER_LAYERS = ["U", "Uw", "R", "Rw", "L", "Lw"];
 
 let modelPromise;

@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261127-yau-natural-centers-1";
+const WORKER_BUILD_TOKEN = "20261127-yau-front-center-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });

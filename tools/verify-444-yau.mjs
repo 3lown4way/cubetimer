@@ -269,11 +269,12 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   ]);
   assert.equal(setup.segments.map((segment) => segment.solution).filter(Boolean).join(" "), setup.solution);
   assert.ok(result.solution.startsWith(`${setup.solution} `), "full playback must use the displayed Yau setup order");
-  assert.equal(setup.segments[1].viewpointRotations, 1, "Yau must flip once before the opposite center");
-  assert.match(setup.segments[1].solution.split(" ")[0], /^[xz]2$/);
+  assert.equal(setup.segments[1].viewpointRotations, 1, "Yau must tilt once before the opposite center");
+  assert.equal(setup.segments[1].solution.split(" ")[0], "x'");
   for (const center of setup.segments.slice(0, 2)) {
     const moves = center.solution.split(/\s+/).filter(Boolean).slice(center.viewpointRotations);
-    assert.ok(moves.every((move) => /^[URL]w?(?:2|')?$/.test(move)), "first two centers should use only top and side layers");
+    const allowed = center.id === "yauFirstCenter" ? /^(?:F|[URL]w?)(?:2|')?$/ : /^[URL]w?(?:2|')?$/;
+    assert.ok(moves.every((move) => allowed.test(move)), "center moves must use the layers available in the prescribed grip");
     const layers = moves.map((move) => move.replace(/[2']$/, ""));
     assert.equal(layers.some((layer, index) => layer === layers[index - 1]), false,
       "center turns on the same layer should be combined");
@@ -283,8 +284,19 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
 
   const targetMask = crossTypeMask(crossColor);
   let pattern = solved.applyAlg(scramble);
-  pattern = setup.segments[0].solution ? pattern.applyAlg(setup.segments[0].solution) : pattern;
-  assert.equal(centerFaceForColor(pattern, crossColor), "U", "first Yau center was not solved on top");
+  const first = setup.segments[0];
+  const firstMoves = first.solution.split(/\s+/).filter(Boolean);
+  if (first.moveCount) {
+    const beforeJoin = pattern.applyAlg(firstMoves.slice(0, -1).join(" "));
+    const bar = CENTER_POSITIONS_BY_FACE.F.filter((position) =>
+      CENTER_FACE_BY_PIECE.get(beforeJoin.patternData.CENTERS.pieces[position]) === crossColor);
+    assert.equal(bar.length, 2, "the front face should already have one bar before the final join");
+    const frontHalfTurn = kpuzzle.moveToTransformation("F2").transformationData.CENTERS.permutation;
+    assert.notEqual(frontHalfTurn[bar[0]], bar[1], "the two front center stickers must touch");
+    assert.match(firstMoves.at(-1), /^[URL]w(?:2|')?$/, "a wide turn should join the bars on the front face");
+  }
+  pattern = first.solution ? pattern.applyAlg(first.solution) : pattern;
+  assert.equal(centerFaceForColor(pattern, crossColor), "F", "first Yau center was not solved on the front");
   pattern = setup.segments[1].solution ? pattern.applyAlg(setup.segments[1].solution) : pattern;
   assert.equal(centerFaceForColor(pattern, crossColor), "D", "first Yau center was not preserved on bottom");
   assert.equal(centerFaceForColor(pattern, OPPOSITE[crossColor]), "U", "opposite Yau center was not solved on top");
@@ -471,6 +483,11 @@ await verifyCase(
 );
 await verifyCase("R2 D2 B' U2 F B U2 R' D F2 R2 U' L2 U' R2 B2 R2 D B2 L2 Uw2 Rw2 L' Fw2 B' R' B2 R L' Fw2 F U2 R Uw' F2 Uw' D2 Rw2 Fw U Rw' U2 B' L2 Uw2 B2", "U");
 await verifyCase("L D2 L2 D' R F' D F' R2 U F2 B2 U2 L2 F2 U' R2 B2 D F' Uw2 F' Rw2 Uw2 R' Uw2 F Uw2 U2 F' Uw2 F Uw F' L' F2 D Rw2 Fw' Rw' R2 Fw R2 Uw Rw", "L");
+
+await verifyCase(
+  "L2 Dw' F U L2 U Fw B F Rw2 Lw' R L2 D B' U Bw2 R' Dw Bw2 F2 R L U' F B R' U Dw' B' D2 B2 Rw Lw2 F D F R2 D' U L' F R F",
+  "B",
+);
 
 const alreadyPaired = await solve444("U", null, { method444: "yau", crossColor: "D", deadlineTs: Date.now() + 60_000 });
 assert.equal(alreadyPaired.ok, true, `${alreadyPaired.reason}: ${alreadyPaired.detail}`);

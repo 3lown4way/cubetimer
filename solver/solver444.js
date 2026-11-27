@@ -1140,41 +1140,17 @@ function yauCross3Grip444(crossColor, workColor) {
   return VIEW_ORIENTATIONS_444.find(({ map }) => map.L === crossColor && map.U === workColor);
 }
 
-function yauCenterGrips444(first, opposite, crossColor, canonicalGrip) {
-  const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
-  const upGrips = VIEW_ORIENTATIONS_444.filter(({ map }) => map.U === crossColor);
-  const sideColors = [canonicalGrip.map.R, canonicalGrip.map.L];
-  const downGrips = VIEW_ORIENTATIONS_444.filter(({ map }) => map.D === crossColor && sideColors.includes(map.R));
-  const turnsCost = (segment, grip) => viewMoveExecutionCost444(remapPhysical444SequenceForView(segment.solution, grip));
-  let best;
-  for (const up of upGrips) {
-    const initialGrip = shortestViewRotationPath444(identity, up);
-    for (const down of downGrips) {
-      const flip = shortestViewRotationPath444(up, down);
-      if (flip.length !== 1) continue;
-      const cost = turnsCost(first, up) + turnsCost(opposite, down) +
-        5 * initialGrip.length + (flip[0] === "z2" ? 0.8 : 0);
-      if (!best || cost < best.cost) best = { up, down, cost };
-    }
-  }
-  return best;
+function yauFrontCenterGrip444(canonicalGrip) {
+  const map = applyViewRotation444(canonicalGrip.map, "x");
+  return VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(map));
 }
 
-function makeYauCross3Scorer444(first, opposite, crossColor, canonicalGrip) {
-  const physical = (turns) => mapLogical444SequenceToPhysical(turns.join(" "), canonicalGrip);
-  const { down } = yauCenterGrips444(
-    { solution: physical(first) },
-    { solution: physical(opposite) },
-    crossColor,
-    canonicalGrip,
-  );
-  return ({ steps, workingFace }) => {
-    const leftGrip = yauCross3Grip444(crossColor, canonicalGrip.map[workingFace]);
-    const segments = steps.length ? steps.map(({ turns }) => ({ solution: physical(turns) })) : [{ solution: "" }];
-    const presented = planYauCross3View444(segments, down, leftGrip);
-    return steps.reduce((sum, { turns }) => sum + turns.length, 0) +
-      6 * presented.reduce((sum, { viewpointRotations }) => sum + viewpointRotations, 0);
-  };
+function scoreYauCross3Plan444({ steps, workingFace }, crossColor, canonicalGrip) {
+  const leftGrip = yauCross3Grip444(crossColor, canonicalGrip.map[workingFace]);
+  const segments = steps.map(({ turns }) => ({ solution: mapLogical444SequenceToPhysical(turns.join(" "), canonicalGrip) }));
+  const presented = planYauCross3View444(segments.length ? segments : [{ solution: "" }], canonicalGrip, leftGrip);
+  return steps.reduce((sum, { turns }) => sum + turns.length, 0) +
+    6 * presented.reduce((sum, { viewpointRotations }) => sum + viewpointRotations, 0);
 }
 
 function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
@@ -1186,7 +1162,6 @@ function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
   if (!leftGrip || !edgeGrip) return null;
   const [setup, edges, cfop] = stages;
   const [first, opposite] = setup.segments;
-  const firstPair = yauCenterGrips444(first, opposite, crossColor, canonicalGrip);
 
   let current = identity;
   let rotationCount = 0;
@@ -1208,7 +1183,7 @@ function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
     return { ...segment, solution: [...transition, ...turns].join(" "), viewpointRotations: transition.length };
   }
   const [cross3, sides, cross4] = setup.segments.slice(2);
-  const setupSegments = [presentSegment(first, firstPair.up), presentSegment(opposite, firstPair.down)];
+  const setupSegments = [presentSegment(first, yauFrontCenterGrip444(canonicalGrip)), presentSegment(opposite, canonicalGrip)];
   const crossSteps = planYauCross3View444(cross3.segments.length ? cross3.segments : [cross3], current, leftGrip);
   const crossRotations = crossSteps.reduce((count, step) => count + step.viewpointRotations, 0);
   setupSegments.push({
@@ -1569,6 +1544,10 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
     return scramble == null ? [] : [{ spin, orientation, scramble }];
   });
   if (!frames.length) return emptyFailure("444_INVALID_SCRAMBLE", "invalid", null, meta);
+  const identity = VIEW_ORIENTATION_BY_KEY_444.get(viewMapKey444(CFOP_444_IDENTITY_FACE_MAP));
+  const initialRegrips = ({ orientation }) => shortestViewRotationPath444(identity, yauFrontCenterGrip444(orientation)).length;
+  frames.sort((a, b) => initialRegrips(a) - initialRegrips(b));
+
 
   const progress = (stage, extra = {}) => emitProgress(onProgress, { type: "444_stage_start", eventId: "444", stage, ...extra });
   progress("BOUNDARY");
@@ -1577,7 +1556,7 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
 
   let yau;
   try {
-    yau = await import("./yau444.js?v=20261127-yau-natural-centers-1");
+    yau = await import("./yau444.js?v=20261127-yau-front-center-1");
   } catch (error) {
     return emptyFailure("444_YAU_MODULE_UNAVAILABLE", "error", error?.message, meta);
   }
@@ -1597,7 +1576,7 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
         edgeBudgetMs: resolveYauBudget444(options, "__yauEdgeBudgetMs", 12000),
         cross4BudgetMs: resolveYauBudget444(options, "__yauCross4BudgetMs", 1500),
         onStage: progress,
-        scoreCross3Plans: (first, opposite) => makeYauCross3Scorer444(first, opposite, crossColor, orientation),
+        scoreCross3: (plan) => scoreYauCross3Plan444(plan, crossColor, orientation),
       });
       const result = await finish444Cfop({
         api, publicScramble: scramble, onProgress, crossColor: "D", deadlineTs: frameDeadline,
