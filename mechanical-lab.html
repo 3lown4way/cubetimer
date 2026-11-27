@@ -9,11 +9,11 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M0.7 Live contact</h1>
+<h1>Cube mechanical lab · M0.8 Constrained contact</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
-<div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label>다음 손가락 입력 시점 (이전 회전 잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
-<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><div class="controls"><label>외피 <select id="shellStyle"><option value="gan" selected>신형 비대칭 곡면 (M0.6)</option><option value="sculpted">이전 M0.5 외피</option><option value="old">이전 v2.7 컬러 캡</option></select></label><label><input type="checkbox" id="shellCompare"> 같은 자세에서 외피 비교</label></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="livePhysicsStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. M0.7은 재생 준비 시 480 Hz 적분·60 Hz 형상 접촉 표본 계산을 수행합니다. 센터 축방향 탄성 및 자석 위치 기반 인력 근사 포함. 입력 시점 각도는 사용자의 다음 회전 명령을 모사하는 값이지 허용 코너커팅 한계가 아닙니다. 실제 제품 물성 및 완전한 강체 충돌은 미구현입니다. M0.4 표 방식도 비교할 수 있습니다.</small>
+<div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label><input id="hardContact" type="checkbox" checked> 침투 제한 및 비선형 MagLev (M0.8)</label><label>다음 손가락 입력 시점 (이전 회전 잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
+<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><div class="controls"><label>외피 <select id="shellStyle"><option value="gan" selected>신형 비대칭 곡면 (M0.6)</option><option value="sculpted">이전 M0.5 외피</option><option value="old">이전 v2.7 컬러 캡</option></select></label><label><input type="checkbox" id="shellCompare"> 같은 자세에서 외피 비교</label></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="livePhysicsStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. M0.8은 재생 준비 시 120 Hz 자세 구속 및 60 Hz 접촉력 표본 계산을 수행합니다. M0.7은 480 Hz 적분을 사용합니다. 센터 축방향 탄성 및 자석 위치 기반 인력 근사 포함. M0.8은 내부 메시 표본 침투 허용량 0.0925 mm와 비선형 MagLev 복원력 근사를 적용합니다. 연속 충돌 보장은 아닙니다. 입력 시점 각도는 사용자의 다음 회전 명령을 모사하는 값이지 허용 코너커팅 한계가 아닙니다. 실제 제품 물성 및 완전한 강체 충돌은 미구현입니다. M0.4 표 방식도 비교할 수 있습니다.</small>
 <div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
 <figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>M0.6 비대칭 곡면 · 메시 접촉 모델</figcaption></figure>
@@ -513,7 +513,101 @@ function m07Forces(t,active,offsets,travel,magnet,friction,contact=true){
  return {torques,axial,depth,force,hits};
 }
 
-function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40}={}){
+
+// M0.8: discrete, sampled internal geometry constraints. No claim of
+// continuous collision detection or exact rigid-body contact.
+const M08_LIMIT=.005; // nominal 0.0925 mm sampled penetration
+function m08Depth(t,active,offsets,limit=M08_LIMIT){
+ if(active.length<2)return 0;
+ const frame=m07Frame(t,active,offsets),parts=m04Parts(frame),groups=frame.cubies.map((_,id)=>active.reduce((s,a,k)=>s|(a.move.selected(t.frames[a.i][id].p)?1<<k:0),0));
+ let worst=0;
+ for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
+  const a=parts[i],b=parts[j];
+  if(a.id===b.id||(groups[a.id]===groups[b.id]&&Math.hypot(...a.offset,...b.offset)<1e-8)||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
+  for(const [src,dst] of [[a,b],[b,a]])for(const sample of src.geo.sample){
+   const local=cadInverse(dst.basis,cadTransform(src.basis,sample).map((x,k)=>x+src.offset[k]-dst.offset[k]));
+   if(!m04Inside(local,dst.geo))continue;
+   worst=Math.max(worst,Math.sqrt(m04Depth2(local,dst.geo)));
+   if(worst>limit)return worst;
+  }
+ }
+ return worst;
+}
+function m08Restore(x,travel){
+ const gap=.12,preload=6*(.065/Math.max(.015,travel));
+ return 35*x+preload*(1-(gap/(gap+Math.max(0,x)))**3);
+}
+function simulateConstrained(t,{magnet=1,travel=.065,friction=1,requestAngle=40}={}){
+ if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
+ const dt=1/120,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0],offsets=t.frames[0].map(()=>0),offsetV=offsets.slice(),traceCenter=[offsets.slice()];
+ let clock=0,next=0,maxDeflection=0,maxForce=0,maxCenter=0,meshEvaluations=0,contactSamples=0,projectionQueries=0,blockedSteps=0,retreatSteps=0,stalls=0,last=null;
+ const launchAngle=rad(clamp(requestAngle,20,50));
+ const start=()=>{const move=t.moves[next],a={i:next,move,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(move.angle),inertia:move.whole?2.1:1,ts:[clock],angles:[0]};if(active.length)cuts.push({i:next,start:clock,end:clock,limit:launchAngle*180/Math.PI,previous:active[0].move.token,next:move.token});times.push(clock);turns.push(a);active.push(a);next++;stalls=0;};
+ if(t.moves.length)start();
+ const limitSteps=Math.ceil(Math.max(2,t.moves.length*6)/dt);
+ for(let step=0;active.length&&step<limitSteps;step++){
+  const oldX=active.map(a=>a.x),oldO=offsets.slice(),ids=active.map(a=>a.i).join(",");
+  if(!last||last.ids!==ids||step%2===0){last={...m07Forces(t,active,offsets,travel,magnet,friction),ids};meshEvaluations++;contactSamples+=last.hits;}
+  const torques=active.map((a,i)=>{
+    const err=a.goal-a.x,desired=Math.min(2.3,Math.sqrt(28*Math.max(0,err)),24*Math.max(0,err));
+    return clamp(24*(desired-a.v),-35,35)+clamp(last.torques[i],-22,22)-friction*(.65*a.v+.21*Math.tanh(a.v/.045));
+  });
+  for(let i=0;i<offsets.length;i++){offsetV[i]+=(last.axial[i]-m08Restore(offsets[i],travel)-9*offsetV[i])/.10*dt;offsets[i]=clamp(offsets[i]+offsetV[i]*dt,0,travel);}
+  const targetO=offsets.slice();
+  const targetX=active.map((a,i)=>clamp(a.x+clamp(a.v+torques[i]/a.inertia*dt,-1.1,2.7)*dt,0,a.goal));
+  // Do not permit controller overshoot: exact turn endpoints are constraints.
+  const test=(x,o)=>{for(let k=0;k<active.length;k++)active[k].x=x[k];projectionQueries++;return m08Depth(t,active,o);};
+  let acceptedX=targetX,acceptedO=targetO,depth=0,blocked=false;
+  if(active.length===2){
+   depth=test(targetX,targetO);
+   if(depth>M08_LIMIT){
+    blocked=true;blockedSteps++;
+    // First try full earlier-turn progress with the following angle held.
+    // If jammed, release the later turn in bounded steps. No teleporting.
+    let base=null;
+    for(const o of [targetO,oldO]){
+     const x=[targetX[0],oldX[1]],d=test(x,o);
+     if(d<=M08_LIMIT){base={x,o,d};break;}
+    }
+    if(!base){
+     const x=[targetX[0],Math.max(0,oldX[1]-.018)],d=test(x,oldO);
+     if(d<=M08_LIMIT)base={x,o:oldO,d};
+    }
+    if(!base){
+     const x=[oldX[0],Math.max(0,oldX[1]-.018)],d=test(x,oldO);
+     if(d<=M08_LIMIT)base={x,o:oldO,d};
+    }
+    if(!base){const d=test(oldX,oldO);if(d>M08_LIMIT+1e-7)throw Error("이전 자세의 내부 간섭이 허용 범위를 초과");base={x:oldX,o:oldO,d};}
+    // On a valid segment search for the furthest admissible proposed state.
+    let lo=0,hi=1,best=base;
+    for(let j=0;j<5;j++){const f=(lo+hi)/2,x=base.x.map((v,k)=>v+(targetX[k]-v)*f),o=base.o.map((v,k)=>v+(targetO[k]-v)*f),d=test(x,o);if(d<=M08_LIMIT){best={x,o,d};lo=f;}else hi=f;}
+    acceptedX=best.x;acceptedO=best.o;depth=best.d;
+   }
+   if(acceptedX[0]-oldX[0]<1e-6&&active[0].goal-oldX[0]>.001)stalls++;else stalls=0;
+   // Escape a local contact trap: temporarily release the following finger.
+   if(stalls>3&&oldX[1]>0){
+    for(const scale of [1,.5,.25]){const x=[oldX[0],Math.max(0,oldX[1]-.022*scale)],d=test(x,oldO);if(d<=M08_LIMIT){acceptedX=x;acceptedO=oldO;depth=d;break;}}
+   }
+   if(acceptedX[1]<oldX[1]-1e-8)retreatSteps++;
+  }
+  for(let i=0;i<offsets.length;i++){offsets[i]=acceptedO[i];offsetV[i]=(offsets[i]-oldO[i])/dt;}
+  clock+=dt;
+  for(let k=0;k<active.length;k++){const a=active[k];a.x=acceptedX[k];a.v=(a.x-oldX[k])/dt;a.ts.push(clock);a.angles.push(Math.sign(a.move.angle)*a.x);}
+  maxDeflection=Math.max(maxDeflection,depth);maxForce=Math.max(maxForce,last.force);maxCenter=Math.max(maxCenter,...offsets);
+  traceT.push(clock);traceD.push(depth);traceF.push(last.force);traceCenter.push(offsets.slice());
+  // Only finish the earliest joint; the exact endpoint was already tested.
+  const a=active[0];
+  if(a.goal-a.x<1e-8){a.x=a.goal;a.angles[a.angles.length-1]=a.move.angle;a.v=0;a.end=clock;const cut=cuts.find(c=>c.i===a.i+1);if(cut)cut.end=clock;active.shift();stalls=0;}
+  if(next<t.moves.length){if(!active.length)start();else if(active.length===1){const a=active[0],b=t.moves[next];if(a.i===next-1&&cutLimit(a.move,b,3,true)>0&&a.goal-a.x<=launchAngle&&a.v>0)start();}}
+ }
+ if(active.length||next!==t.moves.length)throw Error("구속 회전 정렬 수렴 실패: "+active.map(a=>a.move.token+":"+a.x.toFixed(4)).join(","));
+ for(let i=0;i<120&&offsets.some(v=>v>1e-6);i++){clock+=dt;for(let j=0;j<offsets.length;j++){offsetV[j]+=(-m08Restore(offsets[j],travel)-9*offsetV[j])/.10*dt;offsets[j]=Math.max(0,offsets[j]+offsetV[j]*dt);if(offsets[j]===0)offsetV[j]=0;}traceT.push(clock);traceD.push(0);traceF.push(0);traceCenter.push(offsets.slice());}
+ traceCenter[traceCenter.length-1]=offsets.map(()=>0);times.push(clock);
+ return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,traceT,traceD,traceF,traceCenter,maxDeflection,maxForce,maxCenter,meshEvaluations,contactSamples,projectionQueries,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
+}
+
+function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false}={}){
+  if(liveContact&&constrained)return simulateConstrained(t,{magnet,travel,friction,requestAngle});
   if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
   const dt=1/480,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0];
   let clock=0,next=0,maxDeflection=0,maxForce=0,maxCenter=0,meshEvaluations=0,contactSamples=0;
@@ -1882,7 +1976,7 @@ function render(now=Infinity){
   const taskEvent=plan.taskEvents?plan.events.find(e=>motionTime>=e.start&&motionTime<e.end):null;
   $("assemblyStatus").textContent=$("cadMode").value==="magnetic"?"신형 독자 형상 · Ball core · 삼엽형 코너 다리 · 타원형 엣지 슈 · 4날개 센터 · MagLev 링 (치수 추정)":cadAsset&&$("cadMode").value==="cad"?"CAD 원형: 코어 1 · 센터 6 · 엣지 12 · 코너 8 (나사·스프링·자석 별도 미모델링)":"근사 구조: 코어 1 · 센터 6 · 엣지 12 · 코너 8 · 센터축/스프링 · 자석";
   $("mechanicalStatus").textContent=flowTrack.profile==="mechanical"?(flowTrack.liveContact?"현재 자세 접촉 근사 · 표본 침투 ":flowTrack.meshContact?"사전 계산 표 접촉 근사 · 현재 표본 침투 ":"캠 접촉 근사 · 현재 변위 ")+(lookup(flowTrack.traceT,flowTrack.traceD,time)*100).toFixed(2)+"% · 최대 "+(flowTrack.maxDeflection*100).toFixed(2)+"% · 접촉력 "+lookup(flowTrack.traceT,flowTrack.traceF,time).toFixed(2)+" (상대값) · 중첩 "+flowTrack.cuts.length+"회":"기존 운동학적 재생";
-  $("livePhysicsStatus").textContent=flowTrack.liveContact?"실제 자세 메시 표본 계산 "+flowTrack.meshEvaluations+"회 · 접촉 표본 누적 "+flowTrack.contactSamples+"개 · 센터 현재 "+(Math.max(0,...centerOffsets)*18.5).toFixed(3)+" mm · 최대 "+(flowTrack.maxCenter*18.5).toFixed(3)+" mm (추정)":"기존 물리 모델";
+  $("livePhysicsStatus").textContent=flowTrack.liveContact?"실제 자세 메시 표본 계산 "+flowTrack.meshEvaluations+"회 · 접촉 표본 누적 "+flowTrack.contactSamples+"개 · 센터 현재 "+(Math.max(0,...centerOffsets)*18.5).toFixed(3)+" mm · 최대 "+(flowTrack.maxCenter*18.5).toFixed(3)+" mm (추정)"+(flowTrack.constrained?" · 구속 검사 "+flowTrack.projectionQueries+"회 / 제한 "+flowTrack.blockedSteps+"스텝 / 후행 후퇴 "+flowTrack.retreatSteps+"스텝 · 최대 승인 침투 "+(flowTrack.maxAcceptedDepth*18.5).toFixed(3)+" mm":""):"기존 물리 모델";
   $("taskStatus").textContent=plan.taskEvents?(taskEvent?"목표 조각 확인 · "+taskEvent.angle.toFixed(0)+"° · "+(motionTime>=taskEvent.hold?(taskEvent.identified?"목표 색상 확인 완료":"후보 면 확인"):"면을 드러내는 중"):plan.events.length?"목표 탐색 "+plan.events.length+"회 · 추가 확인 "+plan.events.filter(e=>e.identified).length+"회":"추가 탐색 없음 (현재 조건에서 유효한 확인 경로 없음)"):"기존 탐색 방식";
   const group=tl.rhythm?.find(g=>g.first<=modernFrame.i&&g.last>=modernFrame.i);
   $("rhythmStatus").textContent=tl.reference?"영상 주석 타이밍 · 기존 v2.2 유지":group?"동작 단위: "+group.name+" · "+(group.first+1)+"–"+(group.last+1)+"수 (추정 프로필)":"일반 회전 타이밍";
@@ -1915,7 +2009,7 @@ function load(){
     if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
     const nextContinuous=$("mode").value==="continuous";
     let nextTrack;
-    if($("profile").value==="mechanical"){const p=simulateMechanical(t,{magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,requestAngle:Number($("requestAngle").value)});t=p.timeline;nextTrack=p.track;}else nextTrack=buildFlowTrack(t,$("profile").value);
+    if($("profile").value==="mechanical"){const p=simulateMechanical(t,{magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,constrained:$("hardContact").checked,requestAngle:Number($("requestAngle").value)});t=p.timeline;nextTrack=p.track;}else nextTrack=buildFlowTrack(t,$("profile").value);
     const p={events:[],decisions:[],taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};
     continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
     $("rhythmDetails").textContent=t.moves.map((m,i)=>`${i+1}. ${m.token} · ${((t.times[i+1]-t.times[i])*1000/Number($("speed").value)).toFixed(0)} ms · ${t.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(t.reference?"영상 주석":"일반")}`).join("\n");
@@ -1939,6 +2033,7 @@ $("assembly").onchange=()=>render();$("explode").oninput=()=>render();
 for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
 $("mechanicalApply").onclick=load;
 $("livePhysics").onchange=load;
+$("hardContact").onchange=load;
 $("requestAngle").oninput=()=>{$("requestAngleVal").textContent=$("requestAngle").value+"°";};
 $("stressTest").onclick=()=>{$("cadMode").value="magnetic";$("profile").value="mechanical";$("livePhysics").checked=true;$("flow").checked=true;$("size").value="3";$("setup").value="";$("alg").value="R U";$("requestAngle").value="48";$("requestAngleVal").textContent="48°";$("speed").value="2";$("speedVal").textContent="2 TPS";$("assembly").value="cutaway";load();};
 $("contactSweep").onclick=()=>{playing=false;syncButton();const rows=[[0,0],[0,15],[5,5],[10,10],[15,15],[25,15],[30,25]].map(([a,b])=>{const p=m04Probe(m04PairFrame("R","U",a,b),true);return `${String(a).padStart(2)}° / ${String(b).padStart(2)}° · ${p.piecePairs}쌍 · ${p.hits}점 · 최대 ${(p.maxDepth*18.5).toFixed(2)} mm`;});$("meshContactResult").textContent="R 남은 각도 / U 진행 각도 · 내부 조각 쌍 · 내부 표본점\n"+rows.join("\n")+"\n표본점에서 가장 가까운 메시 표면까지의 거리이며 전체 최대 침투량을 보장하지 않습니다.";};
