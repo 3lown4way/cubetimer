@@ -1719,7 +1719,7 @@ const m04Names=["cornerFoot","edgeFoot","cornerStem","edgeStem","centerWing","ce
 const m04Cache=new Map();
 function m04Geometry(name){
  if(m04Cache.has(name))return m04Cache.get(name);
- const m=magneticMeshes[name],tri=[],vertices=new Map();
+ const m=name==="housing"?m09Housing():name.startsWith("shell:")?ganShellPatch(Number(name.split(":")[1])):magneticMeshes[name],tri=[],vertices=new Map();
  for(let i=0;i<m.length;i+=18){
   const a=Array.from(m.slice(i,i+3)),b=Array.from(m.slice(i+6,i+9)),c=Array.from(m.slice(i+12,i+15));
   const e=b.map((x,k)=>x-a[k]),g=c.map((x,k)=>x-a[k]);
@@ -1892,6 +1892,49 @@ function ganShellPatch(mask){
  for(let k=0;k<rings.length-1;k++)for(let i=0;i<count;i++){const j=(i+1)%count,a=rings[k][i],b=rings[k][j],c=rings[k+1][j],d=rings[k+1][i];out.push(...a,...b,...c,...a,...c,...d);}
  const back=rings.at(-1).map(v=>[v[0],v[1],v[2],0,0,-1]);for(let i=0;i<count;i++)out.push(0,0,.245,0,0,-1,...back[(i+1)%count],...back[i]);
  const mesh=new Float32Array(out);ganShellCache.set(mask,mesh);return mesh;
+}
+
+
+function m09Housing(){
+ const out=[];
+ for(const [axis,side] of FACES){const basis=[unit((axis+1)%3,1),unit((axis+2)%3,side),unit(axis,side)];for(let i=0;i<faceMesh.length;i+=6)out.push(...cadTransform(basis,Array.from(faceMesh.slice(i,i+3))).map(x=>x*.84*.91),...cadTransform(basis,Array.from(faceMesh.slice(i+3,i+6))));}
+ return new Float32Array(out);
+}
+function m09FlexTransform(c,flex){
+ const pivot=c.p.map(v=>v*.5),shift=flex.slice(0,3),angle=flex.slice(3,6);
+ const rot=v=>{for(let k=0;k<3;k++)if(angle[k])v=rotate(v,k,angle[k]);return v;};
+ const point=v=>rot(v.map((x,k)=>x-pivot[k])).map((x,k)=>x+pivot[k]+shift[k]);
+ return {rot,point};
+}
+function m09Parts(frame){
+ const parts=m04Parts(frame),flex=frame.pieceFlex;
+ function setBounds(p){
+  const {min,max}=p.geo.root;const mid=min.map((x,k)=>(x+max[k])*.5),half=max.map((x,k)=>(x-min[k])*.5),center=cadTransform(p.basis,mid).map((v,k)=>v+p.offset[k]),rad=center.map((_,k)=>p.basis.reduce((s,v,j)=>s+Math.abs(v[k])*half[j],0));
+  p.min=center.map((v,k)=>v-rad[k]);p.max=center.map((v,k)=>v+rad[k]);return p;
+ }
+ if(flex)for(const p of parts){const f=m09FlexTransform(frame.cubies[p.id],flex[p.id]);p.offset=f.point(p.offset);p.basis=p.basis.map(f.rot);setBounds(p);}
+ for(let id=0;id<frame.cubies.length;id++){
+  const c=frame.cubies[id],p=c.p.map(x=>x*.5),b=c.b,outer=[0,1,2].map(k=>c.colors[2*k]!=="#202124"?1:c.colors[2*k+1]!=="#202124"?-1:0),radial=norm3(p),give=frame.centerOffsets?.[id]||0;
+  const tr=flex?m09FlexTransform(c,flex[id]):{rot:v=>v,point:v=>v};
+  const origin=p.map((v,k)=>v+radial[k]*give);
+  const add=(name,basis,offset)=>parts.push(setBounds({id,name,geo:m04Geometry(name),basis:basis.map(tr.rot),offset:tr.point(offset)}));
+  add("housing",b,origin.map((v,k)=>v+b.reduce((s,a,i)=>s-.056*outer[i]*a[k],0)));
+  for(let axis=0;axis<3;axis++){const side=outer[axis];if(!side)continue;const u=(axis+1)%3,v=(axis+2)%3,mask=(outer[u]===1?1:outer[u]===-1?2:0)|(outer[v]===side?4:outer[v]===-side?8:0);add("shell:"+mask,[b[u],b[v].map(x=>x*side),b[axis].map(x=>x*side)],origin);}
+ }
+ return parts;
+}
+function m09Measure(frame,limit=Infinity){
+ const parts=m09Parts(frame);let depth=0,hits=0,types={};
+ for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
+  const a=parts[i],b=parts[j];if(a.id===b.id||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
+  for(const [src,dst] of [[a,b],[b,a]])for(const sample of src.geo.sample){
+   const local=cadInverse(dst.basis,cadTransform(src.basis,sample).map((x,k)=>x+src.offset[k]-dst.offset[k]));
+   if(!m04Inside(local,dst.geo))continue;
+   const d=Math.sqrt(m04Depth2(local,dst.geo));if(d<.0004)continue;hits++;depth=Math.max(depth,d);const key=[a.name,b.name].sort().join(" ↔ ");types[key]=(types[key]||0)+1;
+   if(depth>limit)return {depth,hits,types};
+  }
+ }
+ return {depth,hits,types};
 }
 
 function drawGPU(canvas,frame,pose){
