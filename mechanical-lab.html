@@ -1657,15 +1657,15 @@ const sculptedCache=new Map();
 function sculptedPatch(mask){
  if(sculptedCache.has(mask))return sculptedCache.get(mask);
  const ext=(axis,sign)=>!!(mask&(axis===0?(sign>0?1:2):(sign>0?4:8)));
- const half=(axis,sign)=>ext(axis,sign)?.495:.478;
- const fillet=(axis,sign)=>ext(axis,sign)?.112:.046;
+ const half=(axis,sign)=>ext(axis,sign)?.495:.487;
+ const fillet=(axis,sign)=>ext(axis,sign)?.112:.032;
  const outline=(s,t)=>{
    const sx=s<0?-1:1,sy=t<0?-1:1,hx=half(0,sx),hy=half(1,sy);
    let x=s*hx,y=t*hy;
    // Preserve the common edge of adjacent coloured panels. Deep relief
    // only at corners between distinct cubies.
    if(!ext(0,sx)&&!ext(1,sy)){
-     const r=mask===0?.205:.165,dx=Math.max(0,Math.abs(x)-hx+r),dy=Math.max(0,Math.abs(y)-hy+r),l=Math.hypot(dx,dy);
+     const r=mask===0?.235:.185,dx=Math.max(0,Math.abs(x)-hx+r),dy=Math.max(0,Math.abs(y)-hy+r),l=Math.hypot(dx,dy);
      if(l>r){x=sx*(hx-r+dx*r/l);y=sy*(hy-r+dy*r/l);}
    }
    return [x,y];
@@ -1826,7 +1826,7 @@ $("cubeModel").onchange=()=>render();
 $("cadFile").onchange=async()=>{try{const f=$("cadFile").files[0];if(!f)return;if(f.size>5000000)throw Error("파일이 너무 큽니다");await loadCAD(JSON.parse(await f.text()));$("cadMode").value="cad";render();}catch(e){$("cadStatus").textContent="CAD 가져오기 실패: "+e.message;}};
 $("cadProbe").onclick=()=>{if($("cadMode").value==="magnetic"){playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time),p=m04Probe(f),base=m04Probe({cubies:solved(3)});$("cadCollision").textContent=`내부 메시 간섭: ${p.piecePairs} 조각 쌍 / ${p.hits} 표본점 · 최대 침투 ${(p.maxDepth*18.5).toFixed(2)} mm · 정렬 기준 ${base.piecePairs}쌍 / ${base.hits}점`;$("meshContactResult").textContent=Object.entries(p.byType).map(([k,v])=>k+": "+v).join("\n")||"검출 없음";return;}if($("cadMode").value!=="cad"){$("cadCollision").textContent="신형 또는 구형 CAD를 선택하세요.";return;}if(!cadAsset){$("cadCollision").textContent="CAD JSON을 먼저 불러오세요.";return;}playing=false;syncButton();const f=$("flow").checked?flowFrameAt(tl,flowTrack,chainClock(flowTrack,time)):frameAt(tl,time);const p=probeCAD(f);if(!cadBaseline)cadBaseline=probeCAD({cubies:solved(3)});$("cadCollision").textContent="현재 자세: "+p.pairs+"쌍 / "+p.hits+" 내부점 · 정렬 기준: "+cadBaseline.pairs+"쌍 / "+cadBaseline.hits+" 내부점 · 검사점 "+p.tests+"개 (샘플 근사, 공차 검증 전, 코어 제외)";};
 $("shellStyle").onchange=()=>render();
-$("shellCompare").onchange=()=>{$("cadMode").value="magnetic";$("compareView").checked=$("shellCompare").checked;syncComparison();document.querySelectorAll(".compare figcaption").forEach((el,i)=>el.textContent=$("shellCompare").checked?(i?"M0.5 곡면 외피":"v2.7 기존 외피"):(i?"신형 자석식 큐브":"기호 회전만 · 기준"));render();};
+$("shellCompare").onchange=()=>{const changed=$("cadMode").value!=="magnetic";$("cadMode").value="magnetic";$("compareView").checked=$("shellCompare").checked;syncComparison();document.querySelectorAll(".compare figcaption").forEach((el,i)=>el.textContent=$("shellCompare").checked?(i?"M0.5 곡면 외피":"v2.7 기존 외피"):(i?"신형 자석식 큐브":"기호 회전만 · 기준"));if(changed)load();else render();};
 $("assembly").onchange=()=>render();$("explode").oninput=()=>render();
 for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
 $("mechanicalApply").onclick=load;
