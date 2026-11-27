@@ -6,7 +6,7 @@ const PUZZLE_ID = "4x4x4";
 const SOLVE_TIMEOUT_MS = 60_000;
 const WORKER_BOOT_TIMEOUT_MS = 8_000;
 const WORKER_CALL_GRACE_MS = 5_000;
-const WORKER_BUILD_TOKEN = "20261127-yau-grip-1";
+const WORKER_BUILD_TOKEN = "20261127-yau-centers-1";
 const INSTALL_KEY = "__cubeTimer444UiActivationInstalled";
 
 const METHOD_LABELS = Object.freeze({ yau: "Yau", reduction: "Reduction" });
@@ -393,7 +393,8 @@ export function installSolver444UiActivation() {
   }
 
   function renderStageItem(stage, depth, startIndex) {
-    const end = startIndex + splitMoves(stage?.solution).length;
+    const stageMoves = splitMoves(stage?.solution);
+    const end = startIndex + stageMoves.length;
     const children = Array.isArray(stage?.segments) ? stage.segments : [];
     const item = document.createElement("li");
     item.dataset.solver444Ui = "true";
@@ -408,7 +409,7 @@ export function installSolver444UiActivation() {
       ? "Yau Setup"
       : STAGE_LABELS[stage?.id] || String(stage?.name || stage?.id || "단계");
     const count = document.createElement("span");
-    const moveCount = Number.isFinite(stage?.moveCount) ? stage.moveCount : splitMoves(stage?.solution).length;
+    const moveCount = Number.isFinite(stage?.moveCount) ? stage.moveCount : stageMoves.length;
     const detail = stage?.alreadyPaired === true
       ? " · 이미 페어링"
       : stage?.technique === "align-then-close"
@@ -429,8 +430,18 @@ export function installSolver444UiActivation() {
     });
     item.append(title, count, jump);
     if (!children.length) {
+      const rotationCount = stage?.viewpointRotations || 0;
+      if (rotationCount) {
+        const grip = document.createElement("div");
+        grip.className = "stage-notes";
+        const rotation = document.createElement("code");
+        grip.textContent = "큐브 방향 전환 · ";
+        rotation.textContent = joinMoves(stageMoves.slice(0, rotationCount));
+        grip.appendChild(rotation);
+        item.appendChild(grip);
+      }
       const algorithm = document.createElement("code");
-      algorithm.textContent = String(stage?.solution || "").trim() || "0수";
+      algorithm.textContent = joinMoves(stageMoves.slice(rotationCount)) || "0수";
       item.appendChild(algorithm);
       if (end > startIndex) playbackStages.push({ end, name: title.textContent });
     }

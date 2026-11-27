@@ -1,5 +1,5 @@
 import { puzzles } from "../vendor/cubing/puzzles/index.js";
-import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261126-yau-stages-1";
+import { solveYauFirstCenters444, solveYauSideCenters444 } from "./yauCenters444.js?v=20261127-yau-centers-1";
 import {
   crossEdgeTypeMask444,
   crossSideColors444,
@@ -47,7 +47,7 @@ function stationaryCrossTurns(solution) {
 
 // On the upper three layers, Uw and 2D act on disjoint slices. A 3Uw
 // is Uw plus the lower inner slice in the opposite direction to 2D.
-function shortenYauLayerRuns(turns) {
+function shortenYauLayerRuns(turns, mergeUpperSlices = true) {
   const shorter = [];
   let upper = 0;
   let inner = 0;
@@ -61,7 +61,7 @@ function shortenYauLayerRuns(turns) {
     upper = inner = 0;
   }
   for (const turn of turns) {
-    const match = /^(3Uw|Uw|2D)(2|')?$/.exec(turn);
+    const match = mergeUpperSlices && /^(3Uw|Uw|2D)(2|')?$/.exec(turn);
     if (match) {
       const [, layer] = match;
       const amount = moveAmount(turn);
@@ -154,7 +154,7 @@ export async function solveYauPhases444(scramble, { deadlineTs, edgeBudgetMs, cr
 
   const setupStage = phaseGroup("centers", "Yau Setup", "Yau", [
     phaseSegment("yauFirstCenter", "Yau · First Center", centers.first),
-    phaseSegment("yauOppositeCenter", "Yau · Opposite Center", centers.opposite),
+    phaseSegment("yauOppositeCenter", "Yau · Opposite Center", shortenYauLayerRuns(centers.opposite, false)),
     phaseSegment("yauCross3", cross.crossCount === 4 ? "Yau · Cross Already Solved" : "Yau · Cross Edges 3/4", cross3Turns, {
       crossEdgeCount: cross.crossCount,
       startingSideColors: crossSideColors444(cross.initialMask & cross.lockedMask),

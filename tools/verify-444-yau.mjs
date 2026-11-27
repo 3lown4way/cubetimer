@@ -269,17 +269,23 @@ async function verifyCase(scramble, crossColor, { expectNatural = false } = {}) 
   ]);
   assert.equal(setup.segments.map((segment) => segment.solution).filter(Boolean).join(" "), setup.solution);
   assert.ok(result.solution.startsWith(`${setup.solution} `), "full playback must use the displayed Yau setup order");
-  assert.ok(Number(setup.segments[1].viewpointRotations) >= 1, "Yau opposite center did not flip the first center down");
+  assert.equal(setup.segments[1].viewpointRotations, 1, "Yau must flip once before the opposite center");
+  assert.match(setup.segments[1].solution.split(" ")[0], /^[xz]2$/);
+  for (const center of setup.segments.slice(0, 2)) {
+    const layers = center.solution.split(" ").slice(center.viewpointRotations).map((move) => move.replace(/[2']$/, ""));
+    assert.equal(layers.some((layer, index) => layer === layers[index - 1]), false,
+      "center turns on the same layer should be combined");
+  }
   assert.ok(Number(setup.segments[2].viewpointRotations) >= 1, "Yau Cross 3/4 did not regrip with the cross center on the side");
   assert.equal(centerFaceForColor(solved.applyAlg(scramble).applyAlg(setup.solution), crossColor), "L", "Yau setup must finish Cross 4/4 with the cross still on L");
 
   const targetMask = crossTypeMask(crossColor);
   let pattern = solved.applyAlg(scramble);
   pattern = setup.segments[0].solution ? pattern.applyAlg(setup.segments[0].solution) : pattern;
-  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not solved first");
+  assert.equal(centerFaceForColor(pattern, crossColor), "U", "first Yau center was not solved on top");
   pattern = setup.segments[1].solution ? pattern.applyAlg(setup.segments[1].solution) : pattern;
-  assert.equal(centerColorGroupedSomewhere(pattern, crossColor), true, "first Yau center was not preserved");
-  assert.equal(centerColorGroupedSomewhere(pattern, OPPOSITE[crossColor]), true, "opposite Yau center was not solved second");
+  assert.equal(centerFaceForColor(pattern, crossColor), "D", "first Yau center was not preserved on bottom");
+  assert.equal(centerFaceForColor(pattern, OPPOSITE[crossColor]), "U", "opposite Yau center was not solved on top");
   if (expectNatural) {
     assert.equal(allCentersGrouped(pattern), false, "remaining centers were already solved before Cross 3/4");
     assert.ok(bitCount(pairedCrossTypesAdjacentToCenter(pattern, crossColor)) < 3,

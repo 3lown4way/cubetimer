@@ -5,6 +5,8 @@ const FACES = ["U", "R", "F", "D", "L", "B"];
 const SIDES = ["F", "L", "B", "R"];
 const SUFFIXES = ["", "'", "2"];
 const MASK_BASE = 2 ** 24;
+const FIRST_CENTER_VIEW = { U: "D", D: "U", R: "R", L: "L", F: "B", B: "F" };
+const CENTER_TURN_COST = { U: 8, R: 8, F: 10, L: 12, D: 17, B: 22 };
 
 let modelPromise;
 
@@ -71,7 +73,7 @@ function centerMask(model, pattern, colors) {
   ), 0);
 }
 
-// Reverse breadth-first search over just the participating center colors.
+// Reverse shortest-path search over just the participating center colors.
 // A table records the move back toward its goal. It never evaluates wings or
 // other phases, and a table is built only when its own phase needs it.
 function getPolicy(model, id, goalA, goalB, createActions, deadlineTs, timing) {
@@ -81,17 +83,21 @@ function getPolicy(model, id, goalA, goalB, createActions, deadlineTs, timing) {
   const actions = createActions();
   const goal = goalA + goalB * MASK_BASE;
   const policy = new Map([[goal, null]]);
-  const queue = [goal];
-  for (let i = 0; i < queue.length; i += 1) {
-    if ((i & 255) === 0) checkDeadline(deadlineTs);
-    const current = queue[i];
-    const a = current % MASK_BASE;
-    const b = Math.floor(current / MASK_BASE);
-    for (const { destinations, undo } of actions) {
-      const next = moveMask(a, destinations) + moveMask(b, destinations) * MASK_BASE;
-      if (policy.has(next)) continue;
-      policy.set(next, { toward: current, undo });
-      queue.push(next);
+  const buckets = [[goal]];
+  let visited = 0;
+  for (let cost = 0; cost < buckets.length; cost += 1) {
+    for (const current of buckets[cost] || []) {
+      if ((visited++ & 255) === 0) checkDeadline(deadlineTs);
+      if (current !== goal && policy.get(current).cost !== cost) continue;
+      const a = current % MASK_BASE;
+      const b = Math.floor(current / MASK_BASE);
+      for (const { destinations, undo, cost: turnCost = 1 } of actions) {
+        const next = moveMask(a, destinations) + moveMask(b, destinations) * MASK_BASE;
+        const nextCost = cost + turnCost;
+        if (next === goal || (policy.get(next)?.cost ?? Infinity) <= nextCost) continue;
+        policy.set(next, { toward: current, undo, cost: nextCost });
+        (buckets[nextCost] ??= []).push(next);
+      }
     }
   }
   checkDeadline(deadlineTs);
@@ -115,19 +121,29 @@ function centerPath(model, id, startA, goalA, startB, goalB, actions, deadlineTs
   return output;
 }
 
+function firstCenterAction(model, moves, view = null) {
+  const action = model.action(moves);
+  const cost = action.undo.reduce((sum, turn) => {
+    const face = view ? view[turn[0]] : turn[0];
+    const wideCost = turn[1] === "w" ? (face === "B" || face === "D" ? 5 : 2) : 0;
+    return sum + CENTER_TURN_COST[face] + wideCost;
+  }, 0);
+  return { ...action, cost };
+}
+
 function oppositeCenterActions(model) {
   const candidates = [
     ...[...model.outer, ...model.wide].map((move) => [move]),
     ...model.wide.flatMap((open) => model.outer.map((turn) => [open, turn, inverseTurn(open)])),
   ];
-  const seen = new Set();
-  return candidates.map(model.action).filter(({ destinations }) => {
-    if (moveMask(model.goals.D, destinations) !== model.goals.D) return false;
-    const key = destinations.join(",");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const actions = new Map();
+  for (const moves of candidates) {
+    const action = firstCenterAction(model, moves);
+    if (moveMask(model.goals.D, action.destinations) !== model.goals.D) continue;
+    const key = action.destinations.join(",");
+    if ((actions.get(key)?.cost ?? Infinity) > action.cost) actions.set(key, action);
+  }
+  return [...actions.values()];
 }
 
 export async function solveYauFirstCenters444(pattern, deadlineTs, onStage) {
@@ -139,7 +155,7 @@ export async function solveYauFirstCenters444(pattern, deadlineTs, onStage) {
 
   onStage("YAU_FIRST_CENTER");
   const first = centerPath(model, "first", centerMask(model, pattern, "D"), goals.D, 0, 0,
-    () => [...model.wide, ...model.outer].map((move) => model.action([move])), deadlineTs, timing);
+    () => [...model.wide, ...model.outer].map((move) => firstCenterAction(model, [move], FIRST_CENTER_VIEW)), deadlineTs, timing);
   const afterFirst = pattern.applyAlg(moveSequence(first));
   if (centerMask(model, afterFirst, "D") !== goals.D) throw new Error("444_YAU_FIRST_CENTER_VERIFY");
 

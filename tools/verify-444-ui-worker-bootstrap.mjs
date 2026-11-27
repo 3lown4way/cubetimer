@@ -16,7 +16,7 @@ assert.match(ui, /client\.worker\.addEventListener\("error", onError\)/);
 assert.match(ui, /client\.worker\.addEventListener\("messageerror", onMessageError\)/);
 assert.match(ui, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
 assert.match(ui, /withUiTimeout\(\s*api\.solve\(/);
-assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-grip-1/);
+assert.match(preview, /solver444UiActivation\.js\?v=20261127-yau-centers-1/);
 console.log("4x4 UI worker bootstrap timeout, retry, and cache-bust contract passed");
 
 const elements = new Map();
@@ -25,12 +25,12 @@ const workers = [];
 const players = [];
 const puzzle = await puzzles["4x4x4"].kpuzzle();
 
-function newElement() {
+function newElement(tagName) {
   const attrs = new Map();
   const listeners = new Map();
   let textContent = "";
   return {
-    dataset: {}, style: {}, children: [], disabled: false, value: "", listeners,
+    tagName, dataset: {}, style: {}, children: [], disabled: false, value: "", listeners,
     get textContent() { return textContent; },
     set textContent(value) { textContent = value; this.children = []; },
     addEventListener: (type, listener) => listeners.set(type, listener),
@@ -159,7 +159,7 @@ workers[2].finishSolve({
   meta: { method444: "yau", yauPlaybackVerified: true },
   stages: [{ id: "centers", method: "Yau", solution, segments: [
     { id: "yauCross3", name: "Cross 3/4", solution: "x 2D", segments: [
-      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x 2D" },
+      { id: "yauCross3_1", name: "Cross Edge 3/3", solution: "x 2D", viewpointRotations: 1 },
     ] },
     { id: "yauRemainingCenters", name: "Remaining 4 Centers", solution: "3Uw2 F'" },
   ] }],
@@ -173,6 +173,10 @@ assert.equal(player.experimentalSetupAlg, "U2 Fw Rw");
 assert.equal(player.alg, solution);
 const cross = element("solverStageList").children.find((item) => item.dataset.solver444Stage === "yauCross3_1");
 assert.ok(cross, "individual cross insertions must be displayed and seekable");
+const grip = cross.children.find((item) => item.className === "stage-notes");
+assert.equal(grip.textContent, "큐브 방향 전환 · ");
+assert.equal(grip.children[0].textContent, "x");
+assert.equal(cross.children.find((item) => item.tagName === "code").textContent, "2D");
 cross.children.find((item) => item.type === "button").listeners.get("click")();
 assert.equal(player.timestamp, 2000, "2D is a single turn even though its notation starts with 2");
 assert.match(element("solverStepLabel").textContent, /^2\/4 동작 · Cross Edge 3\/3$/);

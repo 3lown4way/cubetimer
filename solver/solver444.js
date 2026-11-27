@@ -1105,9 +1105,12 @@ function presentYauStages444(stages, crossColor, canonicalGrip, workingFace) {
   const regripCost = (from, to) => 2 * viewRotationExecutionCost444(shortestViewRotationPath444(from, to));
   let firstPair;
   for (const up of upGrips) {
+    const initialGrip = shortestViewRotationPath444(identity, up);
     for (const down of downGrips) {
+      const flip = shortestViewRotationPath444(up, down);
+      if (flip.length !== 1) continue;
       const cost = turnsCost(first, up) + turnsCost(opposite, down) +
-        regripCost(identity, up) + regripCost(up, down) + regripCost(down, leftGrip);
+        5 * initialGrip.length + regripCost(down, leftGrip) + (flip[0] === "z2" ? 0.8 : 0);
       if (!firstPair || cost < firstPair.cost) firstPair = { up, down, cost };
     }
   }
@@ -1491,7 +1494,7 @@ async function solveYauCanonicalFrame444(publicScramble, onProgress, options, cr
 
   let yau;
   try {
-    yau = await import("./yau444.js?v=20261127-yau-grip-1");
+    yau = await import("./yau444.js?v=20261127-yau-centers-1");
   } catch (error) {
     return emptyFailure("444_YAU_MODULE_UNAVAILABLE", "error", error?.message, meta);
   }
