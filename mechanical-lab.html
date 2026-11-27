@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CubeTimer — mechanical lab</title>
+<style>
+:root{color-scheme:light dark;font:15px system-ui,sans-serif}
+body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 0 8px}p{line-height:1.5;opacity:.8}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0;min-width:0}figcaption{text-align:center;font-weight:600;padding:8px}canvas{display:block;width:100%;aspect-ratio:1;touch-action:none;cursor:grab}
+.controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}button,select,input,textarea{font:inherit}button,select{padding:7px 10px}textarea{display:block;width:100%;box-sizing:border-box;padding:10px;resize:vertical}input[type=range]{accent-color:#578dd6}.wide{flex:1;min-width:100px}#message{min-height:1.4em;color:#cf5555}label{display:block;margin-top:8px}small{opacity:.75}
+@media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
+#taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
+</style></head><body>
+<h1>Cube mechanical lab · M0.1</h1>
+<p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
+<div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">컬러 캡 제거</option><option value="exploded">분해도</option><option value="core">코어·센터만</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
+<div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><button id="mechanicalApply">물리 설정 적용</button></div>
+<p id="mechanicalStatus"></p><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 회전에는 축약 관성/토크·자석·접촉 모델을 사용하며, 메시의 실제 충돌 해석은 아직 하지 않습니다.</small>
+<div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
+<figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
+<figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>스티커리스 스피드큐브 · 코너커팅 기본 적용</figcaption></figure>
+</div>
+<div class="controls"><button id="play">▶ 재생</button><button id="reset">처음</button><button id="prev">◀</button><button id="next">▶</button><input id="seek" class="wide" type="range" min="0" max="1" step=".001" value="0" aria-label="재생 위치"><output id="pos"></output></div>
+<div class="controls">
+<label>크기 <select id="size"><option selected>3</option></select></label>
+<label>속도 <input id="speed" type="range" min="1" max="20" step=".25" value="6"><output id="speedVal">6 TPS</output></label>
+<label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
+<label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="mechanical" selected>축약 동역학 M0.1</option><option value="rhythm">동작별 리듬 v2.3</option><option value="flick">이전 빠른 정렬 v2.1</option><option value="handoff">이전 v2.0</option><option value="contact">이전 v1.1</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><label><input id="wrist" type="checkbox" checked> 미세 손목 반작용</label><label><input id="lookAhead" type="checkbox" checked> 자연 노출 예측</label><label>큐브 외형 <select id="cubeModel"><option value="modern" selected>신형 스피드큐브</option><option value="classic">이전 외형</option></select></label><button id="resetView">시점 초기화</button>
+</div>
+<div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button id="f2lDemo">F2L 삽입 예시</button><button id="pllDemo">PLL T-perm</button><button id="wideDemo">4×4 Wide 연결</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
+<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15" autocomplete="off"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2"></textarea>
+<label><input id="referenceTiming" type="checkbox"> 영상 기반 회전 간격 (3×3 Sexy move 6회 전용)</label><label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U R' U' R U R' U'</textarea>
+<div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
+<div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="taskStatus"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><p id="contactStatus"></p><p id="referenceStatus"></p><p id="rhythmStatus"></p><p id="wristStatus"></p><details><summary>동작별 타이밍</summary><pre id="rhythmDetails" style="white-space:pre-wrap"></pre></details><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
+<small>실험판: v2.7 WebGL2 신형 외형 — 센터·엣지·코너의 서로 다른 성형 캡, 비대칭 라운딩, 움푹 들어간 내부 지지체와 밝은 코어, 색상 및 표면 하이라이트. 특정 상용 제품의 정확한 CAD 복제는 아닙니다. 목표 색상은 사용자가 지정합니다. 다음 세 수에 실제로 관여하는 조각을 후보로 삼고, 현재 보이는 스티커와 회전 중 새로 보일 스티커를 구분합니다. 회전 중 탐색은 추가 정지 시간을 만들지 않으며 확인한 자세를 다음 회전까지 유지하고 서서히 되돌립니다. v1.0은 180° 회전을 포함한 연결 가능한 회전을 하나의 회전량 시계로 재생하고, 과도한 탐색 기울임과 불필요한 반복 확인을 줄입니다. v2.6은 사용자 지정 목표 조각을 기준으로 전체 큐브의 후보를 검사합니다. 추가 확인이 필요한 경우 실제 레이어 회전과 동시에 면을 드러내고 여러 수에 걸쳐 원래 자세로 복귀합니다. 기본 예제의 목표는 흰색·초록색 엣지입니다. 적용 시 카메라 방향을 기준으로 판단하며, 면 방향에 따른 근사로 실제 가림 및 시선 추적은 아닙니다. 기존 회전 타이밍과 손목 반작용은 유지합니다. 잔상은 적용하지 않습니다. 실물 영상 기반 24수 예제는 반작용을 끈 기존 상태로 유지합니다. F2L·PLL·Wide 프로필은 추정 모델이며 별도 실측은 하지 않았습니다. 영상은 저장소에 포함하지 않습니다. 프레임별 접촉 보정은 기본 프로필에서 제외했으며 v2.0에서 비교할 수 있습니다. 내부 코어는 시각 모델입니다. 실제 내부 기구, 자석 힘, 마찰 및 탄성은 모델링하지 않습니다. 정지 후 탐색 모드에는 중첩을 적용하지 않습니다. 가시성과 기억은 아직 근사 모델입니다. 드래그는 관찰자 카메라에만 적용되며, 바뀐 시점을 탐색 계획에 반영하려면 적용 버튼을 누르세요.</small>
+<script type="module">
+// Independent NxN state + experimental grip-pose planner. No cubing.js dependency.
+const rad = d => d*Math.PI/180;
+const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
+const smooth = t => t*t*(3-2*t);
+const rotate = (v,a,t) => {
+  const [x,y,z]=v,c=Math.cos(t),s=Math.sin(t);
+  return a===0?[x,c*y-s*z,s*y+c*z]:a===1?[c*x+s*z,y,c*z-s*x]:[c*x-s*y,s*x+c*y,z];
+};
+const FACES=[[0,1,"#cf302e"],[0,-1,"#f58b27"],[1,1,"#f7f7f7"],[1,-1,"#f4d331"],[2,1,"#24aa57"],[2,-1,"#2463cf"]];
+const unit=(a,s)=>[0,1,2].map(i=>i===a?s:0);
+function solved(n) {
+  const c=[],edge=n-1;
+  for(let x=-edge;x<=edge;x+=2)for(let y=-edge;y<=edge;y+=2)for(let z=-edge;z<=edge;z+=2){
+    const p=[x,y,z];
+    if(!p.some(v=>Math.abs(v)===edge))continue;
+    c.push({p,b:[unit(0,1),unit(1,1),unit(2,1)],
+      colors:FACES.map(([a,s,color])=>p[a]===s*edge?color:"#202124")});
+  }
+  return c;
+}
+function parseAlg(text,n){
+  return text.trim().split(/\s+/).filter(Boolean).map(token=>{
+    const m=token.match(/^(\d+)?([RLUDFBrludfbxyzMES])(w)?(2'?|')?$/);
+    if(!m)throw Error("Unsupported move: "+token);
+    const [,prefix,letter,w,suffix]=m, f=letter.toUpperCase();
+    const whole="xyz".includes(letter), slice="MES".includes(letter);
+    const lower="rludfb".includes(letter);
+    if((whole||slice)&&(prefix||w))throw Error("Invalid move: "+token);
+    const axis=({R:0,L:0,U:1,D:1,F:2,B:2,X:0,Y:1,Z:2,M:0,E:1,S:2})[f];
+    const side="LDBME".includes(f)?-1:1;
+    const width=prefix?Number(prefix):w||lower?2:1;
+    if(!whole&&!slice&&(width<1||width>n))throw Error("Invalid layer: "+token);
+    if(slice&&n%2===0)throw Error("Use explicit inner-layer notation on even cubes: "+token);
+    const selected=p=>whole|| (slice?p[axis]===0:(w||lower)?side*p[axis]>=n-1-2*(width-1):side*p[axis]===n-1-2*(width-1));
+    const amount=suffix?.startsWith("2")?2:1;
+    return {token,axis,side,whole,slice,width,amount,face:f,selected,
+      angle:-side*amount*Math.PI/2*(suffix?.endsWith("'")?-1:1)};
+  });
+}
+function apply(cubies,move){
+  const r=v=>rotate(v,move.axis,move.angle).map(Math.round);
+  return cubies.map(c=>move.selected(c.p)?{...c,p:r(c.p),b:c.b.map(r)}:c);
+}
+// Hand-annotated estimates from a 30-fps, 115-frame reference clip.
+// These are approximate move boundaries, not measured angular trajectories.
+const referenceBoundaries=[26.5,29.5,32.5,34.5,36.5,38.5,40.5,42.5,44.5,46.5,48.5,50.5,53.5,55.5,57.5,59.5,61.5,63.5,65.5,67.5,69.5,71.5,73.5,75.5,77];
+const referenceAlg=Array(6).fill("R U R' U'").join(" ");
+const referenceSpan=referenceBoundaries.at(-1)-referenceBoundaries[0];
+const referenceTPS=24*30/referenceSpan;
+function applyReferenceTiming(t){
+  if(t.n!==3||t.moves.map(m=>m.token).join(" ")!==referenceAlg)throw Error("영상 타이밍은 3×3 R U R' U' 6회에만 사용할 수 있습니다.");
+  const times=referenceBoundaries.map(x=>(x-referenceBoundaries[0])*24/referenceSpan);
+  return {...t,times,total:times.at(-1),reference:true};
+}
+
+// The only measured cadence is the user's reference sequence. Other patterns
+// below are initial heuristic profiles, not claims about human measurements.
+// Relative weights preserve the chosen average playback speed.
+function rhythmGroups(moves){
+  const groups=[],tokens=moves.map(m=>m.token);
+  const templates=[
+    {name:"T-perm",alg:"R U R' U' R' F R2 U' R' U' R U R' F'",w:[1.08,.84,.96,.88,1.10,1.18,1.38,.83,.98,.85,.98,.84,.98,1.18]},
+    {name:"Sune",alg:"R U R' U R U2 R'",w:[1.04,.84,.98,.85,1.00,1.35,1.02]},
+    {name:"Sexy move",alg:"R U R' U'",w:[1.08,.91,.98,.93]},
+    {name:"Left trigger",alg:"L' U' L U",w:[1.08,.91,.98,.93]},
+    {name:"Sledge",alg:"R' F R F'",w:[1.02,1.14,.93,1.10]},
+    {name:"Hedge",alg:"F R' F' R",w:[1.13,.98,1.10,.96]},
+    {name:"F2L right insert",alg:"U R U' R'",w:[.88,1.04,.88,1.04]},
+    {name:"F2L left insert",alg:"U' L' U L",w:[.88,1.04,.88,1.04]},
+    {name:"F2L right trigger",alg:"R U' R'",w:[1.04,.87,1.02]},
+    {name:"F2L left trigger",alg:"L' U L",w:[1.04,.87,1.02]}
+  ].map(p=>({...p,t:p.alg.split(" ")})).sort((a,b)=>b.t.length-a.t.length);
+  const match=(i,p)=>p.t.every((x,j)=>tokens[i+j]===x);
+  for(let i=0;i<moves.length;){
+    const p=templates.find(p=>match(i,p));
+    if(p){groups.push({first:i,last:i+p.t.length-1,name:p.name,weights:p.w.slice(),source:"heuristic"});i+=p.t.length;continue;}
+    const m=moves[i],wide=m.width>1&&!m.slice&&!m.whole&&(/w|^[rludfb]/.test(m.token));
+    if(wide){
+      let j=i+1;
+      while(j<moves.length&&j<i+4&&!moves[j].whole&&!moves[j].slice&&moves[j].axis!==moves[j-1].axis&&
+        (moves[j].width===1||/w|^[rludfb]/.test(moves[j].token)))j++;
+      groups.push({first:i,last:j-1,name:"Wide / outer connection",weights:moves.slice(i,j).map(x=>(x.width>1?1.22:1)*(x.amount===2?1.48:1)),source:"heuristic"});i=j;continue;
+    }
+    const w=(m.whole?1.48:m.slice||m.width>1?1.25:"UD".includes(m.face)?.86:"FB".includes(m.face)?1.15:1)*(m.amount===2?1.48:1);
+    groups.push({first:i,last:i,name:m.whole?"Whole rotation":m.slice||m.width>1?"Inner / slice":"Single",weights:[w],source:"heuristic"});i++;
+  }
+  return groups;
+}
+function applyRhythmTiming(t){
+  if(t.reference)return t;
+  const groups=rhythmGroups(t.moves),weights=[];
+  for(const g of groups){
+    for(let j=0;j<g.weights.length;j++){
+      let w=g.weights[j];
+      // Anticipation/hand-off varies with the next move, not every token.
+      const k=g.first+j,a=t.moves[k],b=t.moves[k+1];
+      if(b&&a.axis===b.axis&&Math.sign(a.angle)!==Math.sign(b.angle))w*=1.10;
+      if(j===g.weights.length-1&&g.weights.length>1&&b){
+        const next=groups.find(x=>x.first===k+1);
+        if(next?.name!==g.name)w*=1.09;
+      }
+      weights.push(w);
+    }
+  }
+  const sum=weights.reduce((s,x)=>s+x,0),factor=sum?t.moves.length/sum:1,times=[0];
+  for(const w of weights)times.push(times.at(-1)+w*factor);
+  return {...t,times,total:times.at(-1),rhythm:groups};
+}
+
+function buildTimeline(n,setup,alg){
+  let c=solved(n);
+  for(const m of parseAlg(setup,n))c=apply(c,m);
+  const moves=parseAlg(alg,n), frames=[c], times=[0];
+  for(const m of moves){
+    c=apply(c,m);frames.push(c);
+    times.push(times.at(-1)+(m.whole?1.25:m.amount===2?1.48:1));
+  }
+  return {n,moves,frames,times,total:times.at(-1)};
+}
+// Hypothesized ergonomic grip states, not measured motion capture.
+// Angles are pitch/yaw/roll relative to the user's camera.
+const GRIPS=[
+  {name:"home",pose:[0,0,0]},
+  {name:"right access",pose:[-3,-12,-6]},
+  {name:"left access",pose:[-3,12,6]},
+  {name:"front access",pose:[-13,0,0]},
+  {name:"lower access",pose:[15,0,0]},
+  {name:"back access",pose:[-7,27,5]}
+];
+function cost(m,g){
+  if(m.whole)return g===0?0:0.3;
+  const face=m.face;
+  if(face==="R"||face==="L"||face==="U")return g===0?0:g===1&&face==="R"||g===2&&face==="L"?0.08:0.7;
+  if(face==="F"||face==="S")return g===3?0:g===0?1.05:1.2;
+  if(face==="D"||face==="E")return g===4?0:g===0?1.25:1.3;
+  if(face==="B")return g===5?0:g===0?1.9:1.7;
+  return g===0?0:0.6;
+}
+function planGrip(moves){
+  let scores=GRIPS.map((_,i)=>i===0?0:1.35), back=[];
+  for(const m of moves){
+    const prev=scores, row=[];
+    scores=GRIPS.map((_,j)=>{
+      let best=Infinity,idx=0;
+      prev.forEach((v,i)=>{
+        const z=v+(i===j?0:1.25)+cost(m,j);
+        if(z<best){best=z;idx=i;}
+      });row[j]=idx;return best;
+    });back.push(row);
+  }
+  let best=scores.map((v,i)=>v+(i===0?0:0.4)), k=best.indexOf(Math.min(...best)), out=[];
+  for(let i=moves.length-1;i>=0;i--){out.unshift(k);k=back[i][k];}
+  return out;
+}
+// Unit quaternion [w,x,y,z]. Interpolate visual pose only.
+const mul=(a,b)=>[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+const qaxis=(a,t)=>[Math.cos(t/2),...unit(a,Math.sin(t/2))];
+const qpose=([x,y,z])=>mul(qaxis(2,rad(z)),mul(qaxis(1,rad(y)),qaxis(0,rad(x))));
+function qrotate(q,v){return mul(mul(q,[0,...v]),[q[0],-q[1],-q[2],-q[3]]).slice(1);}
+function slerp(a,b,t){
+  let dot=a.reduce((s,v,i)=>s+v*b[i],0);
+  if(dot<0){b=b.map(v=>-v);dot=-dot;}
+  if(dot>0.9995){const q=a.map((v,i)=>v+(b[i]-v)*t),l=Math.hypot(...q);return q.map(v=>v/l);}
+  const theta=Math.acos(clamp(dot,-1,1)),s=Math.sin(theta);
+  return a.map((v,i)=>(v*Math.sin((1-t)*theta)+b[i]*Math.sin(t*theta))/s);
+}
+// A grip change spans a short window around the move boundary.
+// Keep a stable grip through ordinary finger flicks; only explicit whole
+// rotations receive an extra small multi-axis wrist arc.
+// Timing and angles are hypotheses, not motion-capture measurements.
+function buildPoseTrack(timeline){
+  const {moves,times,total}=timeline,grip=planGrip(moves);
+  const keys=[{t:0,p:[0,0,0]}], accents=[];
+  const push=(t,p)=>{
+    t=clamp(t,0,total);
+    const last=keys.at(-1);
+    if(t<=last.t+1e-8)return;
+    keys.push({t,p:p.slice()});
+  };
+  let current=0;
+  for(let i=0;i<moves.length;i++){
+    const m=moves[i],start=times[i],end=times[i+1],span=end-start;
+    const next=grip[i];
+    if(next!==current){
+      // Anticipate a change during the tail of the previous move.
+      const lead=i?Math.min(.42,(times[i]-times[i-1])*.32):0;
+      push(start-lead,GRIPS[current].pose);
+      push(start+span*.28,GRIPS[next].pose);
+      current=next;
+    }
+    if(m.whole){
+      const sign=Math.sign(m.angle);
+      // Orthogonal wrist tilt, not an extra logical x/y/z turn.
+      const p=m.axis===0?[0,sign*5,-sign*4]:
+        m.axis===1?[sign*6,0,sign*3]:[sign*4,-sign*5,0];
+      accents.push({start:Math.max(0,start-.16),end:Math.min(total,end+.18),p});
+    }
+  }
+  // Preserve the ending grip; don't spring back to home after every sequence.
+  push(total,GRIPS[current].pose);
+  return {keys,grip,accents};
+}
+// Component-wise monotone cubic Hermite on small local pose offsets.
+// This yields continuous velocity at keyframes without overshooting a
+// chosen grip. Convert to a unit quaternion for rendering. Full x/y/z
+// rotations remain on the separate logical rotation timeline.
+function tangent(keys,i,axis){
+  if(i===0||i===keys.length-1)return 0;
+  const a=keys[i-1],b=keys[i],c=keys[i+1];
+  const h0=b.t-a.t,h1=c.t-b.t;
+  const d0=(b.p[axis]-a.p[axis])/h0,d1=(c.p[axis]-b.p[axis])/h1;
+  if(d0*d1<=0)return 0;
+  const w0=2*h1+h0,w1=h1+2*h0;
+  return (w0+w1)/(w0/d0+w1/d1);
+}
+function poseAnglesAt(track,t){
+  const keys=track.keys;
+  let j=1;while(j<keys.length&&keys[j].t<t)j++;
+  let p;
+  if(j>=keys.length)p=keys.at(-1).p.slice();
+  else{
+    const a=keys[j-1],b=keys[j],h=b.t-a.t,u=clamp((t-a.t)/h,0,1);
+    const u2=u*u,u3=u2*u;
+    p=a.p.map((v,k)=>(2*u3-3*u2+1)*v+(u3-2*u2+u)*h*tangent(keys,j-1,k)+(-2*u3+3*u2)*b.p[k]+(u3-u2)*h*tangent(keys,j,k));
+  }
+  for(const a of track.accents||[]){
+    if(t<=a.start||t>=a.end)continue;
+    const u=(t-a.start)/(a.end-a.start);
+    const envelope=Math.sin(Math.PI*u)**2; // zero velocity at entry/exit
+    p=p.map((v,k)=>v+a.p[k]*envelope);
+  }
+  return p;
+}
+function poseAt(track,t,strength=1){
+  return qpose(poseAnglesAt(track,t).map(v=>v*strength));
+}
+
+// Render-only flow track: exact cubie states are never modified.
+// Selection for each turn comes from its discrete input state; visual
+// transforms compose in notation order, even when their time windows overlap.
+function cutLimit(a,b,n,allowDouble=false){
+  if(!a||!b||a.whole||b.whole||a.slice||b.slice||a.axis===b.axis||(!allowDouble&&(a.amount!==1||b.amount!==1)))return 0;
+  // A numbered inner layer (2R) is not an outer or wide move.
+  const inner=m=>m.width>1&&!/w|^[rludfb]/.test(m.token);
+  if(inner(a)||inner(b))return 0;
+  const wide=a.width>1||b.width>1;
+  return wide?(n<=4?5:3):(n<=3?10:n===4?7:5);
+}
+function overshootDegrees(m,n){
+  if(m.whole||m.slice||m.amount!==1)return 0;
+  if(m.width>1&&!/w|^[rludfb]/.test(m.token))return 0;
+  return m.width>1?0.65:n<=3?2.2:n===4?1.3:.8;
+}
+function hermite01(a,b,ma,mb,u,h){
+  const u2=u*u,u3=u2*u;
+  return (2*u3-3*u2+1)*a+(u3-2*u2+u)*h*ma+(-2*u3+3*u2)*b+(u3-u2)*h*mb;
+}
+function turnFlowProgress(u,overshoot){
+  u=clamp(u,0,1);
+  // Fast finger-flick, gentle capture, small elastic-looking return.
+  if(u<=.66)return hermite01(0,.83,0,1.05,u/.66,.66);
+  if(u<=.86)return hermite01(.83,1+overshoot,1.05,0,(u-.66)/.20,.20);
+  return hermite01(1+overshoot,1,0,0,(u-.86)/.14,.14);
+}
+function buildLegacyFlowTrack(timeline){
+  const {moves,times,n}=timeline;
+  const turns=moves.map((m,i)=>({i,move:m,start:times[i],end:times[i+1],over:overshootDegrees(m,n)/90}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],limit=cutLimit(a.move,b.move,n);
+    if(!limit)continue;
+    const boundary=times[i],span=Math.min(times[i]-times[i-1],times[i+1]-times[i]);
+    // Allow the previous layer to settle a little after the logical boundary.
+    a.end=boundary+span*.055;
+    const threshold=1-limit/90;
+    let lo=0,hi=.86;
+    for(let j=0;j<30;j++){const mid=(lo+hi)/2;if(turnFlowProgress(mid,a.over)<threshold)lo=mid;else hi=mid;}
+    b.start=Math.max(boundary-span*.22,a.start+hi*(a.end-a.start));
+    if(b.start>=boundary){a.end=boundary;b.start=boundary;continue;}
+    cuts.push({i,start:b.start,end:a.end,limit,previous:a.move.token,next:b.move.token});
+  }
+  return {turns,cuts,total:timeline.total};
+}
+// Velocity-integrated curve: short acceleration, sustained speed, smooth
+// deceleration. Cosine ramps keep angular velocity continuous; no stop,
+// reversal or magnetic bounce is inserted into every intermediate turn.
+function fluidProgress(u,a=.14,d=.26){
+  u=clamp(u,0,1);
+  const v=1/(1-(a+d)/2);
+  if(u<a)return v*.5*(u-a/Math.PI*Math.sin(Math.PI*u/a));
+  if(u<=1-d)return v*(u-a/2);
+  const x=1-u;
+  return 1-v*.5*(x-d/Math.PI*Math.sin(Math.PI*x/d));
+}
+function buildBaseFlowTrack(timeline,profile="fluid",allowDouble=false){
+  if(profile==="legacy")return buildLegacyFlowTrack(timeline);
+  const {moves,times,n}=timeline;
+  const turns=moves.map((move,i)=>({i,move,start:times[i],end:times[i+1],fluid:true,a:.14,d:.26,over:0}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],limit=cutLimit(a.move,b.move,n,allowDouble);
+    if(!limit)continue;
+    const boundary=times[i],span=Math.min(times[i]-times[i-1],times[i+1]-times[i]);
+    // Decelerate the previous move while the next is already accelerating.
+    // Longer hand-off than v0.7, within the same angular safety threshold.
+    a.end=boundary+span*.11;a.d=.40;b.a=.085;
+    let lo=0,hi=1;
+    for(let j=0;j<36;j++){const mid=(lo+hi)/2;if(fluidProgress(mid,a.a,a.d)<1-limit/(90*a.move.amount))lo=mid;else hi=mid;}
+    b.start=Math.max(boundary-span*.30,a.start+hi*(a.end-a.start));
+    if(b.start>=boundary){a.end=boundary;a.d=.26;b.start=boundary;b.a=.14;continue;}
+    cuts.push({i,start:b.start,end:a.end,limit,previous:a.move.token,next:b.move.token});
+  }
+  // No repeated overshoot on intermediate moves; settle at the end only.
+  return {turns,cuts,total:timeline.total};
+}
+// Direct angular handoff. Both layers share a distance parameter. The
+// next layer takes over angular travel gradually, without a per-move bounce.
+function handoffIntegral(u){
+  u=clamp(u,0,1);const r=.16,v=.5/(1-r);
+  if(u<r)return v*u*u/(2*r);
+  if(u<=1-r)return v*(u-r/2);
+  const d=1-u;
+  return .5-d+v*d*d/(2*r);
+}
+// Integral of a monotonic rate increasing from 0 to 1, with symmetry.
+function handoffNext(u){
+  u=clamp(u,0,1);const r=.16;
+  if(u<r)return .5*u*u/(2*r);
+  if(u<=1-r)return .5*(u-r/2);
+  const d=1-u;
+  return .5-d+.5*d*d/(2*r);
+}
+function buildHandoffBase(timeline){
+  const {moves,times,n}=timeline,arc=[0];
+  for(const m of moves)arc.push(arc.at(-1)+Math.abs(m.angle)*180/Math.PI);
+  const angleAt=t=>lookup(times,arc,t),timeAt=s=>lookup(arc,times,s);
+  const turns=moves.map((move,i)=>({i,move,start:times[i],end:times[i+1],handoff:true,arcStart:arc[i],arcEnd:arc[i+1],angleAt}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],old=cutLimit(a.move,b.move,n,true);
+    if(!old)continue;
+    const wide=a.move.width>1||b.move.width>1;
+    const limit=wide?(n<=4?8:5):(n<=3?20:n===4?12:8);
+    const mid=arc[i],start=timeAt(mid-limit),end=timeAt(mid+limit);
+    a.end=end;b.start=start;a.outCut={mid,limit};b.inCut={mid,limit};
+    cuts.push({i,start,end,limit,previous:a.move.token,next:b.move.token});
+  }
+  return {turns,cuts,total:timeline.total};
+}
+
+// Finger-flick timing: a short acceleration/capture, a long constant-speed
+// drive, and true simultaneous turns during permitted handoffs. Unlike v2.0
+// we do not force the sum of both layer velocities to remain constant.
+function buildFlickTrack(timeline,adaptive=false){
+  const {moves,times,n}=timeline;
+  const turns=moves.map((move,i)=>({i,move,start:times[i],end:times[i+1],flick:true}));
+  const cuts=[];
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1],b=turns[i],base=cutLimit(a.move,b.move,n,true);
+    if(!base)continue;
+    const wide=a.move.width>1||b.move.width>1;
+    const limit=wide?(n<=4?8:5):(n<=3?20:n===4?12:8);
+    // Limit overlap by the faster of the two nominal angular rates.
+    const span=Math.min(times[i]-times[i-1],times[i+1]-times[i]);
+    const vmax=Math.max(Math.abs(a.move.angle)*180/Math.PI/(times[i]-times[i-1]),Math.abs(b.move.angle)*180/Math.PI/(times[i+1]-times[i]));
+    const g=adaptive?timeline.rhythm?.find(g=>g.first<=i-1&&g.last>=i):null;
+    const overlap=Math.min(span*(adaptive?(g?.name==="Wide / outer connection"?.21:g?.name==="Sexy move"||g?.name==="Left trigger"?.31:g?.name==="T-perm"||g?.name==="Sune"?.27:g?.name?.includes("F2L")?.27:.20):.24),limit/vmax*.94);
+    a.end=times[i]+overlap*.28;b.start=times[i]-overlap*.72;
+    cuts.push({i,start:b.start,end:a.end,limit,previous:a.move.token,next:b.move.token});
+  }
+  for(const t of turns){
+    const duration=t.end-t.start;
+    // About 4 degrees of final capture at nominal speed, rather than 20.
+    // Shorter on an outgoing handoff, a little longer at a genuine stop.
+    const incoming=cuts.some(c=>c.i===t.i),outgoing=cuts.some(c=>c.i===t.i+1);
+    t.a=Math.min(.13,(incoming?.047:.075)/duration);
+    t.d=Math.min(.13,(outgoing?.032:.065)/duration);
+  }
+  return {turns,cuts,total:timeline.total,profile:adaptive?"rhythm":"flick"};
+}
+
+
+// Reduced generalized-coordinate model (dimensionless mechanical units).
+// Not a full mesh-contact solver: spring contact uses a smooth cam proxy.
+function simulateMechanical(t,{magnet=1,travel=.065,friction=1}={}){
+  if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
+  const dt=1/480,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0];
+  let clock=0,next=0,maxDeflection=0,maxForce=0;
+  const cam=.42,clearance=.012,k=950;
+  const launchAngle=Math.min(rad(28),Math.asin(clamp((clearance+travel)/cam,0,.99)));
+  const start=()=>{
+    const m=t.moves[next],a={i:next,move:m,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(m.angle),ts:[clock],angles:[0],inertia:m.whole?2.1:1,steps:0};
+    if(active.length)cuts.push({i:next,start:clock,end:clock,limit:launchAngle*180/Math.PI,previous:active[0].move.token,next:m.token});
+    times.push(clock);turns.push(a);active.push(a);next++;
+  };
+  if(t.moves.length)start();
+  const limitSteps=480*Math.max(2,t.moves.length*5);
+  for(let step=0;active.length&&step<limitSteps;step++){
+    const torque=active.map(a=>{
+      const error=a.goal-a.x;
+      // Velocity command under bounded actuator torque, not a prescribed angle curve.
+      const desired=Math.sign(error)*Math.min(2.30,Math.sqrt(2*14*Math.abs(error)),24*Math.abs(error));
+      const drive=clamp(24*(desired-a.v),-35,35);
+      const magnetic=a.move.whole?0:-magnet*2.8*Math.sin(4*a.x);
+      return drive+magnetic-friction*(.65*a.v+.21*Math.tanh(a.v/.045));
+    });
+    let deflection=0,force=0;
+    if(active.length===2){
+      const [a,b]=active,rem=Math.max(0,a.goal-a.x),advance=clamp(b.x,0,Math.PI/2);
+      const demand=cam*Math.sin(Math.min(rem,Math.PI/2))*Math.sin(advance);
+      deflection=Math.max(0,demand-clearance);
+      const stiffness=k*(.065/Math.max(.015,travel));
+      force=stiffness*deflection;
+      // Gradient of .5*k*deflection^2 transfers torque into alignment
+      // while resisting the following layer. Forces share one potential.
+      if(deflection>0){
+        torque[0]+=force*cam*Math.cos(rem)*Math.sin(advance);
+        torque[1]-=force*cam*Math.sin(rem)*Math.cos(advance);
+      }
+    }
+    maxDeflection=Math.max(maxDeflection,deflection);maxForce=Math.max(maxForce,force);
+    clock+=dt;traceT.push(clock);traceD.push(deflection);traceF.push(force);
+    for(let i=0;i<active.length;i++){
+      const a=active[i];a.v+=torque[i]/a.inertia*dt;a.x+=a.v*dt;a.steps++;
+      if(!Number.isFinite(a.x)||a.x<-.1||a.x>a.goal+.2)throw Error("unstable physical turn");
+      a.ts.push(clock);a.angles.push(Math.sign(a.move.angle)*a.x);
+    }
+    for(let i=active.length-1;i>=0;i--){
+      const a=active[i];
+      if(Math.abs(a.goal-a.x)<.0007&&Math.abs(a.v)<.015){
+        a.x=a.goal;a.v=0;a.angles[a.angles.length-1]=a.move.angle;a.end=clock;
+        if(cuts.some(c=>c.i===a.i+1))cuts.find(c=>c.i===a.i+1).end=clock;
+        active.splice(i,1);
+      }
+    }
+    if(next<t.moves.length){
+      if(!active.length)start();
+      else if(active.length===1){
+        const a=active[0],b=t.moves[next];
+        if(a.i===next-1&&cutLimit(a.move,b,3,true)>0&&a.goal-a.x<=launchAngle&&a.v>0)start();
+      }
+    }
+  }
+  if(active.length||next!==t.moves.length)throw Error("회전 정렬 수렴 실패");
+  times.push(clock);
+  const timeline={...t,times,total:clock,mechanical:true};
+  return {timeline,track:{turns,cuts,total:clock,profile:"mechanical",traceT,traceD,traceF,maxDeflection,maxForce,launchAngle}};
+}
+
+function flowAngle(turn,t){
+  if(turn.physical)return lookup(turn.ts,turn.angles,t);
+  if(turn.flick)return turn.move.angle*fluidProgress((t-turn.start)/(turn.end-turn.start),turn.a,turn.d);
+  if(turn.handoff){
+    const s=turn.angleAt(t),length=turn.arcEnd-turn.arcStart;
+    let x=clamp(s-turn.arcStart,0,length);
+    if(turn.inCut&&s<turn.inCut.mid+turn.inCut.limit){
+      const {mid,limit}=turn.inCut,u=clamp((s-mid+limit)/(2*limit),0,1);
+      x=2*limit*handoffNext(u);
+    }
+    if(turn.outCut&&s>turn.outCut.mid-turn.outCut.limit){
+      const {mid,limit}=turn.outCut,u=clamp((s-mid+limit)/(2*limit),0,1);
+      x=length-limit+2*limit*(u-handoffNext(u));
+    }
+    return Math.sign(turn.move.angle)*rad(clamp(x,0,length));
+  }
+  const u=(t-turn.start)/(turn.end-turn.start);
+  let progress=turn.fluid?fluidProgress(u,turn.a,turn.d):turnFlowProgress(u,turn.over);
+  if(turn.capture){const c=turn.capture,v=clamp((t-c.start)/(c.end-c.start),0,1);progress+=(1-progress)*c.gain*smooth(v);}
+  return turn.move.angle*progress;
+}
+
+// Shared chain clock. Reparameterize the complete angular travel of a
+// compatible run, rather than selecting a new easing curve for every move.
+// This preserves the exact existing layer path and cut limits.
+function chainProgress(u,ramp){
+  return fluidProgress(u,ramp,ramp);
+}
+function lookup(xs,ys,x){
+  if(x<=xs[0])return ys[0];
+  if(x>=xs.at(-1))return ys.at(-1);
+  let lo=0,hi=xs.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1;if(xs[m]<x)lo=m;else hi=m;}
+  const d=xs[hi]-xs[lo];
+  return d>1e-12?ys[lo]+(ys[hi]-ys[lo])*(x-xs[lo])/d:ys[hi];
+}
+function buildFlowTrack(timeline,profile="rhythm"){
+  if(profile==="rhythm")return buildFlickTrack(timeline,!timeline.reference);
+  if(profile==="flick")return buildFlickTrack(timeline);
+  const track=profile==="handoff"?buildHandoffBase(timeline):buildBaseFlowTrack(timeline,profile==="legacy"?"legacy":"fluid",["natural","contact"].includes(profile));
+  if(!["chain","natural","contact","handoff"].includes(profile)||!track.turns.length)return track;
+  if(profile==="contact")for(const c of track.cuts){const a=track.turns[c.i-1];a.capture={start:c.start,end:c.end,gain:timeline.n<=3?.38:timeline.n===4?.27:.20};}
+  const {turns,cuts}=track,{times}=timeline;
+  const joins=new Set(cuts.map(c=>c.i));
+  // Consecutive same-layer turns in the same direction may carry momentum
+  // through the boundary without requiring a perpendicular cut.
+  for(let i=1;i<turns.length;i++){
+    const a=turns[i-1].move,b=turns[i].move;
+    if(a.axis===b.axis&&a.side===b.side&&a.width===b.width&&a.whole===b.whole&&a.slice===b.slice&&
+       Math.sign(a.angle)===Math.sign(b.angle)&&
+       timeline.frames[i].every(c=>a.selected(c.p)===b.selected(c.p)))joins.add(i);
+  }
+  const runs=[];
+  for(let first=0;first<turns.length;){
+    let last=first;
+    while(last+1<turns.length&&joins.has(last+1))last++;
+    const start=times[first],end=times[last+1],span=end-start;
+    // Use each turn's exact path to integrate accumulated angular travel.
+    const count=Math.max(128,Math.ceil(span*192)),ts=[],arc=[];
+    let done=0,k=first;
+    for(let j=0;j<=count;j++){
+      const t=start+span*j/count;
+      while(k<=last&&turns[k].end<=t){done+=Math.abs(turns[k].move.angle);k++;}
+      let s=done;
+      for(let p=k;p<=last&&turns[p].start<t;p++)s+=Math.abs(flowAngle(turns[p],t));
+      ts.push(t);arc.push(s);
+    }
+    const total=arc.at(-1);
+    // Single turns retain their ordinary feel. Multi-turn runs have a
+    // single start/end speed ramp, not one ramp per notation token.
+    runs.push({first,last,start,end,span,ts,arc,total,ramp:Math.min(.2,.16/span)});
+    first=last+1;
+  }
+  return {...track,runs,profile};
+}
+function chainRun(track,t){
+  if(!track.runs)return null;
+  let lo=0,hi=track.runs.length-1;
+  while(lo<hi){const m=(lo+hi)>>1;if(t>=track.runs[m].end)lo=m+1;else hi=m;}
+  return track.runs[lo];
+}
+function chainClock(track,t){
+  const r=chainRun(track,t);
+  if(!r||(r.first===r.last&&track.profile!=="handoff")||t<=r.start||t>=r.end)return t;
+  const x=(t-r.start)/r.span;
+  return lookup(r.arc,r.ts,r.total*chainProgress(x,r.ramp));
+}
+function chainDisplayTime(track,t){
+  const r=chainRun(track,t);
+  if(!r||(r.first===r.last&&track.profile!=="handoff")||t<=r.start||t>=r.end)return t;
+  const fraction=lookup(r.ts,r.arc,t)/r.total;
+  let lo=0,hi=1;
+  for(let i=0;i<32;i++){const m=(lo+hi)/2;if(chainProgress(m,r.ramp)<fraction)lo=m;else hi=m;}
+  return r.start+(lo+hi)*.5*r.span;
+}
+
+// Small filtered grip reaction to layer angular velocity. No extra cube
+// rotations, no changes to the layer trajectory, no random shake.
+// The gains and time constants are visual hypotheses, not motion capture.
+function buildReactionTrack(timeline,track){
+  const total=timeline.total,count=Math.max(1,Math.ceil(total*48)),dt=total/count;
+  const ts=[0],angles=[[0,0,0]],a=[0,0,0],b=[0,0,0];let first=0;
+  if(!total)return {ts,angles,total};
+  const f=1-Math.exp(-dt/.19),g=1-Math.exp(-dt/.14);
+  for(let j=1;j<=count;j++){
+    const t=j*dt,eps=.003,lo=Math.max(0,t-eps),hi=Math.min(total,t+eps);
+    const l=chainClock(track,lo),h=chainClock(track,hi);
+    while(first<track.turns.length&&track.turns[first].end<l)first++;
+    const drive=[0,0,0];
+    for(let k=first;k<track.turns.length&&track.turns[k].start<=h;k++){
+      const turn=track.turns[k],m=turn.move;
+      if(m.whole)continue;
+      const v=(flowAngle(turn,h)-flowAngle(turn,l))/(hi-lo)*180/Math.PI;
+      const gain=m.slice||m.width>1?.85:1.10;
+      drive[m.axis]-=clamp(v/90,-1.5,1.5)*gain;
+    }
+    for(let k=0;k<3;k++){a[k]+=f*(drive[k]-a[k]);b[k]+=g*(a[k]-b[k]);}
+    const fade=smooth(clamp(t/.20,0,1))*smooth(clamp((total-t)/.26,0,1));
+    const norm=Math.hypot(...b),scale=norm>1.8?1.8/norm:1;
+    ts.push(t);angles.push(b.map(x=>x*scale*fade));
+  }
+  return {ts,angles,total};
+}
+function reactionAt(track,t){
+  if(!track||!track.total||t<=0||t>=track.total)return HOME_Q;
+  let lo=0,hi=track.ts.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1;if(track.ts[m]<=t)lo=m;else hi=m;}
+  const u=(t-track.ts[lo])/(track.ts[hi]-track.ts[lo]);
+  return qpose(track.angles[lo].map((x,k)=>x+(track.angles[hi][k]-x)*u));
+}
+
+function flowFrameAt(timeline,track,t){
+  t=clamp(t,0,timeline.total);
+  const logical=frameAt(timeline,t);
+  // At most two active turns; their selected piece IDs are stable across
+  // all snapshots. Begin from the exact frame preceding the earliest turn.
+  let i=logical.i;
+  if(i>0&&track.turns[i-1].end>t)i--;
+  const active=[];
+  for(let k=i;k<track.turns.length&&track.turns[k].start<=t;k++){
+    const turn=track.turns[k];
+    if(t<turn.end)active.push({i:k,move:turn.move,angle:flowAngle(turn,t)});
+  }
+  if(!active.length)return {...logical,move:null,angle:0,flow:true,active:[]};
+  const base=timeline.frames[active[0].i];
+  const cubies=base.map((c,id)=>{
+    let p=c.p,b=c.b;
+    for(const a of active){
+      if(!a.move.selected(timeline.frames[a.i][id].p))continue;
+      const r=v=>rotate(v,a.move.axis,a.angle);
+      p=r(p);b=b.map(r);
+    }
+    return {...c,p,b};
+  });
+  return {...logical,cubies,move:null,angle:0,flow:true,active};
+}
+
+
+// Approximate rounded-box contact using support distances on 15 SAT axes.
+// This is a conservative proxy, not exact rounded-surface collision detection.
+// Friction and internal locking are not represented; render positions only.
+const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+function contactDepth(a,b,half=.484,radius=.087){
+  const d=b.p.map((x,i)=>(x-a.p[i])*.5);
+  if(dot3(d,d)>12*half*half)return null;
+  const axes=[...a.b,...b.b];
+  for(const x of a.b)for(const y of b.b)axes.push(cross3(x,y));
+  let depth=Infinity,normal=null;
+  for(const v of axes){
+    const l=Math.hypot(...v);if(l<1e-7)continue;
+    const u=v.map(x=>x/l),signed=dot3(d,u);
+    const ra=(half-radius)*a.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0)+radius;
+    const rb=(half-radius)*b.b.reduce((s,x)=>s+Math.abs(dot3(x,u)),0)+radius;
+    const overlap=ra+rb-Math.abs(signed);
+    if(overlap<=0)return null;
+    if(overlap<depth){depth=overlap;normal=u.map(x=>x*(signed<0?-1:1));}
+  }
+  return {depth,normal};
+}
+function contactPairs(timeline,frame){
+  if(frame.active?.length!==2)return [];
+  const [a,b]=frame.active;if(a.move.axis===b.move.axis)return [];
+  const groups=frame.cubies.map((_,id)=>(a.move.selected(timeline.frames[a.i][id].p)?1:0)|(b.move.selected(timeline.frames[b.i][id].p)?2:0));
+  const pairs=[];
+  for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+    if(groups[i]===groups[j])continue;
+    const p=frame.cubies[i].p,q=frame.cubies[j].p;
+    if(Math.abs(p[0]-q[0])>3.1||Math.abs(p[1]-q[1])>3.1||Math.abs(p[2]-q[2])>3.1)continue;
+    pairs.push([i,j]);
+  }
+  return pairs;
+}
+function contactCompliance(timeline,frame){
+  const active=frame.active||[];
+  if(active.length!==2)return {...frame,contact:{pairs:0,maxShift:0,before:0,after:0}};
+  const [a,b]=active;
+  const residual=Math.abs(a.move.angle-a.angle)*180/Math.PI;
+  const next=Math.abs(b.angle)*180/Math.PI;
+  const limit=timeline.n<=3?.055:timeline.n===4?.038:.026;
+  const envelope=smooth(clamp(residual/4,0,1))*smooth(clamp(next/5,0,1));
+  if(envelope<1e-6)return {...frame,contact:{pairs:0,maxShift:0,before:0,after:0}};
+  const pairs=contactPairs(timeline,frame),base=frame.cubies;
+  const cubies=base.map(c=>({...c,p:c.p.slice()}));
+  const totalDepth=cs=>pairs.reduce((s,[i,j])=>s+(contactDepth(cs[i],cs[j])?.depth||0),0);
+  const before=totalDepth(cubies);
+  let hits=0;
+  // Jacobi corrections avoid order-dependent sequential piece pushes.
+  for(let it=0;it<3;it++){
+    const shift=cubies.map(()=>[0,0,0]);
+    let count=0;
+    for(const [i,j] of pairs){
+      const hit=contactDepth(cubies[i],cubies[j]);if(!hit)continue;
+      count++;
+      const delta=Math.min(.040,hit.depth*.38)*envelope;
+      for(let k=0;k<3;k++){shift[i][k]-=2*delta*hit.normal[k];shift[j][k]+=2*delta*hit.normal[k];}
+    }
+    hits=Math.max(hits,count);if(!count)break;
+    for(let i=0;i<cubies.length;i++){
+      const d=cubies[i].p.map((x,k)=>x+shift[i][k]-base[i].p[k]);
+      const mag=Math.hypot(...d),factor=mag>2*limit*envelope?2*limit*envelope/mag:1;
+      cubies[i].p=base[i].p.map((x,k)=>x+d[k]*factor);
+    }
+  }
+  const after=totalDepth(cubies);
+  // Do not accept a correction which increases the global overlap proxy.
+  if(after>before+1e-9)return {...frame,contact:{pairs:hits,maxShift:0,before,after:before}};
+  const maxShift=cubies.reduce((m,c,i)=>Math.max(m,Math.hypot(...c.p.map((x,k)=>(x-base[i].p[k])*.5))),0);
+  return {...frame,cubies,contact:{pairs:hits,maxShift,before,after}};
+}
+
+function frameAt(timeline,t){
+  const {times,frames,moves,total}=timeline;t=clamp(t,0,total);
+  let lo=0,hi=times.length-1;
+  while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(times[mid]<=t)lo=mid;else hi=mid-1;}
+  const i=lo,move=moves[i];
+  const f=move?clamp((t-times[i])/(times[i+1]-times[i]),0,1):0;
+  return {i,cubies:frames[i],move,angle:move?move.angle*smooth(f):0};
+}
+
+// Visual-search experiment. The solver's full sticker state is never used to
+// choose a pose: only geometry, move cues and already observed sticker colors.
+// Piece/sticker identity tracking is idealized and memory has a finite lifetime.
+const SEARCH_COLORS={white:"#f7f7f7",yellow:"#f4d331",green:"#24aa57",blue:"#2463cf",red:"#cf302e",orange:"#f58b27"};
+const SEARCH_VIEW=qpose([33,-34,0]);
+const VISIBILITY=.18;
+const MEMORY_MOVES=12;
+const searchAngles=[
+  [-22,0,0],[22,0,0],[0,-22,0],[0,22,0],
+  [-40,0,0],[40,0,0],[0,-40,0],[0,40,0],
+  [-32,-32,0],[-32,32,0],[32,-32,0],[32,32,0],
+  [-60,0,0],[60,0,0],[0,-65,0],[0,65,0],
+  [-48,-48,0],[-48,48,0],[48,-48,0],[48,48,0]
+];
+function stickerVisible(c,j,pose,view=SEARCH_VIEW){
+  const [axis,side]=FACES[j];
+  const n=c.b[axis].map(v=>v*side);
+  return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
+}
+function memoryColor(memory,id,j,i){
+  const seen=memory.get(id*6+j);
+  return seen&&i-seen.i<=MEMORY_MOVES?seen.color:null;
+}
+function observe(cubies,pose,memory,i,view){
+  for(let id=0;id<cubies.length;id++){
+    const c=cubies[id];
+    // Color is read only after the geometry passes the visibility test.
+    for(let j=0;j<6;j++)if(stickerVisible(c,j,pose,view)&&c.colors[j]!=="#202124"){
+      memory.set(id*6+j,{color:c.colors[j],i});
+    }
+  }
+}
+function isOuterSticker(c,j,n){
+  const [a,s]=FACES[j],normal=c.b[a].map(v=>v*s);
+  return normal.some((v,k)=>v!==0&&c.p[k]*v===n-1);
+}
+function searchCandidates(timeline,i,memory,colors,kind){
+  const c=timeline.frames[i],n=timeline.n,moves=timeline.moves.slice(i,i+3);
+  const candidates=[];
+  for(let id=0;id<c.length;id++){
+    const piece=c[id];
+    const stickers=[0,1,2,3,4,5].filter(j=>isOuterSticker(piece,j,n));
+    if(stickers.length!==(kind==="center"?1:2))continue;
+    // Future move participation is a rough proxy for solver target metadata.
+    // No inference about the actual solver's goal is claimed here.
+    if(!moves.some(m=>!m.whole&&m.selected(piece.p)))continue;
+    const known=stickers.map(j=>memoryColor(memory,id,j,i)).filter(Boolean);
+    if(known.some(color=>!colors.includes(color)))continue;
+    if(known.length===stickers.length&&colors.every(color=>known.includes(color))){
+      return {candidates:[],knownTarget:true};
+    }
+    const unknown=stickers.filter(j=>!memoryColor(memory,id,j,i));
+    if(unknown.length)candidates.push({id,unknown,weight:known.length?2:0.65});
+  }
+  return {candidates,knownTarget:false};
+}
+function planVisualSearch(timeline,{target=["white","green"],kind="edge",checkpoints=null,interval=4,view=SEARCH_VIEW}={}){
+  if(kind!=="edge"&&kind!=="center")throw Error("Unknown search target type");
+  const colors=target.map(c=>SEARCH_COLORS[c]);
+  if(colors.length!==(kind==="center"?1:2)||colors.some(c=>!c)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const memory=new Map(),events=[],decisions=[];
+  const checks=checkpoints===null?null:new Set(checkpoints);
+  const home=[1,0,0,0];
+  for(let i=0;i<timeline.moves.length;i++){
+    const cubies=timeline.frames[i];
+    observe(cubies,home,memory,i,view);
+    if(!(checks?checks.has(i):i%Math.max(1,interval)===0))continue;
+    const {candidates,knownTarget}=searchCandidates(timeline,i,memory,colors,kind);
+    if(knownTarget||!candidates.length){
+      decisions.push({i,reason:knownTarget?"target already identified":"no eligible uncertain piece"});continue;
+    }
+    let best=null;
+    for(const p of searchAngles){
+      const q=qpose(p);
+      // Gain is computed on unknown slots, never on their hidden colors.
+      const newlyVisible=candidates.flatMap(c=>c.unknown.filter(j=>stickerVisible(cubies[c.id],j,q,view)).map(j=>({id:c.id,j,weight:c.weight})));
+      const gain=newlyVisible.reduce((s,v)=>s+v.weight,0);
+      const angle=2*Math.acos(clamp(Math.abs(q[0]),0,1))*180/Math.PI;
+      const score=gain-.023*angle-.45;
+      if(gain>0&&score>0&&(!best||score>best.score))best={p,angle,gain,score,newlyVisible};
+    }
+    if(!best){decisions.push({i,reason:"no useful low-cost view"});continue;}
+    // Observe only what was exposed by the selected physical pose.
+    observe(cubies,qpose(best.p),memory,i,view);
+    const duration=.48+best.angle/95; // units of nominal quarter-turn duration
+    events.push({i,p:best.p,duration,angle:best.angle,gain:best.gain,observed:best.newlyVisible.length});
+    decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain});
+  }
+  return {events,decisions};
+}
+// Extra search time is explicit and does not change the puzzle or add a move.
+// Both comparison views use the same schedule, allowing a fair pose comparison.
+function inspectionTimeline(timeline,plan){
+  const segments=[],stepTimes=[],byIndex=new Map(plan.events.map(e=>[e.i,e]));
+  let t=0;
+  for(let i=0;i<timeline.moves.length;i++){
+    stepTimes.push(t);
+    const event=byIndex.get(i);
+    if(event){segments.push({start:t,end:t+event.duration,i,event});t+=event.duration;}
+    const dt=timeline.times[i+1]-timeline.times[i];
+    segments.push({start:t,end:t+dt,i,move:true});t+=dt;
+  }
+  stepTimes.push(t);
+  return {segments,stepTimes,total:t};
+}
+function inspectionFrameAt(timeline,schedule,time,strength=1){
+  const t=clamp(time,0,schedule.total);
+  const seg=schedule.segments.find(s=>t<s.end);
+  if(!seg)return {frame:frameAt(timeline,timeline.total),pose:[1,0,0,0],event:null};
+  const u=clamp((t-seg.start)/(seg.end-seg.start),0,1);
+  if(seg.event){
+    // Fast tilt, brief observation, smooth return. No logical cube rotation.
+    const f=u<.4?smooth(u/.4):u<.6?1:smooth((1-u)/.4);
+    return {frame:{i:seg.i,cubies:timeline.frames[seg.i],move:null,angle:0},
+      pose:qpose(seg.event.p.map(v=>v*f*strength)),event:seg.event};
+  }
+  return {frame:frameAt(timeline,timeline.times[seg.i]+u*(timeline.times[seg.i+1]-timeline.times[seg.i])),
+    pose:[1,0,0,0],event:null};
+}
+
+// v0.4: inspection during a real layer turn. The old pause-based planner
+// remains available as a baseline. All time values are nominal turn units.
+const HOME_Q=[1,0,0,0];
+const angularDistance=(a,b)=>2*Math.acos(clamp(Math.abs(a.reduce((v,x,i)=>v+x*b[i],0)),0,1))*180/Math.PI;
+const easePose=u=>{u=clamp(u,0,1);return u*u*u*(10+u*(-15+6*u));};
+const transitionAt=(from,to,u)=>slerp(from,to,easePose(u));
+function movingVisibility(c,j,move,u,pose,view){
+  const [axis,side]=FACES[j];
+  let n=c.b[axis].map(v=>v*side);
+  if(move.selected(c.p))n=rotate(n,move.axis,move.angle*smooth(u));
+  return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
+}
+const sampleProgress=[0,.2,.4,.6,.8,1];
+function observedSlots(cubies,move,from,to,view){
+  const slots=new Set();
+  for(const u of sampleProgress){
+    const q=transitionAt(from,to,u);
+    for(let id=0;id<cubies.length;id++){
+      const c=cubies[id];
+      for(let j=0;j<6;j++)if(movingVisibility(c,j,move,u,q,view))slots.add(id*6+j);
+    }
+  }
+  return slots;
+}
+function observeMoving(cubies,slots,memory,i,n){
+  for(const key of slots){
+    const id=Math.floor(key/6),j=key%6,c=cubies[id];
+    if(isOuterSticker(c,j,n)&&c.colors[j]!=="#202124")memory.set(key,{color:c.colors[j],i});
+  }
+}
+function continuousCandidates(timeline,i,memory,colors,kind){
+  const {frames,moves,n}=timeline,cubies=frames[i],candidates=[];
+  for(let id=0;id<cubies.length;id++){
+    const c=cubies[id],stickers=[0,1,2,3,4,5].filter(j=>isOuterSticker(c,j,n));
+    if(stickers.length!==(kind==="center"?1:2))continue;
+    let relevant=false;
+    for(let k=i;k<Math.min(i+3,moves.length);k++){
+      if(!moves[k].whole&&moves[k].selected(frames[k][id].p)){relevant=true;break;}
+    }
+    if(!relevant)continue;
+    const known=stickers.map(j=>memoryColor(memory,id,j,i)).filter(Boolean);
+    if(known.some(color=>!colors.includes(color)))continue;
+    if(known.length===stickers.length&&colors.every(color=>known.includes(color)))return {candidates:[],knownTarget:true};
+    const unknown=stickers.filter(j=>!memoryColor(memory,id,j,i));
+    if(unknown.length)candidates.push({id,unknown,weight:known.length?2:0.65});
+  }
+  return {candidates,knownTarget:false};
+}
+// Gain from a candidate pose in addition to what the layer itself reveals.
+// Search candidate geometry only; hidden sticker colors are never consulted.
+function extraGain(cubies,move,from,to,view,candidates,baseline){
+  let gain=0,count=0;
+  for(const c of candidates)for(const j of c.unknown){
+    if(baseline.has(c.id*6+j))continue;
+    if(sampleProgress.some(u=>movingVisibility(cubies[c.id],j,move,u,transitionAt(from,to,u),view))){
+      gain+=c.weight;count++;
+    }
+  }
+  return {gain,count};
+}
+// Geometry-only prediction from actual turn transforms. Never read future colors.
+function upcomingVisible(timeline,track,i,pose,view,keys){
+  const result=new Set(),previous=new Set();
+  for(let k=i;k<=Math.min(i+2,timeline.moves.length-1);k++)for(const u of [0,.2,.4,.6,.8,1]){
+    const f=flowFrameAt(timeline,track,timeline.times[k]+u*(timeline.times[k+1]-timeline.times[k]));
+    const current=new Set();
+    for(const key of keys){
+      const id=Math.floor(key/6),j=key%6;
+      const [a,s]=FACES[j],normal=f.cubies[id].b[a].map(v=>v*s);
+      const z=qrotate(view,qrotate(pose,normal))[2];
+      if(z>=.20){current.add(key);if(previous.has(key)||z>=.38)result.add(key);}
+    }
+    previous.clear();for(const key of current)previous.add(key);
+  }
+  return result;
+}
+function planContinuousSearch(timeline,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW,lookAheadTrack=null}={}){
+  if(kind!=="edge"&&kind!=="center")throw Error("Unknown search target type");
+  const colors=target.map(c=>SEARCH_COLORS[c]);
+  if(colors.length!==(kind==="center"?1:2)||colors.some(c=>!c)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const memory=new Map(),events=[],decisions=[],segments=[],checks=checkpoints===null?null:new Set(checkpoints);
+  let pose=HOME_Q,lastSearch=-Infinity;
+  for(let i=0;i<timeline.moves.length;i++){
+    const cubies=timeline.frames[i],move=timeline.moves[i];
+    observe(cubies,pose,memory,i,view);
+    // Stay at the acquired pose for one more turn; return only when no
+    // immediate information-seeking move is needed. No per-turn bounce.
+    let to=i-lastSearch<=2?pose:angularDistance(pose,HOME_Q)<2?HOME_Q:slerp(pose,HOME_Q,.34),event=null;
+    const baseline=observedSlots(cubies,move,pose,to,view);
+    if((checks?checks.has(i):i-lastSearch>=2)&&!move.whole){
+      const {candidates,knownTarget}=continuousCandidates(timeline,i,memory,colors,kind);
+      if(knownTarget||!candidates.length)decisions.push({i,reason:knownTarget?"target already identified":"no eligible uncertain piece"});
+      else{
+        let best=null,skipped=0;
+        if(lookAheadTrack){const keys=candidates.flatMap(c=>c.unknown.map(j=>c.id*6+j));for(const key of upcomingVisible(timeline,lookAheadTrack,i,to,view,keys)){if(!baseline.has(key))skipped++;baseline.add(key);}}
+        const evaluate=p=>{
+          const q=qpose(p),angle=angularDistance(pose,q);
+          const maxAngle=lookAheadTrack?42:30;
+          if(angle>maxAngle||angularDistance(HOME_Q,q)>maxAngle)return;
+          // Preserve a readable three-quarter view. If the requested hidden
+          // sticker needs a larger turn, do not invent a tiny fake inspection.
+          if(qrotate(view,qrotate(q,[0,1,0]))[2]<.28)return;
+          const {gain,count}=extraGain(cubies,move,pose,q,view,candidates,baseline);
+          const score=gain-.036*angle-.35;
+          if(gain>0&&score>0&&(!best||score>best.score+1e-8))best={p,q,angle,gain,count,score};
+        };
+        for(const p of [...searchAngles,...[10,16,24,30,36,40].flatMap(a=>[[a,0,0],[-a,0,0],[0,a,0],[0,-a,0],[a*.7,a*.7,0],[-a*.7,a*.7,0],[a*.7,-a*.7,0],[-a*.7,-a*.7,0]])])evaluate(p);
+        // Refine around the best coarse direction, including non-grid angles.
+        if(best)for(const delta of [10,4,1]){
+          const center=best.p.slice();
+          for(const x of [-delta,0,delta])for(const y of [-delta,0,delta])if(x||y)evaluate([center[0]+x,center[1]+y,0]);
+        }
+        if(best){
+          to=best.q;lastSearch=i;
+          event={i,p:best.p,angle:best.angle,gain:best.gain,observed:best.count,overlap:true};
+          events.push(event);decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain,skipped});
+        }else decisions.push({i,reason:skipped?"future visibility considered":"no useful low-cost view",skipped});
+      }
+    }
+    const slots=observedSlots(cubies,move,pose,to,view);
+    observeMoving(cubies,slots,memory,i,timeline.n);
+    segments.push({start:timeline.times[i],end:timeline.times[i+1],i,from:pose,to,event});
+    pose=to;
+  }
+  return {events,decisions,segments,stepTimes:timeline.times,total:timeline.total,endPose:pose};
+}
+
+// Task-based inspection. A target is supplied by the user/solver, not
+// inferred from future move membership. All candidate scores use known
+// colors and geometry only. Actual colors are read after exposure.
+function taskPoseAt(e,t){
+  if(!e||t<=e.start||t>=e.end)return HOME_Q;
+  if(t<e.arrive)return transitionAt(HOME_Q,e.q,(t-e.start)/(e.arrive-e.start));
+  if(t<=e.hold)return e.q;
+  return transitionAt(e.q,HOME_Q,(t-e.hold)/(e.end-e.hold));
+}
+function taskCandidates(t,i,memory,colors,kind){
+  const keys=new Map(),ids=[];
+  for(let id=0;id<t.frames[i].length;id++){
+    const c=t.frames[i][id],slots=[0,1,2,3,4,5].filter(j=>isOuterSticker(c,j,t.n));
+    if(slots.length!==(kind==="center"?1:2))continue;
+    const seen=slots.filter(j=>memory.has(id*6+j));
+    if(seen.some(j=>!colors.includes(memory.get(id*6+j).color)))continue;
+    if(seen.length===slots.length)return {known:true,keys,ids:[id]};
+    ids.push(id);
+    for(const j of slots)if(!memory.has(id*6+j))keys.set(id*6+j,seen.length?3:kind==="center"?1.1:.35);
+  }
+  return {known:false,keys,ids};
+}
+function planTaskInspection(t,track,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW}={}){
+  const colors=target.map(x=>SEARCH_COLORS[x]);
+  if(!["edge","center"].includes(kind)||colors.length!==(kind==="center"?1:2)||colors.some(x=>!x)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const events=[],decisions=[],memory=new Map(),checks=new Set(checkpoints??[0]);
+  let blockedUntil=0;
+  for(let i=0;i<t.moves.length;i++){
+    const active=events.find(e=>t.times[i]>=e.start&&t.times[i]<e.end);
+    observe(t.frames[i],taskPoseAt(active,t.times[i]),memory,i,view);
+    if(!checks.has(i)||i<blockedUntil)continue;
+    const {known,keys,ids}=taskCandidates(t,i,memory,colors,kind);
+    if(known){decisions.push({i,reason:"target already identified"});continue;}
+    const naturally=upcomingVisible(t,track,i,HOME_Q,view,[...keys.keys()]);
+    for(const k of naturally)keys.delete(k);
+    if(!keys.size){decisions.push({i,reason:"future visibility considered",skipped:naturally.size});continue;}
+    const start=t.times[i],arrive=t.times[i+1],hold=t.times[Math.min(i+2,t.moves.length)],end=t.times[Math.min(i+4,t.moves.length)];
+    if(end<=hold){decisions.push({i,reason:"no useful low-cost view"});continue;}
+    const frames=[];
+    for(let j=0;j<=20;j++){
+      const time=start+(hold-start)*j/20,frame=flowFrameAt(t,track,time);
+      frames.push({time,slots:[...keys.keys()].map(k=>{const c=frame.cubies[Math.floor(k/6)],[a,b]=FACES[k%6];return {k,n:c.b[a].map(v=>v*b)};})});
+    }
+    const exposure=e=>{
+      const visible=new Set();
+      for(const f of frames){
+        const q=mul(view,taskPoseAt(e,f.time)),dir=qrotate([q[0],-q[1],-q[2],-q[3]],[0,0,1]);
+        for(const s of f.slots)if(dot3(s.n,dir)>=.32)visible.add(s.k);
+      }
+      return visible;
+    };
+    let best=null;
+    for(const pitch of [-22,-12,0,12,22])for(const yaw of [-66,-60,-54,-48,-42,-36,-30,0,30,36,42,48,54,60,66]){
+      const p=[pitch,yaw,0],q=qpose(p),angle=angularDistance(HOME_Q,q);
+      if(angle>68||angle<5||qrotate(view,qrotate(q,[0,1,0]))[2]<.20)continue;
+      const e={i,start,arrive,hold,end,p,q,angle,overlap:true};
+      const seen=exposure(e),gain=[...seen].reduce((v,k)=>v+keys.get(k),0),score=gain-.025*angle;
+      if(score>0&&(!best||score>best.score+1e-8))best={...e,seen,gain,score};
+    }
+    if(!best){decisions.push({i,reason:"no useful low-cost view",skipped:naturally.size});continue;}
+    // These colors are accessed only after the selected pose exposes them.
+    const after=new Map(memory);
+    for(const k of best.seen){const id=Math.floor(k/6),j=k%6;after.set(k,{color:t.frames[i][id].colors[j],i});}
+    const identified=taskCandidates(t,i,after,colors,kind).known;
+    for(const [k,v] of after)memory.set(k,v);
+    const e={...best,observed:best.seen.size,identified};
+    events.push(e);blockedUntil=Math.min(i+4,t.moves.length);
+    decisions.push({i,reason:"inspect",angle:e.angle,gain:e.gain,skipped:naturally.size,identified});
+  }
+  return {events,decisions,taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};
+}
+
+function continuousSearchFrameAt(timeline,plan,time,strength=1){
+  const t=clamp(time,0,plan.total),frame=frameAt(timeline,t);
+  const task=plan.taskEvents?plan.events.find(e=>t>=e.start&&t<e.end):null;
+  if(plan.taskEvents){const q=taskPoseAt(task,t);return {frame,pose:slerp(HOME_Q,q,Math.max(0,strength)),event:task||null};}
+  const seg=plan.segments[frame.i];
+  const pose=seg?transitionAt(seg.from,seg.to,(t-seg.start)/(seg.end-seg.start)):plan.endPose;
+  // Strength is a display-only comparison adjustment; perception always
+  // uses the nominal planned pose.
+  const q=strength<=1?slerp(HOME_Q,pose,clamp(strength,0,1)):slerp(HOME_Q,pose,strength);
+  return {frame,pose:q,event:seg?.event||null};
+}
+
+const $=id=>document.getElementById(id), canvases=[$("fixed"),$("natural")];
+const axes=[[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]];
+const add=(a,b)=>a.map((v,i)=>v+b[i]), scale=(a,s)=>a.map(v=>v*s);
+let tl,plan,timing,flowTrack,reactionTrack,continuous=true,time=0,playing=false,last=0,raf=0;
+let fps=0,fpsStart=0,fpsFrames=0,lastStatus=-Infinity;
+const canvasSizes=new Map();
+let yaw=-34,pitch=33,goalYaw=yaw,goalPitch=pitch;
+let pointer=null,lastX=0,lastY=0;
+function schedule(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}}
+function tick(now){
+  raf=0;const dt=Math.min(.25,Math.max(0,(now-last)/1000));last=now;
+  if(playing){if(!fpsStart)fpsStart=now;fpsFrames++;if(now-fpsStart>=750){fps=fpsFrames*1000/(now-fpsStart);fpsFrames=0;fpsStart=now;}}
+  if(playing){time=Math.min(timing.total,time+dt*Number($("speed").value));if(time>=timing.total){playing=false;syncButton()}}
+  const f=1-Math.exp(-dt/0.045);
+  yaw+=(goalYaw-yaw)*f;pitch+=(goalPitch-pitch)*f;
+  render(now);
+  if(playing||Math.abs(yaw-goalYaw)+Math.abs(pitch-goalPitch)>.02)raf=requestAnimationFrame(tick);
+}
+function drawFallback(canvas,frame,pose){
+  const box=canvasSizes.get(canvas)||canvas.getBoundingClientRect(),dpr=Math.min(1.5,devicePixelRatio||1,640/Math.max(1,box.width,box.height));
+  const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
+  if(!w||!h)return;
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+  const ctx=canvas.getContext("2d");ctx.clearRect(0,0,w,h);
+  const view=qpose([pitch,yaw,0]), project=v=>qrotate(view,qrotate(pose,v));
+  const size=Math.min(w,h)*.48/tl.n, half=.489;
+  const polys=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p), transform=v=>project(turning?rotate(v,frame.move.axis,frame.angle):v);
+    const p=scale(c.p,.5);
+    for(let i=0;i<6;i++){
+      const [axis,side]=axes[i],n=scale(c.b[axis],side);
+      const u=c.b[(axis+1)%3],v=c.b[(axis+2)%3];
+      const normal=transform(n);if(normal[2]<.015)continue;
+      const center=add(p,scale(n,half)),corner=(a,b,r)=>transform(add(center,add(scale(u,a*r),scale(v,b*r))));
+      const pts=[corner(-1,-1,half),corner(1,-1,half),corner(1,1,half),corner(-1,1,half)];
+      const col=c.colors[i], inner=half*.91;
+      const sticker=[corner(-1,-1,inner),corner(1,-1,inner),corner(1,1,inner),corner(-1,1,inner)];
+      polys.push({pts,sticker,col,depth:pts.reduce((a,b)=>a+b[2],0)/4,light:.88+.12*normal[2]});
+    }
+  }
+  polys.sort((a,b)=>a.depth-b.depth);
+  const drawPoly=(pts,color)=>{ctx.beginPath();pts.forEach((p,i)=>{const x=w/2+p[0]*size,y=h/2-p[1]*size;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fillStyle=color;ctx.fill()};
+  for(const p of polys){drawPoly(p.pts,displayPalette.get(p.col)||"#c7c9c7");ctx.globalAlpha=1-p.light;drawPoly(p.pts,"#000");ctx.globalAlpha=1}
+}
+
+const gpuViews=new Map();
+// Display colors only; logical sticker IDs remain unchanged.
+const displayPalette=new Map([
+  ["#cf302e","#ef2639"],["#f58b27","#ff791c"],["#f7f7f7","#fcfcf9"],
+  ["#f4d331","#ffe32a"],["#24aa57","#17ce72"],["#2463cf","#2476ed"],
+  ["#202124","#777b7a"]
+]);
+const hexRGB=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
+const rgbCache=new Map([...displayPalette].map(([id,color])=>[id,hexRGB(color)]));
+// Each piece has six matching rounded plastic surface patches, not a black
+// foundation with inset stickers. Adjacent colored patches meet at the bevel.
+function plasticFace(h=.484,r=.087){
+  const inner=h-r,g=[-h,-h+r*.25,-h+r*.6,-inner,0,inner,h-r*.6,h-r*.25,h];
+  const out=[];
+  const vertex=(u,v)=>{
+    const raw=[u,v,h],base=raw.map(x=>clamp(x,-inner,inner));
+    const d=raw.map((x,i)=>x-base[i]),len=Math.hypot(...d);
+    const normal=d.map(x=>x/len);
+    return [...base.map((x,i)=>x+r*normal[i]),...normal];
+  };
+  for(let i=0;i<g.length-1;i++)for(let j=0;j<g.length-1;j++){
+    const a=vertex(g[i],g[j]),b=vertex(g[i+1],g[j]),c=vertex(g[i+1],g[j+1]),d=vertex(g[i],g[j+1]);
+    out.push(...a,...b,...c,...a,...c,...d);
+  }
+  return new Float32Array(out);
+}
+const faceMesh=plasticFace();
+
+// Procedural, independent approximation of 3x3 mechanical components.
+// Meshes are visual, not imported manufacturer CAD or collision meshes.
+function latheMesh(profile,segments=32){
+ const out=[];
+ const v=(j,k)=>{const [r,z]=profile[j],a=k*2*Math.PI/segments,prev=profile[Math.max(0,j-1)],next=profile[Math.min(profile.length-1,j+1)],dr=next[0]-prev[0],dz=next[1]-prev[1],l=Math.hypot(dr,dz)||1;return [r*Math.cos(a),r*Math.sin(a),z,dz*Math.cos(a)/l,dz*Math.sin(a)/l,-dr/l];};
+ for(let j=0;j<profile.length-1;j++)for(let k=0;k<segments;k++){const a=v(j,k),b=v(j,k+1),c=v(j+1,k+1),d=v(j+1,k);out.push(...a,...b,...c,...a,...c,...d);}
+ return new Float32Array(out);
+}
+function springMesh(){
+ const out=[],loops=4,steps=96,sides=8,r=.115,tube=.014;
+ const v=(i,j)=>{const a=i*2*Math.PI*loops/steps,b=j*2*Math.PI/sides,n=[Math.cos(a)*Math.cos(b),Math.sin(a)*Math.cos(b),Math.sin(b)];return [r*Math.cos(a)+tube*n[0],r*Math.sin(a)+tube*n[1],.46+.31*i/steps+tube*n[2],...n];};
+ for(let i=0;i<steps;i++)for(let j=0;j<sides;j++){const a=v(i,j),b=v(i,j+1),c=v(i+1,j+1),d=v(i+1,j);out.push(...a,...b,...c,...a,...c,...d);}
+ return new Float32Array(out);
+}
+const mechanicalMeshes={
+ shaft:latheMesh([[0,.26],[.081,.26],[.081,.84],[.132,.84],[.132,.88],[0,.88]]),
+ spring:springMesh(),
+ center:latheMesh([[0,.60],[.19,.60],[.19,.69],[.31,.78],[.34,.98],[.36,1.23],[0,1.23]]),
+ edge:latheMesh([[0,.49],[.205,.49],[.29,.55],[.30,.65],[.16,.72],[.16,.91],[.27,1.06],[.34,1.27],[.32,1.39],[0,1.39]]),
+ corner:latheMesh([[0,.53],[.18,.53],[.30,.62],[.33,.70],[.20,.82],[.20,1.07],[.27,1.19],[.36,1.49],[.34,1.62],[0,1.62]]),
+ magnet:latheMesh([[0,0],[.085,0],[.085,.037],[0,.037]],20)
+};
+const mechWhite=hexRGB("#dedfd7"),mechCream=hexRGB("#f2eee0"),mechSteel=hexRGB("#b9c6d1"),mechGold=hexRGB("#caa24e");
+function internalAssembly(frame,mode,explode=0){
+ const parts={shaft:[],spring:[],center:[],edge:[],corner:[],magnet:[]};
+ const push=(name,pos,normal,color)=>{
+   const n=normal.map(v=>v/(Math.hypot(...normal)||1)),up=Math.abs(n[1])>.9?[1,0,0]:[0,1,0],u=cross3(up,n),len=Math.hypot(...u),x=u.map(v=>v/len),y=cross3(n,x);
+   parts[name].push(...pos,...x,...y,...n,...color);
+ };
+ const cp=[];
+ for(const c of frame.cubies){
+   const moving=frame.move?.selected(c.p),turn=v=>moving?rotate(v,frame.move.axis,frame.angle):v;
+   const p=turn(c.p.map(x=>x*.5)),count=c.colors.filter(x=>x!=="#202124").length,len=Math.hypot(...p);
+   if(!len)continue;
+   const n=p.map(v=>v/len),offset=n.map(v=>v*explode);
+   if(count===1){
+     push("shaft",[0,0,0],n,mechSteel);push("spring",[0,0,0],n,mechSteel);push("center",offset,n,mechWhite);
+   }else if(mode!=="core"){
+     push(count===2?"edge":"corner",offset,n,count===2?mechWhite:mechCream);
+     if(count===3){push("magnet",n.map((v,k)=>v*.50+offset[k]),n,mechGold);push("magnet",n.map(v=>v*.31),n,mechGold);}
+     // A magnet on each side of a corner/edge's shared contact surface.
+     const b=c.b.map(turn),outer=c.colors.map((col,j)=>col!=="#202124"?j:-1).filter(j=>j>=0);
+     if(count===3)for(const j of outer){const [a,s]=FACES[j],dir=b[a].map(v=>-s*v);push("magnet",p.map((v,k)=>v+offset[k]+dir[k]*.44-n[k]*.16),dir,mechSteel);}
+     if(count===2){const axis=[0,1,2].find(a=>c.colors[2*a]==="#202124"&&c.colors[2*a+1]==="#202124");for(const sign of [-1,1]){const dir=b[axis].map(v=>v*sign);push("magnet",p.map((v,k)=>v+offset[k]+dir[k]*.40-n[k]*.16),dir,mechSteel);}}
+   }
+   cp.push({...c,p:c.p.map((v,k)=>v+2*(moving?rotate(offset,frame.move.axis,-frame.angle):offset)[k])});
+ }
+ return {parts:Object.fromEntries(Object.entries(parts).map(([k,v])=>[k,new Float32Array(v)])),frame:{...frame,cubies:cp}};
+}
+
+
+// Moulded colour caps: the radius of each corner depends on whether
+// the adjacent sides are exposed exterior faces. On a 3x3 this gives
+// circular-ish centres, inner-rounded edges and square outer corners.
+// Larger puzzles use smaller radii so the face grid stays readable.
+const modernPalette=new Map([
+  ["#cf302e","#ed3037"],["#f58b27","#ff821b"],["#f7f7f7","#fcfcf7"],
+  ["#f4d331","#f5eb25"],["#24aa57","#22d056"],["#2463cf","#2467dd"]
+].map(([k,v])=>[k,hexRGB(v)]));
+const chassisRGB=hexRGB("#d6d7cc"),coreRGB=hexRGB("#c4c6bd");
+const capMeshCache=new Map();
+function capRadii(mask,n){
+  const size=n===2?0:n===3?1:n===4?.58:.42;
+  return [[1,1],[-1,1],[-1,-1],[1,-1]].map(([x,y])=>{
+    const count=Number(!!(mask&(x>0?1:2)))+Number(!!(mask&(y>0?4:8)));
+    if(count===2)return .035;
+    if(count===1)return .044+.030*size;
+    return .065+(mask===0?.180:.135)*size;
+  });
+}
+function mouldedCap(mask,n){
+  const key=n+":"+mask;if(capMeshCache.has(key))return capMeshCache.get(key);
+  const radii=capRadii(mask,n),out=[],directions=[[1,1],[-1,1],[-1,-1],[1,-1]];
+  const rings=[
+    {half:.465,z:.495,shrink:.018,side:0,up:1},
+    {half:.481,z:.489,shrink:.004,side:.48,up:.88},
+    {half:.489,z:.473,shrink:0,side:.92,up:.39},
+    {half:.489,z:.445,shrink:0,side:1,up:0},
+    {half:.456,z:.320,shrink:.020,side:.97,up:-.26},
+    {half:.385,z:.200,shrink:.040,side:.86,up:-.51}
+  ];
+  const points=rings.map(r=>directions.flatMap(([sx,sy],k)=>{
+    const radius=Math.max(.014,radii[k]-r.shrink),a0=k*Math.PI/2;
+    return Array.from({length:7},(_,j)=>{
+      const a=a0+j*Math.PI/12,nx=Math.cos(a),ny=Math.sin(a);
+      const l=Math.hypot(r.side,r.up);
+      return [sx*(r.half-radius)+nx*radius,sy*(r.half-radius)+ny*radius,r.z,nx*r.side/l,ny*r.side/l,r.up/l];
+    });
+  }));
+  const count=points[0].length,center=[0,0,.495,0,0,1];
+  for(let i=0;i<count;i++)out.push(...center,...points[0][i],...points[0][(i+1)%count]);
+  for(let j=0;j<points.length-1;j++)for(let i=0;i<count;i++){
+    const k=(i+1)%count,a=points[j][i],b=points[j][k],c=points[j+1][k],d=points[j+1][i];
+    out.push(...a,...b,...c,...a,...c,...d);
+  }
+  const back=points.at(-1).map(p=>[p[0],p[1],p[2],0,0,-1]),bc=[0,0,.200,0,0,-1];
+  for(let i=0;i<count;i++)out.push(...bc,...back[(i+1)%count],...back[i]);
+  const mesh=new Float32Array(out);capMeshCache.set(key,mesh);return mesh;
+}
+function modernInstances(frame,n){
+  const caps=new Map(),body=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p),turn=v=>turning?rotate(v,frame.move.axis,frame.angle):v;
+    const p=turn(c.p.map(x=>x*.5)),b=c.b.map(turn);
+    const colored=(axis,side)=>c.colors[axis*2+(side<0?1:0)]!=="#202124";
+    // Neutral, recessed chassis, rather than an entire grey cube. Offset
+    // towards the uncoloured sides to mimic the inward piece structure.
+    const inward=[0,1,2].map(a=>colored(a,1)?-.056:colored(a,-1)?.056:0);
+    const base=p.map((x,k)=>x+inward.reduce((s,v,i)=>s+v*b[i][k],0));
+    for(let j=0;j<6;j++){
+      const [axis,side]=axes[j],u=b[(axis+1)%3],v=b[(axis+2)%3].map(x=>x*side),normal=b[axis].map(x=>x*side);
+      const small=x=>x.map(v=>v*.84);
+      body.push(...base,...small(u),...small(v),...small(normal),...chassisRGB);
+      if(!colored(axis,side))continue;
+      const a=(axis+1)%3,d=(axis+2)%3;
+      const mask=(colored(a,1)?1:0)|(colored(a,-1)?2:0)|(colored(d,side)?4:0)|(colored(d,-side)?8:0);
+      if(!caps.has(mask))caps.set(mask,[]);
+      caps.get(mask).push(...p,...u,...v,...normal,...modernPalette.get(c.colors[j]));
+    }
+  }
+  return {body:new Float32Array(body),caps:[...caps].map(([mask,data])=>({mask,data:new Float32Array(data)}))};
+}
+
+// A small dark rounded inner core makes exposed turning gaps less hollow.
+function coreGeometry(){const out=[];const p=(a,b)=>{const v=[Math.sin(a)*Math.cos(b),Math.cos(a),Math.sin(a)*Math.sin(b)];return [...v,...v];};for(let i=0;i<12;i++)for(let j=0;j<24;j++){let a=i*Math.PI/12,b=j*Math.PI/12,c=(i+1)*Math.PI/12,d=(j+1)*Math.PI/12;out.push(...p(a,b),...p(c,b),...p(c,d),...p(a,b),...p(c,d),...p(a,d));}return new Float32Array(out);}
+const coreMesh=coreGeometry();
+const VS="#version 300 es\n"+
+"layout(location=0) in vec3 vert;layout(location=1) in vec3 normal;layout(location=2) in vec3 pos;layout(location=3) in vec3 bx;layout(location=4) in vec3 by;layout(location=5) in vec3 bz;layout(location=6) in vec3 rgb;uniform mat3 view;uniform vec2 lens;uniform float distance;out vec3 N;out vec3 C;out vec3 P;void main(){mat3 basis=mat3(bx,by,bz);vec3 p=view*(pos+basis*vert);N=view*basis*normal;C=rgb;P=p-vec3(0.,0.,distance);float d=-P.z;float near=.1;float far=100.;gl_Position=vec4(P.x*lens.x,P.y*lens.y,((far+near)/(far-near))*d-2.*far*near/(far-near),d);}";
+const FS="#version 300 es\nprecision highp float;\n"+
+"in vec3 N;in vec3 C;in vec3 P;out vec4 color;void main(){vec3 n=normalize(N);float key=max(0.,dot(n,normalize(vec3(-.55,.85,1.4))));float fill=max(0.,dot(n,normalize(vec3(.8,-.3,.8))));vec3 eye=normalize(-P);vec3 halfv=normalize(eye+normalize(vec3(-.55,.85,1.4)));float spec=pow(max(0.,dot(n,halfv)),45.)*.14;float broad=pow(max(0.,dot(n,halfv)),9.)*.035;vec3 c=C*(.72+.25*key+.075*fill)+vec3(spec+broad);color=vec4(clamp(c,0.,1.),1.);}";
+function compile(gl,kind,source){
+  const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||"Shader compile failed");
+  return s;
+}
+function createGPU(canvas){
+  const gl=canvas.getContext("webgl2",{alpha:true,antialias:true,premultipliedAlpha:false,depth:true});
+  if(!gl)return null;
+  const program=gl.createProgram(),vs=compile(gl,gl.VERTEX_SHADER,VS),fs=compile(gl,gl.FRAGMENT_SHADER,FS);
+  gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program)||"Shader link failed");
+  gl.deleteShader(vs);gl.deleteShader(fs);
+  function mesh(vertices){
+    const vao=gl.createVertexArray(),vb=gl.createBuffer(),ib=gl.createBuffer();
+    gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+    for(let i=0;i<2;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,24,i*12);}
+    gl.bindBuffer(gl.ARRAY_BUFFER,ib);
+    for(let i=2;i<=6;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,60,(i-2)*12);gl.vertexAttribDivisor(i,1);}
+    gl.bindVertexArray(null);return {vao,ib,count:vertices.length/6};
+  }
+  const face=mesh(faceMesh),core=mesh(coreMesh);
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
+  return {gl,program,face,core,mesh,capMeshes:new Map(),view:gl.getUniformLocation(program,"view"),lens:gl.getUniformLocation(program,"lens"),distance:gl.getUniformLocation(program,"distance")};
+}
+function cubeInstances(frame){
+  const surfaces=[];
+  for(const c of frame.cubies){
+    const turning=frame.move?.selected(c.p);
+    const turn=v=>turning?rotate(v,frame.move.axis,frame.angle):v;
+    const p=turn(c.p.map(x=>x*.5)),b=c.b.map(turn);
+    for(let j=0;j<6;j++){
+      const color=rgbCache.get(c.colors[j]),[axis,side]=axes[j];
+      const normal=b[axis].map(x=>x*side),u=b[(axis+1)%3],v=b[(axis+2)%3].map(x=>x*side);
+      surfaces.push(...p,...u,...v,...normal,...color);
+    }
+  }
+  return new Float32Array(surfaces);
+}
+function drawGPU(canvas,frame,pose){
+  let gpu=gpuViews.get(canvas);
+  if(gpu===undefined){gpu=createGPU(canvas);gpuViews.set(canvas,gpu);}
+  if(!gpu)return false;
+  const {gl,program,face,core}=gpu;
+  if(gl.isContextLost())return true;
+  const box=canvasSizes.get(canvas)||canvas.getBoundingClientRect(),dpr=Math.min(1.5,devicePixelRatio||1,640/Math.max(1,box.width,box.height));
+  const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);
+  if(!w||!h)return true;
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+  gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
+  const q=qpose([pitch,yaw,0]),basis=[0,1,2].flatMap(i=>qrotate(q,qrotate(pose,unit(i,1))));
+  const f=1/Math.tan(rad(23)/2),mode=$("assembly").value||"full",explode=mode==="exploded"?Number($("explode").value):0;
+  gl.uniformMatrix3fv(gpu.view,false,new Float32Array(basis));gl.uniform2f(gpu.lens,f*h/w,f);gl.uniform1f(gpu.distance,tl.n*4.65+explode*8);
+  const modern=$("cubeModel").value!=="classic";
+  const drawInstances=(mesh,data)=>{if(!data.length)return;gl.bindVertexArray(mesh.vao);gl.bindBuffer(gl.ARRAY_BUFFER,mesh.ib);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);gl.drawArraysInstanced(gl.TRIANGLES,0,mesh.count,data.length/15);};
+  const r=.34,color=coreRGB;
+  drawInstances(core,new Float32Array([0,0,0,r,0,0,0,r,0,0,0,r,...color]));
+  if(modern){
+    const assembly=internalAssembly(frame,mode,explode);
+    for(const [name,instances] of Object.entries(assembly.parts)){const key="internal:"+name;if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(mechanicalMeshes[name]));drawInstances(gpu.capMeshes.get(key),instances);}
+    const data=modernInstances(assembly.frame,tl.n);
+    if(mode==="full"||mode==="exploded")for(const {mask,data:instances} of data.caps){
+      const key=tl.n+":"+mask;
+      if(!gpu.capMeshes.has(key))gpu.capMeshes.set(key,gpu.mesh(mouldedCap(mask,tl.n)));
+      drawInstances(gpu.capMeshes.get(key),instances);
+    }
+  }else drawInstances(face,cubeInstances(frame));
+  $("assemblyStatus").textContent="구성: 코어 1 · 센터 6 · 엣지 12 · 코너 8 · 센터축/스프링 · 자석 (형상 근사)";
+  gl.bindVertexArray(null);return true;
+}
+function draw(canvas,frame,pose){
+  if(drawGPU(canvas,frame,pose))return true;
+  drawFallback(canvas,frame,pose);return false;
+}
+
+function sampled(t,strength=1){return continuous?continuousSearchFrameAt(tl,timing,t,strength):inspectionFrameAt(tl,timing,t,strength)}
+function render(now=Infinity){
+  if(!tl)return;
+  const strength=Number($("strength").value);
+  const {frame}=sampled(time,strength);
+  const flowOn=continuous&&$("flow").checked;
+  const motionTime=flowOn?chainClock(flowTrack,time):time;
+  const {pose,event}=sampled(motionTime,strength);
+  const reaction=flowOn&&$("wrist").checked?reactionAt(reactionTrack,time):HOME_Q;
+  const renderPose=mul(pose,reaction);
+  const rawFrame=flowOn?flowFrameAt(tl,flowTrack,motionTime):frame;
+  const modernFrame=flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
+  const gpuA=$("compareView").checked?draw(canvases[0],frame,HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
+  if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
+  lastStatus=Number.isFinite(now)?now:-Infinity;
+  $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
+  $("referenceStatus").textContent=tl.reference?"실물 영상 기반 근사 리듬 · 24수 / 약 "+(referenceSpan/30).toFixed(2)+"초 · 원본 약 "+referenceTPS.toFixed(2)+" TPS · 현재 "+(tl.total/Number($("speed").value)).toFixed(2)+"초":"일반 알고리즘 재생";
+  const taskEvent=plan.taskEvents?plan.events.find(e=>motionTime>=e.start&&motionTime<e.end):null;
+  $("mechanicalStatus").textContent=flowTrack.profile==="mechanical"?"접촉 모형 · 현재 변위 "+(lookup(flowTrack.traceT,flowTrack.traceD,time)*100).toFixed(2)+"% · 최대 "+(flowTrack.maxDeflection*100).toFixed(2)+"% · 접촉력 "+lookup(flowTrack.traceT,flowTrack.traceF,time).toFixed(2)+" (상대값) · 중첩 "+flowTrack.cuts.length+"회":"기존 운동학적 재생";
+  $("taskStatus").textContent=plan.taskEvents?(taskEvent?"목표 조각 확인 · "+taskEvent.angle.toFixed(0)+"° · "+(motionTime>=taskEvent.hold?(taskEvent.identified?"목표 색상 확인 완료":"후보 면 확인"):"면을 드러내는 중"):plan.events.length?"목표 탐색 "+plan.events.length+"회 · 추가 확인 "+plan.events.filter(e=>e.identified).length+"회":"추가 탐색 없음 (현재 조건에서 유효한 확인 경로 없음)"):"기존 탐색 방식";
+  const group=tl.rhythm?.find(g=>g.first<=modernFrame.i&&g.last>=modernFrame.i);
+  $("rhythmStatus").textContent=tl.reference?"영상 주석 타이밍 · 기존 v2.2 유지":group?"동작 단위: "+group.name+" · "+(group.first+1)+"–"+(group.last+1)+"수 (추정 프로필)":"일반 회전 타이밍";
+  $("wristStatus").textContent=$("wrist").checked&&flowOn?"손목 반작용 · "+angularDistance(HOME_Q,reaction).toFixed(2)+"° (추정)":"손목 반작용 꺼짐";
+  const contact=modernFrame.contact;
+  $("contactStatus").textContent=contact?"접촉 근사 · "+contact.pairs+"쌍 · 최대 유격 "+(contact.maxShift*100).toFixed(2)+"% (조각 폭 기준)":"접촉 보정 미적용";
+  const active=modernFrame.active||[];
+  const cut=flowOn?flowTrack.cuts.find(c=>motionTime>=c.start-1e-8&&motionTime<=c.end+1e-8):null;
+  if(flowTrack.cuts.length===1&&flowOn){const c=flowTrack.cuts[0];$("cutSeek").value=100*clamp((motionTime-c.start)/(c.end-c.start),0,1);const a=flowTrack.turns[c.i-1],b=flowTrack.turns[c.i];$("cutPair").textContent=a.move.token+" "+(Math.abs(flowAngle(a,motionTime))*180/Math.PI).toFixed(2)+"° / "+b.move.token+" "+(Math.abs(flowAngle(b,motionTime))*180/Math.PI).toFixed(2)+"°";}else{$("cutPair").textContent="";}
+  $("cutSeek").disabled=!(flowOn&&flowTrack.cuts.length===1);
+  const run=flowOn?chainRun(flowTrack,time):null;
+  $("chainStatus").textContent=flowOn&&["flick","rhythm"].includes(flowTrack.profile)?"빠른 정렬 · 중첩 "+flowTrack.cuts.length+"구간":run?"연속 체인: "+(run.first+1)+"–"+(run.last+1)+"수 · "+(run.last-run.first+1)+"수 연결":"개별 회전 타임라인";
+  const angles=active.map(a=>a.move.token+" "+(Math.abs(a.angle)*180/Math.PI).toFixed(1)+"°").join(" / ");
+  $("cutStatus").textContent=flowOn?(active.length>1?"코너커팅 중 · "+angles:"자동 정렬 · "+(angles||"정렬 완료"))+" · 중첩 구간 "+flowTrack.cuts.length+"개": "코너커팅 꺼짐";
+  $("rendererStatus").textContent=gpuA&&gpuB?($("cubeModel").value==="classic"?"WebGL2 · 기존 외형":"WebGL2 · 신형 성형 캡 / 조각별 윤곽"):"WebGL2 미지원 · Canvas 대체 렌더링 (신형 외형 미적용)";
+  $("poseDiff").textContent=($("compareView").checked?"두 큐브의 자세 차이: ":"능동적 탐색 자세: ")+angularDistance(HOME_Q,pose).toFixed(1)+"° · 탐색 "+plan.events.length+"회";
+  $("seek").value=timing.total?time/timing.total:0;
+  $("inspectionStatus").textContent=event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
+  $("pos").textContent=frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
+}
+function syncButton(){$("play").textContent=playing?"Ⅱ 일시정지":"▶ 재생"}
+function load(){
+  try{
+    let t=buildTimeline(Number($("size").value),$("setup").value,$("alg").value);
+    if($("referenceTiming").checked){if(t.n===3&&t.moves.map(m=>m.token).join(" ")===referenceAlg)t=applyReferenceTiming(t);else $("referenceTiming").checked=false;}
+    if($("profile").value==="rhythm"&&!t.reference)t=applyRhythmTiming(t);
+    const kind=$("kind").value,target=$("target").value.trim().toLowerCase().split(/\s+/);
+    const raw=$("checks").value.trim();
+    const checkpoints=raw?raw.split(",").map(v=>Number(v.trim())):null;
+    if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
+    const nextContinuous=$("mode").value==="continuous";
+    let nextTrack;
+    if($("profile").value==="mechanical"){const p=simulateMechanical(t,{magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value)});t=p.timeline;nextTrack=p.track;}else nextTrack=buildFlowTrack(t,$("profile").value);
+    const p={events:[],decisions:[],taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};
+    continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
+    $("rhythmDetails").textContent=t.moves.map((m,i)=>`${i+1}. ${m.token} · ${((t.times[i+1]-t.times[i])*1000/Number($("speed").value)).toFixed(0)} ms · ${t.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(t.reference?"영상 주석":"일반")}`).join("\n");
+    $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음","future visibility considered":"자연 노출 예측 후 추가 확인 생략",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")+(d.skipped?" · 이후 자연 노출 후보 "+d.skipped+"면":"")).join("\n");render();
+  }catch(e){$("message").textContent=e.message}
+}
+$("play").onclick=()=>{if(!timing?.total)return;if(time>=timing.total)time=0;playing=!playing;syncButton();schedule()};
+$("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
+$("prev").onclick=()=>{playing=false;syncButton();const f=sampled(time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
+$("next").onclick=()=>{playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,sampled(time).frame.i+1)];render()};
+$("seek").oninput=()=>{playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
+$("flow").onchange=()=>render();
+$("wrist").onchange=()=>render();
+$("cubeModel").onchange=()=>render();
+$("assembly").onchange=()=>render();$("explode").oninput=()=>render();
+for(const id of ["magnet","travel","friction"])$(id).oninput=()=>$(id+"Val").textContent=Number($(id).value).toFixed(id==="travel"?3:1);
+$("mechanicalApply").onclick=load;
+$("lookAhead").onchange=load;
+$("profile").onchange=load;
+function syncComparison(){
+  const compare=$("compareView").checked;
+  canvases[0].parentElement.hidden=!compare;
+  canvases[1].parentElement.parentElement.style.gridTemplateColumns=compare?"1fr 1fr":"minmax(0, 520px)";
+  canvasSizes.clear();
+}
+$("compareView").onchange=()=>{syncComparison();render();};
+$("strength").oninput=()=>{$("strengthVal").textContent=Number($("strength").value).toFixed(2)+"×";render()};
+$("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+" TPS";if(tl)$("rhythmDetails").textContent=tl.moves.map((m,i)=>`${i+1}. ${m.token} · ${((tl.times[i+1]-tl.times[i])*1000/Number($("speed").value)).toFixed(0)} ms · ${tl.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(tl.reference?"영상 주석":"일반")}`).join("\n");};
+$("referenceTiming").onchange=load;
+$("load").onclick=load;$("size").onchange=load;$("mode").onchange=load;
+$("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";load()};
+function sample(setup,target="yellow orange"){$("size").value="3";$("kind").value="edge";$("target").value=target;$("checks").value="";$("setup").value=setup;$("alg").value="R U R' U' F R U R' U' F' R U2 R'";load();}
+$("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
+$("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").value="yellow orange";$("checks").value="";$("setup").value="Rw U2 Fw D Lw B";$("alg").value="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'";load()};
+$("taskDemo").onclick=()=>{
+  $("size").value="3";$("setup").value="R U F2 L D B R2";$("alg").value="R U R' U' F R U R' U' F' R U2 R'";
+  $("referenceTiming").checked=false;$("mode").value="continuous";$("flow").checked=true;$("profile").value="rhythm";$("lookAhead").checked=true;
+  $("kind").value="edge";$("target").value="white green";$("checks").value="";$("strength").value="1";$("strengthVal").textContent="1.00×";
+  $("speed").value="6";$("speedVal").textContent="6 TPS";yaw=goalYaw=-34;pitch=goalPitch=33;load();
+};
+function rhythmDemo(n,setup,alg){
+  $("wrist").checked=true;
+  $("size").value=String(n);$("setup").value=setup;$("alg").value=alg;$("referenceTiming").checked=false;
+  $("mode").value="continuous";$("flow").checked=true;$("profile").value="rhythm";$("kind").value="edge";$("target").value="white green";$("checks").value="";
+  $("strength").value="0";$("strengthVal").textContent="0.00×";$("speed").value="6";$("speedVal").textContent="6 TPS";
+  yaw=goalYaw=-34;pitch=goalPitch=33;load();
+}
+$("f2lDemo").onclick=()=>rhythmDemo(3,"R U R' U'","U R U' R' U' L' U L R' F R F'");
+$("pllDemo").onclick=()=>rhythmDemo(3,"","R U R' U' R' F R2 U' R' U' R U R' F'");
+$("wideDemo").onclick=()=>rhythmDemo(4,"Rw U2 Fw D Lw B","Rw U Rw' U' Fw D Rw2 U2 Rw' U");
+function referenceDemo(slow=false){
+  $("wrist").checked=false; // preserve the already approved reference motion
+  $("compareView").checked=false;syncComparison();
+  $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
+  $("setup").value="x' z";$("alg").value=referenceAlg;$("referenceTiming").checked=true;
+  $("mode").value="continuous";$("flow").checked=true;$("profile").value="flick";
+  $("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("speed").value=slow?"3.5":"14.25";$("speedVal").textContent=$("speed").value+" TPS";
+  yaw=goalYaw=-27;pitch=goalPitch=6;load();
+}
+$("referenceDemo").onclick=()=>referenceDemo(false);
+$("referenceSlow").onclick=()=>referenceDemo(true);
+function pairDemo(n,alg){
+  $("wrist").checked=false;
+  $("compareView").checked=true;syncComparison();
+  $("size").value=String(n);$("kind").value="edge";$("target").value="white green";$("checks").value="";$("setup").value="";$("alg").value=alg;
+  $("mode").value="continuous";$("flow").checked=true;$("profile").value="flick";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("speed").value="1";$("speedVal").textContent="1 TPS";load();
+  const c=flowTrack.cuts[0];if(c){time=chainDisplayTime(flowTrack,(c.start+c.end)/2);render();}
+}
+$("pair3").onclick=()=>pairDemo(3,"R U");
+$("pair4").onclick=()=>pairDemo(4,"Rw U");
+$("cutSeek").oninput=()=>{if(!continuous||!$("flow").checked||flowTrack.cuts.length!==1)return;playing=false;syncButton();const c=flowTrack.cuts[0];time=chainDisplayTime(flowTrack,c.start+(c.end-c.start)*Number($("cutSeek").value)/100);render();};
+$("cutDemo").onclick=()=>{
+  $("wrist").checked=false;
+  $("compareView").checked=true;syncComparison();
+  $("size").value="3";$("kind").value="edge";$("target").value="white green";$("checks").value="";
+  $("setup").value="";$("alg").value="R U R' U' R U R' U'";$("mode").value="continuous";
+  $("flow").checked=true;$("profile").value="flick";$("strength").value="0";$("strengthVal").textContent="0.00×";
+  $("speed").value="4";$("speedVal").textContent="4 TPS";load();
+};
+$("jumpCut").onclick=()=>{
+  if(!continuous||!flowTrack?.cuts.length){$("message").textContent="현재 알고리즘에는 허용된 코너커팅 구간이 없습니다.";return;}
+  $("flow").checked=true;playing=false;syncButton();
+  const cuts=flowTrack.cuts;
+  const c=cuts.find(x=>x.start>time+.001)||cuts[0];
+  time=chainDisplayTime(flowTrack,c.start+(c.end-c.start)*.52);render();
+};
+$("jumpInspection").onclick=()=>{
+  if(!plan?.events.length){$("message").textContent="현재 조건에서는 추가 탐색이 필요하지 않습니다.";return;}
+  playing=false;syncButton();
+  const starts=plan.events.map(e=>timing.stepTimes[e.i]);
+  const next=starts.findIndex(t=>t>time+.03);
+  const i=next<0?0:next;
+  const start=starts[i],end=timing.stepTimes[plan.events[i].i+1];
+  time=continuous&&$("flow").checked?chainDisplayTime(flowTrack,start+(end-start)*.8):start+(end-start)*.8;render();
+};
+$("resetView").onclick=()=>{goalYaw=-34;goalPitch=33;schedule()};
+document.querySelectorAll("[data-alg]").forEach(b=>b.onclick=()=>{if(b.textContent==="4×4 wide")$("size").value="4";$("alg").value=b.dataset.alg;load()});
+for(const c of canvases){
+  c.addEventListener("pointerdown",e=>{if(pointer!==null||e.button!==0)return;pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;c.setPointerCapture(pointer)});
+  c.addEventListener("pointermove",e=>{if(e.pointerId!==pointer)return;goalYaw+=(e.clientX-lastX)*.4;goalPitch=clamp(goalPitch+(e.clientY-lastY)*.4,-80,80);lastX=e.clientX;lastY=e.clientY;schedule()});
+  for(const event of ["pointerup","pointercancel","lostpointercapture"])c.addEventListener(event,e=>{if(e.pointerId===pointer)pointer=null});
+}
+const sizeObserver=new ResizeObserver(entries=>{for(const e of entries||[])canvasSizes.set(e.target,e.contentRect);render();});
+for(const c of canvases)sizeObserver.observe(c);
+document.addEventListener("visibilitychange",()=>{last=performance.now();fpsStart=0;fpsFrames=0;});
+// Initialize the normal playback explicitly, even if the browser restores form values.
+$("mode").value="continuous";$("flow").checked=true;$("profile").value="mechanical";$("wrist").checked=false;$("lookAhead").checked=false;$("strength").value="0";$("cubeModel").value="modern";$("compareView").checked=false;syncComparison();load();
+</script></body></html>
