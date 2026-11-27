@@ -423,7 +423,7 @@ function simulateMechanical(t,{magnet=1,travel=.065,friction=1}={}){
   if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
   const dt=1/480,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0];
   let clock=0,next=0,maxDeflection=0,maxForce=0;
-  const cam=.42,clearance=.012,k=950;
+  const cam=.42,clearance=.006,k=950;
   const launchAngle=Math.min(rad(28),Math.asin(clamp((clearance+travel)/cam,0,.99)));
   const start=()=>{
     const m=t.moves[next],a={i:next,move:m,start:clock,end:clock,physical:true,x:0,v:0,goal:Math.abs(m.angle),ts:[clock],angles:[0],inertia:m.whole?2.1:1,steps:0};
@@ -444,15 +444,16 @@ function simulateMechanical(t,{magnet=1,travel=.065,friction=1}={}){
     let deflection=0,force=0;
     if(active.length===2){
       const [a,b]=active,rem=Math.max(0,a.goal-a.x),advance=clamp(b.x,0,Math.PI/2);
-      const demand=cam*Math.sin(Math.min(rem,Math.PI/2))*Math.sin(advance);
+      const camAngle=Math.min(advance*6,Math.PI/2),camDerivative=advance*6<Math.PI/2?6:0;
+      const demand=cam*Math.sin(Math.min(rem,Math.PI/2))*Math.sin(camAngle);
       deflection=Math.max(0,demand-clearance);
       const stiffness=k*(.065/Math.max(.015,travel));
       force=stiffness*deflection;
       // Gradient of .5*k*deflection^2 transfers torque into alignment
       // while resisting the following layer. Forces share one potential.
       if(deflection>0){
-        torque[0]+=force*cam*Math.cos(rem)*Math.sin(advance);
-        torque[1]-=force*cam*Math.sin(rem)*Math.cos(advance);
+        torque[0]+=force*cam*Math.cos(rem)*Math.sin(camAngle);
+        torque[1]-=force*cam*Math.sin(rem)*Math.cos(camAngle)*camDerivative;
       }
     }
     maxDeflection=Math.max(maxDeflection,deflection);maxForce=Math.max(maxForce,force);
@@ -1159,16 +1160,18 @@ function internalAssembly(frame,mode,explode=0){
    parts[name].push(...pos,...x,...y,...n,...color);
  };
  const cp=[];
+ const whole=frame.active?.find(a=>a.move.whole)||(frame.move?.whole?{move:frame.move,angle:frame.angle}:null);
+ for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1]){let n=[x,y,z].map(v=>v/Math.sqrt(3));if(whole)n=rotate(n,whole.move.axis,whole.angle);push("magnet",n.map(v=>v*.31),n,mechGold);}
  for(const c of frame.cubies){
    const moving=frame.move?.selected(c.p),turn=v=>moving?rotate(v,frame.move.axis,frame.angle):v;
    const p=turn(c.p.map(x=>x*.5)),count=c.colors.filter(x=>x!=="#202124").length,len=Math.hypot(...p);
    if(!len)continue;
-   const n=p.map(v=>v/len),offset=n.map(v=>v*explode);
+   const n=p.map(v=>v/len),inContact=frame.active?.length===2&&frame.active.some(a=>Math.abs(n[a.move.axis])>.55&&Math.sign(n[a.move.axis])===a.move.side),give=inContact?Math.min(.10,frame.mechanicalDeflection||0)*.5:0,offset=n.map(v=>v*(explode+give));
    if(count===1){
      push("shaft",[0,0,0],n,mechSteel);push("spring",[0,0,0],n,mechSteel);push("center",offset,n,mechWhite);
    }else if(mode!=="core"){
      push(count===2?"edge":"corner",offset,n,count===2?mechWhite:mechCream);
-     if(count===3){push("magnet",n.map((v,k)=>v*.50+offset[k]),n,mechGold);push("magnet",n.map(v=>v*.31),n,mechGold);}
+     if(count===3)push("magnet",n.map((v,k)=>v*.50+offset[k]),n,mechGold);
      // A magnet on each side of a corner/edge's shared contact surface.
      const b=c.b.map(turn),outer=c.colors.map((col,j)=>col!=="#202124"?j:-1).filter(j=>j>=0);
      if(count===3)for(const j of outer){const [a,s]=FACES[j],dir=b[a].map(v=>-s*v);push("magnet",p.map((v,k)=>v+offset[k]+dir[k]*.44-n[k]*.16),dir,mechSteel);}
@@ -1325,7 +1328,7 @@ function drawGPU(canvas,frame,pose){
       drawInstances(gpu.capMeshes.get(key),instances);
     }
   }else drawInstances(face,cubeInstances(frame));
-  $("assemblyStatus").textContent="구성: 코어 1 · 센터 6 · 엣지 12 · 코너 8 · 센터축/스프링 · 자석 (형상 근사)";
+  
   gl.bindVertexArray(null);return true;
 }
 function draw(canvas,frame,pose){
@@ -1344,13 +1347,14 @@ function render(now=Infinity){
   const reaction=flowOn&&$("wrist").checked?reactionAt(reactionTrack,time):HOME_Q;
   const renderPose=mul(pose,reaction);
   const rawFrame=flowOn?flowFrameAt(tl,flowTrack,motionTime):frame;
-  const modernFrame=flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
+  const modernFrame=flowOn&&flowTrack.profile==="mechanical"?{...rawFrame,mechanicalDeflection:lookup(flowTrack.traceT,flowTrack.traceD,motionTime)}:flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
   const gpuA=$("compareView").checked?draw(canvases[0],frame,HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
   if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
   lastStatus=Number.isFinite(now)?now:-Infinity;
   $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
   $("referenceStatus").textContent=tl.reference?"실물 영상 기반 근사 리듬 · 24수 / 약 "+(referenceSpan/30).toFixed(2)+"초 · 원본 약 "+referenceTPS.toFixed(2)+" TPS · 현재 "+(tl.total/Number($("speed").value)).toFixed(2)+"초":"일반 알고리즘 재생";
   const taskEvent=plan.taskEvents?plan.events.find(e=>motionTime>=e.start&&motionTime<e.end):null;
+  $("assemblyStatus").textContent="구성: 코어 1 · 센터 6 · 엣지 12 · 코너 8 · 센터축/스프링 · 자석 (형상 근사)";
   $("mechanicalStatus").textContent=flowTrack.profile==="mechanical"?"접촉 모형 · 현재 변위 "+(lookup(flowTrack.traceT,flowTrack.traceD,time)*100).toFixed(2)+"% · 최대 "+(flowTrack.maxDeflection*100).toFixed(2)+"% · 접촉력 "+lookup(flowTrack.traceT,flowTrack.traceF,time).toFixed(2)+" (상대값) · 중첩 "+flowTrack.cuts.length+"회":"기존 운동학적 재생";
   $("taskStatus").textContent=plan.taskEvents?(taskEvent?"목표 조각 확인 · "+taskEvent.angle.toFixed(0)+"° · "+(motionTime>=taskEvent.hold?(taskEvent.identified?"목표 색상 확인 완료":"후보 면 확인"):"면을 드러내는 중"):plan.events.length?"목표 탐색 "+plan.events.length+"회 · 추가 확인 "+plan.events.filter(e=>e.identified).length+"회":"추가 탐색 없음 (현재 조건에서 유효한 확인 경로 없음)"):"기존 탐색 방식";
   const group=tl.rhythm?.find(g=>g.first<=modernFrame.i&&g.last>=modernFrame.i);
