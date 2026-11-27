@@ -299,3 +299,117 @@ export function inspectionFrameAt(timeline,schedule,time,strength=1){
   return {frame:frameAt(timeline,timeline.times[seg.i]+u*(timeline.times[seg.i+1]-timeline.times[seg.i])),
     pose:[1,0,0,0],event:null};
 }
+
+// v0.4: inspection during a real layer turn. The old pause-based planner
+// remains available as a baseline. All time values are nominal turn units.
+const HOME_Q=[1,0,0,0];
+const angularDistance=(a,b)=>2*Math.acos(clamp(Math.abs(a.reduce((v,x,i)=>v+x*b[i],0)),0,1))*180/Math.PI;
+const transitionAt=(from,to,u)=>slerp(from,to,smooth(clamp(u/.72,0,1)));
+function movingVisibility(c,j,move,u,pose,view){
+  const [axis,side]=FACES[j];
+  let n=c.b[axis].map(v=>v*side);
+  if(move.selected(c.p))n=rotate(n,move.axis,move.angle*smooth(u));
+  return qrotate(view,qrotate(pose,n))[2]>=VISIBILITY;
+}
+const sampleProgress=[0,.25,.5,.72,.86,1];
+function observedSlots(cubies,move,from,to,view){
+  const slots=new Set();
+  for(const u of sampleProgress){
+    const q=transitionAt(from,to,u);
+    for(let id=0;id<cubies.length;id++){
+      const c=cubies[id];
+      for(let j=0;j<6;j++)if(movingVisibility(c,j,move,u,q,view))slots.add(id*6+j);
+    }
+  }
+  return slots;
+}
+function observeMoving(cubies,slots,memory,i,n){
+  for(const key of slots){
+    const id=Math.floor(key/6),j=key%6,c=cubies[id];
+    if(isOuterSticker(c,j,n)&&c.colors[j]!=="#202124")memory.set(key,{color:c.colors[j],i});
+  }
+}
+function continuousCandidates(timeline,i,memory,colors,kind){
+  const {frames,moves,n}=timeline,cubies=frames[i],candidates=[];
+  for(let id=0;id<cubies.length;id++){
+    const c=cubies[id],stickers=[0,1,2,3,4,5].filter(j=>isOuterSticker(c,j,n));
+    if(stickers.length!==(kind==="center"?1:2))continue;
+    let relevant=false;
+    for(let k=i;k<Math.min(i+3,moves.length);k++){
+      if(!moves[k].whole&&moves[k].selected(frames[k][id].p)){relevant=true;break;}
+    }
+    if(!relevant)continue;
+    const known=stickers.map(j=>memoryColor(memory,id,j,i)).filter(Boolean);
+    if(known.some(color=>!colors.includes(color)))continue;
+    if(known.length===stickers.length&&colors.every(color=>known.includes(color)))return {candidates:[],knownTarget:true};
+    const unknown=stickers.filter(j=>!memoryColor(memory,id,j,i));
+    if(unknown.length)candidates.push({id,unknown,weight:known.length?2:0.65});
+  }
+  return {candidates,knownTarget:false};
+}
+// Gain from a candidate pose in addition to what the layer itself reveals.
+// Search candidate geometry only; hidden sticker colors are never consulted.
+function extraGain(cubies,move,from,to,view,candidates,baseline){
+  let gain=0,count=0;
+  for(const c of candidates)for(const j of c.unknown){
+    if(baseline.has(c.id*6+j))continue;
+    if(sampleProgress.some(u=>movingVisibility(cubies[c.id],j,move,u,transitionAt(from,to,u),view))){
+      gain+=c.weight;count++;
+    }
+  }
+  return {gain,count};
+}
+export function planContinuousSearch(timeline,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW}={}){
+  if(kind!=="edge"&&kind!=="center")throw Error("Unknown search target type");
+  const colors=target.map(c=>SEARCH_COLORS[c]);
+  if(colors.length!==(kind==="center"?1:2)||colors.some(c=>!c)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+  const memory=new Map(),events=[],decisions=[],segments=[],checks=checkpoints===null?null:new Set(checkpoints);
+  let pose=HOME_Q,lastSearch=-Infinity;
+  for(let i=0;i<timeline.moves.length;i++){
+    const cubies=timeline.frames[i],move=timeline.moves[i];
+    observe(cubies,pose,memory,i,view);
+    // Stay at the acquired pose for one more turn; return only when no
+    // immediate information-seeking move is needed. No per-turn bounce.
+    let to=i-lastSearch<=1?pose:HOME_Q,event=null;
+    const baseline=observedSlots(cubies,move,pose,to,view);
+    if((checks?checks.has(i):i-lastSearch>=2)&&!move.whole){
+      const {candidates,knownTarget}=continuousCandidates(timeline,i,memory,colors,kind);
+      if(knownTarget||!candidates.length)decisions.push({i,reason:knownTarget?"target already identified":"no eligible uncertain piece"});
+      else{
+        let best=null;
+        const evaluate=p=>{
+          const q=qpose(p),angle=angularDistance(pose,q);
+          if(angle>75||angularDistance(HOME_Q,q)>75)return;
+          const {gain,count}=extraGain(cubies,move,pose,q,view,candidates,baseline);
+          const score=gain-.026*angle-.35;
+          if(gain>0&&score>0&&(!best||score>best.score+1e-8))best={p,q,angle,gain,count,score};
+        };
+        for(const p of searchAngles)evaluate(p);
+        // Refine around the best coarse direction, including non-grid angles.
+        if(best)for(const delta of [10,4,1]){
+          const center=best.p.slice();
+          for(const x of [-delta,0,delta])for(const y of [-delta,0,delta])if(x||y)evaluate([center[0]+x,center[1]+y,0]);
+        }
+        if(best){
+          to=best.q;lastSearch=i;
+          event={i,p:best.p,angle:best.angle,gain:best.gain,observed:best.count,overlap:true};
+          events.push(event);decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain});
+        }else decisions.push({i,reason:"no useful low-cost view"});
+      }
+    }
+    const slots=observedSlots(cubies,move,pose,to,view);
+    observeMoving(cubies,slots,memory,i,timeline.n);
+    segments.push({start:timeline.times[i],end:timeline.times[i+1],i,from:pose,to,event});
+    pose=to;
+  }
+  return {events,decisions,segments,stepTimes:timeline.times,total:timeline.total,endPose:pose};
+}
+export function continuousSearchFrameAt(timeline,plan,time,strength=1){
+  const t=clamp(time,0,plan.total),frame=frameAt(timeline,t);
+  const seg=plan.segments[frame.i];
+  const pose=seg?transitionAt(seg.from,seg.to,(t-seg.start)/(seg.end-seg.start)):plan.endPose;
+  // Strength is a display-only comparison adjustment; perception always
+  // uses the nominal planned pose.
+  const q=strength<=1?slerp(HOME_Q,pose,clamp(strength,0,1)):slerp(HOME_Q,pose,strength);
+  return {frame,pose:q,event:seg?.event||null};
+}
