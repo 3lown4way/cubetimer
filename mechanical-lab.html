@@ -9,11 +9,11 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#jumpInspection,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#kind,#target,#checks,#referenceTiming,#strength,#strengthVal,#mode,#lookAhead,#wrist,#taskStatus,#inspectionStatus,#poseDiff,#referenceStatus,#wristStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M1.9 Contact relief</h1>
+<h1>Cube mechanical lab · M2.0 Accelerated MAX</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
-<div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label><input id="hardContact" type="checkbox" checked> 침투 제한 및 비선형 MagLev (M0.8)</label><label><input id="maxPhysics" type="checkbox" checked> MAX · 외피/내부/조각 유격/자기력</label><label><input id="magneticCapture" type="checkbox" checked> M1.4 자석 자율 정렬</label><label>자석 잔류자속밀도 Br (T, 가정) <input id="br" type="range" min=".6" max="1.5" step=".05" value="1.25"><output id="brVal">1.25 T</output></label><label>M1.0 다음 입력 지연 (모델 시간) <input id="requestDelay" type="range" min=".25" max=".85" step=".01" value=".48"><output id="requestDelayVal">480 ms</output></label><label>이전 엔진 입력 시점 (잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><label>손가락 입력 편차 <input id="inputVariation" type="range" min="0" max="1.5" step=".1" value="1"><output id="inputVariationVal">1.0</output></label><label>입력 패턴 번호 <input id="inputSeed" type="number" min="0" max="9999" step="1" value="42" style="width:65px"></label><button id="newInputSeed">다른 입력 패턴</button><label>입력 요청 잔여각 상한 <input id="cutSpec" type="range" min="15" max="60" step="1" value="55"><output id="cutSpecVal">55°</output></label><button id="fullCutTest">형상 간섭 시험</button><label>접촉 시험 조합 <select id="probePair"><option>R U</option><option>R U'</option><option>R' U</option><option>R' U'</option></select></label><label>선행 잔여각 <select id="probeResidual"><option>20</option><option>35</option><option selected>55</option></select>°</label><button id="passiveCutTest">선행 레이어 자유 접촉 시험</button><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
-<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><div class="controls"><label>외피 <select id="shellStyle"><option value="gan" selected>신형 비대칭 곡면 · 측면 릴리프 (M1.9)</option><option value="sculpted">이전 M0.5 외피</option><option value="old">이전 v2.7 컬러 캡</option></select></label><label><input type="checkbox" id="shellCompare"> 같은 자세에서 외피 비교</label></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="livePhysicsStatus"></p><p id="maxPhysicsStatus" aria-live="polite"></p><p id="solverStatus" aria-live="polite"></p><p id="magneticStatus"></p><p id="playbackPhysics" aria-live="polite"></p><p id="capturePhase"></p><div class="controls"><label>자석 자유 정렬 시험 시작 각도 <input id="releaseAngle" type="range" min="0" max="90" step="1" value="80"><output id="releaseAngleVal">80°</output></label><button id="releaseOn">자석 ON · 손 떼기</button><button id="releaseOff">자석 OFF · 손 떼기</button><label>손을 뗄 때 각속도 <input id="releaseVelocity" type="range" min="0" max="240" step="10" value="0"><output id="releaseVelocityVal">0°/s</output></label><label>시험 재생 배율 <select id="releaseRate"><option value=".25" selected>0.25× (느리게)</option><option value=".5">0.5×</option><option value="1">1×</option></select></label><button id="releaseCompare">자석 ON/OFF 동시 비교</button><button id="releaseExit">알고리즘 재생 복귀</button></div><p id="releaseStatus"></p><div class="controls"><button id="videoFit">영상 12프레임 · 토크 역추정 비교</button><label>영상 시험 배율 <select id="fitRate"><option value=".03125" selected>1/32×</option><option value=".0625">1/16×</option><option value=".125">1/8×</option><option value="1">1×</option></select></label></div><p id="videoFitStatus" aria-live="polite"></p><small>영상 시험은 dltkk_video 2.mp4의 1077~1088번 프레임(약 45.8ms, 8배 감속 가정)의 상대 레이어 각도를 비교합니다. 손가락 외부 토크는 가정한 관성·마찰·자기력으로 역추정한 값입니다. 본체 자세 변화는 크기만 측정되어 회전 방향을 임의로 적용하지 않습니다. 전체 알고리즘 물리 엔진은 변경하지 않습니다.</small><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 평균 TPS 모드에서는 N수에 N/TPS초가 걸립니다. 공통 모델 시간 모드에서는 전체 길이를 정규화하지 않으므로 다른 자석 설정의 계산 완료 시간 차이가 보존됩니다. 슬라이더 숫자는 이때 모델 시간 배율입니다. 물리 경로를 시간 확대해 재생하는 방식이며 입력 속도 자체를 바꾸어 다시 적분하지는 않습니다. M1.0은 자석 크기 및 위치·극성·가정 Br에 따른 유한 극쌍 모델로 힘과 에너지를 계산합니다. 일반 재생은 입력 지연과 자기 포획 조건을 사용하며, 수렴 실패 시 추가 손가락 보정을 기록합니다. 기준 조립 상태를 자기 예압 평형으로 가정해 회전 중 자기력·모멘트 변화가 개별 조각의 탄성 운동에 전달됩니다. 강성·감쇠·Br은 실측값이 아닌 가정이며, 일반 재생의 논리 상태 확정에는 최대 0.086° 스냅을 허용합니다. 자유 정렬 시험에는 목표 각도 제어/스냅이 없습니다. MAX는 신형 M0.6 외피·내부 스템/다리·축소 지지체의 실제 삼각형 표본에 대해 120 Hz 구속 및 중간 자세 검사, 조각별 3축 이동/기울기 및 자기 쌍극자 힘/토크를 계산합니다. 구형 외피 선택은 시각 비교 전용입니다. M0.8은 내부 표본만 검사합니다. 2수 기본 예제를 제공하며 긴 알고리즘은 계산 시간이 늘어납니다. 내부 스템, 다리, 지지체, 외피의 표본 접촉만 포함하며 금속축·자석 자체 충돌 및 연속 삼각형 CCD는 별도입니다. M0.7은 480 Hz 적분을 사용합니다. 센터 축방향 탄성 및 자석 위치 기반 인력 근사 포함. M0.8은 내부 메시 표본 침투 허용량 0.0925 mm와 비선형 MagLev 복원력 근사를 적용합니다. 연속 충돌 보장은 아닙니다. M1.9: 센터 날개·코너 스템 목·내부 지지체·외피 뒤쪽 경사에 간섭 릴리프를 적용했습니다. 제조사 치수·조각 이탈 방지 성능은 미검증입니다. 이전 M0.4 접촉표는 구형 형상 참고값입니다. M1.8: 각 전환마다 입력 시점·구동 강도·입력 상승 시간이 달라집니다. 패턴 번호로 재현할 수 있습니다. 입력 편차 0은 기존 균일 입력입니다. 55°는 요청 상한일 뿐, 형상이 55° 코너커팅을 구현했다는 뜻이 아닙니다. 실제 허용 여부는 메시 검사로 결정됩니다. 실제 제품 물성 및 완전한 강체 충돌은 미구현입니다. M0.4 표 방식도 비교할 수 있습니다.</small>
+<div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label><input id="hardContact" type="checkbox" checked> 침투 제한 및 비선형 MagLev (M0.8)</label><label><input id="maxPhysics" type="checkbox" checked> MAX · 외피/내부/조각 유격/자기력</label><label>MAX 계산 <select id="maxQuality"><option value="fast" selected>가속 (권장)</option><option value="full">정밀 (모든 스텝)</option></select></label><label><input id="magneticCapture" type="checkbox" checked> M1.4 자석 자율 정렬</label><label>자석 잔류자속밀도 Br (T, 가정) <input id="br" type="range" min=".6" max="1.5" step=".05" value="1.25"><output id="brVal">1.25 T</output></label><label>M1.0 다음 입력 지연 (모델 시간) <input id="requestDelay" type="range" min=".25" max=".85" step=".01" value=".48"><output id="requestDelayVal">480 ms</output></label><label>이전 엔진 입력 시점 (잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><label>손가락 입력 편차 <input id="inputVariation" type="range" min="0" max="1.5" step=".1" value="1"><output id="inputVariationVal">1.0</output></label><label>입력 패턴 번호 <input id="inputSeed" type="number" min="0" max="9999" step="1" value="42" style="width:65px"></label><button id="newInputSeed">다른 입력 패턴</button><label>입력 요청 잔여각 상한 <input id="cutSpec" type="range" min="15" max="60" step="1" value="55"><output id="cutSpecVal">55°</output></label><button id="fullCutTest">형상 간섭 시험</button><label>접촉 시험 조합 <select id="probePair"><option>R U</option><option>R U'</option><option>R' U</option><option>R' U'</option></select></label><label>선행 잔여각 <select id="probeResidual"><option>20</option><option>35</option><option selected>55</option></select>°</label><button id="passiveCutTest">선행 레이어 자유 접촉 시험</button><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
+<div class="controls"><label>기구 모델 <select id="cadMode"><option value="magnetic" selected>신형 자석식 기구 (독자 설계)</option><option value="cad">구형 공개 CAD (비교)</option><option value="proxy">이전 근사 모델</option></select></label><label>CAD JSON 불러오기 <input id="cadFile" type="file" accept=".json,application/json"></label><button id="cadProbe">현재 자세 간섭 검사</button><button id="contactSweep">R→U 내부 간섭 시험</button></div><div class="controls"><label>외피 <select id="shellStyle"><option value="gan" selected>신형 비대칭 곡면 · 측면 릴리프 (M1.9)</option><option value="sculpted">이전 M0.5 외피</option><option value="old">이전 v2.7 컬러 캡</option></select></label><label><input type="checkbox" id="shellCompare"> 같은 자세에서 외피 비교</label></div><p id="cadStatus">구형 비교용 CAD 로딩 대기</p><p id="cadCollision"></p><pre id="meshContactResult" style="white-space:pre-wrap;font-size:12px"></pre><small>CAD: <a href="https://github.com/deckar01/3x3x3-cube-puzzle">Jared Deckard, 3x3x3 Cube Puzzle</a>, MIT (2017). 구형 비교용 모델입니다. 신형은 공개 특허 <a href="https://patents.google.com/patent/US10583351B2/en">US10583351B2</a>의 구면 트랙·센터 날개 개념을 참고해 독립 설계한 시각 모델입니다. 모든 치수는 추정값이며 제조사 CAD가 아닙니다.</small><p id="mechanicalStatus"></p><p id="livePhysicsStatus"></p><p id="maxPhysicsStatus" aria-live="polite"></p><p id="solverStatus" aria-live="polite"></p><p id="magneticStatus"></p><p id="playbackPhysics" aria-live="polite"></p><p id="capturePhase"></p><div class="controls"><label>자석 자유 정렬 시험 시작 각도 <input id="releaseAngle" type="range" min="0" max="90" step="1" value="80"><output id="releaseAngleVal">80°</output></label><button id="releaseOn">자석 ON · 손 떼기</button><button id="releaseOff">자석 OFF · 손 떼기</button><label>손을 뗄 때 각속도 <input id="releaseVelocity" type="range" min="0" max="240" step="10" value="0"><output id="releaseVelocityVal">0°/s</output></label><label>시험 재생 배율 <select id="releaseRate"><option value=".25" selected>0.25× (느리게)</option><option value=".5">0.5×</option><option value="1">1×</option></select></label><button id="releaseCompare">자석 ON/OFF 동시 비교</button><button id="releaseExit">알고리즘 재생 복귀</button></div><p id="releaseStatus"></p><div class="controls"><button id="videoFit">영상 12프레임 · 토크 역추정 비교</button><label>영상 시험 배율 <select id="fitRate"><option value=".03125" selected>1/32×</option><option value=".0625">1/16×</option><option value=".125">1/8×</option><option value="1">1×</option></select></label></div><p id="videoFitStatus" aria-live="polite"></p><small>영상 시험은 dltkk_video 2.mp4의 1077~1088번 프레임(약 45.8ms, 8배 감속 가정)의 상대 레이어 각도를 비교합니다. 손가락 외부 토크는 가정한 관성·마찰·자기력으로 역추정한 값입니다. 본체 자세 변화는 크기만 측정되어 회전 방향을 임의로 적용하지 않습니다. 전체 알고리즘 물리 엔진은 변경하지 않습니다.</small><p id="assemblyStatus"></p><small>유격 단위는 조각 폭의 비율이며, 자석·마찰은 상대 계수입니다. 실제 제품 물성값이 아닙니다. 평균 TPS 모드에서는 N수에 N/TPS초가 걸립니다. 공통 모델 시간 모드에서는 전체 길이를 정규화하지 않으므로 다른 자석 설정의 계산 완료 시간 차이가 보존됩니다. 슬라이더 숫자는 이때 모델 시간 배율입니다. 물리 경로를 시간 확대해 재생하는 방식이며 입력 속도 자체를 바꾸어 다시 적분하지는 않습니다. M1.0은 자석 크기 및 위치·극성·가정 Br에 따른 유한 극쌍 모델로 힘과 에너지를 계산합니다. 일반 재생은 입력 지연과 자기 포획 조건을 사용하며, 수렴 실패 시 추가 손가락 보정을 기록합니다. 기준 조립 상태를 자기 예압 평형으로 가정해 회전 중 자기력·모멘트 변화가 개별 조각의 탄성 운동에 전달됩니다. 강성·감쇠·Br은 실측값이 아닌 가정이며, 일반 재생의 논리 상태 확정에는 최대 0.086° 스냅을 허용합니다. 자유 정렬 시험에는 목표 각도 제어/스냅이 없습니다. M2.0은 자석 극별 합력과 OBB 충돌 후보 제거로 중복 연산을 줄입니다. 가속 모드는 단일 레이어의 표본 접촉 검사 빈도를 20 Hz로 낮추며 위험 검출 시 추가 검사합니다. 중첩 회전과 120 Hz 운동 적분 및 자기력 계산은 유지합니다. 가속 모드에서는 검사 사이의 단일 회전 침투가 누락될 수 있으므로 정밀 모드를 선택할 수 있습니다. 동일한 설정·알고리즘의 최근 5개 계산 경로를 현재 페이지에서 재사용합니다. MAX는 신형 외피·내부 스템/다리·축소 지지체의 실제 삼각형 표본에 대해 구속 및 중간 자세 검사, 조각별 3축 이동/기울기 및 자기 쌍극자 힘/토크를 계산합니다. 구형 외피 선택은 시각 비교 전용입니다. M0.8은 내부 표본만 검사합니다. 2수 기본 예제를 제공하며 긴 알고리즘은 계산 시간이 늘어납니다. 내부 스템, 다리, 지지체, 외피의 표본 접촉만 포함하며 금속축·자석 자체 충돌 및 연속 삼각형 CCD는 별도입니다. M0.7은 480 Hz 적분을 사용합니다. 센터 축방향 탄성 및 자석 위치 기반 인력 근사 포함. M0.8은 내부 메시 표본 침투 허용량 0.0925 mm와 비선형 MagLev 복원력 근사를 적용합니다. 연속 충돌 보장은 아닙니다. M1.9: 센터 날개·코너 스템 목·내부 지지체·외피 뒤쪽 경사에 간섭 릴리프를 적용했습니다. 제조사 치수·조각 이탈 방지 성능은 미검증입니다. 이전 M0.4 접촉표는 구형 형상 참고값입니다. M1.8: 각 전환마다 입력 시점·구동 강도·입력 상승 시간이 달라집니다. 패턴 번호로 재현할 수 있습니다. 입력 편차 0은 기존 균일 입력입니다. 55°는 요청 상한일 뿐, 형상이 55° 코너커팅을 구현했다는 뜻이 아닙니다. 실제 허용 여부는 메시 검사로 결정됩니다. 실제 제품 물성 및 완전한 강체 충돌은 미구현입니다. M0.4 표 방식도 비교할 수 있습니다.</small>
 <div class="controls"><button id="taskDemo">조각 확인 예제</button><button id="referenceDemo">실물 영상 리듬 · 24수</button><button id="referenceSlow">실물 리듬 · 약 ¼속</button><button id="pair3">3×3 R → U 시연</button><button id="pair4">4×4 Rw → U 시연</button><label>코너커팅 구간 <input id="cutSeek" type="range" min="0" max="100" step="1" value="50" disabled></label><output id="cutPair"></output></div><div class="compare" style="grid-template-columns:minmax(0, 520px);justify-content:center">
 <figure hidden><canvas id="fixed" aria-label="고정 자세 큐브"></canvas><figcaption>기호 회전만 · 기준</figcaption></figure>
 <figure><canvas id="natural" aria-label="자동 자세 큐브"></canvas><figcaption>M1.1 자석 물리 · 신형 외피</figcaption></figure>
@@ -612,6 +612,16 @@ function simulateConstrained(t,{magnet=1,travel=.065,friction=1,requestAngle=40}
 const M09_LIMIT=.0035, M09_SHIFT=.025, M09_TILT=rad(2.2);
 const m09Zero=()=>[0,0,0,0,0,0];
 function m09Frame(t,active,offsets,flex){return {...m07Frame(t,active,offsets),pieceFlex:flex};}
+
+// Conservative OBB test: skip only pairs with a separating axis.
+function m20Box(p){if(p.obb)return p.obb;const {min,max}=p.geo.root,h=min.map((v,k)=>(max[k]-v)*.5),c=cadTransform(p.basis,min.map((v,k)=>(max[k]+v)*.5)).map((v,k)=>v+p.offset[k]);return p.obb={h,c,b:p.basis};}
+function m20Separated(a,b){
+ const A=m20Box(a),B=m20Box(b),d=B.c.map((v,k)=>v-A.c[k]),t=A.b.map(v=>dot3(d,v)),R=A.b.map(v=>B.b.map(w=>dot3(v,w))),Q=R.map(v=>v.map(x=>Math.abs(x)+1e-10)),h=A.h,j=B.h;
+ for(let i=0;i<3;i++)if(Math.abs(t[i])>h[i]+j[0]*Q[i][0]+j[1]*Q[i][1]+j[2]*Q[i][2])return true;
+ for(let i=0;i<3;i++)if(Math.abs(t[0]*R[0][i]+t[1]*R[1][i]+t[2]*R[2][i])>j[i]+h[0]*Q[0][i]+h[1]*Q[1][i]+h[2]*Q[2][i])return true;
+ for(let i=0;i<3;i++)for(let k=0;k<3;k++){const u=(i+1)%3,v=(i+2)%3,m=(k+1)%3,n=(k+2)%3;if(Math.abs(t[v]*R[u][k]-t[u]*R[v][k])>h[u]*Q[v][k]+h[v]*Q[u][k]+j[m]*Q[i][n]+j[n]*Q[i][m])return true;}return false;
+}
+
 function m09Query(t,active,offsets,flex,{forces=false,limit=M09_LIMIT,friction=1,travel=.065}={}){
  const frame=m09Frame(t,active,offsets,flex),parts=m09Parts(frame),groups=frame.cubies.map((_,id)=>active.reduce((s,a,k)=>s|(a.move.selected(t.frames[a.i][id].p)?1<<k:0),0)),torques=active.map(()=>0),axial=offsets.map(()=>0),loads=offsets.map(m09Zero);
  const centers=frame.cubies.map(c=>c.colors.filter(x=>x!=="#202124").length===1);
@@ -625,10 +635,10 @@ function m09Query(t,active,offsets,flex,{forces=false,limit=M09_LIMIT,friction=1
  let depth=0,hits=0,force=0,shellHits=0,tests=0;
  const world=p=>p.world??=p.geo.sample.map(v=>cadTransform(p.basis,v).map((x,k)=>x+p.offset[k]));
  for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
-  const a=parts[i],b=parts[j];if(a.id===b.id||(groups[a.id]===groups[b.id]&&!changed[a.id]&&!changed[b.id])||a.min.some((v,k)=>v>b.max[k]||a.max[k]<b.min[k]))continue;
+  const a=parts[i],b=parts[j];if(a.id===b.id||(groups[a.id]===groups[b.id]&&!changed[a.id]&&!changed[b.id])||a.min[0]>b.max[0]||a.max[0]<b.min[0]||a.min[1]>b.max[1]||a.max[1]<b.min[1]||a.min[2]>b.max[2]||a.max[2]<b.min[2]||m20Separated(a,b))continue;
   for(const [src,dst] of [[a,b],[b,a]])for(const p of world(src)){
-   if(p.some((v,k)=>v<=dst.min[k]+.00015||v>=dst.max[k]-.00015))continue;
-   const local=cadInverse(dst.basis,p.map((x,k)=>x-dst.offset[k]));tests++;
+   if(p[0]<=dst.min[0]+.00015||p[0]>=dst.max[0]-.00015||p[1]<=dst.min[1]+.00015||p[1]>=dst.max[1]-.00015||p[2]<=dst.min[2]+.00015||p[2]>=dst.max[2]-.00015)continue;
+   const x=p[0]-dst.offset[0],y=p[1]-dst.offset[1],z=p[2]-dst.offset[2],b=dst.basis,local=[x*b[0][0]+y*b[0][1]+z*b[0][2],x*b[1][0]+y*b[1][1]+z*b[1][2],x*b[2][0]+y*b[2][1]+z*b[2][2]];tests++;
    if(!m04Inside(local,dst.geo))continue;
    const d=Math.sqrt(m04Depth2(local,dst.geo));if(d<.0004)continue;
    depth=Math.max(depth,d);hits++;if(src.name.startsWith("shell:")||dst.name.startsWith("shell:"))shellHits++;
@@ -704,19 +714,22 @@ function m10Magnetic(t,active,offsets,flex,strength,br=M10_MAG.Br,bodyLoads=fals
   const dirs=count===3?outer.flatMap((s,k)=>s?[c.b[k].map(v=>-s*v)]:[]):[c.b[outer.indexOf(0)],c.b[outer.indexOf(0)].map(v=>-v)];
   for(const n of dirs)(count===3?corner:edge).push(magnet(id,tr.point(p.map((v,k)=>v+n[k]*.385-z[k]*.19)),tr.rot(n.map(v=>v*(count===3?1:-1))),M10_MAG.sideRadius));
  }
+ for(const m of [...core,...inner,...corner,...edge])for(const pole of m.poles)pole.force=[0,0,0];
  const groups=frame.cubies.map((_,id)=>active.reduce((s,a,k)=>s|(a.move.selected(t.frames[a.i][id].p)?1<<k:0),0));
- const add=(id,p,f)=>{if(id<0)return;if(bodyLoads){const pivot=m09FlexTransform(frame.cubies[id],flex[id]).point(frame.cubies[id].p.map(v=>v*.5)),moment=cross3(p.map((x,k)=>(x-pivot[k])*L),f);for(let k=0;k<3;k++){loads[id][k]+=f[k];loads[id][k+3]+=moment[k];}}if(!groups[id])return;const jac=m07Jacobians(t,active,id,p);for(let k=0;k<active.length;k++)torques[k]+=L*dot3(jac[k],f);};
+ const pivots=bodyLoads?frame.cubies.map((c,id)=>m09FlexTransform(c,flex[id]).point(c.p.map(v=>v*.5))):null;
+ const add=(id,p,f)=>{if(id<0)return;if(bodyLoads){const pivot=pivots[id],moment=cross3(p.map((x,k)=>(x-pivot[k])*L),f);for(let k=0;k<3;k++){loads[id][k]+=f[k];loads[id][k+3]+=moment[k];}}if(!groups[id])return;const jac=m07Jacobians(t,active,id,p);for(let k=0;k<active.length;k++)torques[k]+=L*dot3(jac[k],f);};
  function pair(a,b){
   if(!bodyLoads&&(a.id<0?0:groups[a.id])===(b.id<0?0:groups[b.id])&&a.id!==b.id)return;
   const soft=(a.radius+b.radius)*.28;
   for(const A of a.poles)for(const B of b.poles){
    const d=B.p.map((v,k)=>v-A.p[k]),r2=dot3(d,d)+soft*soft,r=Math.sqrt(r2),K=1e-7*A.q*B.q*strength;
    const f=d.map(v=>K*v/(L*L*r2*r));energy+=K/(L*r);
-   add(a.id,A.p,f.map(v=>-v));add(b.id,B.p,f);absForce+=Math.hypot(...f);pairs++;
+   for(let k=0;k<3;k++){A.force[k]-=f[k];B.force[k]+=f[k];}absForce+=Math.hypot(...f);pairs++;
   }
  }
  for(const a of core)for(const b of inner)pair(a,b);
  for(const a of corner)for(const b of edge)pair(a,b);
+ for(const m of [...inner,...corner,...edge])for(const pole of m.poles)add(m.id,pole.p,pole.force);
  return {torques,energy,pairs,absForce,loads};
 }
 
@@ -830,7 +843,7 @@ function m13CanStart(t,a,next,offsets,flex,friction,input,clock){
  }
  return true;
 }
-function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress=null,magneticCapture=false,requestDelay=.48,br=1.25,variation=1,seed=42,cutSpec=55}={}){
+function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress=null,magneticCapture=false,requestDelay=.48,br=1.25,variation=1,seed=42,cutSpec=55,fastMax=true}={}){
  if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("MAX는 3×3 외층과 x/y/z 회전만 지원합니다.");
  const dt=1/120,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0],offsets=t.frames[0].map(()=>0),offsetV=offsets.slice(),traceCenter=[offsets.slice()],flex=offsets.map(m09Zero),vel=offsets.map(m09Zero),traceFlex=[flex.map(f=>f.slice())];
  let launchChecks=0,launchWait=0,clearStreak=0;
@@ -847,7 +860,7 @@ function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress
   const needs=active.length===2||offsets.some(x=>x>1e-6)||flex.some(f=>f.some(x=>Math.abs(x)>1e-6));
   if(!last||last.ids!==ids||step%2===0){
    const mag=magneticCapture?m10BodyLoads(t,active,offsets,flex,magnet,br,magneticRest):m09Magnetic(t,active,offsets,flex,magnet);
-   const c=needs?m09Query(t,active,offsets,flex,{forces:true,friction,travel}):{torques:active.map(()=>0),axial:offsets.map(()=>0),loads:offsets.map(m09Zero),hits:0,shellHits:0,depth:0,force:0};
+   const c=needs&&(!fastMax||active.length===2||step%6===0||last?.depth>M09_LIMIT*.5)?m09Query(t,active,offsets,flex,{forces:true,friction,travel}):{torques:active.map(()=>0),axial:offsets.map(()=>0),loads:offsets.map(m09Zero),hits:0,shellHits:0,depth:0,force:0};
    const magnetic=mag.torques.map(v=>magneticCapture?v/(1.3e-5*9):v);peakMagnetic=Math.max(peakMagnetic,...mag.torques.map(v=>Math.abs(v)));if(magneticCapture)peakBodyLoad=Math.max(peakBodyLoad,...mag.loads.map(v=>Math.hypot(...v.slice(0,3))));last={...c,ids,magnetic,rawMagnetic:mag.torques,loads:magneticCapture?c.loads.map((v,id)=>v.map((x,k)=>x+mag.loads[id][k])):c.loads,torques:c.torques.map((v,i)=>v+magnetic[i])};meshEvaluations++;contactSamples+=c.hits;shellSamples+=c.shellHits;
   }
   if(magneticCapture&&step%2!==0){const m=m10Magnetic(t,active,offsets,flex,magnet,br);last.torques=last.torques.map((v,i)=>v-last.magnetic[i]+m.torques[i]/(1.3e-5*9));last.rawMagnetic=m.torques;last.magnetic=m.torques.map(v=>v/(1.3e-5*9));}
@@ -864,7 +877,7 @@ function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress
   let x=targetX,o=targetO,f=targetF,depth=0;
   // Isolated ordinary turns have been geometry-checked separately. Check
   // the full assembly during all simultaneous motion and residual flex.
-  if(needs){
+  if(needs&&(!fastMax||active.length===2||step%6===0||last.depth>M09_LIMIT*.5)){
    depth=sweep(x,o,f);
    if(depth>M09_LIMIT){
     blockedSteps++;let best=null;
@@ -895,11 +908,11 @@ function simulateMax(t,{magnet=1,travel=.065,friction=1,requestAngle=40,progress
  const o0=offsets.slice(),f0=flex.map(f=>f.slice());if(o0.some(x=>x>1e-6)||f0.some(f=>f.some(x=>Math.abs(x)>1e-6))){for(let j=1;j<=24;j++){const a=1-smooth(j/24);clock+=dt;traceT.push(clock);traceD.push(0);traceF.push(0);traceCenter.push(o0.map(x=>x*a));traceFlex.push(f0.map(f=>f.map(x=>x*a)));}}
  traceCenter[traceCenter.length-1]=offsets.map(()=>0);traceFlex[traceFlex.length-1]=offsets.map(m09Zero);times.push(clock);
  for(const c of cuts){const a=turns[c.i-1],b=turns[c.i],i=b.angles.findIndex(v=>Math.abs(v)>=rad(1));c.actualResidual=i>=0&&b.ts[i]<a.end?(a.goal-Math.abs(flowAngle(a,b.ts[i])))*180/Math.PI:null;c.advanceAtAlignment=Math.abs(flowAngle(b,a.end))*180/Math.PI;}
- return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,inputs,variation,seed,cutSpec,launchChecks,launchWait,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,maxMode:true,traceT,traceD,traceF,traceCenter,traceFlex,magneticCapture,releaseCount,assistCount,peakMagnetic,peakBodyLoad,traceMagnetic,maxDeflection,maxForce,maxCenter,maxShift,maxTilt,meshEvaluations,contactSamples,shellSamples,projectionQueries,sweepTests,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
+ return {timeline:{...t,times,total:clock,mechanical:true},track:{turns,cuts,fastMax,inputs,variation,seed,cutSpec,launchChecks,launchWait,total:clock,profile:"mechanical",meshContact:true,liveContact:true,constrained:true,maxMode:true,traceT,traceD,traceF,traceCenter,traceFlex,magneticCapture,releaseCount,assistCount,peakMagnetic,peakBodyLoad,traceMagnetic,maxDeflection,maxForce,maxCenter,maxShift,maxTilt,meshEvaluations,contactSamples,shellSamples,projectionQueries,sweepTests,blockedSteps,retreatSteps,maxAcceptedDepth:maxDeflection,launchAngle}};
 }
 
-function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false,maxMode=false,progress=null,magneticCapture=false,requestDelay=.48,br=1.25,variation=1,seed=42,cutSpec=55}={}){
-  if(liveContact&&constrained&&maxMode)return simulateMax(t,{magnet,travel,friction,requestAngle,progress,magneticCapture,requestDelay,br,variation,seed,cutSpec});
+function simulateMechanical(t,{magnet=1,travel=.065,friction=1,meshContact=false,liveContact=false,requestAngle=40,constrained=false,maxMode=false,progress=null,magneticCapture=false,requestDelay=.48,br=1.25,variation=1,seed=42,cutSpec=55,fastMax=true}={}){
+  if(liveContact&&constrained&&maxMode)return simulateMax(t,{magnet,travel,friction,requestAngle,progress,magneticCapture,requestDelay,br,variation,seed,cutSpec,fastMax});
   if(liveContact&&constrained)return simulateConstrained(t,{magnet,travel,friction,requestAngle});
   if(t.n!==3||t.moves.some(m=>m.slice||m.width!==1))throw Error("기구 실험판은 3×3 외층과 x/y/z 회전만 지원합니다.");
   const dt=1/480,turns=[],cuts=[],times=[],active=[],traceT=[0],traceD=[0],traceF=[0];
@@ -2018,7 +2031,7 @@ function m04Geometry(name){
   const a=Array.from(m.slice(i,i+3)),b=Array.from(m.slice(i+6,i+9)),c=Array.from(m.slice(i+12,i+15));
   const e=b.map((x,k)=>x-a[k]),g=c.map((x,k)=>x-a[k]);
   const min=a.map((x,k)=>Math.min(x,b[k],c[k])),max=a.map((x,k)=>Math.max(x,b[k],c[k]));
-  tri.push({a,e,g,min,max,mid:min.map((x,k)=>(x+max[k])*.5)});
+  const h=cross3(m04Ray,g),det=dot3(e,h);tri.push({a,e,g,min,max,h,det,mid:min.map((x,k)=>(x+max[k])*.5)});
   for(const v of [a,b,c])vertices.set(v.map(x=>x.toFixed(5)).join(","),v);
  }
  function tree(ts){
@@ -2040,20 +2053,22 @@ function m04RayBox(p,node){
  return hi>=0;
 }
 function m04Inside(p,geo){
- if(p.some((x,k)=>x<=geo.root.min[k]+.0002||x>=geo.root.max[k]-.0002))return false;
+ const x=p[0],y=p[1],z=p[2],min=geo.root.min,max=geo.root.max;
+ if(x<=min[0]+.0002||x>=max[0]-.0002||y<=min[1]+.0002||y>=max[1]-.0002||z<=min[2]+.0002||z>=max[2]-.0002)return false;
  const hits=[],stack=[geo.root];
  while(stack.length){
   const n=stack.pop();if(!m04RayBox(p,n))continue;
-  if(n.children){stack.push(...n.children);continue;}
-  for(const {a,e,g} of n.ts){
-    const h=cross3(m04Ray,g),det=dot3(e,h);if(Math.abs(det)<1e-10)continue;
-    const s=p.map((x,k)=>x-a[k]),u=dot3(s,h)/det;if(u<0||u>1)continue;
-    const q=cross3(s,e),v=dot3(m04Ray,q)/det;if(v<0||u+v>1)continue;
-    const t=dot3(g,q)/det;if(Math.abs(t)<.0005)return false;if(t>0)hits.push(t);
+  if(n.children){stack.push(n.children[0],n.children[1]);continue;}
+  for(const {a,e,g,h,det} of n.ts){
+    if(Math.abs(det)<1e-10)continue;
+    const sx=x-a[0],sy=y-a[1],sz=z-a[2],u=(sx*h[0]+sy*h[1]+sz*h[2])/det;if(u<0||u>1)continue;
+    const qx=sy*e[2]-sz*e[1],qy=sz*e[0]-sx*e[2],qz=sx*e[1]-sy*e[0],v=(m04Ray[0]*qx+m04Ray[1]*qy+m04Ray[2]*qz)/det;if(v<0||u+v>1)continue;
+    const t=(g[0]*qx+g[1]*qy+g[2]*qz)/det;if(Math.abs(t)<.0005)return false;if(t>0)hits.push(t);
   }
  }
- hits.sort((a,b)=>a-b);return hits.filter((v,i)=>!i||v-hits[i-1]>.00001).length%2===1;
+ hits.sort((a,b)=>a-b);let count=0;for(let i=0;i<hits.length;i++)if(!i||hits[i]-hits[i-1]>.00001)count++;return count%2===1;
 }
+
 function m04Parts(frame){
  const arr=[];
  for(let id=0;id<frame.cubies.length;id++){
@@ -2345,6 +2360,8 @@ function render(now=Infinity){
 }
 function syncButton(){$("play").textContent=playing?"Ⅱ 일시정지":"▶ 재생"}
 let solveSerial=0,solveWorker=null,solveReject=null;
+const maxPathCache=new Map();
+function solveCached(t,settings){const key=JSON.stringify([t.n,$("setup").value.trim().replace(/\s+/g," "),t.moves.map(m=>m.token),settings]);if(maxPathCache.has(key)){const hit=maxPathCache.get(key);maxPathCache.delete(key);maxPathCache.set(key,hit);return Promise.resolve({...hit,cached:true});}return solveInWorker(t,settings).then(p=>{maxPathCache.set(key,p);while(maxPathCache.size>5)maxPathCache.delete(maxPathCache.keys().next().value);return p;});}
 function solveInWorker(t,settings){
   if(typeof Worker==="undefined"||typeof Blob==="undefined"||typeof URL==="undefined")return Promise.resolve(simulateMechanical(t,settings));
   const src=document.querySelector('script[type="module"]').textContent,engine=src.split("const $=id")[0],geometry=src.slice(src.indexOf("const gpuViews"),src.indexOf("function drawGPU"));
@@ -2368,8 +2385,8 @@ async function load(){
     if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=t.moves.length))throw Error("Invalid checkpoint");
     const nextContinuous=$("mode").value==="continuous";
     let nextTrack;
-    if($("profile").value==="mechanical"){const settings={magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,constrained:$("hardContact").checked,maxMode:$("maxPhysics").checked,magneticCapture:$("magneticCapture").checked,br:Number($("br").value),requestDelay:Number($("requestDelay").value),requestAngle:Number($("requestAngle").value),variation:Number($("inputVariation").value),seed:Math.round(clamp(Number($("inputSeed").value)||0,0,9999)),cutSpec:Number($("cutSpec").value)};
-      const max=settings.liveContact&&settings.constrained&&settings.maxMode;const start=performance.now();if(max)$("solverStatus").textContent="MAX 물리 경로 계산 중 · 재생은 계산 완료 후 가능 (다른 알고리즘을 적용하면 기존 계산 취소)";const p=max?await solveInWorker(t,settings):simulateMechanical(t,settings);if(serial!==solveSerial)return;t=p.timeline;nextTrack=p.track;if(max)$("solverStatus").textContent="MAX 계산 완료 · "+((performance.now()-start)/1000).toFixed(2)+"초";}else nextTrack=buildFlowTrack(t,$("profile").value);
+    if($("profile").value==="mechanical"){const settings={magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,constrained:$("hardContact").checked,maxMode:$("maxPhysics").checked,magneticCapture:$("magneticCapture").checked,br:Number($("br").value),requestDelay:Number($("requestDelay").value),requestAngle:Number($("requestAngle").value),variation:Number($("inputVariation").value),seed:Math.round(clamp(Number($("inputSeed").value)||0,0,9999)),cutSpec:Number($("cutSpec").value),fastMax:$("maxQuality").value!=="full"};
+      const max=settings.liveContact&&settings.constrained&&settings.maxMode;const start=performance.now();if(max)$("solverStatus").textContent="MAX 물리 경로 계산 중 · 재생은 계산 완료 후 가능 (다른 알고리즘을 적용하면 기존 계산 취소)";const p=max?await solveCached(t,settings):simulateMechanical(t,settings);if(serial!==solveSerial)return;t=p.timeline;nextTrack=p.track;if(max)$("solverStatus").textContent=(p.cached?"MAX 경로 캐시 재사용 · ":"MAX "+(settings.fastMax?"가속":"정밀")+" 계산 완료 · ")+((performance.now()-start)/1000).toFixed(2)+"초";}else nextTrack=buildFlowTrack(t,$("profile").value);
     const p={events:[],decisions:[],taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};
     continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
     $("rhythmDetails").textContent=t.moves.map((m,i)=>`${i+1}. ${m.token} · ${((t.times[i+1]-t.times[i])*1000/playbackRate()).toFixed(0)} ms · ${t.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(t.reference?"영상 주석":"일반")}`).join("\n");
@@ -2395,6 +2412,7 @@ $("mechanicalApply").onclick=load;
 $("livePhysics").onchange=load;
 $("hardContact").onchange=load;
 $("maxPhysics").onchange=load;
+$("maxQuality").onchange=load;
 $("magneticCapture").onchange=load;
 $("br").oninput=()=>{$("brVal").textContent=Number($("br").value).toFixed(2)+" T";};
 $("requestDelay").oninput=()=>{$("requestDelayVal").textContent=Math.round(Number($("requestDelay").value)*1000)+" ms";};
