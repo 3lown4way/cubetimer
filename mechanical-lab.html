@@ -9,7 +9,7 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 @media(max-width:520px){body{margin:12px auto;padding:0 9px}figcaption{font-size:12px}}
 #taskDemo,#referenceDemo,#referenceSlow,#pair4,#wideDemo,#case4,#caseA,#caseB,#caseC,#cutDemo,[data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'"],#cubeModel,#referenceTiming,#mode,#referenceStatus,#rhythmStatus{display:none}
 </style></head><body>
-<h1>Cube mechanical lab · M2.3 Restored body inspection</h1>
+<h1>Cube mechanical lab · M2.4 Continuous body motion</h1>
 <p>3×3 기구 실험판 — 내부 부품과 축약 동역학 모델. 기존 <a href="./motion-lab.html">Motion Lab</a>은 변경하지 않았습니다.</p>
 <div class="controls"><label>구조 <select id="assembly"><option value="full">조립 상태</option><option value="inside">무색 부품 보기</option><option value="cutaway">앞쪽 1층 제거 (내부 보기)</option><option value="exploded">분해도</option><option value="core">코어·센터만</option><option value="feet">다리·트랙만 (신형)</option><option value="cornerPart">코너 단품 (신형)</option><option value="edgePart">엣지 단품 (신형)</option><option value="centerPart">센터 단품 (신형)</option></select></label><label>분해 간격 <input id="explode" type="range" min=".2" max="1.3" step=".05" value=".65"></label></div>
 <div class="controls"><label>자석 복원력 <input id="magnet" type="range" min="0" max="3" step=".1" value="1"><output id="magnetVal">1.0</output></label><label>센터 유격 <input id="travel" type="range" min=".015" max=".12" step=".005" value=".065"><output id="travelVal">0.065</output></label><label>마찰 <input id="friction" type="range" min=".3" max="2.5" step=".1" value="1"><output id="frictionVal">1.0</output></label><label><input id="livePhysics" type="checkbox" checked> 형상 기반 동역학 (M0.7)</label><label><input id="hardContact" type="checkbox" checked> 침투 제한 및 비선형 MagLev (M0.8)</label><label><input id="maxPhysics" type="checkbox" checked> MAX · 외피/내부/조각 유격/자기력</label><label>MAX 계산 <select id="maxQuality"><option value="full" selected>정밀 · 컴파일 가속 (기본)</option><option value="fast">저빈도 검사 (선택)</option></select></label><label><input id="magneticCapture" type="checkbox" checked> M1.4 자석 자율 정렬</label><label>자석 잔류자속밀도 Br (T, 가정) <input id="br" type="range" min=".6" max="1.5" step=".05" value="1.25"><output id="brVal">1.25 T</output></label><label>M1.0 다음 입력 지연 (모델 시간) <input id="requestDelay" type="range" min=".25" max=".85" step=".01" value=".48"><output id="requestDelayVal">480 ms</output></label><label>이전 엔진 입력 시점 (잔여각) <input id="requestAngle" type="range" min="20" max="50" step="1" value="40"><output id="requestAngleVal">40°</output></label><label>손가락 입력 편차 <input id="inputVariation" type="range" min="0" max="1.5" step=".1" value="1"><output id="inputVariationVal">1.0</output></label><label>입력 패턴 번호 <input id="inputSeed" type="number" min="0" max="9999" step="1" value="42" style="width:65px"></label><button id="newInputSeed">다른 입력 패턴</button><button id="cutVariationDemo">비정형 코너커팅 예제</button><label>입력 요청 잔여각 상한 <input id="cutSpec" type="range" min="15" max="60" step="1" value="55"><output id="cutSpecVal">55°</output></label><button id="fullCutTest">형상 간섭 시험</button><label>접촉 시험 조합 <select id="probePair"><option>R U</option><option>R U'</option><option>R' U</option><option>R' U'</option></select></label><label>선행 잔여각 <select id="probeResidual"><option>20</option><option>35</option><option selected>55</option></select>°</label><button id="passiveCutTest">선행 레이어 자유 접촉 시험</button><button id="stressTest">접촉 강제 시험 R → U</button><button id="mechanicalApply">물리 설정 적용</button></div>
@@ -22,11 +22,11 @@ body{max-width:960px;margin:24px auto;padding:0 16px}h1{font-size:23px;margin:0 
 <div class="controls">
 <label>크기 <select id="size"><option selected>3</option></select></label>
 <label>재생 속도 (평균 TPS) <input id="speed" type="range" min="1" max="20" step=".25" value="6"><output id="speedVal">6 TPS</output></label><label>재생 시간 기준 <select id="clockMode"><option value="tps" selected>평균 TPS (기존)</option><option value="model">공통 모델 시간 (자석 비교)</option></select></label><p id="referenceClockStatus" aria-live="polite"></p>
-<label><input id="bodyInspection" type="checkbox" checked> 큐브 본체 탐색 (Motion Lab 복원)</label><button id="bodyInspectionDemo">본체 탐색 + 정밀 물리 비교</button><label><input id="bodyOnlyCompare" type="checkbox"> 같은 물리 경로에서 본체 동작만 비교</label><label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
+<label><input id="bodyInspection" type="checkbox" checked> 큐브 본체 탐색</label><label>본체 움직임 <select id="bodyStyle"><option value="adaptive" selected>상황별 연속 탐색 (M2.4)</option><option value="target">지정 조각 연속 탐색</option><option value="legacy">기존 Motion Lab 방식 (M2.3)</option></select></label><button id="bodyInspectionDemo">본체 탐색 + 정밀 물리 비교</button><label><input id="bodyOnlyCompare" type="checkbox"> 같은 물리 경로에서 본체 동작만 비교</label><label>자세 강도 <input id="strength" type="range" min="0" max="2" step=".05" value="1"><output id="strengthVal">1.00×</output></label>
 <label>탐색 방식 <select id="mode"><option value="continuous" selected>회전 중 탐색 (기본)</option><option value="pause">정지 후 탐색 (v0.3)</option></select></label><label><input id="flow" type="checkbox" checked autocomplete="off"> 코너커팅 / 자동 정렬 (기본 ON)</label><label>회전 프로필 <select id="profile"><option value="mechanical" selected>물리 엔진 (M1.1 기본)</option><option value="rhythm">동작별 리듬 v2.3</option><option value="flick">이전 빠른 정렬 v2.1</option><option value="handoff">이전 v2.0</option><option value="contact">이전 v1.1</option><option value="natural">이전 v1.0</option><option value="chain">이전 v0.9</option><option value="fluid">이전 v0.8</option><option value="legacy">이전 v0.7</option></select></label><label><input id="compareView" type="checkbox" autocomplete="off"> 기존 큐브와 비교</label><label><input id="wrist" type="checkbox" checked> 미세 손목 반작용</label><label><input id="lookAhead" type="checkbox" checked> 목표 조각 자연 노출 예측</label><label>큐브 외형 <select id="cubeModel"><option value="modern" selected>신형 스피드큐브</option><option value="classic">이전 외형</option></select></label><button id="resetView">시점 초기화</button>
 </div>
 <div class="controls"><button data-alg="R U R' U' R U R' U'">Sexy move</button><button id="f2lDemo">F2L 삽입 예시</button><button id="pllDemo">PLL T-perm</button><button id="wideDemo">4×4 Wide 연결</button><button data-alg="R' F R F' R U R' U'">F / Sledge</button><button data-alg="R U R' U' R' F R2 U' R' U' R U R' F'">T-perm</button><button data-alg="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'">4×4 wide</button><button data-alg="R U R' y R U' R' x' F2 D B' y2">전체 방향 전환</button></div>
-<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15" autocomplete="off"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다. 기본 목표 탐색은 0수 직전, 자연 노출 예측 해제 시 이전 연속 탐색 방식을 사용합니다. 실제 시선 추적 데이터는 아닙니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2"></textarea>
+<div class="controls"><label>탐색 대상 <select id="kind"><option value="edge">Edge / Wing</option><option value="center">Center</option></select></label><label>목표 색상 <input id="target" value="white green" size="15" autocomplete="off"></label><label>확인 후보 위치 <input id="checks" placeholder="자동: 정보 부족 판단" size="16"></label></div><small>색상: white yellow green blue red orange. Center는 한 색상, Edge/Wing은 두 색상. 확인 후보 위치에는 0부터 시작하는 수 번호를 쉼표로 입력할 수 있습니다. M2.4는 목표 조각 및 다음 두 무브 관련 스티커의 관찰 상태를 평가하고, 평균 0.55수 간격으로 자세 목표를 다시 검토합니다. 자세와 각속도를 보존하며 원위치 복귀를 강제하지 않습니다. 자연 노출 예측 해제 시 이전 연속 탐색 방식으로 돌아갑니다. 실제 시선·손 힘을 측정한 모델은 아닙니다.</small><label for="setup">초기 스크램블 (선택)</label><textarea id="setup" rows="2"></textarea>
 <label><input id="referenceTiming" type="checkbox"> 영상 기반 회전 간격 (3×3 Sexy move 6회 전용)</label><label for="alg">재생 알고리즘</label><textarea id="alg" rows="3">R U</textarea>
 <div class="controls"><button id="load">적용</button><button id="caseA">비교 A (정렬 상태)</button><button id="caseB">비교 B (스크램블)</button><button id="caseC">회전으로 자연 노출</button><button id="case4">4×4 탐색 예시</button><button id="jumpInspection">다음 탐색 구간</button><button id="cutDemo">코너커팅 비교</button><button id="jumpCut">다음 코너커팅</button><small>큐브를 드래그하면 두 화면의 시점이 함께 움직입니다.</small></div>
 <div id="message" role="status"></div><p id="inspectionStatus" aria-live="polite"></p><p id="taskStatus"></p><p id="poseDiff"></p><p id="cutStatus"></p><p id="rendererStatus"></p><p id="fpsStatus"></p><p id="chainStatus"></p><p id="contactStatus"></p><p id="referenceStatus"></p><p id="rhythmStatus"></p><p id="wristStatus"></p><details><summary>동작별 타이밍</summary><pre id="rhythmDetails" style="white-space:pre-wrap"></pre></details><details><summary>탐색 판단 기록</summary><pre id="decisions" style="white-space:pre-wrap"></pre></details>
@@ -1550,7 +1550,54 @@ function taskCandidates(t,i,memory,colors,kind){
   }
   return {known:false,keys,ids};
 }
-function bodyPlan(t,track,{enabled=true,lookAhead=true,...options}={}){return enabled?(lookAhead?planTaskInspection(t,track,options):planContinuousSearch(t,options)):{events:[],decisions:[],taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};}
+
+// M2.4: information-driven body pose, integrated independently from
+// the precomputed layer physics. Time is normalized by mean move duration.
+// These wrist-control parameters are hypotheses, not measured hand forces.
+function m24Inv(q){return [q[0],-q[1],-q[2],-q[3]];}
+function m24Log(q){if(q[0]<0)q=q.map(x=>-x);const l=Math.hypot(q[1],q[2],q[3]);return l<1e-10?[0,0,0]:q.slice(1).map(x=>x*2*Math.atan2(l,q[0])/l);}
+function m24Exp(v){const a=Math.hypot(...v);return a<1e-10?HOME_Q:[Math.cos(a/2),...v.map(x=>x*Math.sin(a/2)/a)];}
+function m24Step(state,target,dt){
+ const e=m24Log(mul(target,m24Inv(state.q))),w=state.w,acc=e.map((x,k)=>24*x-9.8*w[k]),a=Math.hypot(...acc),limit=rad(360);
+ const v=w.map((x,k)=>x+dt*acc[k]*Math.min(1,limit/Math.max(a,1e-9))),speed=Math.hypot(...v),next=v.map(x=>x*Math.min(1,rad(95)/Math.max(speed,1e-9)));
+ const q=mul(m24Exp(next.map((x,k)=>(x+w[k])*.5*dt)),state.q),l=Math.hypot(...q);
+ return {q:q.map(x=>x/l),w:next};
+}
+function m24BodyPlan(t,track,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW,lookAhead=true,adaptive=true}={}){
+ const colors=target.map(x=>SEARCH_COLORS[x]);if(!["edge","center"].includes(kind)||colors.length!==(kind==="center"?1:2)||colors.some(x=>!x)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
+ const memory=new Map(),events=[],decisions=[],ts=[0],qs=[HOME_Q],ws=[[0,0,0]],checks=checkpoints===null?null:new Set(checkpoints),mean=t.total/Math.max(1,t.moves.length);
+ if(!mean)return {events,decisions,taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q,bodyTrace:{ts,qs,ws}};
+ const outer=t.frames[0].flatMap((c,id)=>FACES.map((_,j)=>isOuterSticker(c,j,t.n)?id*6+j:null).filter(k=>k!==null));
+ let state={q:HOME_Q,w:[0,0,0]},goal=HOME_Q,prevSeen=new Set(),active=null;
+ const frameAtTime=x=>flowFrameAt(t,track,x),direction=q=>qrotate(m24Inv(mul(view,q)),[0,0,1]);
+ const normal=(f,k)=>{const [a,b]=FACES[k%6];return f.cubies[Math.floor(k/6)].b[a].map(x=>x*b);};
+ const observeFrame=(f,i,time)=>{const d=direction(state.q),seen=new Set();for(const k of outer){const z=dot3(normal(f,k),d);if(z>=.28){seen.add(k);if(prevSeen.has(k)||z>=.5){const c=f.cubies[Math.floor(k/6)].colors[k%6];if(c!=="#202124"){if(active&&active.keys.has(k)&&!active.seen.has(k)){active.seen.add(k);active.observed=active.seen.size;}memory.set(k,{color:c,i,time});}}}}prevSeen=seen;};
+ const decide=(i,start)=>{
+  if(i>=t.moves.length||t.moves[i].whole||(checks&&!checks.has(i)))return;
+  const targetInfo=taskCandidates(t,i,memory,colors,kind),keys=new Map(targetInfo.keys);
+  // Next-turn participation and last visual confirmation are proxies for
+  // attention, not an inference of the actual solver's thoughts or gaze.
+  if(adaptive){for(const k of outer){const id=Math.floor(k/6),m=memory.get(k),age=m?(start-m.time)/mean:Infinity;let relevant=0;for(let j=i;j<Math.min(i+2,t.moves.length);j++)if(!t.moves[j].whole&&t.moves[j].selected(t.frames[j][id].p))relevant+=j===i?1:.7;if(!relevant)continue;const w=(m?Math.min(.65,Math.max(0,age-.7)*.22):.85)*relevant;if(w>.12)keys.set(k,(keys.get(k)||0)+w);}}
+  if(!keys.size)return;
+  const horizon=Math.min(t.total,start+mean*(lookAhead?1.2:.7));if(horizon-start<mean*.25)return;
+  const frames=Array.from({length:10},(_,j)=>{const time=start+(horizon-start)*(j+1)/10,f=frameAtTime(time);return {time,slots:[...keys.keys()].map(k=>({k,n:normal(f,k)}))};});
+  const exposure=q=>{let a=state,last=start,seen=new Set(),previous=new Set();for(const f of frames){const dt=(f.time-last)/mean,steps=Math.max(1,Math.ceil(dt/.04));for(let k=0;k<steps;k++)a=m24Step(a,q,dt/steps);last=f.time;const dir=direction(a.q),current=new Set();for(const s of f.slots){const z=dot3(s.n,dir);if(z>=.32){current.add(s.k);if(previous.has(s.k)||z>=.52)seen.add(s.k);}}previous=current;}return seen;};
+  const base=exposure(goal);let best=null;
+  const evaluate=q=>{const angle=angularDistance(state.q,q),distance=angularDistance(HOME_Q,q);if(angle<5||angle>(adaptive?36:68)||distance>65||qrotate(view,qrotate(q,[0,1,0]))[2]<.20)return;const seen=exposure(q),gain=[...seen].reduce((v,k)=>v+(base.has(k)?0:keys.get(k)),0),loss=[...base].reduce((v,k)=>v+(seen.has(k)?0:keys.get(k)),0),score=gain-.65*loss-.040*angle-.012*distance-.25;if(score>0&&(!best||score>best.score))best={q,angle,seen,gain,score};};
+  for(const x of [-24,-12,0,12,24])for(const y of [-30,-18,-8,0,8,18,30])for(const z of [-10,0,10])evaluate(mul(qpose([x,y,z]),state.q));
+  if(!adaptive)for(const x of [-24,-12,0,12,24])for(const y of [-64,-48,-32,0,32,48,64])evaluate(qpose([x,y,0]));
+  if(best){if(active)active.end=start;goal=best.q;active={i,start,arrive:Math.min(t.total,start+mean*.8),hold:Math.min(t.total,start+mean),end:t.total,q:goal,angle:best.angle,overlap:true,observed:0,identified:false,expected:best.seen.size,keys:new Set([...best.seen].filter(k=>!base.has(k))),seen:new Set()};events.push(active);decisions.push({i,reason:"inspect",angle:best.angle,gain:best.gain,skipped:base.size});}
+  else decisions.push({i,reason:"future visibility considered",skipped:base.size});
+ };
+ const count=Math.max(1,Math.ceil(t.total/mean*60)),dt=t.total/count/mean;let nextDecision=0,i=0;
+ for(let j=0;j<count;j++){const x=j*t.total/count;while(i<t.moves.length-1&&t.times[i+1]<=x)i++;if(j%4===0)observeFrame(frameAtTime(x),i,x);if(x+1e-9>=nextDecision){decide(i,x);nextDecision=x+mean*.55;}state=m24Step(state,goal,dt);ts.push((j+1)*t.total/count);qs.push(state.q);ws.push(state.w);}
+ observeFrame(frameAtTime(t.total),t.moves.length-1,t.total);
+ for(const e of events){delete e.keys;delete e.seen;e.arrive=Math.min(e.arrive,e.end);e.hold=Math.min(e.hold,e.end);}
+ return {events,decisions,taskEvents:true,stepTimes:t.times,total:t.total,endPose:state.q,bodyTrace:{ts,qs,ws}};
+}
+function m24At(trace,t){const {ts,qs}=trace;if(t<=0)return qs[0];if(t>=ts.at(-1))return qs.at(-1);let lo=0,hi=ts.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(ts[m]<=t)lo=m;else hi=m;}return slerp(qs[lo],qs[hi],(t-ts[lo])/(ts[hi]-ts[lo]));}
+
+function bodyPlan(t,track,{enabled=true,lookAhead=true,style="adaptive",...options}={}){if(!enabled)return {events:[],decisions:[],taskEvents:true,stepTimes:t.times,total:t.total,endPose:HOME_Q};if(!lookAhead)return planContinuousSearch(t,options);if(style==="legacy")return planTaskInspection(t,track,options);return m24BodyPlan(t,track,{...options,lookAhead,adaptive:style==="adaptive"});}
 function planTaskInspection(t,track,{target=["white","green"],kind="edge",checkpoints=null,view=SEARCH_VIEW}={}){
   const colors=target.map(x=>SEARCH_COLORS[x]);
   if(!["edge","center"].includes(kind)||colors.length!==(kind==="center"?1:2)||colors.some(x=>!x)||new Set(colors).size!==colors.length)throw Error("Invalid target colors");
@@ -1604,6 +1651,7 @@ function planTaskInspection(t,track,{target=["white","green"],kind="edge",checkp
 function continuousSearchFrameAt(timeline,plan,time,strength=1){
   const t=clamp(time,0,plan.total),frame=frameAt(timeline,t);
   const task=plan.taskEvents?plan.events.find(e=>t>=e.start&&t<e.end):null;
+  if(plan.bodyTrace){const q=m24At(plan.bodyTrace,t);return {frame,pose:slerp(HOME_Q,q,Math.max(0,strength)),event:task||null};}
   if(plan.taskEvents){const q=taskPoseAt(task,t);return {frame,pose:slerp(HOME_Q,q,Math.max(0,strength)),event:task||null};}
   const seg=plan.segments[frame.i];
   const pose=seg?transitionAt(seg.from,seg.to,(t-seg.start)/(seg.end-seg.start)):plan.endPose;
@@ -2389,7 +2437,7 @@ function render(now=Infinity){
   $("maxPhysicsStatus").textContent=flowTrack.maxMode?"MAX · 외피 접촉 표본 "+flowTrack.shellSamples+"개 · 중간 자세 포함 구속 검사 "+flowTrack.sweepTests+"회 · 최대 조각 이동 "+(flowTrack.maxShift*18.5).toFixed(3)+" mm · 기울기 "+(flowTrack.maxTilt*180/Math.PI).toFixed(3)+"° · 자기 쌍극자 근사":"MAX 꺼짐";
   $("magneticStatus").textContent=flowTrack.magneticCapture?"유한 자석 극 모델 · 자석 수 64개 (코너-엣지 / Ball Core) · 최대 계산 토크 "+(flowTrack.peakMagnetic*1000).toFixed(2)+" mN·m · 손가락 해제 "+flowTrack.releaseCount+"수 · 추가 손가락 보정 "+flowTrack.assistCount+"수 · 입력 잔여각 "+flowTrack.cuts.map(c=>c.requestRemaining.toFixed(1)+"°").join(" / ")+" · 실제 후행 1° 시 선행 잔여각 "+flowTrack.cuts.map(c=>c.actualResidual==null?"중첩 없음":c.actualResidual.toFixed(1)+"°").join(" / ")+" · 최대 자기 하중 변화 "+(flowTrack.peakBodyLoad/(M10_MAG.length/(1.3e-5*36))).toFixed(3)+" N · 논리 확정 오차 "+Math.max(0,...flowTrack.turns.map(a=>a.captureResidual||0)).toFixed(3)+"°":flowTrack.releaseDemo?"자유 정렬 · 목표 각도 제어 없음 / 자석 강도 "+flowTrack.magneticStrength:"이전 자기 모델";
   if(flowTrack.releaseDemo){const p=flowTrack.result,deg=lookup(p.ts,p.angles,time)*180/Math.PI;if(videoFit){const ref=flowTrack.offTrack.result,observed=lookup(ref.ts,ref.angles,time)*180/Math.PI,body=lookup(ref.ts,M17_REF.body,time);$("releaseStatus").textContent="";$("videoFitStatus").textContent=`관측 구간 ${(time*1000).toFixed(2)} ms / 45.83 ms · 영상 추정 ${observed.toFixed(2)}° · 토크 적분 ${deg.toFixed(2)}° · 본체 자세 변화량 ${body.toFixed(2)}° · 가중 RMS ${p.rmse.toFixed(2)}° · 외부 입력 토크 ${(lookup(p.ts,p.forces,time)*1000).toFixed(2)} mN·m (역추정) · 자기 토크 ${(lookup(p.ts,p.magnetic,time)*1000).toFixed(2)} mN·m (모델)`;}else if(ab){const off=flowTrack.offTrack.result,offDeg=lookup(off.ts,off.angles,time)*180/Math.PI,onV=lookup(p.ts,p.velocities,time)*180/Math.PI,offV=lookup(off.ts,off.velocities,time)*180/Math.PI;$("releaseStatus").textContent=`계산 시간 ${time.toFixed(3)}초 | ON ${deg.toFixed(2)}° · ${onV.toFixed(1)}°/s | OFF ${offDeg.toFixed(2)}° · ${offV.toFixed(1)}°/s | 1초 후 ON ${p.final.toFixed(2)}° / OFF ${off.final.toFixed(2)}° · 강제 정렬 없음`;}else $("releaseStatus").textContent="현재 "+deg.toFixed(2)+"° · 1초 후 "+p.final.toFixed(3)+"° · 최대 토크 "+(p.peakTorque*1000).toFixed(2)+" mN·m · 최종 각도 스냅 없음";}
-  $("taskStatus").textContent=plan.taskEvents?(taskEvent?"목표 조각 확인 · "+taskEvent.angle.toFixed(0)+"° · "+(motionTime>=taskEvent.hold?(taskEvent.identified?"목표 색상 확인 완료":"후보 면 확인"):"면을 드러내는 중"):plan.events.length?"목표 탐색 "+plan.events.length+"회 · 추가 확인 "+plan.events.filter(e=>e.identified).length+"회":"추가 탐색 없음 (현재 조건에서 유효한 확인 경로 없음)"):"기존 탐색 방식";
+  $("taskStatus").textContent=plan.bodyTrace?"연속 자세 판단 "+plan.decisions.length+"회 · 자세 목표 변경 "+plan.events.length+"회 · 원위치 강제 복귀 없음":plan.taskEvents?(taskEvent?"목표 조각 확인 · "+taskEvent.angle.toFixed(0)+"° · "+(motionTime>=taskEvent.hold?(taskEvent.identified?"목표 색상 확인 완료":"후보 면 확인"):"면을 드러내는 중"):plan.events.length?"목표 탐색 "+plan.events.length+"회 · 추가 확인 "+plan.events.filter(e=>e.identified).length+"회":"추가 탐색 없음 (현재 조건에서 유효한 확인 경로 없음)"):"기존 탐색 방식";
   const group=tl.rhythm?.find(g=>g.first<=modernFrame.i&&g.last>=modernFrame.i);
   $("rhythmStatus").textContent=tl.reference?"영상 주석 타이밍 · 기존 v2.2 유지":group?"동작 단위: "+group.name+" · "+(group.first+1)+"–"+(group.last+1)+"수 (추정 프로필)":"일반 회전 타이밍";
   $("wristStatus").textContent=$("wrist").checked&&flowOn?"손목 반작용 · "+angularDistance(HOME_Q,reaction).toFixed(2)+"° (추정)":"손목 반작용 꺼짐";
@@ -2409,7 +2457,7 @@ function render(now=Infinity){
   $("rendererStatus").textContent=gpuA&&gpuB?($("cubeModel").value==="classic"?"WebGL2 · 기존 외형":"WebGL2 · 신형 성형 캡 / 조각별 윤곽"):"WebGL2 미지원 · Canvas 대체 렌더링 (신형 외형 미적용)";
   $("poseDiff").textContent=($("bodyOnlyCompare").checked?"같은 물리 경로의 본체 자세 차이: ":"큐브 본체 탐색 자세: ")+angularDistance(HOME_Q,pose).toFixed(1)+"° · 탐색 "+plan.events.length+"회";
   $("seek").value=timing.total?time/timing.total:0;
-  $("inspectionStatus").textContent=event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
+  $("inspectionStatus").textContent=plan.bodyTrace?(event?"최근 자세 목표 변경 "+event.angle.toFixed(1)+"° · 실제 확인 후보 "+event.observed+"개 · 현재 본체 "+angularDistance(HOME_Q,pose).toFixed(1)+"°":"추가 기울임 없이 현재 자세 유지"):event?(event.overlap?"회전과 탐색 동시 진행 · ":"확인 중 · ")+event.angle.toFixed(0)+"° · 새로 관찰할 후보 스티커 "+event.observed+"개":"탐색 동작 "+plan.events.length+"회 · "+plan.decisions.length+"개 판단 시점 · 추가 정지 "+Math.max(0,(timing.total-tl.total)/Number($("speed").value)).toFixed(2)+"초";
   $("pos").textContent=flowTrack.releaseDemo?time.toFixed(2)+" / 1.00 s":frame.i+"/"+tl.moves.length+(frame.move?" · "+frame.move.token:"");
   if(flowTrack.releaseDemo){$("cutStatus").textContent="자유 정렬 · "+(Math.abs(flowAngle(flowTrack.turns[0],time))*180/Math.PI).toFixed(2)+"°";$("mechanicalStatus").textContent="자유 정렬 시험: 손가락 토크 0, 목표 각도 없음";}
 }
@@ -2442,7 +2490,7 @@ async function load(){
     let nextTrack;
     if($("profile").value==="mechanical"){const settings={magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,constrained:$("hardContact").checked,maxMode:$("maxPhysics").checked,magneticCapture:$("magneticCapture").checked,br:Number($("br").value),requestDelay:Number($("requestDelay").value),requestAngle:Number($("requestAngle").value),variation:Number($("inputVariation").value),seed:Math.round(clamp(Number($("inputSeed").value)||0,0,9999)),cutSpec:Number($("cutSpec").value),fastMax:$("maxQuality").value==="fast"};
       const max=settings.liveContact&&settings.constrained&&settings.maxMode;const start=performance.now();if(max)$("solverStatus").textContent="MAX 물리 경로 계산 중 · 재생은 계산 완료 후 가능 (다른 알고리즘을 적용하면 기존 계산 취소)";const p=max?await solveCached(t,settings):simulateMechanical(t,settings);if(serial!==solveSerial)return;t=p.timeline;nextTrack=p.track;if(max)$("solverStatus").textContent=(p.cached?"MAX 경로 캐시 재사용 · ":"MAX "+(settings.fastMax?"저빈도":"정밀")+" 계산 완료 · ")+((performance.now()-start)/1000).toFixed(2)+"초 · "+(p.track.kernel?.calls&&!p.track.kernel.fault?"WASM 검사 "+p.track.kernel.calls+"회 / JS 대조 "+p.track.kernel.verified+"회":"JS 검사"+(p.track.kernel?.fault?" (WASM 대조 실패: "+p.track.kernel.fault+")":""));}else nextTrack=buildFlowTrack(t,$("profile").value);
-    const p=bodyPlan(t,nextTrack,{kind,target,checkpoints,view:qpose([pitch,yaw,0]),enabled:$("bodyInspection").checked,lookAhead:$("lookAhead").checked&&$("flow").checked});
+    const p=bodyPlan(t,nextTrack,{kind,target,checkpoints,view:qpose([pitch,yaw,0]),enabled:$("bodyInspection").checked,lookAhead:$("lookAhead").checked&&$("flow").checked,style:$("bodyStyle").value});
     continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncComparison();syncButton();$("message").textContent="";
     $("rhythmDetails").textContent=t.moves.map((m,i)=>`${i+1}. ${m.token} · ${((t.times[i+1]-t.times[i])*1000/playbackRate()).toFixed(0)} ms · ${t.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(t.reference?"영상 주석":"일반")}`).join("\n");
     $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음","future visibility considered":"자연 노출 예측 후 추가 확인 생략",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")+(d.skipped?" · 이후 자연 노출 후보 "+d.skipped+"면":"")).join("\n");render();
@@ -2453,7 +2501,7 @@ $("reset").onclick=()=>{playing=false;time=0;syncButton();render()};
 $("prev").onclick=()=>{if(!timing||$("play").disabled)return;playing=false;syncButton();const f=sampled(time).frame;time=timing.stepTimes[Math.max(0,f.i-(Math.abs(time-timing.stepTimes[f.i])<1e-6?1:0))];render()};
 $("next").onclick=()=>{if(!timing||$("play").disabled)return;playing=false;syncButton();time=timing.stepTimes[Math.min(tl.moves.length,sampled(time).frame.i+1)];render()};
 $("seek").oninput=()=>{if(!timing||$("play").disabled)return;playing=false;syncButton();time=Number($("seek").value)*timing.total;render()};
-$("flow").onchange=()=>render();
+$("flow").onchange=replanBody;
 $("wrist").onchange=()=>render();
 $("cubeModel").onchange=()=>render();
  $("cadMode").onchange=()=>{if($("cadMode").value!=="magnetic"&&$("shellCompare").checked){$("shellCompare").checked=false;$("compareView").checked=false;syncComparison();}if($("cadMode").value!=="magnetic"&&["feet","cornerPart","edgePart","centerPart"].includes($("assembly").value))$("assembly").value="full";$("cadCollision").textContent="";load();};
@@ -2498,8 +2546,8 @@ $("fitRate").onchange=()=>render();$("releaseVelocity").oninput=()=>{$("releaseV
 $("requestAngle").oninput=()=>{$("requestAngleVal").textContent=$("requestAngle").value+"°";};
 $("stressTest").onclick=()=>{$("cadMode").value="magnetic";$("profile").value="mechanical";$("livePhysics").checked=true;$("hardContact").checked=true;$("maxPhysics").checked=true;$("magneticCapture").checked=true;$("requestDelay").value=".36";$("requestDelayVal").textContent="360 ms";$("flow").checked=true;$("size").value="3";$("setup").value="";$("alg").value="R U";$("requestAngle").value="48";$("requestAngleVal").textContent="48°";$("speed").value="2";$("speedVal").textContent="2 TPS";$("assembly").value="cutaway";load();};
 $("contactSweep").onclick=()=>{playing=false;syncButton();const rows=[[0,0],[0,15],[5,5],[10,10],[15,15],[25,15],[30,25]].map(([a,b])=>{const p=m04Probe(m04PairFrame("R","U",a,b),true);return `${String(a).padStart(2)}° / ${String(b).padStart(2)}° · ${p.piecePairs}쌍 · ${p.hits}점 · 최대 ${(p.maxDepth*18.5).toFixed(2)} mm`;});$("meshContactResult").textContent="R 남은 각도 / U 진행 각도 · 내부 조각 쌍 · 내부 표본점\n"+rows.join("\n")+"\n표본점에서 가장 가까운 메시 표면까지의 거리이며 전체 최대 침투량을 보장하지 않습니다.";};
-function replanBody(){if(!tl||flowTrack?.releaseDemo||$("play").disabled)return;try{const raw=$("checks").value.trim(),checkpoints=raw?raw.split(",").map(v=>Number(v.trim())):null;if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=tl.moves.length))throw Error("Invalid checkpoint");plan=bodyPlan(tl,flowTrack,{kind:$("kind").value,target:$("target").value.trim().toLowerCase().split(/\s+/),checkpoints,view:qpose([pitch,yaw,0]),enabled:$("bodyInspection").checked,lookAhead:$("lookAhead").checked&&$("flow").checked});timing=plan;$("message").textContent="";$("decisions").textContent=plan.decisions.map(d=>`${d.i}수 직전 · ${d.reason}${d.angle?" · "+d.angle.toFixed(1)+"°":""}`).join("\n");render();}catch(e){$("message").textContent=e.message;}}
-$("bodyInspection").onchange=replanBody;$("lookAhead").onchange=replanBody;$("target").onchange=replanBody;$("checks").onchange=replanBody;
+function replanBody(){if(!tl||flowTrack?.releaseDemo||$("play").disabled)return;try{const raw=$("checks").value.trim(),checkpoints=raw?raw.split(",").map(v=>Number(v.trim())):null;if(checkpoints?.some(v=>!Number.isInteger(v)||v<0||v>=tl.moves.length))throw Error("Invalid checkpoint");plan=bodyPlan(tl,flowTrack,{kind:$("kind").value,target:$("target").value.trim().toLowerCase().split(/\s+/),checkpoints,view:qpose([pitch,yaw,0]),enabled:$("bodyInspection").checked,lookAhead:$("lookAhead").checked&&$("flow").checked,style:$("bodyStyle").value});timing=plan;$("message").textContent="";$("decisions").textContent=plan.decisions.map(d=>`${d.i}수 직전 · ${d.reason}${d.angle?" · "+d.angle.toFixed(1)+"°":""}`).join("\n");render();}catch(e){$("message").textContent=e.message;}}
+$("bodyInspection").onchange=replanBody;$("bodyStyle").onchange=replanBody;$("lookAhead").onchange=replanBody;$("target").onchange=replanBody;$("checks").onchange=replanBody;
 $("bodyOnlyCompare").onchange=()=>{if($("bodyOnlyCompare").checked){$("compareView").checked=true;$("shellCompare").checked=false;}syncComparison();render();};
 $("bodyInspectionDemo").onclick=()=>{const ready=physicalPreset(3,"R U F2 L D B R2","R U R' U'",{body:true});return ready;};
 $("profile").onchange=load;
@@ -2532,7 +2580,7 @@ function physicalPreset(n,setup,alg,{body=false}={}){
   $("mode").value="continuous";$("flow").checked=true;$("profile").value="mechanical";$("cadMode").value="magnetic";
   $("livePhysics").checked=true;$("hardContact").checked=true;$("maxPhysics").checked=true;$("magneticCapture").checked=true;
   $("kind").value="edge";$("target").value="white green";$("checks").value="";$("wrist").checked=false;
-  if(body){$("bodyInspection").checked=true;$("lookAhead").checked=true;$("strength").value="1";$("strengthVal").textContent="1.00×";$("bodyOnlyCompare").checked=true;$("maxQuality").value="full";$("speed").value="1";$("clockMode").value="tps";$("speedVal").textContent="1 TPS";yaw=goalYaw=-34;pitch=goalPitch=33;} $("shellStyle").value="gan";$("assembly").value="full";
+  if(body){$("bodyStyle").value="adaptive";$("bodyInspection").checked=true;$("lookAhead").checked=true;$("strength").value="1";$("strengthVal").textContent="1.00×";$("bodyOnlyCompare").checked=true;$("maxQuality").value="full";$("speed").value="1";$("clockMode").value="tps";$("speedVal").textContent="1 TPS";yaw=goalYaw=-34;pitch=goalPitch=33;} $("shellStyle").value="gan";$("assembly").value="full";
   $("shellCompare").checked=false;$("compareView").checked=body;syncComparison();
   return load();
 }
@@ -2577,10 +2625,10 @@ $("jumpCut").onclick=()=>{
 $("jumpInspection").onclick=()=>{
   if(!plan?.events.length){$("message").textContent="현재 조건에서는 추가 탐색이 필요하지 않습니다.";return;}
   playing=false;syncButton();
-  const starts=plan.events.map(e=>timing.stepTimes[e.i]);
+  const starts=plan.events.map(e=>plan.bodyTrace?e.start:timing.stepTimes[e.i]);
   const next=starts.findIndex(t=>t>time+.03);
   const i=next<0?0:next;
-  const start=starts[i],end=timing.stepTimes[plan.events[i].i+1];
+  const start=starts[i],end=plan.bodyTrace?plan.events[i].arrive:timing.stepTimes[plan.events[i].i+1];
   time=continuous&&$("flow").checked?chainDisplayTime(flowTrack,start+(end-start)*.8):start+(end-start)*.8;render();
 };
 $("resetView").onclick=()=>{goalYaw=-34;goalPitch=33;schedule()};
