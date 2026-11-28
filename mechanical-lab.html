@@ -2376,7 +2376,7 @@ function render(now=Infinity){
   const centerOffsets=flowTrack.liveContact?centerOffsetsAt(flowTrack,motionTime):null,pieceFlex=flowTrack.maxMode?pieceFlexAt(flowTrack,motionTime):null;
   const modernFrame=flowOn&&flowTrack.profile==="mechanical"?{...rawFrame,mechanicalDeflection:lookup(flowTrack.traceT,flowTrack.traceD,motionTime),centerOffsets,pieceFlex}:flowOn&&(flowTrack.profile==="contact"||(flowTrack.profile==="handoff"&&tl.n<=4))?contactCompliance(tl,rawFrame):rawFrame;
   const ab=flowTrack.releaseComparison,videoFit=flowTrack.videoFit,bodyCompare=$("bodyOnlyCompare").checked&&!flowTrack.releaseDemo&&!$("shellCompare").checked,referenceFrame=ab?flowFrameAt(tl,flowTrack.offTrack,motionTime):$("shellCompare").checked||bodyCompare?modernFrame:frame;
-  const gpuA=$("compareView").checked?draw(canvases[0],referenceFrame,ab||$("shellCompare").checked?renderPose:HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
+  const gpuA=$("compareView").checked?draw(canvases[0],referenceFrame,ab||$("shellCompare").checked?renderPose:bodyCompare?reaction:HOME_Q):true,gpuB=draw(canvases[1],modernFrame,renderPose);
   if(Number.isFinite(now)&&playing&&now-lastStatus<100)return;
   lastStatus=Number.isFinite(now)?now:-Infinity;
   $("fpsStatus").textContent=fps?"최근 재생 프레임: "+fps.toFixed(0)+" FPS (브라우저 측정)":"재생 중 프레임 측정";
@@ -2429,7 +2429,7 @@ function solveInWorker(t,settings){
   });
 }
 async function load(){
-  const serial=++solveSerial;$("videoFitStatus").textContent="";if(flowTrack?.releaseDemo){$("compareView").checked=false;syncComparison();document.querySelectorAll(".compare figcaption").forEach((el,i)=>el.textContent=i?"신형 자석식 큐브":"기호 회전만 · 기준");}$("releaseStatus").textContent=""; if(solveWorker){solveWorker.terminate();solveWorker=null;const reject=solveReject;solveReject=null;reject?.(Error("새 계산으로 교체"));}playing=false;syncButton();$("play").disabled=true;$("solverStatus").textContent="";$("playbackPhysics").textContent="새 경로 계산 중 · 이전 경로 재생 잠금";
+  const serial=++solveSerial;$("videoFitStatus").textContent="";if(flowTrack?.releaseDemo){$("compareView").checked=$("bodyOnlyCompare").checked;syncComparison();}$("releaseStatus").textContent=""; if(solveWorker){solveWorker.terminate();solveWorker=null;const reject=solveReject;solveReject=null;reject?.(Error("새 계산으로 교체"));}playing=false;syncButton();$("play").disabled=true;$("solverStatus").textContent="";$("playbackPhysics").textContent="새 경로 계산 중 · 이전 경로 재생 잠금";
   try{
     let t=buildTimeline(Number($("size").value),$("setup").value,$("alg").value);
     if($("referenceTiming").checked){if(t.n===3&&t.moves.map(m=>m.token).join(" ")===referenceAlg)t=applyReferenceTiming(t);else $("referenceTiming").checked=false;}
@@ -2443,7 +2443,7 @@ async function load(){
     if($("profile").value==="mechanical"){const settings={magnet:Number($("magnet").value),travel:Number($("travel").value),friction:Number($("friction").value),meshContact:$("cadMode").value==="magnetic",liveContact:$("cadMode").value==="magnetic"&&$("livePhysics").checked,constrained:$("hardContact").checked,maxMode:$("maxPhysics").checked,magneticCapture:$("magneticCapture").checked,br:Number($("br").value),requestDelay:Number($("requestDelay").value),requestAngle:Number($("requestAngle").value),variation:Number($("inputVariation").value),seed:Math.round(clamp(Number($("inputSeed").value)||0,0,9999)),cutSpec:Number($("cutSpec").value),fastMax:$("maxQuality").value==="fast"};
       const max=settings.liveContact&&settings.constrained&&settings.maxMode;const start=performance.now();if(max)$("solverStatus").textContent="MAX 물리 경로 계산 중 · 재생은 계산 완료 후 가능 (다른 알고리즘을 적용하면 기존 계산 취소)";const p=max?await solveCached(t,settings):simulateMechanical(t,settings);if(serial!==solveSerial)return;t=p.timeline;nextTrack=p.track;if(max)$("solverStatus").textContent=(p.cached?"MAX 경로 캐시 재사용 · ":"MAX "+(settings.fastMax?"저빈도":"정밀")+" 계산 완료 · ")+((performance.now()-start)/1000).toFixed(2)+"초 · "+(p.track.kernel?.calls&&!p.track.kernel.fault?"WASM 검사 "+p.track.kernel.calls+"회 / JS 대조 "+p.track.kernel.verified+"회":"JS 검사"+(p.track.kernel?.fault?" (WASM 대조 실패: "+p.track.kernel.fault+")":""));}else nextTrack=buildFlowTrack(t,$("profile").value);
     const p=bodyPlan(t,nextTrack,{kind,target,checkpoints,view:qpose([pitch,yaw,0]),enabled:$("bodyInspection").checked,lookAhead:$("lookAhead").checked&&$("flow").checked});
-    continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncButton();$("message").textContent="";
+    continuous=true;tl=t;plan=p;flowTrack=nextTrack;reactionTrack=buildReactionTrack(t,flowTrack);timing=continuous?p:inspectionTimeline(t,p);time=0;playing=false;syncComparison();syncButton();$("message").textContent="";
     $("rhythmDetails").textContent=t.moves.map((m,i)=>`${i+1}. ${m.token} · ${((t.times[i+1]-t.times[i])*1000/playbackRate()).toFixed(0)} ms · ${t.rhythm?.find(g=>g.first<=i&&g.last>=i)?.name||(t.reference?"영상 주석":"일반")}`).join("\n");
     $("decisions").textContent=p.decisions.map(d=>d.i+"수 직전: "+({"target already identified":"목표 이미 확인","no eligible uncertain piece":"불확실한 후보 없음","no useful low-cost view":"유효한 저비용 자세 없음","future visibility considered":"자연 노출 예측 후 추가 확인 생략",inspect:"추가 확인"}[d.reason])+(d.angle?" · "+d.angle.toFixed(1)+"°":"")+(d.skipped?" · 이후 자연 노출 후보 "+d.skipped+"면":"")).join("\n");render();
   }catch(e){if(serial===solveSerial){$("message").textContent=e.message;$("solverStatus").textContent="계산 실패";}}finally{if(serial===solveSerial){$("play").disabled=!!$("message").textContent;if(!$("play").disabled)render();else $("playbackPhysics").textContent="계산 실패 · 재생 잠금 (다시 적용하세요)";}}
@@ -2488,7 +2488,7 @@ function showFreeRelease(on,compare=false){
  $("releaseOn").onclick=()=>showFreeRelease(true);$("releaseOff").onclick=()=>showFreeRelease(false);$("releaseCompare").onclick=()=>showFreeRelease(true,true);
 $("videoFit").onclick=()=>{
  ++solveSerial;if(solveWorker){solveWorker.terminate();solveWorker=null;const reject=solveReject;solveReject=null;reject?.(Error("영상 비교로 교체"));}
- playing=false;$("play").disabled=false;$("message").textContent="";$("solverStatus").textContent="";$("cadMode").value="magnetic";$("shellStyle").value="gan";$("shellCompare").checked=false;$("flow").checked=true;$("wrist").checked=false;$("assembly").value="full";$("strength").value="0";
+ playing=false;$("play").disabled=false;$("message").textContent="";$("solverStatus").textContent="";$("cadMode").value="magnetic";$("shellStyle").value="gan";$("shellCompare").checked=false;$("flow").checked=true;$("wrist").checked=false;$("assembly").value="full";
  const p=m17FitTrack(Number($("magnet").value),Number($("br").value),Number($("friction").value)),t=buildTimeline(3,"","R"),move=t.moves[0],total=p.ts.at(-1),ref={ts:M17_REF.angles.map((_,i)=>i*M17_REF.dt),angles:M17_REF.angles.map(rad)};
  tl={...t,times:[0,total],total};const turn=(p)=>({i:0,move,start:0,end:total+1,physical:true,ts:p.ts,angles:p.angles.map(x=>Math.sign(move.angle)*x)});
  flowTrack={turns:[turn(p)],cuts:[],total,profile:"release",releaseDemo:true,releaseComparison:true,videoFit:true,result:p,offTrack:{turns:[turn(ref)],result:ref}};
@@ -2516,7 +2516,7 @@ $("speed").oninput=()=>{$("speedVal").textContent=$("speed").value+($("clockMode
 $("clockMode").onchange=()=>{$("speed").oninput();};
 $("referenceTiming").onchange=load;
 $("load").onclick=load;$("size").onchange=load;$("mode").onchange=load;
-$("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";load()};
+$("kind").onchange=()=>{$("target").value=$("kind").value==="center"?"white":"white green";replanBody()};
 function sample(setup,target="yellow orange"){return physicalPreset(3,setup,"R U R' U' F R U R' U' F' R U2 R'");}
 $("caseA").onclick=()=>sample("");$("caseB").onclick=()=>sample("R U F2 L D B R2");$("caseC").onclick=()=>sample("R U F2 L D B R2","white green");
 $("case4").onclick=()=>{$("size").value="4";$("kind").value="edge";$("target").value="yellow orange";$("checks").value="";$("setup").value="Rw U2 Fw D Lw B";$("alg").value="Rw U Rw' U' Fw D Rw2 x U2 y' 2R 2R'";load()};
