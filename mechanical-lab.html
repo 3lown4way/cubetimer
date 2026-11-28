@@ -2580,7 +2580,7 @@ function physicalPreset(n,setup,alg,{body=false}={}){
   $("mode").value="continuous";$("flow").checked=true;$("profile").value="mechanical";$("cadMode").value="magnetic";
   $("livePhysics").checked=true;$("hardContact").checked=true;$("maxPhysics").checked=true;$("magneticCapture").checked=true;
   $("kind").value="edge";$("target").value="white green";$("checks").value="";$("wrist").checked=false;
-  if(body){$("bodyStyle").value="adaptive";$("bodyInspection").checked=true;$("lookAhead").checked=true;$("strength").value="1";$("strengthVal").textContent="1.00×";$("bodyOnlyCompare").checked=true;$("maxQuality").value="full";$("speed").value="1";$("clockMode").value="tps";$("speedVal").textContent="1 TPS";yaw=goalYaw=-34;pitch=goalPitch=33;} $("shellStyle").value="gan";$("assembly").value="full";
+  if(body){$("target").value="white red";$("bodyStyle").value="adaptive";$("bodyInspection").checked=true;$("lookAhead").checked=true;$("strength").value="1";$("strengthVal").textContent="1.00×";$("bodyOnlyCompare").checked=true;$("maxQuality").value="full";$("speed").value="1";$("clockMode").value="tps";$("speedVal").textContent="1 TPS";yaw=goalYaw=-34;pitch=goalPitch=33;} $("shellStyle").value="gan";$("assembly").value="full";
   $("shellCompare").checked=false;$("compareView").checked=body;syncComparison();
   return load();
 }
